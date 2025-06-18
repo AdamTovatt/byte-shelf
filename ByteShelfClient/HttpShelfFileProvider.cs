@@ -8,16 +8,25 @@ namespace ByteShelfClient
     {
         private readonly HttpClient _httpClient;
         private readonly JsonSerializerOptions _jsonOptions;
+        private readonly string? _apiKey;
         private int? _chunkSize;
 
         public HttpShelfFileProvider(
-            HttpClient httpClient)
+            HttpClient httpClient,
+            string? apiKey = null)
         {
             _httpClient = httpClient;
+            _apiKey = apiKey;
             _jsonOptions = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
             };
+
+            // Set default API key header if provided
+            if (!string.IsNullOrEmpty(_apiKey))
+            {
+                _httpClient.DefaultRequestHeaders.Add("X-API-Key", _apiKey);
+            }
         }
 
         private async Task<int> GetChunkSizeAsync(CancellationToken cancellationToken = default)

@@ -279,10 +279,68 @@ ByteShelf/
 
 ## Security Notes
 
-- The current implementation does not include authentication or authorization
+- API key authentication is included by default. All API requests require a valid API key unless authentication is explicitly disabled in configuration.
 - Consider adding HTTPS in production environments
 - Implement proper access controls for production use
 - Validate file types and sizes as needed for your use case
+
+### API Key Authentication
+
+ByteShelf now supports API key authentication to secure access to the file storage API.
+
+#### Configuration
+
+Add authentication settings to your `appsettings.json`:
+
+```json
+{
+  "Authentication": {
+    "ApiKey": "your-secure-api-key-here",
+    "RequireAuthentication": true
+  }
+}
+```
+
+- **ApiKey**: The secret key that clients must provide to access the API
+- **RequireAuthentication**: Set to `false` to disable authentication (not recommended for production)
+
+#### Client Usage
+
+Update your client code to include the API key:
+
+```csharp
+using HttpClient httpClient = new HttpClient();
+httpClient.BaseAddress = new Uri("https://localhost:7001");
+
+// Pass the API key to the client
+IShelfFileProvider provider = new HttpShelfFileProvider(httpClient, "your-secure-api-key-here");
+```
+
+The client will automatically include the API key in the `X-API-Key` header for all requests.
+
+#### Security Best Practices
+
+1. **Use Strong API Keys**: Generate cryptographically secure random keys
+2. **Environment Variables**: Store API keys in environment variables, not in source code
+3. **HTTPS Only**: Always use HTTPS in production to protect API keys in transit
+4. **Key Rotation**: Regularly rotate API keys for better security
+5. **Access Logging**: Monitor API access for suspicious activity
+
+#### Environment Variable Configuration
+
+```bash
+# Set API key via environment variable
+set Authentication__ApiKey=your-secure-api-key-here
+set Authentication__RequireAuthentication=true
+dotnet run
+```
+
+#### Excluded Endpoints
+
+The following endpoints are excluded from authentication for system health monitoring:
+- `/health` - Health check endpoints
+- `/metrics` - Metrics endpoints  
+- `/` - Root endpoint
 
 ## Contributing
 

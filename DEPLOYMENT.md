@@ -114,6 +114,8 @@ Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=ASPNETCORE_URLS=http://localhost:5000
 Environment=StoragePath=/var/byteshelf/storage
 Environment=ChunkConfiguration__ChunkSizeBytes=1048576
+Environment=Authentication__ApiKey=your-secure-production-api-key
+Environment=Authentication__RequireAuthentication=true
 ```
 
 ### Configuration File
@@ -129,11 +131,38 @@ You can also create an `appsettings.Production.json` file in `/opt/byteshelf/`:
     }
   },
   "StoragePath": "/var/byteshelf/storage",
+  "Authentication": {
+    "ApiKey": "your-secure-production-api-key",
+    "RequireAuthentication": true
+  },
   "ChunkConfiguration": {
     "ChunkSizeBytes": 1048576
   }
 }
 ```
+
+### Security Configuration
+
+For production deployments, it's recommended to:
+
+1. **Generate a Strong API Key**:
+   ```bash
+   # Generate a secure random API key
+   openssl rand -base64 32
+   ```
+
+2. **Set API Key via Environment Variable** (preferred for security):
+   ```bash
+   # Add to the service file or export in shell
+   export Authentication__ApiKey="your-generated-api-key"
+   ```
+
+3. **Secure the Configuration File**:
+   ```bash
+   # Set restrictive permissions on config file
+   sudo chmod 600 /opt/byteshelf/appsettings.Production.json
+   sudo chown byteshelf:byteshelf /opt/byteshelf/appsettings.Production.json
+   ```
 
 ## Service Management
 
@@ -249,8 +278,13 @@ curl http://localhost:5000/api/config/chunk-size
 
 1. **Firewall**: Configure firewall to only allow necessary ports
 2. **HTTPS**: Use a reverse proxy with SSL/TLS for production
-3. **Authentication**: Consider adding authentication middleware
+3. **Authentication**: API key authentication is enabled by default - ensure you set a strong API key
 4. **File Permissions**: Ensure proper file permissions for the service user
+5. **API Key Security**: 
+   - Use environment variables for API keys in production
+   - Rotate API keys regularly
+   - Monitor access logs for suspicious activity
+   - Never commit API keys to version control
 
 ## Performance Tuning
 

@@ -1,4 +1,5 @@
 using ByteShelf.Configuration;
+using ByteShelf.Middleware;
 using ByteShelf.Services;
 
 namespace ByteShelf
@@ -13,6 +14,15 @@ namespace ByteShelf
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
+
+            // Configure authentication
+            builder.Services.Configure<AuthenticationConfiguration>(builder.Configuration.GetSection("Authentication"));
+            builder.Services.AddSingleton<AuthenticationConfiguration>(serviceProvider =>
+            {
+                AuthenticationConfiguration config = new AuthenticationConfiguration();
+                builder.Configuration.GetSection("Authentication").Bind(config);
+                return config;
+            });
 
             // Configure chunk settings
             builder.Services.Configure<ChunkConfiguration>(builder.Configuration.GetSection("ChunkConfiguration"));
@@ -41,6 +51,10 @@ namespace ByteShelf
             }
 
             app.UseHttpsRedirection();
+            
+            // Add API key authentication middleware
+            app.UseApiKeyAuthentication();
+            
             app.UseAuthorization();
             app.MapControllers();
 

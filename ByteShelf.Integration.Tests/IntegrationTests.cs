@@ -10,6 +10,7 @@ using ByteShelfClient;
 using ByteShelfCommon;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -24,9 +25,10 @@ namespace ByteShelf.Integration.Tests
         private HttpShelfFileProvider _client = null!;
         private string _tempStoragePath = null!;
         private IFileStorageService _storageService = null!;
+        private const string TestApiKey = "dev-api-key-12345";
 
         [TestInitialize]
-        public async Task Setup()
+        public void Setup()
         {
             _tempStoragePath = Path.Combine(Path.GetTempPath(), $"ByteShelf-Integration-{Guid.NewGuid()}");
             
@@ -43,10 +45,19 @@ namespace ByteShelf.Integration.Tests
                             return new FileStorageService(_tempStoragePath, logger);
                         });
                     });
+                    builder.ConfigureAppConfiguration((context, config) =>
+                    {
+                        // Override authentication configuration for tests
+                        config.AddInMemoryCollection(new Dictionary<string, string?>
+                        {
+                            ["Authentication:ApiKey"] = TestApiKey,
+                            ["Authentication:RequireAuthentication"] = "true"
+                        });
+                    });
                 });
 
             _httpClient = _factory.CreateClient();
-            _client = new HttpShelfFileProvider(_httpClient);
+            _client = new HttpShelfFileProvider(_httpClient, TestApiKey);
             
             // Get the storage service from the DI container for verification
             using IServiceScope scope = _factory.Services.CreateScope();
@@ -267,6 +278,50 @@ namespace ByteShelf.Integration.Tests
                     stream.Dispose();
                 }
             }
+        }
+
+        [TestMethod]
+        public async Task Authentication_ValidApiKey_AllowsAccess()
+        {
+            // Arrange - Create a client with valid API key
+            using HttpClient validClient = _factory.CreateClient();
+            validClient.DefaultRequestHeaders.Add("X-API-Key", TestApiKey);
+            HttpShelfFileProvider validProvider = new HttpShelfFileProvider(validClient, TestApiKey);
+
+            // Act - Try to list files (should succeed)
+            IEnumerable<ShelfFileMetadata> files = await validProvider.GetFilesAsync();
+
+            // Assert - Should not throw an exception
+            Assert.IsNotNull(files);
+        }
+
+        [TestMethod]
+        public async Task Authentication_InvalidApiKey_ReturnsUnauthorized()
+        {
+            // Arrange - Create a client with invalid API key
+            using HttpClient invalidClient = _factory.CreateClient();
+            invalidClient.DefaultRequestHeaders.Add("X-API-Key", "invalid-key");
+            HttpShelfFileProvider invalidProvider = new HttpShelfFileProvider(invalidClient, "invalid-key");
+
+            // Act & Assert - Should throw HttpRequestException with 401 status
+            HttpRequestException? exception = await Assert.ThrowsExceptionAsync<HttpRequestException>(
+                async () => await invalidProvider.GetFilesAsync());
+
+            Assert.IsTrue(exception.Message.Contains("401") || exception.Message.Contains("Unauthorized"));
+        }
+
+        [TestMethod]
+        public async Task Authentication_MissingApiKey_ReturnsUnauthorized()
+        {
+            // Arrange - Create a client without API key
+            using HttpClient noKeyClient = _factory.CreateClient();
+            HttpShelfFileProvider noKeyProvider = new HttpShelfFileProvider(noKeyClient);
+
+            // Act & Assert - Should throw HttpRequestException with 401 status
+            HttpRequestException? exception = await Assert.ThrowsExceptionAsync<HttpRequestException>(
+                async () => await noKeyProvider.GetFilesAsync());
+
+            Assert.IsTrue(exception.Message.Contains("401") || exception.Message.Contains("Unauthorized"));
         }
 
         public void Dispose()
