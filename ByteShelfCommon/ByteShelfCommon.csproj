@@ -11,6 +11,8 @@
     <Authors>Adam Tovatt</Authors>
     <PackageIcon>ByteShelfIcon256.png</PackageIcon>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <IncludeSymbols>True</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
