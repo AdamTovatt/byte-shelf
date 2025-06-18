@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using ByteShelf.Configuration;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 
 namespace ByteShelf.Middleware
 {
@@ -40,7 +41,7 @@ namespace ByteShelf.Middleware
             {
                 context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
                 context.Response.ContentType = "application/json";
-                
+
                 string errorResponse = "{\"error\":\"Invalid or missing API key\",\"message\":\"Please provide a valid X-API-Key header\"}";
                 byte[] errorBytes = Encoding.UTF8.GetBytes(errorResponse);
                 await context.Response.Body.WriteAsync(errorBytes);
@@ -54,7 +55,7 @@ namespace ByteShelf.Middleware
         {
             // Skip authentication for health checks and other system endpoints
             string pathValue = path.Value?.ToLowerInvariant() ?? string.Empty;
-            return pathValue.StartsWith("/health") || 
+            return pathValue.StartsWith("/health") ||
                    pathValue.StartsWith("/metrics") ||
                    pathValue == "/";
         }
@@ -62,15 +63,15 @@ namespace ByteShelf.Middleware
         private bool IsValidApiKey(HttpRequest request)
         {
             // Check if API key header is present
-            if (!request.Headers.TryGetValue(ApiKeyHeaderName, out var apiKeyHeader))
+            if (!request.Headers.TryGetValue(ApiKeyHeaderName, out StringValues apiKeyHeader))
             {
                 return false;
             }
 
             string providedApiKey = apiKeyHeader.FirstOrDefault() ?? string.Empty;
-            
+
             // Validate against configured API key
-            return !string.IsNullOrEmpty(providedApiKey) && 
+            return !string.IsNullOrEmpty(providedApiKey) &&
                    providedApiKey.Equals(_config.ApiKey, StringComparison.Ordinal);
         }
     }
