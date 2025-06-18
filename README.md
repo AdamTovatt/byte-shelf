@@ -23,7 +23,7 @@ The system consists of three separate projects:
 
 ```
 ┌─────────────────┐    HTTP/REST    ┌─────────────────┐
-│                 │ ◄──────────────► │                 │
+│                 │ ◄──────────────►│                 │
 │ ByteShelfClient │                 │   ByteShelf     │
 │                 │                 │   (API Server)  │
 └─────────────────┘                 └─────────────────┘
