@@ -101,6 +101,8 @@ byte-shelf-storage/
 
    The server will start on `https://localhost:7001` (or the next available port).
 
+   **Note:** By default, API key authentication is enabled. You must set an API key in your configuration (see below) and provide it in all client requests. See the [API Key Authentication](#api-key-authentication) section for details.
+
 3. **Configuration**
 
    The server can be configured through `appsettings.json`:
@@ -108,6 +110,10 @@ byte-shelf-storage/
    ```json
    {
      "StoragePath": "byte-shelf-storage",
+     "Authentication": {
+       "ApiKey": "your-secure-api-key-here",
+       "RequireAuthentication": true
+     },
      "ChunkConfiguration": {
        "ChunkSizeBytes": 1048576
      }
@@ -116,6 +122,7 @@ byte-shelf-storage/
 
    - **StoragePath**: Directory where files will be stored (default: "byte-shelf-storage")
    - **ChunkSizeBytes**: Size of each chunk in bytes (default: 1MB)
+   - **Authentication**: See [API Key Authentication](#api-key-authentication)
 
 4. **Environment Variables**
 
@@ -123,6 +130,8 @@ byte-shelf-storage/
    ```bash
    set StoragePath=C:\MyStorage
    set ChunkConfiguration__ChunkSizeBytes=2097152
+   set Authentication__ApiKey=your-secure-api-key-here
+   set Authentication__RequireAuthentication=true
    dotnet run
    ```
 
@@ -142,6 +151,7 @@ A C# client library that provides a simple interface for interacting with the By
 - **Automatic chunking** - Handles file splitting and reconstruction automatically
 - **Streaming support** - Efficient memory usage for large files
 - **Error handling** - Proper exception handling with meaningful error messages
+- **API key authentication** - All requests include the API key if provided
 
 #### Usage
 
@@ -150,7 +160,8 @@ A C# client library that provides a simple interface for interacting with the By
    using HttpClient httpClient = new HttpClient();
    httpClient.BaseAddress = new Uri("https://localhost:7001");
    
-   IShelfFileProvider provider = new HttpShelfFileProvider(httpClient);
+   // Pass the API key to the client
+   IShelfFileProvider provider = new HttpShelfFileProvider(httpClient, "your-secure-api-key-here");
    ```
 
 2. **Upload a File**
@@ -189,6 +200,7 @@ A C# client library that provides a simple interface for interacting with the By
 builder.Services.AddHttpClient<IShelfFileProvider, HttpShelfFileProvider>(client =>
 {
     client.BaseAddress = new Uri("https://localhost:7001");
+    client.DefaultRequestHeaders.Add("X-API-Key", "your-secure-api-key-here");
 });
 ```
 
@@ -247,6 +259,10 @@ ByteShelf/
     }
   },
   "StoragePath": "/var/byteshelf/storage",
+  "Authentication": {
+    "ApiKey": "your-secure-api-key-here",
+    "RequireAuthentication": true
+  },
   "ChunkConfiguration": {
     "ChunkSizeBytes": 2097152
   }
@@ -264,6 +280,10 @@ ByteShelf/
     }
   },
   "StoragePath": "byte-shelf-storage",
+  "Authentication": {
+    "ApiKey": "dev-api-key-12345",
+    "RequireAuthentication": true
+  },
   "ChunkConfiguration": {
     "ChunkSizeBytes": 1048576
   }
