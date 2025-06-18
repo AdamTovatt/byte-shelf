@@ -12,4 +12,6 @@
 /ByteShelfClient.Tests/obj/*
 /ByteShelf.Tests/bin/*
 /ByteShelf.Tests/obj/*
+/ByteShelf.Integration.Tests/bin/*
+/ByteShelf.Integration.Tests/obj/*
 /linux-deploy/ 
