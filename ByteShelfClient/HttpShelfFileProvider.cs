@@ -1,11 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using ByteShelfCommon;
 
 namespace ByteShelfClient
@@ -59,10 +53,18 @@ namespace ByteShelfClient
             CancellationToken cancellationToken = default)
         {
             // First get the metadata
-            ShelfFileMetadata? metadata = await _httpClient.GetFromJsonAsync<ShelfFileMetadata>(
-                $"api/files/{fileId}/metadata",
-                _jsonOptions,
-                cancellationToken);
+            ShelfFileMetadata? metadata;
+            try
+            {
+                metadata = await _httpClient.GetFromJsonAsync<ShelfFileMetadata>(
+                    $"api/files/{fileId}/metadata",
+                    _jsonOptions,
+                    cancellationToken);
+            }
+            catch (HttpRequestException ex) when (ex.Message.Contains("404"))
+            {
+                throw new FileNotFoundException($"File with ID {fileId} not found", ex);
+            }
 
             if (metadata == null)
                 throw new FileNotFoundException($"File with ID {fileId} not found");

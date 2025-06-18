@@ -5,4 +5,11 @@
 /ByteShelfCommon/bin/*
 /ByteShelfCommon/obj/*
 /ByteShelfClient/bin/*
-/ByteShelfClient/obj/* 
+/ByteShelfClient/obj/*
+/ByteShelfCommon.Tests/bin/*
+/ByteShelfCommon.Tests/obj/*
+/ByteShelfClient.Tests/bin/*
+/ByteShelfClient.Tests/obj/*
+/ByteShelf.Tests/bin/*
+/ByteShelf.Tests/obj/*
+/linux-deploy/ 
