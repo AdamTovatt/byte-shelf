@@ -16,6 +16,7 @@
     <PackageTags>storage, api, client, byteshelf, byte shelf, file storage</PackageTags>
     <Authors>Adam Tovatt</Authors>
     <PackageIcon>ByteShelfIcon256.png</PackageIcon>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>

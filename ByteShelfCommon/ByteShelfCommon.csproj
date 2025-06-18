@@ -10,6 +10,7 @@
     <Title>ByteShelf.Common</Title>
     <Authors>Adam Tovatt</Authors>
     <PackageIcon>ByteShelfIcon256.png</PackageIcon>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>
