@@ -13,10 +13,17 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PackageProjectUrl>https://github.com/AdamTovatt/byte-shelf</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>Common part of ByteShelf which is a three-part C# file storage system: server, client and common</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="..\Icons\ByteShelfIcon256.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+    <None Include="..\README.md">
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>
     </None>
