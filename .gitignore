@@ -1,0 +1,8 @@
+.vs/
+/ByteShelf/bin/*
+/ByteShelf/obj/*
+/ByteShelf/Properties/launchSettings.json
+/ByteShelfCommon/bin/*
+/ByteShelfCommon/obj/*
+/ByteShelfClient/bin/*
+/ByteShelfClient/obj/* 
