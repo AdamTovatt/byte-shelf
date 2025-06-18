@@ -5,8 +5,29 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <DocumentationFile>ByteShelfClient.xml</DocumentationFile>
+    <DocumentationFile></DocumentationFile>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <Title>ByteShelf.Client</Title>
+    <Description>Client for ByteShelf which is a three-part C# file storage system: server, client and common</Description>
+    <Copyright>MIT</Copyright>
+    <PackageProjectUrl>https://github.com/AdamTovatt/byte-shelf</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/AdamTovatt/byte-shelf</RepositoryUrl>
+    <PackageTags>storage, api, client, byteshelf, byte shelf, file storage</PackageTags>
+    <Authors>Adam Tovatt</Authors>
+    <PackageIcon>ByteShelfIcon256.png</PackageIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\Icons\ByteShelfIcon256.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+    <None Include="..\README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ByteShelfCommon\ByteShelfCommon.csproj" />

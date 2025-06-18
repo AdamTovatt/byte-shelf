@@ -4,8 +4,15 @@ using ByteShelf.Services;
 
 namespace ByteShelf
 {
+    /// <summary>
+    /// Main entry point for the ByteShelf file storage API server.
+    /// </summary>
     public class Program
     {
+        /// <summary>
+        /// The main entry point for the application.
+        /// </summary>
+        /// <param name="args">Command line arguments passed to the application.</param>
         public static void Main(string[] args)
         {
             WebApplicationBuilder builder = WebApplication.CreateBuilder(args);

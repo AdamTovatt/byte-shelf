@@ -14,4 +14,8 @@
 /ByteShelf.Tests/obj/*
 /ByteShelf.Integration.Tests/bin/*
 /ByteShelf.Integration.Tests/obj/*
-/linux-deploy/ 
+/linux-deploy/
+
+# Generated XML documentation files
+**/bin/**/*.xml
+**/obj/**/*.xml 

@@ -47,7 +47,7 @@ namespace ByteShelf.Services
             _metadataPath = Path.Combine(_storagePath, "metadata");
             _binPath = Path.Combine(_storagePath, "bin");
             _logger = logger;
-            
+
             _jsonOptions = new JsonSerializerOptions
             {
                 WriteIndented = true,
@@ -56,7 +56,7 @@ namespace ByteShelf.Services
             // Ensure directories exist
             Directory.CreateDirectory(_metadataPath);
             Directory.CreateDirectory(_binPath);
-            
+
             _logger?.LogInformation("FileStorageService initialized with storage path: {StoragePath}", _storagePath);
         }
 
@@ -72,10 +72,10 @@ namespace ByteShelf.Services
         public async Task<IEnumerable<ShelfFileMetadata>> GetFilesAsync(CancellationToken cancellationToken = default)
         {
             List<ShelfFileMetadata> files = new List<ShelfFileMetadata>();
-            
+
             string[] metadataFiles = Directory.GetFiles(_metadataPath, "*.json");
             _logger?.LogDebug("Found {Count} metadata files", metadataFiles.Length);
-            
+
             foreach (string metadataFile in metadataFiles)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -85,7 +85,7 @@ namespace ByteShelf.Services
                 {
                     string jsonContent = await File.ReadAllTextAsync(metadataFile, cancellationToken);
                     ShelfFileMetadata? metadata = JsonSerializer.Deserialize<ShelfFileMetadata>(jsonContent, _jsonOptions);
-                    
+
                     if (metadata != null)
                     {
                         files.Add(metadata);
@@ -100,7 +100,7 @@ namespace ByteShelf.Services
                     _logger?.LogError(ex, "Error reading metadata file: {File}", metadataFile);
                 }
             }
-            
+
             return files;
         }
 
@@ -117,7 +117,7 @@ namespace ByteShelf.Services
         public async Task<ShelfFileMetadata?> GetFileMetadataAsync(Guid fileId, CancellationToken cancellationToken = default)
         {
             string metadataFile = Path.Combine(_metadataPath, $"{fileId}.json");
-            
+
             if (!File.Exists(metadataFile))
                 return null;
 
@@ -146,8 +146,10 @@ namespace ByteShelf.Services
         /// </remarks>
         public async Task<Stream> GetChunkAsync(Guid chunkId, CancellationToken cancellationToken = default)
         {
+            await Task.CompletedTask;
+
             string chunkFile = Path.Combine(_binPath, $"{chunkId}.bin");
-            
+
             if (!File.Exists(chunkFile))
                 throw new FileNotFoundException($"Chunk with ID {chunkId} not found", chunkFile);
 
@@ -172,10 +174,10 @@ namespace ByteShelf.Services
             if (chunkData == null) throw new ArgumentNullException(nameof(chunkData));
 
             string chunkFile = Path.Combine(_binPath, $"{chunkId}.bin");
-            
+
             using FileStream fileStream = File.Create(chunkFile);
             await chunkData.CopyToAsync(fileStream, cancellationToken);
-            
+
             _logger?.LogDebug("Saved chunk: {ChunkId}", chunkId);
             return chunkId;
         }
@@ -197,9 +199,9 @@ namespace ByteShelf.Services
 
             string metadataFile = Path.Combine(_metadataPath, $"{metadata.Id}.json");
             string jsonContent = JsonSerializer.Serialize(metadata, _jsonOptions);
-            
+
             await File.WriteAllTextAsync(metadataFile, jsonContent, cancellationToken);
-            
+
             _logger?.LogDebug("Saved metadata for file: {FileId}", metadata.Id);
         }
 
@@ -219,7 +221,7 @@ namespace ByteShelf.Services
         public async Task DeleteFileAsync(Guid fileId, CancellationToken cancellationToken = default)
         {
             ShelfFileMetadata? metadata = await GetFileMetadataAsync(fileId, cancellationToken);
-            
+
             if (metadata != null)
             {
                 // Delete all chunks
@@ -232,7 +234,7 @@ namespace ByteShelf.Services
                         _logger?.LogDebug("Deleted chunk: {ChunkId}", chunkId);
                     }
                 }
-                
+
                 // Delete metadata file
                 string metadataFile = Path.Combine(_metadataPath, $"{fileId}.json");
                 if (File.Exists(metadataFile))
@@ -243,4 +245,4 @@ namespace ByteShelf.Services
             }
         }
     }
-} 
+}

@@ -122,9 +122,20 @@ namespace ByteShelf.Middleware
         }
     }
 
-    // Extension method for easy registration
+    /// <summary>
+    /// Extension methods for registering the <see cref="ApiKeyAuthenticationMiddleware"/> in the application pipeline.
+    /// </summary>
     public static class ApiKeyAuthenticationMiddlewareExtensions
     {
+        /// <summary>
+        /// Adds API key authentication middleware to the application's request pipeline.
+        /// </summary>
+        /// <param name="builder">The application builder to configure.</param>
+        /// <returns>The application builder with the middleware configured.</returns>
+        /// <remarks>
+        /// This extension method registers the <see cref="ApiKeyAuthenticationMiddleware"/> so that all incoming requests
+        /// are validated for API key authentication, except for excluded endpoints (such as health checks and Swagger docs).
+        /// </remarks>
         public static IApplicationBuilder UseApiKeyAuthentication(this IApplicationBuilder builder)
         {
             return builder.UseMiddleware<ApiKeyAuthenticationMiddleware>();
