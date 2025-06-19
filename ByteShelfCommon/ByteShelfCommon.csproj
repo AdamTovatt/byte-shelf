@@ -16,6 +16,7 @@
     <PackageProjectUrl>https://github.com/AdamTovatt/byte-shelf</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>Common part of ByteShelf which is a three-part C# file storage system: server, client and common</Description>
+    <Copyright>MIT</Copyright>
   </PropertyGroup>
 
   <ItemGroup>
