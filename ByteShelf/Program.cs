@@ -22,14 +22,8 @@ namespace ByteShelf
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
 
-            // Configure authentication
-            builder.Services.Configure<AuthenticationConfiguration>(builder.Configuration.GetSection("Authentication"));
-            builder.Services.AddSingleton<AuthenticationConfiguration>(serviceProvider =>
-            {
-                AuthenticationConfiguration config = new AuthenticationConfiguration();
-                builder.Configuration.GetSection("Authentication").Bind(config);
-                return config;
-            });
+            // Configure tenant settings using external configuration service
+            builder.Services.AddSingleton<ITenantConfigurationService, TenantConfigurationService>();
 
             // Configure chunk settings
             builder.Services.Configure<ChunkConfiguration>(builder.Configuration.GetSection("ChunkConfiguration"));
@@ -42,6 +36,14 @@ namespace ByteShelf
 
             // Configure file storage
             string storagePath = builder.Configuration["StoragePath"] ?? "byte-shelf-storage";
+
+            // Register tenant storage service
+            builder.Services.AddSingleton<ITenantStorageService, TenantStorageService>();
+
+            // Register tenant-aware file storage service
+            builder.Services.AddSingleton<ITenantFileStorageService, TenantFileStorageService>();
+
+            // Keep the original service for backward compatibility (if needed)
             builder.Services.AddSingleton<IFileStorageService>(serviceProvider =>
             {
                 ILogger<FileStorageService>? logger = serviceProvider.GetService<ILogger<FileStorageService>>();
@@ -58,10 +60,10 @@ namespace ByteShelf
             }
 
             app.UseHttpsRedirection();
-            
+
             // Add API key authentication middleware
             app.UseApiKeyAuthentication();
-            
+
             app.UseAuthorization();
             app.MapControllers();
 

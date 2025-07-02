@@ -1,10 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Net.Http;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
 using ByteShelf.Services;
 using ByteShelfClient;
 using ByteShelfCommon;
@@ -14,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Text;
 
 namespace ByteShelf.Integration.Tests
 {
@@ -31,7 +25,7 @@ namespace ByteShelf.Integration.Tests
         public void Setup()
         {
             _tempStoragePath = Path.Combine(Path.GetTempPath(), $"ByteShelf-Integration-{Guid.NewGuid()}");
-            
+
             _factory = new WebApplicationFactory<Program>()
                 .WithWebHostBuilder(builder =>
                 {
@@ -58,7 +52,7 @@ namespace ByteShelf.Integration.Tests
 
             _httpClient = _factory.CreateClient();
             _client = new HttpShelfFileProvider(_httpClient, TestApiKey);
-            
+
             // Get the storage service from the DI container for verification
             using IServiceScope scope = _factory.Services.CreateScope();
             _storageService = scope.ServiceProvider.GetRequiredService<IFileStorageService>();
@@ -69,7 +63,7 @@ namespace ByteShelf.Integration.Tests
         {
             _httpClient?.Dispose();
             _factory?.Dispose();
-            
+
             if (Directory.Exists(_tempStoragePath))
             {
                 Directory.Delete(_tempStoragePath, true);
@@ -143,7 +137,7 @@ namespace ByteShelf.Integration.Tests
         {
             // Arrange - Upload multiple files
             List<Guid> fileIds = new List<Guid>();
-            
+
             for (int i = 1; i <= 3; i++)
             {
                 string content = $"Content for file {i}";
@@ -180,7 +174,7 @@ namespace ByteShelf.Integration.Tests
             byte[] originalBytes = new byte[1024];
             Random random = new Random(42); // Fixed seed for reproducible tests
             random.NextBytes(originalBytes);
-            
+
             string filename = "binary.dat";
             string contentType = "application/octet-stream";
             using MemoryStream uploadStream = new MemoryStream(originalBytes);
@@ -204,7 +198,7 @@ namespace ByteShelf.Integration.Tests
             using MemoryStream downloadedStream = new MemoryStream();
             await contentStream.CopyToAsync(downloadedStream);
             byte[] downloadedBytes = downloadedStream.ToArray();
-            
+
             Assert.AreEqual(originalBytes.Length, downloadedBytes.Length);
             for (int i = 0; i < originalBytes.Length; i++)
             {
@@ -228,7 +222,7 @@ namespace ByteShelf.Integration.Tests
 
             // Assert - Verify chunking occurred
             Assert.IsTrue(downloadedFile.Metadata.ChunkIds.Count > 1, "File should be split into multiple chunks");
-            
+
             // Verify content integrity
             using Stream contentStream = downloadedFile.GetContentStream();
             using StreamReader reader = new StreamReader(contentStream);
@@ -242,7 +236,7 @@ namespace ByteShelf.Integration.Tests
             // Arrange
             List<Task<Guid>> uploadTasks = new List<Task<Guid>>();
             List<MemoryStream> streams = new List<MemoryStream>();
-            
+
             // Start 5 concurrent uploads with small files
             for (int i = 0; i < 5; i++)
             {
@@ -263,7 +257,7 @@ namespace ByteShelf.Integration.Tests
                 foreach (Guid fileId in fileIds)
                 {
                     Assert.AreNotEqual(Guid.Empty, fileId);
-                    
+
                     // Verify each file can be downloaded
                     ShelfFile file = await _client.ReadFileAsync(fileId);
                     Assert.IsNotNull(file);
@@ -329,4 +323,4 @@ namespace ByteShelf.Integration.Tests
             Cleanup();
         }
     }
-} 
+}

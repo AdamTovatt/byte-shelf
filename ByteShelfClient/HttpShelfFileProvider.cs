@@ -1,6 +1,6 @@
+using ByteShelfCommon;
 using System.Net.Http.Json;
 using System.Text.Json;
-using ByteShelfCommon;
 
 namespace ByteShelfClient
 {
@@ -221,6 +221,112 @@ namespace ByteShelfClient
         }
 
         /// <summary>
+        /// Gets storage usage information for the authenticated tenant.
+        /// </summary>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>Storage usage information including current usage and limits.</returns>
+        /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
+        /// <remarks>
+        /// This method makes a GET request to the "/api/tenant/storage" endpoint.
+        /// Requires API key authentication.
+        /// </remarks>
+        public async Task<TenantStorageInfo> GetStorageInfoAsync(CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrEmpty(_apiKey))
+                throw new InvalidOperationException("API key is required for tenant operations");
+
+            TenantStorageInfo? response = await _httpClient.GetFromJsonAsync<TenantStorageInfo>(
+                "api/tenant/storage",
+                _jsonOptions,
+                cancellationToken);
+
+            if (response == null)
+                throw new InvalidOperationException("Failed to retrieve storage information from server");
+
+            return response;
+        }
+
+        /// <summary>
+        /// Checks if the authenticated tenant can store a file of the specified size.
+        /// </summary>
+        /// <param name="fileSizeBytes">The size of the file to check in bytes.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>Information about whether the file can be stored.</returns>
+        /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
+        /// <remarks>
+        /// This method makes a GET request to the "/api/tenant/storage/can-store" endpoint.
+        /// This is useful for checking quota limits before attempting to upload large files.
+        /// Requires API key authentication.
+        /// </remarks>
+        public async Task<QuotaCheckResult> CanStoreFileAsync(long fileSizeBytes, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrEmpty(_apiKey))
+                throw new InvalidOperationException("API key is required for tenant operations");
+
+            QuotaCheckResult? response = await _httpClient.GetFromJsonAsync<QuotaCheckResult>(
+                $"api/tenant/storage/can-store?fileSizeBytes={fileSizeBytes}",
+                _jsonOptions,
+                cancellationToken);
+
+            if (response == null)
+                throw new InvalidOperationException("Failed to retrieve quota check result from server");
+
+            return response;
+        }
+
+        /// <summary>
+        /// Writes a file to the server with quota checking, automatically chunking it if necessary.
+        /// </summary>
+        /// <param name="originalFilename">The original filename of the file being stored.</param>
+        /// <param name="contentType">The MIME type of the file content.</param>
+        /// <param name="content">A stream containing the file content to be stored.</param>
+        /// <param name="checkQuotaFirst">Whether to check quota before uploading. Defaults to true.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>The unique identifier assigned to the stored file.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="originalFilename"/>, <paramref name="contentType"/>, or <paramref name="content"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="originalFilename"/> or <paramref name="contentType"/> is empty.</exception>
+        /// <exception cref="HttpRequestException">Thrown when any HTTP request fails or returns an error status code.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the server configuration cannot be retrieved or quota is exceeded.</exception>
+        /// <remarks>
+        /// This method extends the base implementation with optional quota checking.
+        /// If <paramref name="checkQuotaFirst"/> is true, it will check if the file can be stored
+        /// before attempting the upload, helping to avoid failed uploads due to quota limits.
+        /// Requires API key authentication.
+        /// </remarks>
+        public async Task<Guid> WriteFileWithQuotaCheckAsync(
+            string originalFilename,
+            string contentType,
+            Stream content,
+            bool checkQuotaFirst = true,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrEmpty(_apiKey))
+                throw new InvalidOperationException("API key is required for quota checking");
+
+            if (checkQuotaFirst)
+            {
+                // Get the content length if possible
+                long contentLength = content.CanSeek ? content.Length : -1;
+
+                if (contentLength > 0)
+                {
+                    // Check quota before uploading
+                    QuotaCheckResult quotaCheck = await CanStoreFileAsync(contentLength, cancellationToken);
+                    if (!quotaCheck.CanStore)
+                    {
+                        throw new InvalidOperationException(
+                            $"Cannot store file: would exceed storage quota. " +
+                            $"File size: {contentLength} bytes, " +
+                            $"Available space: {quotaCheck.AvailableSpaceBytes} bytes");
+                    }
+                }
+            }
+
+            // Use the base implementation for the actual upload
+            return await WriteFileAsync(originalFilename, contentType, content, cancellationToken);
+        }
+
+        /// <summary>
         /// Retrieves the chunk size configuration from the server.
         /// </summary>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
@@ -370,6 +476,78 @@ namespace ByteShelfClient
         private class ChunkConfiguration
         {
             public int ChunkSizeBytes { get; set; }
+        }
+
+        /// <summary>
+        /// Information about a tenant's storage usage and limits.
+        /// </summary>
+        public class TenantStorageInfo
+        {
+            /// <summary>
+            /// Gets or sets the tenant ID.
+            /// </summary>
+            public string TenantId { get; set; } = string.Empty;
+
+            /// <summary>
+            /// Gets or sets the current storage usage in bytes.
+            /// </summary>
+            public long CurrentUsageBytes { get; set; }
+
+            /// <summary>
+            /// Gets or sets the storage limit in bytes.
+            /// </summary>
+            public long StorageLimitBytes { get; set; }
+
+            /// <summary>
+            /// Gets or sets the available storage space in bytes.
+            /// </summary>
+            public long AvailableSpaceBytes { get; set; }
+
+            /// <summary>
+            /// Gets or sets the usage percentage (0-100).
+            /// </summary>
+            public double UsagePercentage { get; set; }
+        }
+
+        /// <summary>
+        /// Result of a quota check operation.
+        /// </summary>
+        public class QuotaCheckResult
+        {
+            /// <summary>
+            /// Gets or sets the tenant ID.
+            /// </summary>
+            public string TenantId { get; set; } = string.Empty;
+
+            /// <summary>
+            /// Gets or sets the size of the file being checked in bytes.
+            /// </summary>
+            public long FileSizeBytes { get; set; }
+
+            /// <summary>
+            /// Gets or sets whether the file can be stored.
+            /// </summary>
+            public bool CanStore { get; set; }
+
+            /// <summary>
+            /// Gets or sets the current storage usage in bytes.
+            /// </summary>
+            public long CurrentUsageBytes { get; set; }
+
+            /// <summary>
+            /// Gets or sets the storage limit in bytes.
+            /// </summary>
+            public long StorageLimitBytes { get; set; }
+
+            /// <summary>
+            /// Gets or sets the available storage space in bytes.
+            /// </summary>
+            public long AvailableSpaceBytes { get; set; }
+
+            /// <summary>
+            /// Gets or sets whether the file would exceed the quota.
+            /// </summary>
+            public bool WouldExceedQuota { get; set; }
         }
     }
 }

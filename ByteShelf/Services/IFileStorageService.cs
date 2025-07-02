@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
 using ByteShelfCommon;
 
 namespace ByteShelf.Services
@@ -27,7 +22,7 @@ namespace ByteShelf.Services
         /// Corrupted metadata files are logged and skipped.
         /// </remarks>
         Task<IEnumerable<ShelfFileMetadata>> GetFilesAsync(CancellationToken cancellationToken = default);
-        
+
         /// <summary>
         /// Retrieves metadata for a specific file by its ID.
         /// </summary>
@@ -39,7 +34,7 @@ namespace ByteShelf.Services
         /// Returns <c>null</c> if no metadata file is found.
         /// </remarks>
         Task<ShelfFileMetadata?> GetFileMetadataAsync(Guid fileId, CancellationToken cancellationToken = default);
-        
+
         /// <summary>
         /// Retrieves a chunk by its ID.
         /// </summary>
@@ -51,7 +46,7 @@ namespace ByteShelf.Services
         /// The returned stream should be disposed when no longer needed.
         /// </remarks>
         Task<Stream> GetChunkAsync(Guid chunkId, CancellationToken cancellationToken = default);
-        
+
         /// <summary>
         /// Saves a chunk with the specified ID.
         /// </summary>
@@ -65,7 +60,7 @@ namespace ByteShelf.Services
         /// If a chunk with the same ID already exists, it will be overwritten.
         /// </remarks>
         Task<Guid> SaveChunkAsync(Guid chunkId, Stream chunkData, CancellationToken cancellationToken = default);
-        
+
         /// <summary>
         /// Saves file metadata.
         /// </summary>
@@ -78,7 +73,7 @@ namespace ByteShelf.Services
         /// If metadata for the same file ID already exists, it will be overwritten.
         /// </remarks>
         Task SaveFileMetadataAsync(ShelfFileMetadata metadata, CancellationToken cancellationToken = default);
-        
+
         /// <summary>
         /// Deletes a file and all its associated chunks.
         /// </summary>
@@ -91,4 +86,4 @@ namespace ByteShelf.Services
         /// </remarks>
         Task DeleteFileAsync(Guid fileId, CancellationToken cancellationToken = default);
     }
-} 
+}

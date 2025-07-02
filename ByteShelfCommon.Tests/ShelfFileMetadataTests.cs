@@ -1,8 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.Text.Json;
-using ByteShelfCommon;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Text.Json;
 
 namespace ByteShelfCommon.Tests
 {
@@ -104,4 +101,4 @@ namespace ByteShelfCommon.Tests
             Assert.AreEqual(0, deserializedMetadata.ChunkIds.Count);
         }
     }
-} 
+}

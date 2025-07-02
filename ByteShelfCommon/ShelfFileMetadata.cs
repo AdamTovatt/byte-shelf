@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Text.Json.Serialization;
-
 namespace ByteShelfCommon
 {
     /// <summary>
@@ -90,4 +86,4 @@ namespace ByteShelfCommon
             CreatedAt = DateTimeOffset.UtcNow;
         }
     }
-} 
+}

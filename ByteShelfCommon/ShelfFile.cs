@@ -1,6 +1,3 @@
-using System;
-using System.IO;
-
 namespace ByteShelfCommon
 {
     /// <summary>
@@ -68,4 +65,4 @@ namespace ByteShelfCommon
             GC.SuppressFinalize(this);
         }
     }
-} 
+}

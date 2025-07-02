@@ -1,9 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Text;
-using ByteShelfCommon;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Text;
 
 namespace ByteShelfCommon.Tests
 {
@@ -120,4 +116,4 @@ namespace ByteShelfCommon.Tests
             public bool IsDisposed => _isDisposed;
         }
     }
-} 
+}

@@ -246,9 +246,11 @@ ByteShelf/
 └── README.md                  # This file
 ```
 
-## Configuration Examples
+## Configuration
 
-### Production Server Configuration
+### Server Configuration
+
+The ByteShelf server is configured through `appsettings.json`:
 
 ```json
 {
@@ -259,35 +261,68 @@ ByteShelf/
     }
   },
   "StoragePath": "/var/byteshelf/storage",
-  "Authentication": {
-    "ApiKey": "your-secure-api-key-here",
-    "RequireAuthentication": true
-  },
   "ChunkConfiguration": {
     "ChunkSizeBytes": 2097152
   }
 }
 ```
 
-### Development Configuration
+### Tenant Configuration
+
+Tenants are managed through an external JSON configuration file that supports hot-reloading. The configuration file path is determined by the `BYTESHELF_TENANT_CONFIG_PATH` environment variable, or defaults to `./tenant-config.json` if not set.
+
+The tenant configuration file has the following structure:
 
 ```json
 {
-  "Logging": {
-    "LogLevel": {
-      "Default": "Debug",
-      "Microsoft.AspNetCore": "Information"
+  "RequireAuthentication": true,
+  "Tenants": {
+    "admin": {
+      "ApiKey": "admin-secure-api-key-here",
+      "StorageLimitBytes": 0,
+      "DisplayName": "System Administrator",
+      "IsAdmin": true
+    },
+    "tenant1": {
+      "ApiKey": "tenant1-secure-api-key-here",
+      "StorageLimitBytes": 1073741824,
+      "DisplayName": "Tenant 1",
+      "IsAdmin": false
     }
-  },
-  "StoragePath": "byte-shelf-storage",
-  "Authentication": {
-    "ApiKey": "dev-api-key-12345",
-    "RequireAuthentication": true
-  },
-  "ChunkConfiguration": {
-    "ChunkSizeBytes": 1048576
   }
 }
+```
+
+- `RequireAuthentication`: Whether API key authentication is required for all endpoints
+- `Tenants`: Dictionary of tenant configurations
+  - `ApiKey`: The API key required for authentication
+  - `StorageLimitBytes`: Maximum storage allowed (0 = unlimited for admins)
+  - `DisplayName`: Human-readable name for the tenant
+  - `IsAdmin`: Whether the tenant has administrative privileges
+
+#### Tenant Management
+
+Tenants can be managed through the admin API endpoints:
+
+- `GET /api/admin/tenants` - List all tenants with usage information
+- `GET /api/admin/tenants/{tenantId}` - Get specific tenant information
+- `POST /api/admin/tenants` - Create a new tenant
+- `PUT /api/admin/tenants/{tenantId}/storage-limit` - Update tenant storage limit
+- `DELETE /api/admin/tenants/{tenantId}` - Delete tenant (only if no files exist)
+
+The configuration file is automatically created with default settings if it doesn't exist, and changes are persisted immediately when using the admin API.
+
+### Environment Variables
+
+```bash
+# Set tenant configuration file path
+set BYTESHELF_TENANT_CONFIG_PATH=/etc/byteshelf/tenants.json
+
+# Set storage path
+set StoragePath=/var/byteshelf/storage
+
+# Set chunk size
+set ChunkConfiguration__ChunkSizeBytes=2097152
 ```
 
 ## Performance Considerations
@@ -304,56 +339,49 @@ ByteShelf/
 - Implement proper access controls for production use
 - Validate file types and sizes as needed for your use case
 
-### API Key Authentication
+### Multi-Tenant API Key Authentication
 
-ByteShelf now supports API key authentication to secure access to the file storage API.
+ByteShelf supports multi-tenant API key authentication to secure access to the file storage API. Each tenant has their own API key and storage quota.
 
 #### Configuration
 
-Add authentication settings to your `appsettings.json`:
-
-```json
-{
-  "Authentication": {
-    "ApiKey": "your-secure-api-key-here",
-    "RequireAuthentication": true
-  }
-}
-```
+Tenants are configured in the external tenant configuration file (see Tenant Configuration section above). Each tenant has:
 
 - **ApiKey**: The secret key that clients must provide to access the API
-- **RequireAuthentication**: Set to `false` to disable authentication (not recommended for production)
+- **StorageLimitBytes**: Maximum storage allowed (0 = unlimited for admins)
+- **DisplayName**: Human-readable name for the tenant
+- **IsAdmin**: Whether the tenant has administrative privileges
 
 #### Client Usage
 
-Update your client code to include the API key:
+Update your client code to include the tenant's API key:
 
 ```csharp
 using HttpClient httpClient = new HttpClient();
 httpClient.BaseAddress = new Uri("https://localhost:7001");
 
-// Pass the API key to the client
-IShelfFileProvider provider = new HttpShelfFileProvider(httpClient, "your-secure-api-key-here");
+// Pass the tenant's API key to the client
+IShelfFileProvider provider = new HttpShelfFileProvider(httpClient, "tenant1-secure-api-key-here");
 ```
 
 The client will automatically include the API key in the `X-API-Key` header for all requests.
 
+#### Admin Access
+
+Admin tenants have additional privileges:
+- Access to admin API endpoints for tenant management
+- Unlimited storage (when StorageLimitBytes is set to 0)
+- Ability to view all tenant information and usage statistics
+
 #### Security Best Practices
 
-1. **Use Strong API Keys**: Generate cryptographically secure random keys
+1. **Use Strong API Keys**: Generate cryptographically secure random keys for each tenant
 2. **Environment Variables**: Store API keys in environment variables, not in source code
 3. **HTTPS Only**: Always use HTTPS in production to protect API keys in transit
 4. **Key Rotation**: Regularly rotate API keys for better security
 5. **Access Logging**: Monitor API access for suspicious activity
-
-#### Environment Variable Configuration
-
-```bash
-# Set API key via environment variable
-set Authentication__ApiKey=your-secure-api-key-here
-set Authentication__RequireAuthentication=true
-dotnet run
-```
+6. **Tenant Isolation**: Each tenant's files are stored in separate directories
+7. **Quota Enforcement**: Storage quotas are enforced per tenant
 
 #### Excluded Endpoints
 
