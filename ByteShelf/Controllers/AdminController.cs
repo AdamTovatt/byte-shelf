@@ -125,7 +125,7 @@ namespace ByteShelf.Controllers
             TenantConfiguration config = _configService.GetConfiguration();
             if (!config.Tenants.TryGetValue(tenantId, out TenantInfo? tenantInfo))
             {
-                return NotFound();
+                return NotFound("Tenant not found");
             }
 
             long currentUsage = _tenantStorageService.GetCurrentUsage(tenantId);
@@ -194,14 +194,14 @@ namespace ByteShelf.Controllers
 
             if (request.StorageLimitBytes <= 0)
             {
-                return BadRequest("Storage limit must be greater than 0");
+                return BadRequest("Storage limit must be greater than 0 for non-admin tenants");
             }
 
             // Check if tenant already exists
             TenantConfiguration config = _configService.GetConfiguration();
             if (config.Tenants.ContainsKey(request.TenantId))
             {
-                return Conflict($"Tenant with ID '{request.TenantId}' already exists");
+                return Conflict("A tenant with the specified ID already exists");
             }
 
             // Create the new tenant
@@ -265,7 +265,7 @@ namespace ByteShelf.Controllers
             TenantConfiguration config = _configService.GetConfiguration();
             if (!config.Tenants.TryGetValue(tenantId, out TenantInfo? tenantInfo))
             {
-                return NotFound();
+                return NotFound("Tenant not found");
             }
 
             // Validate request
@@ -334,7 +334,7 @@ namespace ByteShelf.Controllers
             TenantConfiguration config = _configService.GetConfiguration();
             if (!config.Tenants.TryGetValue(tenantId, out TenantInfo? tenantInfo))
             {
-                return NotFound();
+                return NotFound("Tenant not found");
             }
 
             // Check if tenant has any files

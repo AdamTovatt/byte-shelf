@@ -28,6 +28,10 @@ namespace ByteShelf.Tests
             _mockFileStorageService = new Mock<ITenantFileStorageService>();
             _mockHttpContext = new Mock<HttpContext>();
 
+            // Setup the Items dictionary properly
+            Dictionary<object, object?> items = new Dictionary<object, object?>();
+            _mockHttpContext.Setup(c => c.Items).Returns(items);
+
             // Setup default tenant configuration
             _tenantConfig = new TenantConfiguration
             {
@@ -469,12 +473,12 @@ namespace ByteShelf.Tests
 
         private void SetupAdminUser()
         {
-            _mockHttpContext.Setup(c => c.Items["IsAdmin"]).Returns(true);
+            _mockHttpContext.Object.Items["IsAdmin"] = true;
         }
 
         private void SetupNonAdminUser()
         {
-            _mockHttpContext.Setup(c => c.Items["IsAdmin"]).Returns(false);
+            _mockHttpContext.Object.Items["IsAdmin"] = false;
         }
     }
 }
