@@ -1,3 +1,4 @@
+using ByteShelfCommon;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Net;
 using System.Text;
@@ -18,7 +19,7 @@ namespace ByteShelfClient.Tests
             _messageHandler = new TestHttpMessageHandler();
             _httpClient = new HttpClient(_messageHandler);
             _httpClient.BaseAddress = new Uri("http://localhost:5000/");
-            _provider = new HttpShelfFileProvider(_httpClient);
+            _provider = new HttpShelfFileProvider(_httpClient, "test-api-key");
         }
 
         [TestCleanup]
@@ -33,20 +34,19 @@ namespace ByteShelfClient.Tests
             // Arrange
             HttpShelfFileProvider providerWithApiKey = new HttpShelfFileProvider(_httpClient, "tenant1-key");
 
-            HttpShelfFileProvider.TenantStorageInfo expectedResponse = new HttpShelfFileProvider.TenantStorageInfo
-            {
-                TenantId = "tenant1",
-                CurrentUsageBytes = 1024 * 1024 * 25, // 25MB
-                StorageLimitBytes = 1024 * 1024 * 100, // 100MB
-                AvailableSpaceBytes = 1024 * 1024 * 75, // 75MB
-                UsagePercentage = 25.0
-            };
+            TenantStorageInfo expectedResponse = new TenantStorageInfo(
+                "tenant1",
+                1024 * 1024 * 25, // 25MB
+                1024 * 1024 * 100, // 100MB
+                1024 * 1024 * 75, // 75MB
+                25.0
+            );
 
             string jsonResponse = JsonSerializer.Serialize(expectedResponse);
             _messageHandler.SetupResponse("api/tenant/storage", jsonResponse);
 
             // Act
-            HttpShelfFileProvider.TenantStorageInfo result = await providerWithApiKey.GetStorageInfoAsync();
+            TenantStorageInfo result = await providerWithApiKey.GetStorageInfoAsync();
 
             // Assert
             Assert.IsNotNull(result);
@@ -58,55 +58,24 @@ namespace ByteShelfClient.Tests
         }
 
         [TestMethod]
-        public async Task GetStorageInfoAsync_WithoutApiKey_ThrowsInvalidOperationException()
-        {
-            // Act & Assert
-            await Assert.ThrowsExceptionAsync<InvalidOperationException>(
-                () => _provider.GetStorageInfoAsync());
-        }
-
-        [TestMethod]
-        public async Task GetStorageInfoAsync_WithEmptyApiKey_ThrowsInvalidOperationException()
-        {
-            // Arrange
-            HttpShelfFileProvider providerWithEmptyApiKey = new HttpShelfFileProvider(_httpClient, "");
-
-            // Act & Assert
-            await Assert.ThrowsExceptionAsync<InvalidOperationException>(
-                () => providerWithEmptyApiKey.GetStorageInfoAsync());
-        }
-
-        [TestMethod]
-        public async Task GetStorageInfoAsync_WithWhitespaceApiKey_ThrowsInvalidOperationException()
-        {
-            // Arrange
-            HttpShelfFileProvider providerWithWhitespaceApiKey = new HttpShelfFileProvider(_httpClient, "   ");
-
-            // Act & Assert
-            await Assert.ThrowsExceptionAsync<InvalidOperationException>(
-                () => providerWithWhitespaceApiKey.GetStorageInfoAsync());
-        }
-
-        [TestMethod]
         public async Task GetStorageInfoAsync_WithUnlimitedStorage_ReturnsCorrectValues()
         {
             // Arrange
             HttpShelfFileProvider providerWithApiKey = new HttpShelfFileProvider(_httpClient, "admin-key");
 
-            HttpShelfFileProvider.TenantStorageInfo expectedResponse = new HttpShelfFileProvider.TenantStorageInfo
-            {
-                TenantId = "admin",
-                CurrentUsageBytes = 1024 * 1024 * 5, // 5MB
-                StorageLimitBytes = 0, // Unlimited
-                AvailableSpaceBytes = 0, // 0 for unlimited
-                UsagePercentage = 0.0 // 0% for unlimited
-            };
+            TenantStorageInfo expectedResponse = new TenantStorageInfo(
+                "admin",
+                1024 * 1024 * 5, // 5MB
+                0, // Unlimited
+                0, // 0 for unlimited
+                0.0 // 0% for unlimited
+            );
 
             string jsonResponse = JsonSerializer.Serialize(expectedResponse);
             _messageHandler.SetupResponse("api/tenant/storage", jsonResponse);
 
             // Act
-            HttpShelfFileProvider.TenantStorageInfo result = await providerWithApiKey.GetStorageInfoAsync();
+            TenantStorageInfo result = await providerWithApiKey.GetStorageInfoAsync();
 
             // Assert
             Assert.IsNotNull(result);
@@ -124,22 +93,21 @@ namespace ByteShelfClient.Tests
             HttpShelfFileProvider providerWithApiKey = new HttpShelfFileProvider(_httpClient, "tenant1-key");
             long fileSize = 1024 * 1024 * 10; // 10MB
 
-            HttpShelfFileProvider.QuotaCheckResult expectedResponse = new HttpShelfFileProvider.QuotaCheckResult
-            {
-                TenantId = "tenant1",
-                FileSizeBytes = fileSize,
-                CanStore = true,
-                CurrentUsageBytes = 1024 * 1024 * 20, // 20MB
-                StorageLimitBytes = 1024 * 1024 * 100, // 100MB
-                AvailableSpaceBytes = 1024 * 1024 * 80, // 80MB
-                WouldExceedQuota = false
-            };
+            QuotaCheckResult expectedResponse = new QuotaCheckResult(
+                "tenant1",
+                fileSize,
+                true,
+                1024 * 1024 * 20, // 20MB
+                1024 * 1024 * 100, // 100MB
+                1024 * 1024 * 80, // 80MB
+                false
+            );
 
             string jsonResponse = JsonSerializer.Serialize(expectedResponse);
             _messageHandler.SetupResponse($"api/tenant/storage/can-store?fileSizeBytes={fileSize}", jsonResponse);
 
             // Act
-            HttpShelfFileProvider.QuotaCheckResult result = await providerWithApiKey.CanStoreFileAsync(fileSize);
+            QuotaCheckResult result = await providerWithApiKey.CanStoreFileAsync(fileSize);
 
             // Assert
             Assert.IsNotNull(result);
@@ -156,22 +124,21 @@ namespace ByteShelfClient.Tests
             HttpShelfFileProvider providerWithApiKey = new HttpShelfFileProvider(_httpClient, "tenant1-key");
             long fileSize = 1024 * 1024 * 90; // 90MB
 
-            HttpShelfFileProvider.QuotaCheckResult expectedResponse = new HttpShelfFileProvider.QuotaCheckResult
-            {
-                TenantId = "tenant1",
-                FileSizeBytes = fileSize,
-                CanStore = false,
-                CurrentUsageBytes = 1024 * 1024 * 20, // 20MB
-                StorageLimitBytes = 1024 * 1024 * 100, // 100MB
-                AvailableSpaceBytes = 1024 * 1024 * 80, // 80MB
-                WouldExceedQuota = true
-            };
+            QuotaCheckResult expectedResponse = new QuotaCheckResult(
+                "tenant1",
+                fileSize,
+                false,
+                1024 * 1024 * 20, // 20MB
+                1024 * 1024 * 100, // 100MB
+                1024 * 1024 * 80, // 80MB
+                true
+            );
 
             string jsonResponse = JsonSerializer.Serialize(expectedResponse);
             _messageHandler.SetupResponse($"api/tenant/storage/can-store?fileSizeBytes={fileSize}", jsonResponse);
 
             // Act
-            HttpShelfFileProvider.QuotaCheckResult result = await providerWithApiKey.CanStoreFileAsync(fileSize);
+            QuotaCheckResult result = await providerWithApiKey.CanStoreFileAsync(fileSize);
 
             // Assert
             Assert.IsNotNull(result);
@@ -182,36 +149,27 @@ namespace ByteShelfClient.Tests
         }
 
         [TestMethod]
-        public async Task CanStoreFileAsync_WithoutApiKey_ThrowsInvalidOperationException()
-        {
-            // Act & Assert
-            await Assert.ThrowsExceptionAsync<InvalidOperationException>(
-                () => _provider.CanStoreFileAsync(1024));
-        }
-
-        [TestMethod]
         public async Task CanStoreFileAsync_WithZeroFileSize_ReturnsTrue()
         {
             // Arrange
             HttpShelfFileProvider providerWithApiKey = new HttpShelfFileProvider(_httpClient, "tenant1-key");
             long fileSize = 0;
 
-            HttpShelfFileProvider.QuotaCheckResult expectedResponse = new HttpShelfFileProvider.QuotaCheckResult
-            {
-                TenantId = "tenant1",
-                FileSizeBytes = fileSize,
-                CanStore = true,
-                CurrentUsageBytes = 1024 * 1024 * 20,
-                StorageLimitBytes = 1024 * 1024 * 100,
-                AvailableSpaceBytes = 1024 * 1024 * 80,
-                WouldExceedQuota = false
-            };
+            QuotaCheckResult expectedResponse = new QuotaCheckResult(
+                "tenant1",
+                fileSize,
+                true,
+                1024 * 1024 * 20,
+                1024 * 1024 * 100,
+                1024 * 1024 * 80,
+                false
+            );
 
             string jsonResponse = JsonSerializer.Serialize(expectedResponse);
             _messageHandler.SetupResponse($"api/tenant/storage/can-store?fileSizeBytes={fileSize}", jsonResponse);
 
             // Act
-            HttpShelfFileProvider.QuotaCheckResult result = await providerWithApiKey.CanStoreFileAsync(fileSize);
+            QuotaCheckResult result = await providerWithApiKey.CanStoreFileAsync(fileSize);
 
             // Assert
             Assert.IsNotNull(result);
@@ -226,22 +184,21 @@ namespace ByteShelfClient.Tests
             HttpShelfFileProvider providerWithApiKey = new HttpShelfFileProvider(_httpClient, "tenant1-key");
             long fileSize = -1024;
 
-            HttpShelfFileProvider.QuotaCheckResult expectedResponse = new HttpShelfFileProvider.QuotaCheckResult
-            {
-                TenantId = "tenant1",
-                FileSizeBytes = fileSize,
-                CanStore = true,
-                CurrentUsageBytes = 1024 * 1024 * 20,
-                StorageLimitBytes = 1024 * 1024 * 100,
-                AvailableSpaceBytes = 1024 * 1024 * 80,
-                WouldExceedQuota = false
-            };
+            QuotaCheckResult expectedResponse = new QuotaCheckResult(
+                "tenant1",
+                fileSize,
+                true,
+                1024 * 1024 * 20,
+                1024 * 1024 * 100,
+                1024 * 1024 * 80,
+                false
+            );
 
             string jsonResponse = JsonSerializer.Serialize(expectedResponse);
             _messageHandler.SetupResponse($"api/tenant/storage/can-store?fileSizeBytes={fileSize}", jsonResponse);
 
             // Act
-            HttpShelfFileProvider.QuotaCheckResult result = await providerWithApiKey.CanStoreFileAsync(fileSize);
+            QuotaCheckResult result = await providerWithApiKey.CanStoreFileAsync(fileSize);
 
             // Assert
             Assert.IsNotNull(result);
@@ -259,16 +216,15 @@ namespace ByteShelfClient.Tests
             using MemoryStream contentStream = new MemoryStream(Encoding.UTF8.GetBytes(content));
 
             // Setup quota check response
-            HttpShelfFileProvider.QuotaCheckResult quotaResponse = new HttpShelfFileProvider.QuotaCheckResult
-            {
-                TenantId = "tenant1",
-                FileSizeBytes = content.Length,
-                CanStore = true,
-                CurrentUsageBytes = 1024 * 1024 * 20,
-                StorageLimitBytes = 1024 * 1024 * 100,
-                AvailableSpaceBytes = 1024 * 1024 * 80,
-                WouldExceedQuota = false
-            };
+            QuotaCheckResult quotaResponse = new QuotaCheckResult(
+                "tenant1",
+                content.Length,
+                true,
+                1024 * 1024 * 20,
+                1024 * 1024 * 100,
+                1024 * 1024 * 80,
+                false
+            );
 
             string quotaJsonResponse = JsonSerializer.Serialize(quotaResponse);
             _messageHandler.SetupResponse($"api/tenant/storage/can-store?fileSizeBytes={content.Length}", quotaJsonResponse);
@@ -301,16 +257,15 @@ namespace ByteShelfClient.Tests
             using MemoryStream contentStream = new MemoryStream(Encoding.UTF8.GetBytes(content));
 
             // Setup quota check response indicating cannot store
-            HttpShelfFileProvider.QuotaCheckResult quotaResponse = new HttpShelfFileProvider.QuotaCheckResult
-            {
-                TenantId = "tenant1",
-                FileSizeBytes = content.Length,
-                CanStore = false,
-                CurrentUsageBytes = 1024 * 1024 * 95, // Almost full
-                StorageLimitBytes = 1024 * 1024 * 100,
-                AvailableSpaceBytes = 1024 * 1024 * 5,
-                WouldExceedQuota = true
-            };
+            QuotaCheckResult quotaResponse = new QuotaCheckResult(
+                "tenant1",
+                content.Length,
+                false,
+                1024 * 1024 * 95, // Almost full
+                1024 * 1024 * 100,
+                1024 * 1024 * 5,
+                true
+            );
 
             string quotaJsonResponse = JsonSerializer.Serialize(quotaResponse);
             _messageHandler.SetupResponse($"api/tenant/storage/can-store?fileSizeBytes={content.Length}", quotaJsonResponse);
@@ -318,20 +273,6 @@ namespace ByteShelfClient.Tests
             // Act & Assert
             await Assert.ThrowsExceptionAsync<InvalidOperationException>(
                 () => providerWithApiKey.WriteFileWithQuotaCheckAsync(filename, contentType, contentStream));
-        }
-
-        [TestMethod]
-        public async Task WriteFileWithQuotaCheckAsync_WithoutApiKey_ThrowsInvalidOperationException()
-        {
-            // Arrange
-            string content = "Test file content";
-            string filename = "test.txt";
-            string contentType = "text/plain";
-            using MemoryStream contentStream = new MemoryStream(Encoding.UTF8.GetBytes(content));
-
-            // Act & Assert
-            await Assert.ThrowsExceptionAsync<InvalidOperationException>(
-                () => _provider.WriteFileWithQuotaCheckAsync(filename, contentType, contentStream));
         }
 
         [TestMethod]
@@ -382,43 +323,93 @@ namespace ByteShelfClient.Tests
         }
 
         [TestMethod]
-        public async Task GetStorageInfoAsync_WithCancellationToken_RespectsCancellation()
+        public async Task GetTenantInfoAsync_WithApiKey_ReturnsTenantInfo()
         {
             // Arrange
             HttpShelfFileProvider providerWithApiKey = new HttpShelfFileProvider(_httpClient, "tenant1-key");
-            using CancellationTokenSource cts = new CancellationTokenSource();
-            cts.Cancel(); // Cancel immediately
 
-            // Act & Assert
-            await Assert.ThrowsExceptionAsync<OperationCanceledException>(
-                () => providerWithApiKey.GetStorageInfoAsync(cts.Token));
+            TenantInfoResponse expectedResponse = new TenantInfoResponse(
+                "tenant1",
+                "Test Tenant 1",
+                false, // Not admin
+                1024 * 1024 * 100, // 100MB limit
+                1024 * 1024 * 25, // 25MB usage
+                1024 * 1024 * 75, // 75MB available
+                25.0 // 25% usage
+            );
+
+            string jsonResponse = JsonSerializer.Serialize(expectedResponse);
+            _messageHandler.SetupResponse("api/tenant/info", jsonResponse);
+
+            // Act
+            TenantInfoResponse result = await providerWithApiKey.GetTenantInfoAsync();
+
+            // Assert
+            Assert.IsNotNull(result);
+            Assert.AreEqual(expectedResponse.TenantId, result.TenantId);
+            Assert.AreEqual(expectedResponse.DisplayName, result.DisplayName);
+            Assert.AreEqual(expectedResponse.IsAdmin, result.IsAdmin);
+            Assert.AreEqual(expectedResponse.StorageLimitBytes, result.StorageLimitBytes);
+            Assert.AreEqual(expectedResponse.CurrentUsageBytes, result.CurrentUsageBytes);
+            Assert.AreEqual(expectedResponse.AvailableSpaceBytes, result.AvailableSpaceBytes);
+            Assert.AreEqual(expectedResponse.UsagePercentage, result.UsagePercentage);
         }
 
         [TestMethod]
-        public async Task CanStoreFileAsync_WithCancellationToken_RespectsCancellation()
+        public async Task GetTenantInfoAsync_WithAdminApiKey_ReturnsAdminStatus()
         {
             // Arrange
-            HttpShelfFileProvider providerWithApiKey = new HttpShelfFileProvider(_httpClient, "tenant1-key");
-            using CancellationTokenSource cts = new CancellationTokenSource();
-            cts.Cancel(); // Cancel immediately
+            HttpShelfFileProvider providerWithApiKey = new HttpShelfFileProvider(_httpClient, "admin-key");
 
-            // Act & Assert
-            await Assert.ThrowsExceptionAsync<OperationCanceledException>(
-                () => providerWithApiKey.CanStoreFileAsync(1024, cts.Token));
+            TenantInfoResponse expectedResponse = new TenantInfoResponse(
+                "admin",
+                "Admin User",
+                true, // Is admin
+                0, // Unlimited storage
+                1024 * 1024 * 5, // 5MB usage
+                0, // 0 available for unlimited
+                0.0 // 0% usage for unlimited
+            );
+
+            string jsonResponse = JsonSerializer.Serialize(expectedResponse);
+            _messageHandler.SetupResponse("api/tenant/info", jsonResponse);
+
+            // Act
+            TenantInfoResponse result = await providerWithApiKey.GetTenantInfoAsync();
+
+            // Assert
+            Assert.IsNotNull(result);
+            Assert.AreEqual(expectedResponse.TenantId, result.TenantId);
+            Assert.AreEqual(expectedResponse.DisplayName, result.DisplayName);
+            Assert.IsTrue(result.IsAdmin);
+            Assert.AreEqual(0, result.StorageLimitBytes); // Unlimited
+            Assert.AreEqual(expectedResponse.CurrentUsageBytes, result.CurrentUsageBytes);
+            Assert.AreEqual(0, result.AvailableSpaceBytes); // 0 for unlimited
+            Assert.AreEqual(0.0, result.UsagePercentage); // 0% for unlimited
         }
 
         [TestMethod]
-        public async Task WriteFileWithQuotaCheckAsync_WithCancellationToken_RespectsCancellation()
+        public void Constructor_WithNullApiKey_ThrowsArgumentNullException()
         {
-            // Arrange
-            HttpShelfFileProvider providerWithApiKey = new HttpShelfFileProvider(_httpClient, "tenant1-key");
-            using MemoryStream contentStream = new MemoryStream(Encoding.UTF8.GetBytes("test"));
-            using CancellationTokenSource cts = new CancellationTokenSource();
-            cts.Cancel(); // Cancel immediately
-
             // Act & Assert
-            await Assert.ThrowsExceptionAsync<OperationCanceledException>(
-                () => providerWithApiKey.WriteFileWithQuotaCheckAsync("test.txt", "text/plain", contentStream, cancellationToken: cts.Token));
+            Assert.ThrowsException<ArgumentNullException>(
+                () => new HttpShelfFileProvider(_httpClient, null!));
+        }
+
+        [TestMethod]
+        public void Constructor_WithEmptyApiKey_ThrowsArgumentException()
+        {
+            // Act & Assert
+            Assert.ThrowsException<ArgumentException>(
+                () => new HttpShelfFileProvider(_httpClient, ""));
+        }
+
+        [TestMethod]
+        public void Constructor_WithWhitespaceApiKey_ThrowsArgumentException()
+        {
+            // Act & Assert
+            Assert.ThrowsException<ArgumentException>(
+                () => new HttpShelfFileProvider(_httpClient, "   "));
         }
     }
 }

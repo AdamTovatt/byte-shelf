@@ -161,7 +161,9 @@ namespace ByteShelf.Tests
             IActionResult result = await _controller.GetTenant("nonexistent", CancellationToken.None);
 
             // Assert
-            Assert.IsInstanceOfType(result, typeof(NotFoundResult));
+            Assert.IsInstanceOfType(result, typeof(NotFoundObjectResult));
+            NotFoundObjectResult notFoundResult = (NotFoundObjectResult)result;
+            Assert.AreEqual("Tenant not found", notFoundResult.Value);
         }
 
         [TestMethod]

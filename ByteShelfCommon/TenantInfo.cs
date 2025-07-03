@@ -45,4 +45,77 @@ namespace ByteShelfCommon
         /// </remarks>
         public bool IsAdmin { get; set; } = false;
     }
+
+    /// <summary>
+    /// Represents the response from the tenant info endpoint.
+    /// </summary>
+    /// <remarks>
+    /// This class contains both static tenant configuration and dynamic information
+    /// like current storage usage. It's used by the GET /api/tenant/info endpoint.
+    /// </remarks>
+    public class TenantInfoResponse
+    {
+        /// <summary>
+        /// Initializes a new instance of the <see cref="TenantInfoResponse"/> class.
+        /// </summary>
+        /// <param name="tenantId">The unique identifier of the tenant.</param>
+        /// <param name="displayName">The human-readable display name for the tenant.</param>
+        /// <param name="isAdmin">Whether this tenant has administrative privileges.</param>
+        /// <param name="storageLimitBytes">The maximum storage allowed for this tenant in bytes.</param>
+        /// <param name="currentUsageBytes">The current storage usage in bytes.</param>
+        /// <param name="availableSpaceBytes">The available storage space in bytes.</param>
+        /// <param name="usagePercentage">The percentage of storage used (0-100).</param>
+        public TenantInfoResponse(
+            string tenantId,
+            string displayName,
+            bool isAdmin,
+            long storageLimitBytes,
+            long currentUsageBytes,
+            long availableSpaceBytes,
+            double usagePercentage)
+        {
+            TenantId = tenantId;
+            DisplayName = displayName;
+            IsAdmin = isAdmin;
+            StorageLimitBytes = storageLimitBytes;
+            CurrentUsageBytes = currentUsageBytes;
+            AvailableSpaceBytes = availableSpaceBytes;
+            UsagePercentage = usagePercentage;
+        }
+
+        /// <summary>
+        /// Gets the unique identifier of the tenant.
+        /// </summary>
+        public string TenantId { get; }
+
+        /// <summary>
+        /// Gets the human-readable display name for the tenant.
+        /// </summary>
+        public string DisplayName { get; }
+
+        /// <summary>
+        /// Gets whether this tenant has administrative privileges.
+        /// </summary>
+        public bool IsAdmin { get; }
+
+        /// <summary>
+        /// Gets the maximum storage allowed for this tenant in bytes.
+        /// </summary>
+        public long StorageLimitBytes { get; }
+
+        /// <summary>
+        /// Gets the current storage usage in bytes.
+        /// </summary>
+        public long CurrentUsageBytes { get; }
+
+        /// <summary>
+        /// Gets the available storage space in bytes.
+        /// </summary>
+        public long AvailableSpaceBytes { get; }
+
+        /// <summary>
+        /// Gets the percentage of storage used (0-100).
+        /// </summary>
+        public double UsagePercentage { get; }
+    }
 }

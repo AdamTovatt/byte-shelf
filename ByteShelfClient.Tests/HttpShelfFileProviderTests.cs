@@ -19,7 +19,7 @@ namespace ByteShelfClient.Tests
             _messageHandler = new TestHttpMessageHandler();
             _httpClient = new HttpClient(_messageHandler);
             _httpClient.BaseAddress = new Uri("http://localhost:5000/");
-            _provider = new HttpShelfFileProvider(_httpClient);
+            _provider = new HttpShelfFileProvider(_httpClient, "test-api-key");
         }
 
         [TestCleanup]

@@ -1,6 +1,7 @@
 using ByteShelf.Services;
 using ByteShelfClient;
 using ByteShelfCommon;
+using ByteShelf.Configuration;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -8,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Text;
+using System.Text.Json;
 
 namespace ByteShelf.Integration.Tests
 {
@@ -18,44 +20,63 @@ namespace ByteShelf.Integration.Tests
         private HttpClient _httpClient = null!;
         private HttpShelfFileProvider _client = null!;
         private string _tempStoragePath = null!;
-        private IFileStorageService _storageService = null!;
         private const string TestApiKey = "dev-api-key-12345";
 
         [TestInitialize]
         public void Setup()
         {
             _tempStoragePath = Path.Combine(Path.GetTempPath(), $"ByteShelf-Integration-{Guid.NewGuid()}");
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+
+            // Create tenant configuration file for tests
+            Directory.CreateDirectory(_tempStoragePath);
+            CreateTestTenantConfiguration(tenantConfigPath);
 
             _factory = new WebApplicationFactory<Program>()
                 .WithWebHostBuilder(builder =>
                 {
                     builder.UseContentRoot(Directory.GetCurrentDirectory());
-                    builder.ConfigureServices(services =>
-                    {
-                        // Override the storage service to use our temp directory
-                        services.AddSingleton<IFileStorageService>(provider =>
-                        {
-                            ILogger<FileStorageService>? logger = provider.GetService<ILogger<FileStorageService>>();
-                            return new FileStorageService(_tempStoragePath, logger);
-                        });
-                    });
                     builder.ConfigureAppConfiguration((context, config) =>
                     {
                         // Override authentication configuration for tests
                         config.AddInMemoryCollection(new Dictionary<string, string?>
                         {
                             ["Authentication:ApiKey"] = TestApiKey,
-                            ["Authentication:RequireAuthentication"] = "true"
+                            ["Authentication:RequireAuthentication"] = "true",
+                            ["StoragePath"] = _tempStoragePath
                         });
                     });
                 });
 
+            // Set environment variable for tenant configuration
+            Environment.SetEnvironmentVariable("BYTESHELF_TENANT_CONFIG_PATH", tenantConfigPath);
+
             _httpClient = _factory.CreateClient();
             _client = new HttpShelfFileProvider(_httpClient, TestApiKey);
+        }
 
-            // Get the storage service from the DI container for verification
-            using IServiceScope scope = _factory.Services.CreateScope();
-            _storageService = scope.ServiceProvider.GetRequiredService<IFileStorageService>();
+        private void CreateTestTenantConfiguration(string configPath)
+        {
+            var config = new TenantConfiguration
+            {
+                Tenants = new Dictionary<string, TenantInfo>
+                {
+                    [TestApiKey] = new TenantInfo
+                    {
+                        ApiKey = TestApiKey,
+                        DisplayName = "Test Tenant",
+                        StorageLimitBytes = 1000000000L, // 1GB
+                        IsAdmin = false
+                    }
+                }
+            };
+
+            string json = JsonSerializer.Serialize(config, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            File.WriteAllText(configPath, json);
         }
 
         [TestCleanup]
@@ -309,13 +330,10 @@ namespace ByteShelf.Integration.Tests
         {
             // Arrange - Create a client without API key
             using HttpClient noKeyClient = _factory.CreateClient();
-            HttpShelfFileProvider noKeyProvider = new HttpShelfFileProvider(noKeyClient);
 
-            // Act & Assert - Should throw HttpRequestException with 401 status
-            HttpRequestException? exception = await Assert.ThrowsExceptionAsync<HttpRequestException>(
-                async () => await noKeyProvider.GetFilesAsync());
-
-            Assert.IsTrue(exception.Message.Contains("401") || exception.Message.Contains("Unauthorized"));
+            // Act & Assert - Constructor should throw ArgumentNullException for missing API key
+            Assert.ThrowsException<ArgumentNullException>(
+                () => new HttpShelfFileProvider(noKeyClient, null!));
         }
 
         public void Dispose()

@@ -99,6 +99,5 @@ namespace ByteShelf.Controllers
                 return StatusCode(413, new { error = "Storage quota exceeded", message = ex.Message });
             }
         }
-
     }
 }

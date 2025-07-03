@@ -41,13 +41,11 @@ namespace ByteShelf
             builder.Services.AddSingleton<ITenantStorageService, TenantStorageService>();
 
             // Register tenant-aware file storage service
-            builder.Services.AddSingleton<ITenantFileStorageService, TenantFileStorageService>();
-
-            // Keep the original service for backward compatibility (if needed)
-            builder.Services.AddSingleton<IFileStorageService>(serviceProvider =>
+            builder.Services.AddSingleton<ITenantFileStorageService>(serviceProvider =>
             {
-                ILogger<FileStorageService>? logger = serviceProvider.GetService<ILogger<FileStorageService>>();
-                return new FileStorageService(storagePath, logger);
+                ILogger<TenantFileStorageService>? logger = serviceProvider.GetService<ILogger<TenantFileStorageService>>();
+                ITenantStorageService tenantStorageService = serviceProvider.GetRequiredService<ITenantStorageService>();
+                return new TenantFileStorageService(storagePath, tenantStorageService, logger);
             });
 
             WebApplication app = builder.Build();

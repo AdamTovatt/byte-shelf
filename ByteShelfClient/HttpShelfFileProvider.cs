@@ -17,35 +17,41 @@ namespace ByteShelfClient
     {
         private readonly HttpClient _httpClient;
         private readonly JsonSerializerOptions _jsonOptions;
-        private readonly string? _apiKey;
+        private readonly string _apiKey;
         private int? _chunkSize;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="HttpShelfFileProvider"/> class.
         /// </summary>
         /// <param name="httpClient">The HTTP client to use for server communication.</param>
-        /// <param name="apiKey">Optional API key for authentication. If provided, it will be added to all requests.</param>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="httpClient"/> is null.</exception>
+        /// <param name="apiKey">The API key for authentication. Cannot be null or empty.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="httpClient"/> or <paramref name="apiKey"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="apiKey"/> is empty or whitespace.</exception>
         /// <remarks>
-        /// If an API key is provided, it will be automatically added to the <see cref="HttpClient.DefaultRequestHeaders"/>
+        /// The API key will be automatically added to the <see cref="HttpClient.DefaultRequestHeaders"/>
         /// as "X-API-Key". The <see cref="HttpClient"/> should be configured with the appropriate base address.
+        /// All operations require API key authentication to identify the tenant.
         /// </remarks>
         public HttpShelfFileProvider(
             HttpClient httpClient,
-            string? apiKey = null)
+            string apiKey)
         {
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+
+            if (apiKey == null)
+                throw new ArgumentNullException(nameof(apiKey));
+
+            if (string.IsNullOrWhiteSpace(apiKey))
+                throw new ArgumentException("API key cannot be empty or whitespace", nameof(apiKey));
+
             _apiKey = apiKey;
             _jsonOptions = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
             };
 
-            // Set default API key header if provided
-            if (!string.IsNullOrEmpty(_apiKey))
-            {
-                _httpClient.DefaultRequestHeaders.Add("X-API-Key", _apiKey);
-            }
+            // Set default API key header
+            _httpClient.DefaultRequestHeaders.Add("X-API-Key", _apiKey);
         }
 
         /// <summary>
@@ -232,9 +238,6 @@ namespace ByteShelfClient
         /// </remarks>
         public async Task<TenantStorageInfo> GetStorageInfoAsync(CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrEmpty(_apiKey))
-                throw new InvalidOperationException("API key is required for tenant operations");
-
             TenantStorageInfo? response = await _httpClient.GetFromJsonAsync<TenantStorageInfo>(
                 "api/tenant/storage",
                 _jsonOptions,
@@ -247,29 +250,27 @@ namespace ByteShelfClient
         }
 
         /// <summary>
-        /// Checks if the authenticated tenant can store a file of the specified size.
+        /// Checks if the current tenant can store a file of the specified size.
         /// </summary>
         /// <param name="fileSizeBytes">The size of the file to check in bytes.</param>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
         /// <returns>Information about whether the file can be stored.</returns>
+        /// <exception cref="InvalidOperationException">Thrown when no API key is provided.</exception>
         /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
         /// <remarks>
         /// This method makes a GET request to the "/api/tenant/storage/can-store" endpoint.
-        /// This is useful for checking quota limits before attempting to upload large files.
+        /// It allows clients to check if they can store a file of a specific size before attempting to upload it.
         /// Requires API key authentication.
         /// </remarks>
         public async Task<QuotaCheckResult> CanStoreFileAsync(long fileSizeBytes, CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrEmpty(_apiKey))
-                throw new InvalidOperationException("API key is required for tenant operations");
-
             QuotaCheckResult? response = await _httpClient.GetFromJsonAsync<QuotaCheckResult>(
                 $"api/tenant/storage/can-store?fileSizeBytes={fileSizeBytes}",
                 _jsonOptions,
                 cancellationToken);
 
             if (response == null)
-                throw new InvalidOperationException("Failed to retrieve quota check result from server");
+                throw new HttpRequestException("Failed to get quota check result from server");
 
             return response;
         }
@@ -300,8 +301,11 @@ namespace ByteShelfClient
             bool checkQuotaFirst = true,
             CancellationToken cancellationToken = default)
         {
-            if (string.IsNullOrEmpty(_apiKey))
-                throw new InvalidOperationException("API key is required for quota checking");
+            if (originalFilename == null) throw new ArgumentNullException(nameof(originalFilename));
+            if (contentType == null) throw new ArgumentNullException(nameof(contentType));
+            if (content == null) throw new ArgumentNullException(nameof(content));
+            if (string.IsNullOrEmpty(originalFilename)) throw new ArgumentException("Original filename cannot be empty", nameof(originalFilename));
+            if (string.IsNullOrEmpty(contentType)) throw new ArgumentException("Content type cannot be empty", nameof(contentType));
 
             if (checkQuotaFirst)
             {
@@ -354,200 +358,30 @@ namespace ByteShelfClient
             return _chunkSize.Value;
         }
 
-        private class ChunkedHttpContentProvider : IContentProvider, IDisposable
-        {
-            private readonly HttpClient _httpClient;
-            private readonly Guid _fileId;
-            private readonly List<Guid> _chunkIds;
-            private readonly CancellationToken _cancellationToken;
-
-            public ChunkedHttpContentProvider(
-                HttpClient httpClient,
-                Guid fileId,
-                List<Guid> chunkIds,
-                CancellationToken cancellationToken)
-            {
-                _httpClient = httpClient;
-                _fileId = fileId;
-                _chunkIds = chunkIds;
-                _cancellationToken = cancellationToken;
-            }
-
-            public Stream GetStream()
-            {
-                return new ChunkedStream(_httpClient, _chunkIds, _cancellationToken);
-            }
-
-            public void Dispose()
-            {
-                // Nothing to dispose here as the HttpClient is managed externally
-            }
-        }
-
-        private class ChunkedStream : Stream
-        {
-            private readonly HttpClient _httpClient;
-            private readonly List<Guid> _chunkIds;
-            private readonly CancellationToken _cancellationToken;
-            private int _currentChunkIndex;
-            private Stream? _currentChunkStream;
-            private long _position;
-
-            public ChunkedStream(
-                HttpClient httpClient,
-                List<Guid> chunkIds,
-                CancellationToken cancellationToken)
-            {
-                _httpClient = httpClient;
-                _chunkIds = chunkIds;
-                _cancellationToken = cancellationToken;
-                _currentChunkIndex = 0;
-                _position = 0;
-            }
-
-            public override bool CanRead => true;
-            public override bool CanSeek => false;
-            public override bool CanWrite => false;
-            public override long Length => throw new NotSupportedException();
-            public override long Position
-            {
-                get => _position;
-                set => throw new NotSupportedException();
-            }
-
-            public override int Read(byte[] buffer, int offset, int count)
-            {
-                return ReadAsync(buffer, offset, count, _cancellationToken).GetAwaiter().GetResult();
-            }
-
-            public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-            {
-                if (_currentChunkIndex >= _chunkIds.Count)
-                    return 0;
-
-                if (_currentChunkStream == null)
-                {
-                    await LoadCurrentChunkAsync();
-                }
-
-                int bytesRead = await _currentChunkStream!.ReadAsync(buffer, offset, count, cancellationToken);
-                _position += bytesRead;
-
-                if (bytesRead == 0 && _currentChunkIndex < _chunkIds.Count - 1)
-                {
-                    _currentChunkIndex++;
-                    await LoadCurrentChunkAsync();
-                    bytesRead = await _currentChunkStream!.ReadAsync(buffer, offset, count, cancellationToken);
-                    _position += bytesRead;
-                }
-
-                return bytesRead;
-            }
-
-            private async Task LoadCurrentChunkAsync()
-            {
-                if (_currentChunkIndex >= _chunkIds.Count)
-                    return;
-
-                Guid chunkId = _chunkIds[_currentChunkIndex];
-                HttpResponseMessage response = await _httpClient.GetAsync(
-                    $"api/chunks/{chunkId}",
-                    _cancellationToken);
-
-                response.EnsureSuccessStatusCode();
-                _currentChunkStream = await response.Content.ReadAsStreamAsync(_cancellationToken);
-            }
-
-            public override void Flush() => throw new NotSupportedException();
-            public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-            public override void SetLength(long value) => throw new NotSupportedException();
-            public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-
-            protected override void Dispose(bool disposing)
-            {
-                if (disposing)
-                {
-                    _currentChunkStream?.Dispose();
-                }
-                base.Dispose(disposing);
-            }
-        }
-
-        private class ChunkConfiguration
-        {
-            public int ChunkSizeBytes { get; set; }
-        }
-
         /// <summary>
-        /// Information about a tenant's storage usage and limits.
+        /// Gets information about the current tenant including admin status and display name.
         /// </summary>
-        public class TenantStorageInfo
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>Tenant information including admin status, display name, and storage details.</returns>
+        /// <exception cref="InvalidOperationException">Thrown when no API key is provided.</exception>
+        /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
+        /// <remarks>
+        /// This method makes a GET request to the "/api/tenant/info" endpoint.
+        /// It provides information about the tenant including their admin status, which is useful
+        /// for frontend applications to determine what UI controls to show.
+        /// Requires API key authentication.
+        /// </remarks>
+        public async Task<TenantInfoResponse> GetTenantInfoAsync(CancellationToken cancellationToken = default)
         {
-            /// <summary>
-            /// Gets or sets the tenant ID.
-            /// </summary>
-            public string TenantId { get; set; } = string.Empty;
+            TenantInfoResponse? response = await _httpClient.GetFromJsonAsync<TenantInfoResponse>(
+                "api/tenant/info",
+                _jsonOptions,
+                cancellationToken);
 
-            /// <summary>
-            /// Gets or sets the current storage usage in bytes.
-            /// </summary>
-            public long CurrentUsageBytes { get; set; }
+            if (response == null)
+                throw new HttpRequestException("Failed to get tenant information from server");
 
-            /// <summary>
-            /// Gets or sets the storage limit in bytes.
-            /// </summary>
-            public long StorageLimitBytes { get; set; }
-
-            /// <summary>
-            /// Gets or sets the available storage space in bytes.
-            /// </summary>
-            public long AvailableSpaceBytes { get; set; }
-
-            /// <summary>
-            /// Gets or sets the usage percentage (0-100).
-            /// </summary>
-            public double UsagePercentage { get; set; }
-        }
-
-        /// <summary>
-        /// Result of a quota check operation.
-        /// </summary>
-        public class QuotaCheckResult
-        {
-            /// <summary>
-            /// Gets or sets the tenant ID.
-            /// </summary>
-            public string TenantId { get; set; } = string.Empty;
-
-            /// <summary>
-            /// Gets or sets the size of the file being checked in bytes.
-            /// </summary>
-            public long FileSizeBytes { get; set; }
-
-            /// <summary>
-            /// Gets or sets whether the file can be stored.
-            /// </summary>
-            public bool CanStore { get; set; }
-
-            /// <summary>
-            /// Gets or sets the current storage usage in bytes.
-            /// </summary>
-            public long CurrentUsageBytes { get; set; }
-
-            /// <summary>
-            /// Gets or sets the storage limit in bytes.
-            /// </summary>
-            public long StorageLimitBytes { get; set; }
-
-            /// <summary>
-            /// Gets or sets the available storage space in bytes.
-            /// </summary>
-            public long AvailableSpaceBytes { get; set; }
-
-            /// <summary>
-            /// Gets or sets whether the file would exceed the quota.
-            /// </summary>
-            public bool WouldExceedQuota { get; set; }
+            return response;
         }
     }
 }
