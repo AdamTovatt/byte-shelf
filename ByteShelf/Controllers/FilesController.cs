@@ -20,16 +20,16 @@ namespace ByteShelf.Controllers
     [Route("api/[controller]")]
     public class FilesController : ControllerBase
     {
-        private readonly ITenantFileStorageService _tenantFileStorageService;
+        private readonly IFileStorageService _fileStorageService;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="FilesController"/> class.
         /// </summary>
-        /// <param name="tenantFileStorageService">The tenant-aware file storage service for file operations.</param>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="tenantFileStorageService"/> is null.</exception>
-        public FilesController(ITenantFileStorageService tenantFileStorageService)
+        /// <param name="fileStorageService">The file storage service for file operations.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="fileStorageService"/> is null.</exception>
+        public FilesController(IFileStorageService fileStorageService)
         {
-            _tenantFileStorageService = tenantFileStorageService ?? throw new ArgumentNullException(nameof(tenantFileStorageService));
+            _fileStorageService = fileStorageService ?? throw new ArgumentNullException(nameof(fileStorageService));
         }
 
         /// <summary>
@@ -50,7 +50,7 @@ namespace ByteShelf.Controllers
         public async Task<ActionResult<IEnumerable<ShelfFileMetadata>>> GetFiles(CancellationToken cancellationToken)
         {
             string tenantId = HttpContext.GetTenantId();
-            IEnumerable<ShelfFileMetadata> files = await _tenantFileStorageService.GetFilesAsync(tenantId, cancellationToken);
+            IEnumerable<ShelfFileMetadata> files = await _fileStorageService.GetFilesAsync(tenantId, cancellationToken);
             return Ok(files);
         }
 
@@ -75,7 +75,7 @@ namespace ByteShelf.Controllers
         public async Task<ActionResult<ShelfFileMetadata>> GetFileMetadata(Guid fileId, CancellationToken cancellationToken)
         {
             string tenantId = HttpContext.GetTenantId();
-            ShelfFileMetadata? metadata = await _tenantFileStorageService.GetFileMetadataAsync(tenantId, fileId, cancellationToken);
+            ShelfFileMetadata? metadata = await _fileStorageService.GetFileMetadataAsync(tenantId, fileId, cancellationToken);
 
             if (metadata == null)
                 return NotFound();
@@ -104,7 +104,7 @@ namespace ByteShelf.Controllers
         public async Task<ActionResult> CreateFileMetadata([FromBody] ShelfFileMetadata metadata, CancellationToken cancellationToken)
         {
             string tenantId = HttpContext.GetTenantId();
-            await _tenantFileStorageService.SaveFileMetadataAsync(tenantId, metadata, cancellationToken);
+            await _fileStorageService.SaveFileMetadataAsync(tenantId, metadata, cancellationToken);
             return CreatedAtAction(nameof(GetFileMetadata), new { fileId = metadata.Id }, metadata);
         }
 
@@ -115,6 +115,7 @@ namespace ByteShelf.Controllers
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
         /// <returns>No content on successful deletion.</returns>
         /// <response code="204">If the file was successfully deleted.</response>
+        /// <response code="404">If the file with the specified ID does not exist or does not belong to the tenant.</response>
         /// <response code="401">If the API key is invalid or missing.</response>
         /// <remarks>
         /// This operation is idempotent - deleting a non-existent file will not throw an exception.
@@ -123,11 +124,16 @@ namespace ByteShelf.Controllers
         /// </remarks>
         [HttpDelete("{fileId}")]
         [ProducesResponseType(204)]
+        [ProducesResponseType(404)]
         [ProducesResponseType(401)]
         public async Task<ActionResult> DeleteFile(Guid fileId, CancellationToken cancellationToken)
         {
             string tenantId = HttpContext.GetTenantId();
-            await _tenantFileStorageService.DeleteFileAsync(tenantId, fileId, cancellationToken);
+            bool? fileDeletedResult = await _fileStorageService.DeleteFileAsync(tenantId, fileId, cancellationToken);
+
+            if (fileDeletedResult == null)
+                return NotFound();
+
             return NoContent();
         }
     }

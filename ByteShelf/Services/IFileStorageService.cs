@@ -3,14 +3,14 @@ using ByteShelfCommon;
 namespace ByteShelf.Services
 {
     /// <summary>
-    /// Service for storing and retrieving files with tenant isolation and quota management.
+    /// Interface for file storage operations with tenant isolation.
     /// </summary>
     /// <remarks>
-    /// This service extends the basic file storage functionality with tenant isolation,
-    /// ensuring that each tenant's files are stored in separate directories and that
-    /// storage quotas are enforced. All operations are scoped to a specific tenant.
+    /// This interface defines the contract for file storage operations that support
+    /// tenant isolation. All operations are scoped to specific tenants, ensuring
+    /// data separation and quota enforcement.
     /// </remarks>
-    public interface ITenantFileStorageService
+    public interface IFileStorageService
     {
         /// <summary>
         /// Retrieves metadata for all files belonging to a specific tenant.
@@ -67,8 +67,8 @@ namespace ByteShelf.Services
         /// <param name="tenantId">The tenant ID.</param>
         /// <param name="fileId">The unique identifier of the file to delete.</param>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-        /// <returns>A task that represents the asynchronous delete operation.</returns>
-        Task DeleteFileAsync(string tenantId, Guid fileId, CancellationToken cancellationToken = default);
+        /// <returns>A task with a nullable bool that represents the asynchronous delete operation. The bool value indicates success state. If the bool is null it means the file was not found.</returns>
+        Task<bool?> DeleteFileAsync(string tenantId, Guid fileId, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Checks if a tenant can store a file of the specified size.

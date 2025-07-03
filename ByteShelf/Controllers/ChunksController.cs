@@ -18,16 +18,16 @@ namespace ByteShelf.Controllers
     [Route("api/[controller]")]
     public class ChunksController : ControllerBase
     {
-        private readonly ITenantFileStorageService _tenantFileStorageService;
+        private readonly IFileStorageService _fileStorageService;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ChunksController"/> class.
         /// </summary>
-        /// <param name="tenantFileStorageService">The tenant-aware file storage service for chunk operations.</param>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="tenantFileStorageService"/> is null.</exception>
-        public ChunksController(ITenantFileStorageService tenantFileStorageService)
+        /// <param name="fileStorageService">The file storage service for chunk operations.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="fileStorageService"/> is null.</exception>
+        public ChunksController(IFileStorageService fileStorageService)
         {
-            _tenantFileStorageService = tenantFileStorageService ?? throw new ArgumentNullException(nameof(tenantFileStorageService));
+            _fileStorageService = fileStorageService ?? throw new ArgumentNullException(nameof(fileStorageService));
         }
 
         /// <summary>
@@ -53,7 +53,7 @@ namespace ByteShelf.Controllers
             try
             {
                 string tenantId = HttpContext.GetTenantId();
-                Stream chunkStream = await _tenantFileStorageService.GetChunkAsync(tenantId, chunkId, cancellationToken);
+                Stream chunkStream = await _fileStorageService.GetChunkAsync(tenantId, chunkId, cancellationToken);
                 return File(chunkStream, "application/octet-stream");
             }
             catch (FileNotFoundException)
@@ -91,7 +91,7 @@ namespace ByteShelf.Controllers
             try
             {
                 string tenantId = HttpContext.GetTenantId();
-                Guid savedChunkId = await _tenantFileStorageService.SaveChunkAsync(tenantId, chunkId, Request.Body, cancellationToken);
+                Guid savedChunkId = await _fileStorageService.SaveChunkAsync(tenantId, chunkId, Request.Body, cancellationToken);
                 return Ok(new { ChunkId = savedChunkId });
             }
             catch (InvalidOperationException ex) when (ex.Message.Contains("exceed their storage quota"))

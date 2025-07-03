@@ -13,7 +13,7 @@ namespace ByteShelf.Tests
     public class TenantControllerTests
     {
         private TenantController _controller = null!;
-        private Mock<ITenantStorageService> _mockStorageService = null!;
+        private Mock<IStorageService> _mockStorageService = null!;
         private Mock<ITenantConfigurationService> _mockConfigService = null!;
         private Mock<HttpContext> _mockHttpContext = null!;
         private TenantConfiguration _tenantConfig = null!;
@@ -21,7 +21,7 @@ namespace ByteShelf.Tests
         [TestInitialize]
         public void Setup()
         {
-            _mockStorageService = new Mock<ITenantStorageService>();
+            _mockStorageService = new Mock<IStorageService>();
             _mockConfigService = new Mock<ITenantConfigurationService>();
             _mockHttpContext = new Mock<HttpContext>();
 

@@ -4,39 +4,39 @@ using System.Text.Json;
 namespace ByteShelf.Services
 {
     /// <summary>
-    /// Tenant-aware implementation of file storage with isolation and quota management.
+    /// Implementation of file storage with tenant isolation and quota management.
     /// </summary>
     /// <remarks>
     /// This service provides tenant isolation by storing each tenant's files in separate
     /// subdirectories and enforces storage quotas. It uses the existing file storage
     /// infrastructure but scopes all operations to specific tenants.
     /// </remarks>
-    public class TenantFileStorageService : ITenantFileStorageService
+    public class FileStorageService : IFileStorageService
     {
         private readonly string _storagePath;
-        private readonly ITenantStorageService _tenantStorageService;
-        private readonly ILogger<TenantFileStorageService> _logger;
+        private readonly IStorageService _storageService;
+        private readonly ILogger<FileStorageService> _logger;
         private readonly JsonSerializerOptions _jsonOptions;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="TenantFileStorageService"/> class.
+        /// Initializes a new instance of the <see cref="FileStorageService"/> class.
         /// </summary>
         /// <param name="storagePath">The base storage path for tenant data.</param>
-        /// <param name="tenantStorageService">The tenant storage service for quota management.</param>
+        /// <param name="storageService">The storage service for quota management.</param>
         /// <param name="logger">The logger for recording service operations.</param>
         /// <exception cref="ArgumentNullException">Thrown when any of the parameters is null.</exception>
         /// <remarks>
-        /// This constructor initializes the service with the specified storage path, tenant storage service,
+        /// This constructor initializes the service with the specified storage path, storage service,
         /// and logger. The service will create tenant-specific directories under the storage path
         /// for organizing metadata and binary data by tenant.
         /// </remarks>
-        public TenantFileStorageService(
+        public FileStorageService(
             string storagePath,
-            ITenantStorageService tenantStorageService,
-            ILogger<TenantFileStorageService> logger)
+            IStorageService storageService,
+            ILogger<FileStorageService> logger)
         {
             _storagePath = storagePath ?? throw new ArgumentNullException(nameof(storagePath));
-            _tenantStorageService = tenantStorageService ?? throw new ArgumentNullException(nameof(tenantStorageService));
+            _storageService = storageService ?? throw new ArgumentNullException(nameof(storageService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
             _jsonOptions = new JsonSerializerOptions
@@ -44,7 +44,7 @@ namespace ByteShelf.Services
                 WriteIndented = true,
             };
 
-            _logger.LogInformation("TenantFileStorageService initialized with storage path: {StoragePath}", _storagePath);
+            _logger.LogInformation("FileStorageService initialized with storage path: {StoragePath}", _storagePath);
         }
 
         /// <inheritdoc/>
@@ -138,23 +138,32 @@ namespace ByteShelf.Services
             if (chunkData == null)
                 throw new ArgumentNullException(nameof(chunkData));
 
-            // Check quota before saving
-            long chunkSize = chunkData.Length;
-            if (!_tenantStorageService.CanStoreData(tenantId, chunkSize))
-            {
-                throw new InvalidOperationException($"Tenant {tenantId} would exceed their storage quota by storing {chunkSize} bytes");
-            }
-
             string tenantBinPath = GetTenantBinPath(tenantId);
             Directory.CreateDirectory(tenantBinPath); // Ensure tenant directory exists
 
             string chunkFile = Path.Combine(tenantBinPath, $"{chunkId}.bin");
 
-            using FileStream fileStream = File.Create(chunkFile);
-            await chunkData.CopyToAsync(fileStream, cancellationToken);
+            long chunkSize;
+            using (FileStream fileStream = File.Create(chunkFile))
+            {
+                // Copy the data to the file
+                await chunkData.CopyToAsync(fileStream, cancellationToken);
+                chunkSize = fileStream.Length;
+            }
+
+            // Check quota after saving (since we can't know the size beforehand for non-seekable streams)
+            if (!_storageService.CanStoreData(tenantId, chunkSize))
+            {
+                // Clean up the file we just created
+                if (File.Exists(chunkFile))
+                {
+                    File.Delete(chunkFile);
+                }
+                throw new InvalidOperationException($"Tenant {tenantId} would exceed their storage quota by storing {chunkSize} bytes");
+            }
 
             // Record the storage usage
-            _tenantStorageService.RecordStorageUsed(tenantId, chunkSize);
+            _storageService.RecordStorageUsed(tenantId, chunkSize);
 
             _logger.LogDebug("Saved chunk {ChunkId} for tenant {TenantId} ({SizeBytes} bytes)", chunkId, tenantId, chunkSize);
             return chunkId;
@@ -180,53 +189,55 @@ namespace ByteShelf.Services
         }
 
         /// <inheritdoc/>
-        public async Task DeleteFileAsync(string tenantId, Guid fileId, CancellationToken cancellationToken = default)
+        public async Task<bool?> DeleteFileAsync(string tenantId, Guid fileId, CancellationToken cancellationToken = default)
         {
             ValidateTenantId(tenantId);
 
             ShelfFileMetadata? metadata = await GetFileMetadataAsync(tenantId, fileId, cancellationToken);
 
-            if (metadata != null)
+            if (metadata == null)
+                return null;
+
+            long totalFreed = 0;
+            string tenantBinPath = GetTenantBinPath(tenantId);
+
+            // Delete all chunks and calculate freed space
+            foreach (Guid chunkId in metadata.ChunkIds)
             {
-                long totalFreed = 0;
-                string tenantBinPath = GetTenantBinPath(tenantId);
-
-                // Delete all chunks and calculate freed space
-                foreach (Guid chunkId in metadata.ChunkIds)
+                string chunkFile = Path.Combine(tenantBinPath, $"{chunkId}.bin");
+                if (File.Exists(chunkFile))
                 {
-                    string chunkFile = Path.Combine(tenantBinPath, $"{chunkId}.bin");
-                    if (File.Exists(chunkFile))
-                    {
-                        FileInfo fileInfo = new FileInfo(chunkFile);
-                        totalFreed += fileInfo.Length;
-                        File.Delete(chunkFile);
-                        _logger.LogDebug("Deleted chunk {ChunkId} for tenant {TenantId}", chunkId, tenantId);
-                    }
-                }
-
-                // Delete metadata file
-                string tenantMetadataPath = GetTenantMetadataPath(tenantId);
-                string metadataFile = Path.Combine(tenantMetadataPath, $"{fileId}.json");
-                if (File.Exists(metadataFile))
-                {
-                    File.Delete(metadataFile);
-                    _logger.LogDebug("Deleted metadata for file {FileId} for tenant {TenantId}", fileId, tenantId);
-                }
-
-                // Record the freed storage
-                if (totalFreed > 0)
-                {
-                    _tenantStorageService.RecordStorageFreed(tenantId, totalFreed);
-                    _logger.LogInformation("Freed {FreedBytes} bytes for tenant {TenantId} by deleting file {FileId}", totalFreed, tenantId, fileId);
+                    FileInfo fileInfo = new FileInfo(chunkFile);
+                    totalFreed += fileInfo.Length;
+                    File.Delete(chunkFile);
+                    _logger.LogDebug("Deleted chunk {ChunkId} for tenant {TenantId}", chunkId, tenantId);
                 }
             }
+
+            // Delete metadata file
+            string tenantMetadataPath = GetTenantMetadataPath(tenantId);
+            string metadataFile = Path.Combine(tenantMetadataPath, $"{fileId}.json");
+            if (File.Exists(metadataFile))
+            {
+                File.Delete(metadataFile);
+                _logger.LogDebug("Deleted metadata for file {FileId} for tenant {TenantId}", fileId, tenantId);
+            }
+
+            // Record the freed storage
+            if (totalFreed > 0)
+            {
+                _storageService.RecordStorageFreed(tenantId, totalFreed);
+                _logger.LogInformation("Freed {FreedBytes} bytes for tenant {TenantId} by deleting file {FileId}", totalFreed, tenantId, fileId);
+            }
+
+            return true;
         }
 
         /// <inheritdoc/>
         public bool CanStoreFile(string tenantId, long fileSizeBytes)
         {
             ValidateTenantId(tenantId);
-            return _tenantStorageService.CanStoreData(tenantId, fileSizeBytes);
+            return _storageService.CanStoreData(tenantId, fileSizeBytes);
         }
 
         /// <summary>

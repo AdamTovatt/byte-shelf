@@ -35,17 +35,18 @@ namespace ByteShelf
             });
 
             // Configure file storage
-            string storagePath = builder.Configuration["StoragePath"] ?? "byte-shelf-storage";
+            string? envStoragePath = Environment.GetEnvironmentVariable("BYTESHELF_STORAGE_PATH");
+            string storagePath = envStoragePath ?? builder.Configuration["StoragePath"] ?? "byte-shelf-storage";
 
-            // Register tenant storage service
-            builder.Services.AddSingleton<ITenantStorageService, TenantStorageService>();
+            // Register storage service
+            builder.Services.AddSingleton<IStorageService, StorageService>();
 
-            // Register tenant-aware file storage service
-            builder.Services.AddSingleton<ITenantFileStorageService>(serviceProvider =>
+            // Register file storage service
+            builder.Services.AddSingleton<IFileStorageService>(serviceProvider =>
             {
-                ILogger<TenantFileStorageService>? logger = serviceProvider.GetService<ILogger<TenantFileStorageService>>();
-                ITenantStorageService tenantStorageService = serviceProvider.GetRequiredService<ITenantStorageService>();
-                return new TenantFileStorageService(storagePath, tenantStorageService, logger);
+                ILogger<FileStorageService>? logger = serviceProvider.GetService<ILogger<FileStorageService>>();
+                IStorageService storageService = serviceProvider.GetRequiredService<IStorageService>();
+                return new FileStorageService(storagePath, storageService, logger);
             });
 
             WebApplication app = builder.Build();

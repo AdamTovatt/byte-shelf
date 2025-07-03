@@ -1,3 +1,4 @@
+using ByteShelf.Configuration;
 using ByteShelf.Extensions;
 using ByteShelf.Services;
 using ByteShelfCommon;
@@ -19,20 +20,20 @@ namespace ByteShelf.Controllers
     [Route("api/[controller]")]
     public class TenantController : ControllerBase
     {
-        private readonly ITenantStorageService _tenantStorageService;
+        private readonly IStorageService _storageService;
         private readonly ITenantConfigurationService _tenantConfigurationService;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="TenantController"/> class.
         /// </summary>
-        /// <param name="tenantStorageService">The tenant storage service for quota operations.</param>
+        /// <param name="storageService">The storage service for quota operations.</param>
         /// <param name="tenantConfigurationService">The tenant configuration service for tenant information.</param>
         /// <exception cref="ArgumentNullException">Thrown when any parameter is null.</exception>
         public TenantController(
-            ITenantStorageService tenantStorageService,
+            IStorageService storageService,
             ITenantConfigurationService tenantConfigurationService)
         {
-            _tenantStorageService = tenantStorageService ?? throw new ArgumentNullException(nameof(tenantStorageService));
+            _storageService = storageService ?? throw new ArgumentNullException(nameof(storageService));
             _tenantConfigurationService = tenantConfigurationService ?? throw new ArgumentNullException(nameof(tenantConfigurationService));
         }
 
@@ -58,16 +59,16 @@ namespace ByteShelf.Controllers
             await Task.CompletedTask; // No async operations needed
 
             string tenantId = HttpContext.GetTenantId();
-            
+
             // Get tenant configuration
-            var config = _tenantConfigurationService.GetConfiguration();
+            TenantConfiguration config = _tenantConfigurationService.GetConfiguration();
             if (!config.Tenants.TryGetValue(tenantId, out TenantInfo? tenantInfo))
             {
                 return NotFound("Tenant not found");
             }
 
             // Get storage information
-            long currentUsage = _tenantStorageService.GetCurrentUsage(tenantId);
+            long currentUsage = _storageService.GetCurrentUsage(tenantId);
             long storageLimit = tenantInfo.StorageLimitBytes;
             long availableSpace = Math.Max(0, storageLimit - currentUsage);
 
@@ -102,8 +103,8 @@ namespace ByteShelf.Controllers
             await Task.CompletedTask; // No async operations needed
 
             string tenantId = HttpContext.GetTenantId();
-            long currentUsage = _tenantStorageService.GetCurrentUsage(tenantId);
-            long storageLimit = _tenantStorageService.GetStorageLimit(tenantId);
+            long currentUsage = _storageService.GetCurrentUsage(tenantId);
+            long storageLimit = _storageService.GetStorageLimit(tenantId);
             long availableSpace = Math.Max(0, storageLimit - currentUsage);
 
             TenantStorageInfo response = new TenantStorageInfo(
@@ -136,9 +137,9 @@ namespace ByteShelf.Controllers
             await Task.CompletedTask; // No async operations needed
 
             string tenantId = HttpContext.GetTenantId();
-            bool canStore = _tenantStorageService.CanStoreData(tenantId, fileSizeBytes);
-            long currentUsage = _tenantStorageService.GetCurrentUsage(tenantId);
-            long storageLimit = _tenantStorageService.GetStorageLimit(tenantId);
+            bool canStore = _storageService.CanStoreData(tenantId, fileSizeBytes);
+            long currentUsage = _storageService.GetCurrentUsage(tenantId);
+            long storageLimit = _storageService.GetStorageLimit(tenantId);
             long availableSpace = Math.Max(0, storageLimit - currentUsage);
 
             QuotaCheckResult response = new QuotaCheckResult(

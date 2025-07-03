@@ -22,24 +22,24 @@ namespace ByteShelf.Controllers
     public class AdminController : ControllerBase
     {
         private readonly ITenantConfigurationService _configService;
-        private readonly ITenantStorageService _tenantStorageService;
-        private readonly ITenantFileStorageService _tenantFileStorageService;
+        private readonly IStorageService _storageService;
+        private readonly IFileStorageService _fileStorageService;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="AdminController"/> class.
         /// </summary>
         /// <param name="configService">The tenant configuration service.</param>
-        /// <param name="tenantStorageService">The tenant storage service for quota operations.</param>
-        /// <param name="tenantFileStorageService">The tenant file storage service for file operations.</param>
+        /// <param name="storageService">The storage service for quota operations.</param>
+        /// <param name="fileStorageService">The file storage service for file operations.</param>
         /// <exception cref="ArgumentNullException">Thrown when any parameter is null.</exception>
         public AdminController(
             ITenantConfigurationService configService,
-            ITenantStorageService tenantStorageService,
-            ITenantFileStorageService tenantFileStorageService)
+            IStorageService storageService,
+            IFileStorageService fileStorageService)
         {
             _configService = configService ?? throw new ArgumentNullException(nameof(configService));
-            _tenantStorageService = tenantStorageService ?? throw new ArgumentNullException(nameof(tenantStorageService));
-            _tenantFileStorageService = tenantFileStorageService ?? throw new ArgumentNullException(nameof(tenantFileStorageService));
+            _storageService = storageService ?? throw new ArgumentNullException(nameof(storageService));
+            _fileStorageService = fileStorageService ?? throw new ArgumentNullException(nameof(fileStorageService));
         }
 
         /// <summary>
@@ -73,7 +73,7 @@ namespace ByteShelf.Controllers
 
             foreach (KeyValuePair<string, TenantInfo> tenant in config.Tenants)
             {
-                long currentUsage = _tenantStorageService.GetCurrentUsage(tenant.Key);
+                long currentUsage = _storageService.GetCurrentUsage(tenant.Key);
                 long storageLimit = tenant.Value.StorageLimitBytes;
                 long availableSpace = Math.Max(0, storageLimit - currentUsage);
 
@@ -128,7 +128,7 @@ namespace ByteShelf.Controllers
                 return NotFound("Tenant not found");
             }
 
-            long currentUsage = _tenantStorageService.GetCurrentUsage(tenantId);
+            long currentUsage = _storageService.GetCurrentUsage(tenantId);
             long storageLimit = tenantInfo.StorageLimitBytes;
             long availableSpace = Math.Max(0, storageLimit - currentUsage);
 
@@ -275,7 +275,7 @@ namespace ByteShelf.Controllers
             }
 
             // Check if new limit is sufficient for current usage
-            long currentUsage = _tenantStorageService.GetCurrentUsage(tenantId);
+            long currentUsage = _storageService.GetCurrentUsage(tenantId);
             if (request.StorageLimitBytes < currentUsage)
             {
                 return BadRequest($"New storage limit ({request.StorageLimitBytes} bytes) is less than current usage ({currentUsage} bytes)");
@@ -338,7 +338,7 @@ namespace ByteShelf.Controllers
             }
 
             // Check if tenant has any files
-            IEnumerable<ShelfFileMetadata> files = await _tenantFileStorageService.GetFilesAsync(tenantId, cancellationToken);
+            IEnumerable<ShelfFileMetadata> files = await _fileStorageService.GetFilesAsync(tenantId, cancellationToken);
             if (files.Any())
             {
                 return BadRequest(new

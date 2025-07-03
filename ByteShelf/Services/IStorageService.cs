@@ -8,7 +8,7 @@ namespace ByteShelf.Services
     /// and tracking usage per tenant. It maintains usage data in memory for
     /// performance and persists it to disk periodically.
     /// </remarks>
-    public interface ITenantStorageService
+    public interface IStorageService
     {
         /// <summary>
         /// Checks if a tenant can store the specified amount of data.

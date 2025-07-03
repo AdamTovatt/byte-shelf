@@ -15,8 +15,8 @@ namespace ByteShelf.Tests
     {
         private AdminController _controller = null!;
         private Mock<ITenantConfigurationService> _mockConfigService = null!;
-        private Mock<ITenantStorageService> _mockStorageService = null!;
-        private Mock<ITenantFileStorageService> _mockFileStorageService = null!;
+        private Mock<IStorageService> _mockStorageService = null!;
+        private Mock<IFileStorageService> _mockFileStorageService = null!;
         private Mock<HttpContext> _mockHttpContext = null!;
         private TenantConfiguration _tenantConfig = null!;
 
@@ -24,8 +24,8 @@ namespace ByteShelf.Tests
         public void Setup()
         {
             _mockConfigService = new Mock<ITenantConfigurationService>();
-            _mockStorageService = new Mock<ITenantStorageService>();
-            _mockFileStorageService = new Mock<ITenantFileStorageService>();
+            _mockStorageService = new Mock<IStorageService>();
+            _mockFileStorageService = new Mock<IFileStorageService>();
             _mockHttpContext = new Mock<HttpContext>();
 
             // Setup the Items dictionary properly

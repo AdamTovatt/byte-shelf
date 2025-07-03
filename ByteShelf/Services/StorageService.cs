@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace ByteShelf.Services
 {
     /// <summary>
-    /// Implementation of <see cref="ITenantStorageService"/> that provides thread-safe
+    /// Implementation of <see cref="IStorageService"/> that provides thread-safe
     /// tenant storage quota management and usage tracking.
     /// </summary>
     /// <remarks>
@@ -13,11 +13,11 @@ namespace ByteShelf.Services
     /// to disk periodically. All operations are thread-safe using locks to prevent
     /// race conditions when multiple requests are updating usage simultaneously.
     /// </remarks>
-    public class TenantStorageService : ITenantStorageService
+    public class StorageService : IStorageService
     {
         private readonly ITenantConfigurationService _configService;
         private readonly string _storagePath;
-        private readonly ILogger<TenantStorageService> _logger;
+        private readonly ILogger<StorageService> _logger;
         private readonly object _usageLock = new object();
         private readonly Dictionary<string, long> _usageCache = new Dictionary<string, long>();
         private readonly string _usageFilePath;
@@ -25,7 +25,7 @@ namespace ByteShelf.Services
         private const int PersistInterval = 10; // Persist every 10 operations
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="TenantStorageService"/> class.
+        /// Initializes a new instance of the <see cref="StorageService"/> class.
         /// </summary>
         /// <param name="configService">The tenant configuration service for accessing tenant information.</param>
         /// <param name="logger">The logger for recording service operations.</param>
@@ -36,9 +36,9 @@ namespace ByteShelf.Services
         /// sets up the storage path from configuration, and loads existing usage data from disk.
         /// The service will automatically persist usage data periodically to maintain consistency.
         /// </remarks>
-        public TenantStorageService(
+        public StorageService(
             ITenantConfigurationService configService,
-            ILogger<TenantStorageService> logger,
+            ILogger<StorageService> logger,
             IConfiguration configuration)
         {
             _configService = configService ?? throw new ArgumentNullException(nameof(configService));

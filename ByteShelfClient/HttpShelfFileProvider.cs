@@ -178,7 +178,8 @@ namespace ByteShelfClient
                     new StreamContent(chunkStream),
                     cancellationToken);
 
-                chunkResponse.EnsureSuccessStatusCode();
+                if (!chunkResponse.IsSuccessStatusCode)
+                    throw new Exception($"Failed to write file: {await chunkResponse.Content.ReadAsStringAsync()}");
 
                 totalBytesRead += bytesRead;
                 chunkIndex++;
@@ -198,7 +199,8 @@ namespace ByteShelfClient
                 _jsonOptions,
                 cancellationToken);
 
-            metadataResponse.EnsureSuccessStatusCode();
+            if (!metadataResponse.IsSuccessStatusCode)
+                throw new Exception($"Failed to create file metadata: {await metadataResponse.Content.ReadAsStringAsync()}");
 
             return fileId;
         }
@@ -209,6 +211,7 @@ namespace ByteShelfClient
         /// <param name="fileId">The unique identifier of the file to delete.</param>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
         /// <returns>A task that represents the asynchronous delete operation.</returns>
+        /// <exception cref="FileNotFoundException">Thrown when the specified file ID does not exist on the server.</exception>
         /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
         /// <remarks>
         /// This method makes a DELETE request to "/api/files/{fileId}".
@@ -223,7 +226,11 @@ namespace ByteShelfClient
                 $"api/files/{fileId}",
                 cancellationToken);
 
-            response.EnsureSuccessStatusCode();
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                throw new FileNotFoundException($"File with ID {fileId} not found");
+
+            if (!response.IsSuccessStatusCode)
+                throw new Exception($"Failed to delete file {fileId}: {await response.Content.ReadAsStringAsync()}");
         }
 
         /// <summary>

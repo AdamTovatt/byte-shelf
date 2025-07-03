@@ -26,11 +26,22 @@ namespace ByteShelf.Integration.Tests
         public void Setup()
         {
             _tempStoragePath = Path.Combine(Path.GetTempPath(), $"ByteShelf-Integration-{Guid.NewGuid()}");
+
+            // Clean up any previous test files
+            if (Directory.Exists(_tempStoragePath))
+            {
+                Directory.Delete(_tempStoragePath, true);
+            }
+
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
 
             // Create tenant configuration file for tests
             Directory.CreateDirectory(_tempStoragePath);
             CreateTestTenantConfiguration(tenantConfigPath);
+
+            // Set environment variables for configuration
+            Environment.SetEnvironmentVariable("BYTESHELF_TENANT_CONFIG_PATH", tenantConfigPath);
+            Environment.SetEnvironmentVariable("BYTESHELF_STORAGE_PATH", _tempStoragePath);
 
             _factory = new WebApplicationFactory<Program>()
                 .WithWebHostBuilder(builder =>
@@ -38,18 +49,14 @@ namespace ByteShelf.Integration.Tests
                     builder.UseContentRoot(Directory.GetCurrentDirectory());
                     builder.ConfigureAppConfiguration((context, config) =>
                     {
-                        // Override authentication configuration for tests
+                        // Override configuration for tests
                         config.AddInMemoryCollection(new Dictionary<string, string?>
                         {
                             ["Authentication:ApiKey"] = TestApiKey,
-                            ["Authentication:RequireAuthentication"] = "true",
-                            ["StoragePath"] = _tempStoragePath
+                            ["Authentication:RequireAuthentication"] = "true"
                         });
                     });
                 });
-
-            // Set environment variable for tenant configuration
-            Environment.SetEnvironmentVariable("BYTESHELF_TENANT_CONFIG_PATH", tenantConfigPath);
 
             _httpClient = _factory.CreateClient();
             _client = new HttpShelfFileProvider(_httpClient, TestApiKey);
@@ -57,7 +64,7 @@ namespace ByteShelf.Integration.Tests
 
         private void CreateTestTenantConfiguration(string configPath)
         {
-            var config = new TenantConfiguration
+            TenantConfiguration config = new TenantConfiguration
             {
                 Tenants = new Dictionary<string, TenantInfo>
                 {
@@ -326,7 +333,7 @@ namespace ByteShelf.Integration.Tests
         }
 
         [TestMethod]
-        public async Task Authentication_MissingApiKey_ReturnsUnauthorized()
+        public void Authentication_MissingApiKey_ReturnsUnauthorized()
         {
             // Arrange - Create a client without API key
             using HttpClient noKeyClient = _factory.CreateClient();
@@ -335,6 +342,223 @@ namespace ByteShelf.Integration.Tests
             Assert.ThrowsException<ArgumentNullException>(
                 () => new HttpShelfFileProvider(noKeyClient, null!));
         }
+
+        [TestMethod]
+        public async Task MultiTenancy_TenantIsolation_FilesAreIsolated()
+        {
+            // Arrange - Create two different tenants
+            const string tenant1ApiKey = "tenant1-api-key";
+            const string tenant2ApiKey = "tenant2-api-key";
+
+            // Create tenant configuration with both tenants
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateMultiTenantConfiguration(tenantConfigPath, tenant1ApiKey, tenant2ApiKey);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            // Use the existing factory but with updated tenant configuration
+            using HttpClient client1 = _factory.CreateClient();
+            using HttpClient client2 = _factory.CreateClient();
+            HttpShelfFileProvider provider1 = new HttpShelfFileProvider(client1, tenant1ApiKey);
+            HttpShelfFileProvider provider2 = new HttpShelfFileProvider(client2, tenant2ApiKey);
+
+            // Act - Upload files to both tenants
+            string content1 = "Tenant 1 content";
+            string content2 = "Tenant 2 content";
+            
+            using MemoryStream stream1 = new MemoryStream(Encoding.UTF8.GetBytes(content1));
+            using MemoryStream stream2 = new MemoryStream(Encoding.UTF8.GetBytes(content2));
+            
+            Guid fileId1 = await provider1.WriteFileAsync("tenant1-file.txt", "text/plain", stream1);
+            Guid fileId2 = await provider2.WriteFileAsync("tenant2-file.txt", "text/plain", stream2);
+
+            // Assert - Each tenant should only see their own files
+            IEnumerable<ShelfFileMetadata> tenant1Files = await provider1.GetFilesAsync();
+            IEnumerable<ShelfFileMetadata> tenant2Files = await provider2.GetFilesAsync();
+
+            List<ShelfFileMetadata> tenant1FileList = new List<ShelfFileMetadata>(tenant1Files);
+            List<ShelfFileMetadata> tenant2FileList = new List<ShelfFileMetadata>(tenant2Files);
+
+            Assert.AreEqual(1, tenant1FileList.Count);
+            Assert.AreEqual(1, tenant2FileList.Count);
+            Assert.AreEqual("tenant1-file.txt", tenant1FileList[0].OriginalFilename);
+            Assert.AreEqual("tenant2-file.txt", tenant2FileList[0].OriginalFilename);
+
+            // Assert - Tenants cannot access each other's files
+            await Assert.ThrowsExceptionAsync<FileNotFoundException>(
+                async () => await provider1.ReadFileAsync(fileId2));
+            await Assert.ThrowsExceptionAsync<FileNotFoundException>(
+                async () => await provider2.ReadFileAsync(fileId1));
+        }
+
+        [TestMethod]
+        public async Task MultiTenancy_StorageLocation_FilesStoredInCorrectDirectories()
+        {
+            // Arrange - Create a tenant and upload a file
+            const string tenantApiKey = "storage-test-tenant";
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateMultiTenantConfiguration(tenantConfigPath, tenantApiKey);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient client = _factory.CreateClient();
+            HttpShelfFileProvider provider = new HttpShelfFileProvider(client, tenantApiKey);
+
+            string content = "Test content for storage location verification";
+            using MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
+            Guid fileId = await provider.WriteFileAsync("storage-test.txt", "text/plain", stream);
+
+            // Act - Get the file to verify it was stored correctly
+            ShelfFile file = await provider.ReadFileAsync(fileId);
+
+            // Assert - Verify the file was stored in the correct tenant directory
+            string expectedTenantBinPath = Path.Combine(_tempStoragePath, tenantApiKey, "bin");
+            string expectedTenantMetadataPath = Path.Combine(_tempStoragePath, tenantApiKey, "metadata");
+
+            Assert.IsTrue(Directory.Exists(expectedTenantBinPath), "Tenant binary directory should exist");
+            Assert.IsTrue(Directory.Exists(expectedTenantMetadataPath), "Tenant metadata directory should exist");
+
+            // Verify chunks exist
+            foreach (Guid chunkId in file.Metadata.ChunkIds)
+            {
+                string chunkPath = Path.Combine(expectedTenantBinPath, $"{chunkId}.bin");
+                Assert.IsTrue(File.Exists(chunkPath), $"Chunk file should exist: {chunkPath}");
+            }
+
+            // Verify metadata file exists
+            string metadataPath = Path.Combine(expectedTenantMetadataPath, $"{fileId}.json");
+            Assert.IsTrue(File.Exists(metadataPath), "Metadata file should exist");
+
+            // Verify content integrity
+            using Stream contentStream = file.GetContentStream();
+            using StreamReader reader = new StreamReader(contentStream);
+            string downloadedContent = reader.ReadToEnd();
+            Assert.AreEqual(content, downloadedContent);
+        }
+
+        [TestMethod]
+        public async Task MultiTenancy_CrossTenantOperations_FailWithUnauthorized()
+        {
+            // Arrange - Create two tenants
+            const string tenant1ApiKey = "tenant1-api-key";
+            const string tenant2ApiKey = "tenant2-api-key";
+
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateMultiTenantConfiguration(tenantConfigPath, tenant1ApiKey, tenant2ApiKey);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient client1 = _factory.CreateClient();
+            using HttpClient client2 = _factory.CreateClient();
+            HttpShelfFileProvider provider1 = new HttpShelfFileProvider(client1, tenant1ApiKey);
+            HttpShelfFileProvider provider2 = new HttpShelfFileProvider(client2, tenant2ApiKey);
+
+            // Upload a file to tenant 1
+            string content = "Tenant 1 content";
+            using MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
+            Guid fileId = await provider1.WriteFileAsync("test.txt", "text/plain", stream);
+
+            // Act & Assert - Tenant 2 should not be able to access tenant 1's file
+            await Assert.ThrowsExceptionAsync<FileNotFoundException>(
+                async () => await provider2.ReadFileAsync(fileId));
+
+            await Assert.ThrowsExceptionAsync<FileNotFoundException>(
+                async () => await provider2.DeleteFileAsync(fileId));
+
+            // Verify tenant 2's file list is empty
+            IEnumerable<ShelfFileMetadata> tenant2Files = await provider2.GetFilesAsync();
+            Assert.AreEqual(0, new List<ShelfFileMetadata>(tenant2Files).Count);
+        }
+
+        [TestMethod]
+        public async Task MultiTenancy_StorageQuota_PerTenantQuotaEnforcement()
+        {
+            // Arrange - Create a tenant with a small quota
+            const string tenantApiKey = "quota-test-tenant";
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateTenantWithQuota(tenantConfigPath, tenantApiKey, 100); // 100 bytes quota
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient client = _factory.CreateClient();
+            HttpShelfFileProvider provider = new HttpShelfFileProvider(client, tenantApiKey);
+
+            // Act - Upload a small file (should succeed)
+            string smallContent = "Small file";
+            using MemoryStream smallStream = new MemoryStream(Encoding.UTF8.GetBytes(smallContent));
+            Guid smallFileId = await provider.WriteFileAsync("small.txt", "text/plain", smallStream);
+
+            // Act - Try to upload a large file (should fail)
+            string largeContent = new string('X', 200); // 200 bytes, exceeds 100 byte quota
+            using MemoryStream largeStream = new MemoryStream(Encoding.UTF8.GetBytes(largeContent));
+
+            // Assert - Large file upload should fail
+            await Assert.ThrowsExceptionAsync<Exception>(
+                async () => await provider.WriteFileAsync("large.txt", "text/plain", largeStream));
+
+            // Verify small file still exists and is accessible
+            ShelfFile smallFile = await provider.ReadFileAsync(smallFileId);
+            using Stream contentStream = smallFile.GetContentStream();
+            using StreamReader reader = new StreamReader(contentStream);
+            string downloadedContent = reader.ReadToEnd();
+            Assert.AreEqual(smallContent, downloadedContent);
+        }
+
+        private void CreateMultiTenantConfiguration(string configPath, params string[] apiKeys)
+        {
+            TenantConfiguration config = new TenantConfiguration
+            {
+                Tenants = new Dictionary<string, TenantInfo>()
+            };
+
+            foreach (string apiKey in apiKeys)
+            {
+                config.Tenants[apiKey] = new TenantInfo
+                {
+                    ApiKey = apiKey,
+                    DisplayName = $"Test Tenant {apiKey}",
+                    StorageLimitBytes = 1000000000L, // 1GB
+                    IsAdmin = false
+                };
+            }
+
+            string json = JsonSerializer.Serialize(config, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            File.WriteAllText(configPath, json);
+        }
+
+        private void CreateTenantWithQuota(string configPath, string apiKey, long quotaBytes)
+        {
+            TenantConfiguration config = new TenantConfiguration
+            {
+                Tenants = new Dictionary<string, TenantInfo>
+                {
+                    [apiKey] = new TenantInfo
+                    {
+                        ApiKey = apiKey,
+                        DisplayName = $"Quota Test Tenant",
+                        StorageLimitBytes = quotaBytes,
+                        IsAdmin = false
+                    }
+                }
+            };
+
+            string json = JsonSerializer.Serialize(config, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            File.WriteAllText(configPath, json);
+        }
+
+
 
         public void Dispose()
         {

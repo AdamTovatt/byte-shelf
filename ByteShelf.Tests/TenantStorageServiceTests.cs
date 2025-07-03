@@ -15,8 +15,8 @@ namespace ByteShelf.Tests
         private string _tempStoragePath = null!;
         private Mock<ITenantConfigurationService> _mockConfigService = null!;
         private Mock<IConfiguration> _mockConfiguration = null!;
-        private TestLogger<TenantStorageService> _logger = null!;
-        private TenantStorageService _service = null!;
+        private TestLogger<StorageService> _logger = null!;
+        private StorageService _service = null!;
         private TenantConfiguration _tenantConfig = null!;
 
         [TestInitialize]
@@ -25,7 +25,7 @@ namespace ByteShelf.Tests
             _tempStoragePath = Path.Combine(Path.GetTempPath(), $"ByteShelf-TenantStorage-Test-{Guid.NewGuid()}");
             _mockConfigService = new Mock<ITenantConfigurationService>();
             _mockConfiguration = new Mock<IConfiguration>();
-            _logger = new TestLogger<TenantStorageService>();
+            _logger = new TestLogger<StorageService>();
 
             // Setup configuration
             _mockConfiguration.Setup(c => c["StoragePath"]).Returns(_tempStoragePath);
@@ -55,7 +55,7 @@ namespace ByteShelf.Tests
 
             _mockConfigService.Setup(c => c.GetConfiguration()).Returns(_tenantConfig);
 
-            _service = new TenantStorageService(_mockConfigService.Object, _logger, _mockConfiguration.Object);
+            _service = new StorageService(_mockConfigService.Object, _logger, _mockConfiguration.Object);
         }
 
         [TestCleanup]
@@ -80,7 +80,7 @@ namespace ByteShelf.Tests
         {
             // Act & Assert
             Assert.ThrowsException<ArgumentNullException>(() =>
-                new TenantStorageService(null!, _logger, _mockConfiguration.Object));
+                new StorageService(null!, _logger, _mockConfiguration.Object));
         }
 
         [TestMethod]
@@ -88,7 +88,7 @@ namespace ByteShelf.Tests
         {
             // Act & Assert
             Assert.ThrowsException<ArgumentNullException>(() =>
-                new TenantStorageService(_mockConfigService.Object, null!, _mockConfiguration.Object));
+                new StorageService(_mockConfigService.Object, null!, _mockConfiguration.Object));
         }
 
         [TestMethod]
@@ -96,7 +96,7 @@ namespace ByteShelf.Tests
         {
             // Act & Assert
             Assert.ThrowsException<ArgumentNullException>(() =>
-                new TenantStorageService(_mockConfigService.Object, _logger, null!));
+                new StorageService(_mockConfigService.Object, _logger, null!));
         }
 
         [TestMethod]
@@ -364,7 +364,7 @@ namespace ByteShelf.Tests
             CreateTestMetadataFile(metadataDir, "file1.json", 1024 * 1024 * 30);
 
             // Act - Create a new service instance to trigger startup rebuild
-            TenantStorageService newService = new TenantStorageService(
+            StorageService newService = new StorageService(
                 _mockConfigService.Object, _logger, _mockConfiguration.Object);
 
             // Assert
@@ -390,7 +390,7 @@ namespace ByteShelf.Tests
             Assert.IsTrue(File.Exists(usageFilePath));
 
             // Act - Create a new service instance to test persistence
-            TenantStorageService newService = new TenantStorageService(
+            StorageService newService = new StorageService(
                 _mockConfigService.Object, _logger, _mockConfiguration.Object);
 
             // Assert

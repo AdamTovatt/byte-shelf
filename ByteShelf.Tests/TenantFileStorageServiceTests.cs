@@ -9,27 +9,27 @@ using System.Text.Json;
 namespace ByteShelf.Tests
 {
     [TestClass]
-    public class TenantFileStorageServiceTests
+    public class FileStorageServiceTests
     {
         private string _tempStoragePath = null!;
-        private Mock<ITenantStorageService> _mockTenantStorageService = null!;
-        private TestLogger<TenantFileStorageService> _logger = null!;
-        private TenantFileStorageService _service = null!;
+        private Mock<IStorageService> _mockStorageService = null!;
+        private TestLogger<FileStorageService> _logger = null!;
+        private FileStorageService _service = null!;
         private JsonSerializerOptions _jsonOptions = null!;
 
         [TestInitialize]
         public void Setup()
         {
-            _tempStoragePath = Path.Combine(Path.GetTempPath(), $"ByteShelf-TenantFileStorage-Test-{Guid.NewGuid()}");
-            _mockTenantStorageService = new Mock<ITenantStorageService>();
-            _logger = new TestLogger<TenantFileStorageService>();
+            _tempStoragePath = Path.Combine(Path.GetTempPath(), $"ByteShelf-FileStorage-Test-{Guid.NewGuid()}");
+            _mockStorageService = new Mock<IStorageService>();
+            _logger = new TestLogger<FileStorageService>();
 
             _jsonOptions = new JsonSerializerOptions
             {
                 WriteIndented = true,
             };
 
-            _service = new TenantFileStorageService(_tempStoragePath, _mockTenantStorageService.Object, _logger);
+            _service = new FileStorageService(_tempStoragePath, _mockStorageService.Object, _logger);
         }
 
         [TestCleanup]
@@ -46,15 +46,15 @@ namespace ByteShelf.Tests
         {
             // Act & Assert
             Assert.ThrowsException<ArgumentNullException>(() =>
-                new TenantFileStorageService(null!, _mockTenantStorageService.Object, _logger));
+                new FileStorageService(null!, _mockStorageService.Object, _logger));
         }
 
         [TestMethod]
-        public void Constructor_WithNullTenantStorageService_ThrowsArgumentNullException()
+        public void Constructor_WithNullStorageService_ThrowsArgumentNullException()
         {
             // Act & Assert
             Assert.ThrowsException<ArgumentNullException>(() =>
-                new TenantFileStorageService(_tempStoragePath, null!, _logger));
+                new FileStorageService(_tempStoragePath, null!, _logger));
         }
 
         [TestMethod]
@@ -62,7 +62,7 @@ namespace ByteShelf.Tests
         {
             // Act & Assert
             Assert.ThrowsException<ArgumentNullException>(() =>
-                new TenantFileStorageService(_tempStoragePath, _mockTenantStorageService.Object, null!));
+                new FileStorageService(_tempStoragePath, _mockStorageService.Object, null!));
         }
 
         [TestMethod]
@@ -192,7 +192,7 @@ namespace ByteShelf.Tests
             string chunkContent = "test chunk data";
             using MemoryStream chunkStream = new MemoryStream(Encoding.UTF8.GetBytes(chunkContent));
 
-            _mockTenantStorageService.Setup(s => s.CanStoreData(tenantId, chunkContent.Length))
+            _mockStorageService.Setup(s => s.CanStoreData(tenantId, chunkContent.Length))
                 .Returns(true);
 
             // Act
@@ -200,8 +200,8 @@ namespace ByteShelf.Tests
 
             // Assert
             Assert.AreEqual(chunkId, result);
-            _mockTenantStorageService.Verify(s => s.CanStoreData(tenantId, chunkContent.Length), Times.Once);
-            _mockTenantStorageService.Verify(s => s.RecordStorageUsed(tenantId, chunkContent.Length), Times.Once);
+            _mockStorageService.Verify(s => s.CanStoreData(tenantId, chunkContent.Length), Times.Once);
+            _mockStorageService.Verify(s => s.RecordStorageUsed(tenantId, chunkContent.Length), Times.Once);
 
             // Verify file was saved
             string expectedPath = Path.Combine(_tempStoragePath, tenantId, "bin", $"{chunkId}.bin");
@@ -219,15 +219,15 @@ namespace ByteShelf.Tests
             string chunkContent = "test chunk data";
             using MemoryStream chunkStream = new MemoryStream(Encoding.UTF8.GetBytes(chunkContent));
 
-            _mockTenantStorageService.Setup(s => s.CanStoreData(tenantId, chunkContent.Length))
+            _mockStorageService.Setup(s => s.CanStoreData(tenantId, chunkContent.Length))
                 .Returns(false);
 
             // Act & Assert
             await Assert.ThrowsExceptionAsync<InvalidOperationException>(
                 () => _service.SaveChunkAsync(tenantId, chunkId, chunkStream));
 
-            _mockTenantStorageService.Verify(s => s.CanStoreData(tenantId, chunkContent.Length), Times.Once);
-            _mockTenantStorageService.Verify(s => s.RecordStorageUsed(It.IsAny<string>(), It.IsAny<long>()), Times.Never);
+            _mockStorageService.Verify(s => s.CanStoreData(tenantId, chunkContent.Length), Times.Once);
+            _mockStorageService.Verify(s => s.RecordStorageUsed(It.IsAny<string>(), It.IsAny<long>()), Times.Never);
         }
 
         [TestMethod]
@@ -297,7 +297,7 @@ namespace ByteShelf.Tests
             Assert.IsFalse(File.Exists(Path.Combine(tenantBinPath, $"{chunkId1}.bin")));
             Assert.IsFalse(File.Exists(Path.Combine(tenantBinPath, $"{chunkId2}.bin")));
 
-            _mockTenantStorageService.Verify(s => s.RecordStorageFreed(tenantId, It.IsAny<long>()), Times.Once);
+            _mockStorageService.Verify(s => s.RecordStorageFreed(tenantId, It.IsAny<long>()), Times.Once);
         }
 
         [TestMethod]
@@ -307,7 +307,7 @@ namespace ByteShelf.Tests
             await _service.DeleteFileAsync("tenant1", Guid.NewGuid());
 
             // Assert
-            _mockTenantStorageService.Verify(s => s.RecordStorageFreed(It.IsAny<string>(), It.IsAny<long>()), Times.Never);
+            _mockStorageService.Verify(s => s.RecordStorageFreed(It.IsAny<string>(), It.IsAny<long>()), Times.Never);
         }
 
         [TestMethod]
@@ -317,7 +317,7 @@ namespace ByteShelf.Tests
             string tenantId = "tenant1";
             long fileSize = 1024;
 
-            _mockTenantStorageService.Setup(s => s.CanStoreData(tenantId, fileSize))
+            _mockStorageService.Setup(s => s.CanStoreData(tenantId, fileSize))
                 .Returns(true);
 
             // Act
@@ -325,7 +325,7 @@ namespace ByteShelf.Tests
 
             // Assert
             Assert.IsTrue(result);
-            _mockTenantStorageService.Verify(s => s.CanStoreData(tenantId, fileSize), Times.Once);
+            _mockStorageService.Verify(s => s.CanStoreData(tenantId, fileSize), Times.Once);
         }
 
         [TestMethod]
