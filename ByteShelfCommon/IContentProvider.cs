@@ -1,5 +1,3 @@
-using System.IO;
-
 namespace ByteShelfCommon
 {
     /// <summary>
@@ -22,4 +20,4 @@ namespace ByteShelfCommon
         /// </remarks>
         Stream GetStream();
     }
-} 
+}

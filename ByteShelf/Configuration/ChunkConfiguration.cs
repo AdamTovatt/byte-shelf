@@ -20,4 +20,4 @@ namespace ByteShelf.Configuration
         /// </remarks>
         public int ChunkSizeBytes { get; set; } = 1048576; // 1MB default
     }
-} 
+}

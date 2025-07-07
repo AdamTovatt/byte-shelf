@@ -1,94 +1,81 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
 using ByteShelfCommon;
 
 namespace ByteShelf.Services
 {
     /// <summary>
-    /// Defines operations for storing and retrieving files and chunks in the ByteShelf storage system.
+    /// Interface for file storage operations with tenant isolation.
     /// </summary>
     /// <remarks>
-    /// This interface provides low-level storage operations for the ByteShelf file storage system.
-    /// It handles the storage and retrieval of file metadata and individual chunks.
-    /// Implementations may use different storage backends (e.g., local filesystem, cloud storage).
+    /// This interface defines the contract for file storage operations that support
+    /// tenant isolation. All operations are scoped to specific tenants, ensuring
+    /// data separation and quota enforcement.
     /// </remarks>
     public interface IFileStorageService
     {
         /// <summary>
-        /// Retrieves metadata for all stored files.
+        /// Retrieves metadata for all files belonging to a specific tenant.
         /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-        /// <returns>A collection of file metadata for all stored files.</returns>
-        /// <remarks>
-        /// This method scans the storage for all metadata files and deserializes them.
-        /// Corrupted metadata files are logged and skipped.
-        /// </remarks>
-        Task<IEnumerable<ShelfFileMetadata>> GetFilesAsync(CancellationToken cancellationToken = default);
-        
+        /// <returns>A collection of file metadata for all files belonging to the tenant.</returns>
+        Task<IEnumerable<ShelfFileMetadata>> GetFilesAsync(string tenantId, CancellationToken cancellationToken = default);
+
         /// <summary>
-        /// Retrieves metadata for a specific file by its ID.
+        /// Retrieves metadata for a specific file by its ID, scoped to a tenant.
         /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
         /// <param name="fileId">The unique identifier of the file.</param>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-        /// <returns>The file metadata, or <c>null</c> if the file does not exist.</returns>
-        /// <remarks>
-        /// This method looks for a metadata file with the specified ID in the storage.
-        /// Returns <c>null</c> if no metadata file is found.
-        /// </remarks>
-        Task<ShelfFileMetadata?> GetFileMetadataAsync(Guid fileId, CancellationToken cancellationToken = default);
-        
+        /// <returns>The file metadata, or <c>null</c> if the file does not exist or does not belong to the tenant.</returns>
+        Task<ShelfFileMetadata?> GetFileMetadataAsync(string tenantId, Guid fileId, CancellationToken cancellationToken = default);
+
         /// <summary>
-        /// Retrieves a chunk by its ID.
+        /// Retrieves a chunk by its ID, scoped to a tenant.
         /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
         /// <param name="chunkId">The unique identifier of the chunk.</param>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
         /// <returns>A stream containing the chunk data.</returns>
-        /// <exception cref="FileNotFoundException">Thrown when the specified chunk does not exist.</exception>
-        /// <remarks>
-        /// The returned stream should be disposed when no longer needed.
-        /// </remarks>
-        Task<Stream> GetChunkAsync(Guid chunkId, CancellationToken cancellationToken = default);
-        
+        /// <exception cref="FileNotFoundException">Thrown when the specified chunk does not exist or does not belong to the tenant.</exception>
+        Task<Stream> GetChunkAsync(string tenantId, Guid chunkId, CancellationToken cancellationToken = default);
+
         /// <summary>
-        /// Saves a chunk with the specified ID.
+        /// Saves a chunk with the specified ID, scoped to a tenant.
         /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
         /// <param name="chunkId">The unique identifier for the chunk.</param>
         /// <param name="chunkData">A stream containing the chunk data to be stored.</param>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
         /// <returns>The chunk ID that was saved.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="chunkData"/> is null.</exception>
-        /// <remarks>
-        /// The chunk data stream will be read from its current position to the end.
-        /// If a chunk with the same ID already exists, it will be overwritten.
-        /// </remarks>
-        Task<Guid> SaveChunkAsync(Guid chunkId, Stream chunkData, CancellationToken cancellationToken = default);
-        
+        /// <exception cref="InvalidOperationException">Thrown when the tenant would exceed their storage quota.</exception>
+        Task<Guid> SaveChunkAsync(string tenantId, Guid chunkId, Stream chunkData, CancellationToken cancellationToken = default);
+
         /// <summary>
-        /// Saves file metadata.
+        /// Saves file metadata, scoped to a tenant.
         /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
         /// <param name="metadata">The file metadata to be stored.</param>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
         /// <returns>A task that represents the asynchronous save operation.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="metadata"/> is null.</exception>
-        /// <remarks>
-        /// The metadata is serialized to JSON and stored in a file named with the file ID.
-        /// If metadata for the same file ID already exists, it will be overwritten.
-        /// </remarks>
-        Task SaveFileMetadataAsync(ShelfFileMetadata metadata, CancellationToken cancellationToken = default);
-        
+        Task SaveFileMetadataAsync(string tenantId, ShelfFileMetadata metadata, CancellationToken cancellationToken = default);
+
         /// <summary>
-        /// Deletes a file and all its associated chunks.
+        /// Deletes a file and all its associated chunks, scoped to a tenant.
         /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
         /// <param name="fileId">The unique identifier of the file to delete.</param>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-        /// <returns>A task that represents the asynchronous delete operation.</returns>
-        /// <remarks>
-        /// This method deletes both the file metadata and all chunks associated with the file.
-        /// If the file does not exist, no exception is thrown (idempotent operation).
-        /// </remarks>
-        Task DeleteFileAsync(Guid fileId, CancellationToken cancellationToken = default);
+        /// <returns>A task with a nullable bool that represents the asynchronous delete operation. The bool value indicates success state. If the bool is null it means the file was not found.</returns>
+        Task<bool?> DeleteFileAsync(string tenantId, Guid fileId, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Checks if a tenant can store a file of the specified size.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
+        /// <param name="fileSizeBytes">The size of the file in bytes.</param>
+        /// <returns><c>true</c> if the tenant can store the file; otherwise, <c>false</c>.</returns>
+        bool CanStoreFile(string tenantId, long fileSizeBytes);
     }
-} 
+}

@@ -1,15 +1,8 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Net;
-using System.Net.Http;
-using System.Text;
-using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
-using ByteShelfClient;
 using ByteShelfCommon;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Net;
+using System.Text;
+using System.Text.Json;
 
 namespace ByteShelfClient.Tests
 {
@@ -26,7 +19,7 @@ namespace ByteShelfClient.Tests
             _messageHandler = new TestHttpMessageHandler();
             _httpClient = new HttpClient(_messageHandler);
             _httpClient.BaseAddress = new Uri("http://localhost:5000/");
-            _provider = new HttpShelfFileProvider(_httpClient);
+            _provider = new HttpShelfFileProvider(_httpClient, "test-api-key");
         }
 
         [TestCleanup]
@@ -167,37 +160,6 @@ namespace ByteShelfClient.Tests
             Assert.IsTrue(_messageHandler.Requests.Count > 0);
         }
 
-        private class TestHttpMessageHandler : HttpMessageHandler
-        {
-            public List<HttpRequestMessage> Requests { get; } = new List<HttpRequestMessage>();
-            private readonly Dictionary<string, (string Content, HttpStatusCode StatusCode)> _responses = new Dictionary<string, (string, HttpStatusCode)>();
 
-            public void SetupResponse(string url, string content, HttpStatusCode statusCode = HttpStatusCode.OK)
-            {
-                _responses[url] = (content, statusCode);
-            }
-
-            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-            {
-                Requests.Add(request);
-                string url = request.RequestUri!.PathAndQuery;
-
-                // Find matching response
-                foreach (KeyValuePair<string, (string Content, HttpStatusCode StatusCode)> response in _responses)
-                {
-                    if (url.Contains(response.Key.Replace("*", "")))
-                    {
-                        HttpResponseMessage httpResponse = new HttpResponseMessage(response.Value.StatusCode)
-                        {
-                            Content = new StringContent(response.Value.Content, Encoding.UTF8, "application/json")
-                        };
-                        return Task.FromResult(httpResponse);
-                    }
-                }
-
-                // Default 404 response
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
-            }
-        }
     }
-} 
+}

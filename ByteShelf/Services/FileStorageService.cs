@@ -1,80 +1,67 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using ByteShelfCommon;
-using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace ByteShelf.Services
 {
     /// <summary>
-    /// File system-based implementation of <see cref="IFileStorageService"/>.
+    /// Implementation of file storage with tenant isolation and quota management.
     /// </summary>
     /// <remarks>
-    /// This service stores files on the local file system using a structured directory layout:
-    /// - Metadata files are stored as JSON in a "metadata" subdirectory
-    /// - Chunk files are stored as binary data in a "bin" subdirectory
-    /// The service automatically creates the necessary directories if they don't exist.
+    /// This service provides tenant isolation by storing each tenant's files in separate
+    /// subdirectories and enforces storage quotas. It uses the existing file storage
+    /// infrastructure but scopes all operations to specific tenants.
     /// </remarks>
     public class FileStorageService : IFileStorageService
     {
         private readonly string _storagePath;
-        private readonly string _metadataPath;
-        private readonly string _binPath;
+        private readonly IStorageService _storageService;
+        private readonly ILogger<FileStorageService> _logger;
         private readonly JsonSerializerOptions _jsonOptions;
-        private readonly ILogger<FileStorageService>? _logger;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="FileStorageService"/> class.
         /// </summary>
-        /// <param name="storagePath">The root directory path for file storage.</param>
-        /// <param name="logger">Optional logger for diagnostic information.</param>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="storagePath"/> is null.</exception>
-        /// <exception cref="ArgumentException">Thrown when <paramref name="storagePath"/> is empty or whitespace.</exception>
+        /// <param name="storagePath">The base storage path for tenant data.</param>
+        /// <param name="storageService">The storage service for quota management.</param>
+        /// <param name="logger">The logger for recording service operations.</param>
+        /// <exception cref="ArgumentNullException">Thrown when any of the parameters is null.</exception>
         /// <remarks>
-        /// The service will create the following directory structure:
-        /// - {storagePath}/metadata/ - for JSON metadata files
-        /// - {storagePath}/bin/ - for binary chunk files
+        /// This constructor initializes the service with the specified storage path, storage service,
+        /// and logger. The service will create tenant-specific directories under the storage path
+        /// for organizing metadata and binary data by tenant.
         /// </remarks>
-        public FileStorageService(string storagePath, ILogger<FileStorageService>? logger = null)
+        public FileStorageService(
+            string storagePath,
+            IStorageService storageService,
+            ILogger<FileStorageService> logger)
         {
             _storagePath = storagePath ?? throw new ArgumentNullException(nameof(storagePath));
-            if (string.IsNullOrWhiteSpace(storagePath))
-                throw new ArgumentException("Storage path cannot be empty or whitespace", nameof(storagePath));
-
-            _metadataPath = Path.Combine(_storagePath, "metadata");
-            _binPath = Path.Combine(_storagePath, "bin");
-            _logger = logger;
+            _storageService = storageService ?? throw new ArgumentNullException(nameof(storageService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
             _jsonOptions = new JsonSerializerOptions
             {
                 WriteIndented = true,
             };
 
-            // Ensure directories exist
-            Directory.CreateDirectory(_metadataPath);
-            Directory.CreateDirectory(_binPath);
-
-            _logger?.LogInformation("FileStorageService initialized with storage path: {StoragePath}", _storagePath);
+            _logger.LogInformation("FileStorageService initialized with storage path: {StoragePath}", _storagePath);
         }
 
-        /// <summary>
-        /// Retrieves metadata for all stored files.
-        /// </summary>
-        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-        /// <returns>A collection of file metadata for all stored files.</returns>
-        /// <remarks>
-        /// This method scans the metadata directory for all JSON files and attempts to deserialize them.
-        /// Corrupted or invalid JSON files are logged and skipped.
-        /// </remarks>
-        public async Task<IEnumerable<ShelfFileMetadata>> GetFilesAsync(CancellationToken cancellationToken = default)
+        /// <inheritdoc/>
+        public async Task<IEnumerable<ShelfFileMetadata>> GetFilesAsync(string tenantId, CancellationToken cancellationToken = default)
         {
-            List<ShelfFileMetadata> files = new List<ShelfFileMetadata>();
+            ValidateTenantId(tenantId);
 
-            string[] metadataFiles = Directory.GetFiles(_metadataPath, "*.json");
-            _logger?.LogDebug("Found {Count} metadata files", metadataFiles.Length);
+            List<ShelfFileMetadata> files = new List<ShelfFileMetadata>();
+            string tenantMetadataPath = GetTenantMetadataPath(tenantId);
+
+            if (!Directory.Exists(tenantMetadataPath))
+            {
+                return files;
+            }
+
+            string[] metadataFiles = Directory.GetFiles(tenantMetadataPath, "*.json");
+            _logger.LogDebug("Found {Count} metadata files for tenant {TenantId}", metadataFiles.Length, tenantId);
 
             foreach (string metadataFile in metadataFiles)
             {
@@ -92,31 +79,25 @@ namespace ByteShelf.Services
                     }
                     else
                     {
-                        _logger?.LogWarning("Failed to deserialize metadata file: {File}", metadataFile);
+                        _logger.LogWarning("Failed to deserialize metadata file for tenant {TenantId}: {File}", tenantId, metadataFile);
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError(ex, "Error reading metadata file: {File}", metadataFile);
+                    _logger.LogError(ex, "Error reading metadata file for tenant {TenantId}: {File}", tenantId, metadataFile);
                 }
             }
 
             return files;
         }
 
-        /// <summary>
-        /// Retrieves metadata for a specific file by its ID.
-        /// </summary>
-        /// <param name="fileId">The unique identifier of the file.</param>
-        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-        /// <returns>The file metadata, or <c>null</c> if the file does not exist.</returns>
-        /// <remarks>
-        /// This method looks for a JSON file named "{fileId}.json" in the metadata directory.
-        /// Returns <c>null</c> if the file doesn't exist or cannot be deserialized.
-        /// </remarks>
-        public async Task<ShelfFileMetadata?> GetFileMetadataAsync(Guid fileId, CancellationToken cancellationToken = default)
+        /// <inheritdoc/>
+        public async Task<ShelfFileMetadata?> GetFileMetadataAsync(string tenantId, Guid fileId, CancellationToken cancellationToken = default)
         {
-            string metadataFile = Path.Combine(_metadataPath, $"{fileId}.json");
+            ValidateTenantId(tenantId);
+
+            string tenantMetadataPath = GetTenantMetadataPath(tenantId);
+            string metadataFile = Path.Combine(tenantMetadataPath, $"{fileId}.json");
 
             if (!File.Exists(metadataFile))
                 return null;
@@ -128,121 +109,170 @@ namespace ByteShelf.Services
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "Error reading metadata file: {File}", metadataFile);
+                _logger.LogError(ex, "Error reading metadata file for tenant {TenantId}: {File}", tenantId, metadataFile);
                 return null;
             }
         }
 
-        /// <summary>
-        /// Retrieves a chunk by its ID.
-        /// </summary>
-        /// <param name="chunkId">The unique identifier of the chunk.</param>
-        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-        /// <returns>A stream containing the chunk data.</returns>
-        /// <exception cref="FileNotFoundException">Thrown when the specified chunk does not exist.</exception>
-        /// <remarks>
-        /// This method looks for a binary file named "{chunkId}.bin" in the bin directory.
-        /// The returned stream should be disposed when no longer needed.
-        /// </remarks>
-        public async Task<Stream> GetChunkAsync(Guid chunkId, CancellationToken cancellationToken = default)
+        /// <inheritdoc/>
+        public async Task<Stream> GetChunkAsync(string tenantId, Guid chunkId, CancellationToken cancellationToken = default)
         {
+            ValidateTenantId(tenantId);
+
             await Task.CompletedTask;
 
-            string chunkFile = Path.Combine(_binPath, $"{chunkId}.bin");
+            string tenantBinPath = GetTenantBinPath(tenantId);
+            string chunkFile = Path.Combine(tenantBinPath, $"{chunkId}.bin");
 
             if (!File.Exists(chunkFile))
-                throw new FileNotFoundException($"Chunk with ID {chunkId} not found", chunkFile);
+                throw new FileNotFoundException($"Chunk with ID {chunkId} not found for tenant {tenantId}", chunkFile);
 
             return File.OpenRead(chunkFile);
         }
 
-        /// <summary>
-        /// Saves a chunk with the specified ID.
-        /// </summary>
-        /// <param name="chunkId">The unique identifier for the chunk.</param>
-        /// <param name="chunkData">A stream containing the chunk data to be stored.</param>
-        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-        /// <returns>The chunk ID that was saved.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="chunkData"/> is null.</exception>
-        /// <remarks>
-        /// The chunk data is written to a binary file named "{chunkId}.bin" in the bin directory.
-        /// If a file with the same name already exists, it will be overwritten.
-        /// The chunk data stream will be read from its current position to the end.
-        /// </remarks>
-        public async Task<Guid> SaveChunkAsync(Guid chunkId, Stream chunkData, CancellationToken cancellationToken = default)
+        /// <inheritdoc/>
+        public async Task<Guid> SaveChunkAsync(string tenantId, Guid chunkId, Stream chunkData, CancellationToken cancellationToken = default)
         {
-            if (chunkData == null) throw new ArgumentNullException(nameof(chunkData));
+            ValidateTenantId(tenantId);
 
-            string chunkFile = Path.Combine(_binPath, $"{chunkId}.bin");
+            if (chunkData == null)
+                throw new ArgumentNullException(nameof(chunkData));
 
-            using FileStream fileStream = File.Create(chunkFile);
-            await chunkData.CopyToAsync(fileStream, cancellationToken);
+            string tenantBinPath = GetTenantBinPath(tenantId);
+            Directory.CreateDirectory(tenantBinPath); // Ensure tenant directory exists
 
-            _logger?.LogDebug("Saved chunk: {ChunkId}", chunkId);
+            string chunkFile = Path.Combine(tenantBinPath, $"{chunkId}.bin");
+
+            long chunkSize;
+            using (FileStream fileStream = File.Create(chunkFile))
+            {
+                // Copy the data to the file
+                await chunkData.CopyToAsync(fileStream, cancellationToken);
+                chunkSize = fileStream.Length;
+            }
+
+            // Check quota after saving (since we can't know the size beforehand for non-seekable streams)
+            if (!_storageService.CanStoreData(tenantId, chunkSize))
+            {
+                // Clean up the file we just created
+                if (File.Exists(chunkFile))
+                {
+                    File.Delete(chunkFile);
+                }
+                throw new InvalidOperationException($"Tenant {tenantId} would exceed their storage quota by storing {chunkSize} bytes");
+            }
+
+            // Record the storage usage
+            _storageService.RecordStorageUsed(tenantId, chunkSize);
+
+            _logger.LogDebug("Saved chunk {ChunkId} for tenant {TenantId} ({SizeBytes} bytes)", chunkId, tenantId, chunkSize);
             return chunkId;
         }
 
-        /// <summary>
-        /// Saves file metadata.
-        /// </summary>
-        /// <param name="metadata">The file metadata to be stored.</param>
-        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-        /// <returns>A task that represents the asynchronous save operation.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="metadata"/> is null.</exception>
-        /// <remarks>
-        /// The metadata is serialized to JSON and stored in a file named "{metadata.Id}.json" in the metadata directory.
-        /// If a file with the same name already exists, it will be overwritten.
-        /// </remarks>
-        public async Task SaveFileMetadataAsync(ShelfFileMetadata metadata, CancellationToken cancellationToken = default)
+        /// <inheritdoc/>
+        public async Task SaveFileMetadataAsync(string tenantId, ShelfFileMetadata metadata, CancellationToken cancellationToken = default)
         {
-            if (metadata == null) throw new ArgumentNullException(nameof(metadata));
+            ValidateTenantId(tenantId);
 
-            string metadataFile = Path.Combine(_metadataPath, $"{metadata.Id}.json");
+            if (metadata == null)
+                throw new ArgumentNullException(nameof(metadata));
+
+            string tenantMetadataPath = GetTenantMetadataPath(tenantId);
+            Directory.CreateDirectory(tenantMetadataPath); // Ensure tenant directory exists
+
+            string metadataFile = Path.Combine(tenantMetadataPath, $"{metadata.Id}.json");
             string jsonContent = JsonSerializer.Serialize(metadata, _jsonOptions);
 
             await File.WriteAllTextAsync(metadataFile, jsonContent, cancellationToken);
 
-            _logger?.LogDebug("Saved metadata for file: {FileId}", metadata.Id);
+            _logger.LogDebug("Saved metadata for file {FileId} for tenant {TenantId}", metadata.Id, tenantId);
+        }
+
+        /// <inheritdoc/>
+        public async Task<bool?> DeleteFileAsync(string tenantId, Guid fileId, CancellationToken cancellationToken = default)
+        {
+            ValidateTenantId(tenantId);
+
+            ShelfFileMetadata? metadata = await GetFileMetadataAsync(tenantId, fileId, cancellationToken);
+
+            if (metadata == null)
+                return null;
+
+            long totalFreed = 0;
+            string tenantBinPath = GetTenantBinPath(tenantId);
+
+            // Delete all chunks and calculate freed space
+            foreach (Guid chunkId in metadata.ChunkIds)
+            {
+                string chunkFile = Path.Combine(tenantBinPath, $"{chunkId}.bin");
+                if (File.Exists(chunkFile))
+                {
+                    FileInfo fileInfo = new FileInfo(chunkFile);
+                    totalFreed += fileInfo.Length;
+                    File.Delete(chunkFile);
+                    _logger.LogDebug("Deleted chunk {ChunkId} for tenant {TenantId}", chunkId, tenantId);
+                }
+            }
+
+            // Delete metadata file
+            string tenantMetadataPath = GetTenantMetadataPath(tenantId);
+            string metadataFile = Path.Combine(tenantMetadataPath, $"{fileId}.json");
+            if (File.Exists(metadataFile))
+            {
+                File.Delete(metadataFile);
+                _logger.LogDebug("Deleted metadata for file {FileId} for tenant {TenantId}", fileId, tenantId);
+            }
+
+            // Record the freed storage
+            if (totalFreed > 0)
+            {
+                _storageService.RecordStorageFreed(tenantId, totalFreed);
+                _logger.LogInformation("Freed {FreedBytes} bytes for tenant {TenantId} by deleting file {FileId}", totalFreed, tenantId, fileId);
+            }
+
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public bool CanStoreFile(string tenantId, long fileSizeBytes)
+        {
+            ValidateTenantId(tenantId);
+            return _storageService.CanStoreData(tenantId, fileSizeBytes);
         }
 
         /// <summary>
-        /// Deletes a file and all its associated chunks.
+        /// Gets the metadata directory path for a specific tenant.
         /// </summary>
-        /// <param name="fileId">The unique identifier of the file to delete.</param>
-        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
-        /// <returns>A task that represents the asynchronous delete operation.</returns>
-        /// <remarks>
-        /// This method:
-        /// 1. Retrieves the file metadata to get the list of chunk IDs
-        /// 2. Deletes all chunk files
-        /// 3. Deletes the metadata file
-        /// If the file does not exist, no exception is thrown (idempotent operation).
-        /// </remarks>
-        public async Task DeleteFileAsync(Guid fileId, CancellationToken cancellationToken = default)
+        /// <param name="tenantId">The tenant ID.</param>
+        /// <returns>The path to the tenant's metadata directory.</returns>
+        private string GetTenantMetadataPath(string tenantId)
         {
-            ShelfFileMetadata? metadata = await GetFileMetadataAsync(fileId, cancellationToken);
+            return Path.Combine(_storagePath, tenantId, "metadata");
+        }
 
-            if (metadata != null)
-            {
-                // Delete all chunks
-                foreach (Guid chunkId in metadata.ChunkIds)
-                {
-                    string chunkFile = Path.Combine(_binPath, $"{chunkId}.bin");
-                    if (File.Exists(chunkFile))
-                    {
-                        File.Delete(chunkFile);
-                        _logger?.LogDebug("Deleted chunk: {ChunkId}", chunkId);
-                    }
-                }
+        /// <summary>
+        /// Gets the binary storage directory path for a specific tenant.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
+        /// <returns>The path to the tenant's binary storage directory.</returns>
+        private string GetTenantBinPath(string tenantId)
+        {
+            return Path.Combine(_storagePath, tenantId, "bin");
+        }
 
-                // Delete metadata file
-                string metadataFile = Path.Combine(_metadataPath, $"{fileId}.json");
-                if (File.Exists(metadataFile))
-                {
-                    File.Delete(metadataFile);
-                    _logger?.LogDebug("Deleted metadata for file: {FileId}", fileId);
-                }
-            }
+        /// <summary>
+        /// Validates that a tenant ID is not null or empty.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID to validate.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="tenantId"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="tenantId"/> is empty or whitespace.</exception>
+        private static void ValidateTenantId(string tenantId)
+        {
+            if (tenantId == null)
+                throw new ArgumentNullException(nameof(tenantId));
+
+            if (string.IsNullOrWhiteSpace(tenantId))
+                throw new ArgumentException("Tenant ID cannot be empty or whitespace", nameof(tenantId));
         }
     }
 }

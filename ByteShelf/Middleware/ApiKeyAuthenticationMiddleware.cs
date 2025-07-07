@@ -1,42 +1,46 @@
+using ByteShelf.Configuration;
+using ByteShelf.Services;
+using ByteShelfCommon;
+using Microsoft.Extensions.Primitives;
 using System.Net;
 using System.Text;
-using ByteShelf.Configuration;
-using Microsoft.Extensions.Options;
-using Microsoft.Extensions.Primitives;
 
 namespace ByteShelf.Middleware
 {
     /// <summary>
-    /// Middleware that validates API keys in incoming HTTP requests.
+    /// Middleware that validates API keys in incoming HTTP requests and identifies tenants.
     /// </summary>
     /// <remarks>
     /// This middleware intercepts HTTP requests and validates the presence and correctness
-    /// of an API key in the "X-API-Key" header. It can be configured to require authentication
-    /// for all endpoints or to skip authentication for specific paths (like health checks).
-    /// When authentication fails, it returns a 401 Unauthorized response with a JSON error message.
+    /// of an API key in the "X-API-Key" header. It identifies the tenant based on the API key
+    /// and adds the tenant ID to the request context for use by downstream components.
+    /// It can be configured to require authentication for all endpoints or to skip authentication
+    /// for specific paths (like health checks). When authentication fails, it returns a 401
+    /// Unauthorized response with a JSON error message.
     /// </remarks>
     public class ApiKeyAuthenticationMiddleware
     {
         private readonly RequestDelegate _next;
-        private readonly AuthenticationConfiguration _config;
+        private readonly ITenantConfigurationService _configService;
         private const string ApiKeyHeaderName = "X-API-Key";
+        private const string TenantIdHeaderName = "X-Tenant-ID";
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ApiKeyAuthenticationMiddleware"/> class.
         /// </summary>
         /// <param name="next">The next middleware in the request pipeline.</param>
-        /// <param name="config">The authentication configuration containing the API key and settings.</param>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="next"/> or <paramref name="config"/> is null.</exception>
+        /// <param name="configService">The tenant configuration service.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="next"/> or <paramref name="configService"/> is null.</exception>
         public ApiKeyAuthenticationMiddleware(
             RequestDelegate next,
-            IOptions<AuthenticationConfiguration> config)
+            ITenantConfigurationService configService)
         {
             _next = next ?? throw new ArgumentNullException(nameof(next));
-            _config = config?.Value ?? throw new ArgumentNullException(nameof(config));
+            _configService = configService ?? throw new ArgumentNullException(nameof(configService));
         }
 
         /// <summary>
-        /// Processes an HTTP request to validate API key authentication.
+        /// Processes an HTTP request to validate API key authentication and identify the tenant.
         /// </summary>
         /// <param name="context">The HTTP context for the current request.</param>
         /// <returns>A task that represents the asynchronous middleware operation.</returns>
@@ -44,9 +48,10 @@ namespace ByteShelf.Middleware
         /// This method:
         /// 1. Checks if the request path should skip authentication
         /// 2. Checks if authentication is required based on configuration
-        /// 3. Validates the API key if authentication is required
-        /// 4. Returns a 401 Unauthorized response if validation fails
-        /// 5. Calls the next middleware if validation succeeds
+        /// 3. Validates the API key and identifies the tenant if authentication is required
+        /// 4. Adds the tenant ID to the request context for downstream components
+        /// 5. Returns a 401 Unauthorized response if validation fails
+        /// 6. Calls the next middleware if validation succeeds
         /// </remarks>
         public async Task InvokeAsync(HttpContext context)
         {
@@ -58,14 +63,16 @@ namespace ByteShelf.Middleware
             }
 
             // Check if authentication is required
-            if (!_config.RequireAuthentication)
+            TenantConfiguration config = _configService.GetConfiguration();
+            if (!config.RequireAuthentication)
             {
                 await _next(context);
                 return;
             }
 
-            // Validate API key
-            if (!IsValidApiKey(context.Request))
+            // Validate API key and get tenant ID
+            string? tenantId = GetTenantIdFromApiKey(context.Request);
+            if (tenantId == null)
             {
                 context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
                 context.Response.ContentType = "application/json";
@@ -75,6 +82,11 @@ namespace ByteShelf.Middleware
                 await context.Response.Body.WriteAsync(errorBytes);
                 return;
             }
+
+            // Add tenant ID and admin status to the request context for downstream components
+            context.Items["TenantId"] = tenantId;
+            context.Items["IsAdmin"] = config.Tenants[tenantId].IsAdmin;
+            context.Request.Headers[TenantIdHeaderName] = tenantId;
 
             await _next(context);
         }
@@ -93,32 +105,43 @@ namespace ByteShelf.Middleware
         private static bool ShouldSkipAuthentication(PathString path)
         {
             string pathValue = path.Value?.ToLowerInvariant() ?? string.Empty;
-            
+
             return pathValue.StartsWith("/health") ||
                    pathValue.StartsWith("/swagger") ||
                    pathValue.StartsWith("/swagger-ui");
         }
 
         /// <summary>
-        /// Validates the API key in the request headers.
+        /// Validates the API key in the request headers and returns the associated tenant ID.
         /// </summary>
         /// <param name="request">The HTTP request to validate.</param>
-        /// <returns><c>true</c> if the API key is valid; otherwise, <c>false</c>.</returns>
+        /// <returns>The tenant ID if the API key is valid; otherwise, <c>null</c>.</returns>
         /// <remarks>
         /// This method checks for the presence of the "X-API-Key" header and validates
-        /// that it matches the configured API key. The comparison is case-sensitive.
-        /// Returns <c>false</c> if the header is missing, empty, or doesn't match.
+        /// that it matches one of the configured tenant API keys. The comparison is case-sensitive.
+        /// Returns the tenant ID if the header is present and matches a configured key,
+        /// or <c>null</c> if the header is missing, empty, or doesn't match any tenant.
         /// </remarks>
-        private bool IsValidApiKey(HttpRequest request)
+        private string? GetTenantIdFromApiKey(HttpRequest request)
         {
-            if (string.IsNullOrEmpty(_config.ApiKey))
-                return false;
-
             if (!request.Headers.TryGetValue(ApiKeyHeaderName, out StringValues apiKeyValues))
-                return false;
+                return null;
 
             string? providedApiKey = apiKeyValues.FirstOrDefault();
-            return !string.IsNullOrEmpty(providedApiKey) && providedApiKey == _config.ApiKey;
+            if (string.IsNullOrEmpty(providedApiKey))
+                return null;
+
+            // Find the tenant with the matching API key
+            TenantConfiguration config = _configService.GetConfiguration();
+            foreach (KeyValuePair<string, TenantInfo> tenant in config.Tenants)
+            {
+                if (tenant.Value.ApiKey == providedApiKey)
+                {
+                    return tenant.Key;
+                }
+            }
+
+            return null;
         }
     }
 

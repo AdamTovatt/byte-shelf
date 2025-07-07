@@ -1,24 +1,25 @@
+using ByteShelfCommon;
+
 namespace ByteShelf.Configuration
 {
     /// <summary>
-    /// Configuration settings for API key authentication.
+    /// Configuration settings for multi-tenant API key authentication.
     /// </summary>
     /// <remarks>
     /// This class contains the settings used by the <see cref="Middleware.ApiKeyAuthenticationMiddleware"/>
-    /// to validate API keys in incoming requests. The settings can be configured through
-    /// the "Authentication" section in appsettings.json or via environment variables.
+    /// to validate API keys and identify tenants in incoming requests. The settings can be configured through
+    /// the "Tenants" section in appsettings.json or via environment variables.
     /// </remarks>
-    public class AuthenticationConfiguration
+    public class TenantConfiguration
     {
         /// <summary>
-        /// Gets or sets the API key that clients must provide for authentication.
+        /// Gets or sets the dictionary of tenants, keyed by tenant ID.
         /// </summary>
         /// <remarks>
-        /// This is the secret key that clients include in the "X-API-Key" header.
-        /// For security, this should be a strong, randomly generated key.
-        /// In production, consider using environment variables instead of storing this in configuration files.
+        /// Each tenant has an API key and storage limit. The API key is used for authentication,
+        /// and the storage limit is enforced to prevent unlimited data storage.
         /// </remarks>
-        public string ApiKey { get; set; } = string.Empty;
+        public Dictionary<string, TenantInfo> Tenants { get; set; } = new Dictionary<string, TenantInfo>();
 
         /// <summary>
         /// Gets or sets a value indicating whether authentication is required.

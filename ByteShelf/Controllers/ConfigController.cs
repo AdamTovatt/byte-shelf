@@ -1,5 +1,3 @@
-using System.Threading;
-using System.Threading.Tasks;
 using ByteShelf.Configuration;
 using Microsoft.AspNetCore.Mvc;
 
@@ -49,4 +47,4 @@ namespace ByteShelf.Controllers
             return Ok(_chunkConfiguration);
         }
     }
-} 
+}

@@ -22,14 +22,8 @@ namespace ByteShelf
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
 
-            // Configure authentication
-            builder.Services.Configure<AuthenticationConfiguration>(builder.Configuration.GetSection("Authentication"));
-            builder.Services.AddSingleton<AuthenticationConfiguration>(serviceProvider =>
-            {
-                AuthenticationConfiguration config = new AuthenticationConfiguration();
-                builder.Configuration.GetSection("Authentication").Bind(config);
-                return config;
-            });
+            // Configure tenant settings using external configuration service
+            builder.Services.AddSingleton<ITenantConfigurationService, TenantConfigurationService>();
 
             // Configure chunk settings
             builder.Services.Configure<ChunkConfiguration>(builder.Configuration.GetSection("ChunkConfiguration"));
@@ -41,11 +35,18 @@ namespace ByteShelf
             });
 
             // Configure file storage
-            string storagePath = builder.Configuration["StoragePath"] ?? "byte-shelf-storage";
+            string? envStoragePath = Environment.GetEnvironmentVariable("BYTESHELF_STORAGE_PATH");
+            string storagePath = envStoragePath ?? builder.Configuration["StoragePath"] ?? "byte-shelf-storage";
+
+            // Register storage service
+            builder.Services.AddSingleton<IStorageService, StorageService>();
+
+            // Register file storage service
             builder.Services.AddSingleton<IFileStorageService>(serviceProvider =>
             {
                 ILogger<FileStorageService>? logger = serviceProvider.GetService<ILogger<FileStorageService>>();
-                return new FileStorageService(storagePath, logger);
+                IStorageService storageService = serviceProvider.GetRequiredService<IStorageService>();
+                return new FileStorageService(storagePath, storageService, logger);
             });
 
             WebApplication app = builder.Build();
@@ -58,10 +59,10 @@ namespace ByteShelf
             }
 
             app.UseHttpsRedirection();
-            
+
             // Add API key authentication middleware
             app.UseApiKeyAuthentication();
-            
+
             app.UseAuthorization();
             app.MapControllers();
 
