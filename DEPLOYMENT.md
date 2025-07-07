@@ -113,7 +113,7 @@ The service can be configured using environment variables in the service file:
 Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=ASPNETCORE_URLS=http://localhost:5000
 Environment=StoragePath=/var/byteshelf/storage
-Environment=ChunkConfiguration__ChunkSizeBytes=1048576
+Environment=BYTESHELF_CHUNK_SIZE_BYTES=1048576
 Environment=Authentication__ApiKey=your-secure-production-api-key
 Environment=Authentication__RequireAuthentication=true
 ```
@@ -288,7 +288,7 @@ curl http://localhost:5000/api/config/chunk-size
 
 ## Performance Tuning
 
-1. **Chunk Size**: Adjust `ChunkConfiguration__ChunkSizeBytes` based on your use case
+1. **Chunk Size**: Adjust `BYTESHELF_CHUNK_SIZE_BYTES` based on your use case
 2. **Storage**: Use fast storage (SSD) for better performance
 3. **Memory**: Monitor memory usage and adjust as needed
 4. **Concurrency**: The service handles multiple concurrent requests by default 

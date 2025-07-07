@@ -85,7 +85,7 @@ storage-path/
 ```bash
 # Storage configuration
 export BYTESHELF_STORAGE_PATH=/var/byteshelf/storage
-export ChunkConfiguration__ChunkSizeBytes=2097152
+export BYTESHELF_CHUNK_SIZE_BYTES=2097152
 
 # Tenant configuration
 export BYTESHELF_TENANT_CONFIG_PATH=/etc/byteshelf/tenants.json

@@ -31,6 +31,14 @@ namespace ByteShelf
             {
                 ChunkConfiguration config = new ChunkConfiguration();
                 builder.Configuration.GetSection("ChunkConfiguration").Bind(config);
+                
+                // Override with environment variable if set
+                string? envChunkSize = Environment.GetEnvironmentVariable("BYTESHELF_CHUNK_SIZE_BYTES");
+                if (!string.IsNullOrWhiteSpace(envChunkSize) && int.TryParse(envChunkSize, out int chunkSize))
+                {
+                    config.ChunkSizeBytes = chunkSize;
+                }
+                
                 return config;
             });
 
