@@ -1,5 +1,6 @@
 using ByteShelf.Configuration;
 using ByteShelf.Middleware;
+using ByteShelf.Resources;
 using ByteShelf.Services;
 
 namespace ByteShelf
@@ -58,6 +59,18 @@ namespace ByteShelf
             });
 
             WebApplication app = builder.Build();
+
+            // Verify embedded resources on startup
+            try
+            {
+                ResourceHelper.Instance.VerifyResourceMappings();
+                app.Logger.LogInformation("Embedded resource mappings verified successfully");
+            }
+            catch (Exception ex)
+            {
+                app.Logger.LogError(ex, "Embedded resource verification failed");
+                throw;
+            }
 
             // Configure the HTTP request pipeline
             if (app.Environment.IsDevelopment())

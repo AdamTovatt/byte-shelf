@@ -308,13 +308,14 @@ namespace ByteShelf.Controllers
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
         /// <returns>No content on successful deletion.</returns>
         /// <response code="204">If the tenant was successfully deleted.</response>
-        /// <response code="400">If the tenant has files and cannot be deleted.</response>
+        /// <response code="400">If the tenant has files and cannot be deleted, or if trying to delete self.</response>
         /// <response code="401">If the API key is invalid or missing.</response>
         /// <response code="403">If the user is not an admin.</response>
         /// <response code="404">If the tenant does not exist.</response>
         /// <remarks>
         /// This endpoint deletes a tenant only if it has no files. This prevents accidental
         /// deletion of tenants with important data. The tenant's storage usage is also cleared.
+        /// Admins cannot delete themselves to prevent accidental loss of admin access.
         /// </remarks>
         [HttpDelete("tenants/{tenantId}")]
         [ProducesResponseType(204)]
@@ -328,6 +329,18 @@ namespace ByteShelf.Controllers
             if (!HttpContext.IsAdmin())
             {
                 return Forbid();
+            }
+
+            // Get the current user's tenant ID
+            string currentTenantId = HttpContext.GetTenantId();
+
+            // Prevent self-deletion
+            if (tenantId == currentTenantId)
+            {
+                return BadRequest(new
+                {
+                    message = "Cannot delete your own tenant. Please use a different admin account to delete this tenant."
+                });
             }
 
             // Check if tenant exists
@@ -357,6 +370,4 @@ namespace ByteShelf.Controllers
             return NoContent();
         }
     }
-
-
 }

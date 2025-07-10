@@ -4,6 +4,7 @@ using ByteShelfCommon;
 using Microsoft.Extensions.Primitives;
 using System.Net;
 using System.Text;
+using System.Collections.Concurrent;
 
 namespace ByteShelf.Middleware
 {
@@ -24,6 +25,12 @@ namespace ByteShelf.Middleware
         private readonly ITenantConfigurationService _configService;
         private const string ApiKeyHeaderName = "X-API-Key";
         private const string TenantIdHeaderName = "X-Tenant-ID";
+        
+        // Thread-safe dictionary to track failed authentication attempts by IP address
+        private static readonly ConcurrentDictionary<string, FailedAttemptInfo> _failedAttempts = new ConcurrentDictionary<string, FailedAttemptInfo>();
+        
+        // Cleanup timer to remove old entries (runs every 5 minutes)
+        private static readonly Timer _cleanupTimer = new Timer(CleanupOldEntries, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ApiKeyAuthenticationMiddleware"/> class.
@@ -40,6 +47,45 @@ namespace ByteShelf.Middleware
         }
 
         /// <summary>
+        /// Information about failed authentication attempts for a specific IP address.
+        /// </summary>
+        private class FailedAttemptInfo
+        {
+            /// <summary>
+            /// Gets or sets the number of failed attempts.
+            /// </summary>
+            public int FailedAttempts { get; set; }
+            
+            /// <summary>
+            /// Gets or sets the timestamp of the last failed attempt.
+            /// </summary>
+            public DateTime LastFailedAttempt { get; set; }
+        }
+
+        /// <summary>
+        /// Cleans up old failed attempt entries that are older than 1 hour.
+        /// </summary>
+        /// <param name="state">The timer state (unused).</param>
+        private static void CleanupOldEntries(object? state)
+        {
+            DateTime cutoffTime = DateTime.UtcNow.AddHours(-1);
+            List<string> keysToRemove = new List<string>();
+
+            foreach (KeyValuePair<string, FailedAttemptInfo> entry in _failedAttempts)
+            {
+                if (entry.Value.LastFailedAttempt < cutoffTime)
+                {
+                    keysToRemove.Add(entry.Key);
+                }
+            }
+
+            foreach (string key in keysToRemove)
+            {
+                _failedAttempts.TryRemove(key, out _);
+            }
+        }
+
+        /// <summary>
         /// Processes an HTTP request to validate API key authentication and identify the tenant.
         /// </summary>
         /// <param name="context">The HTTP context for the current request.</param>
@@ -52,6 +98,7 @@ namespace ByteShelf.Middleware
         /// 4. Adds the tenant ID to the request context for downstream components
         /// 5. Returns a 401 Unauthorized response if validation fails
         /// 6. Calls the next middleware if validation succeeds
+        /// 7. Implements rate limiting for failed authentication attempts
         /// </remarks>
         public async Task InvokeAsync(HttpContext context)
         {
@@ -70,10 +117,16 @@ namespace ByteShelf.Middleware
                 return;
             }
 
+            // Get client IP address for rate limiting
+            string clientIp = GetClientIpAddress(context);
+
             // Validate API key and get tenant ID
             string? tenantId = GetTenantIdFromApiKey(context.Request);
             if (tenantId == null)
             {
+                // Record failed attempt and apply rate limiting
+                await HandleFailedAuthentication(clientIp);
+                
                 context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
                 context.Response.ContentType = "application/json";
 
@@ -100,6 +153,7 @@ namespace ByteShelf.Middleware
         /// Currently skips authentication for:
         /// - Health check endpoints ("/health", "/healthz")
         /// - Swagger/OpenAPI documentation endpoints ("/swagger", "/swagger-ui")
+        /// - Frontend resources ("/", "/styles.css", "/script.js", "/ping")
         /// Additional paths can be added as needed.
         /// </remarks>
         private static bool ShouldSkipAuthentication(PathString path)
@@ -108,7 +162,65 @@ namespace ByteShelf.Middleware
 
             return pathValue.StartsWith("/health") ||
                    pathValue.StartsWith("/swagger") ||
-                   pathValue.StartsWith("/swagger-ui");
+                   pathValue.StartsWith("/swagger-ui") ||
+                   pathValue == "/" ||
+                   pathValue == "/styles.css" ||
+                   pathValue == "/script.js" ||
+                   pathValue == "/ping";
+        }
+
+        /// <summary>
+        /// Gets the client IP address from the request context.
+        /// </summary>
+        /// <param name="context">The HTTP context.</param>
+        /// <returns>The client IP address.</returns>
+        /// <remarks>
+        /// This method checks for forwarded headers (X-Forwarded-For, X-Real-IP) to handle
+        /// requests that come through proxies or load balancers, falling back to the direct
+        /// connection IP address.
+        /// </remarks>
+        private static string GetClientIpAddress(HttpContext context)
+        {
+            // Check for forwarded headers first
+            string? forwardedFor = context.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(forwardedFor))
+            {
+                // X-Forwarded-For can contain multiple IPs, take the first one
+                return forwardedFor.Split(',')[0].Trim();
+            }
+
+            string? realIp = context.Request.Headers["X-Real-IP"].FirstOrDefault();
+            if (!string.IsNullOrEmpty(realIp))
+            {
+                return realIp;
+            }
+
+            // Fall back to the direct connection IP
+            return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        }
+
+        /// <summary>
+        /// Handles a failed authentication attempt by recording it and applying rate limiting.
+        /// </summary>
+        /// <param name="clientIp">The client IP address.</param>
+        /// <returns>A task that represents the asynchronous operation.</returns>
+        /// <remarks>
+        /// This method records the failed attempt and applies a progressive delay based on
+        /// the number of failed attempts. The delay is 500ms multiplied by the number of
+        /// failed attempts, providing an exponential backoff effect.
+        /// </remarks>
+        private static async Task HandleFailedAuthentication(string clientIp)
+        {
+            // Get or create failed attempt info for this IP
+            FailedAttemptInfo failedInfo = _failedAttempts.GetOrAdd(clientIp, _ => new FailedAttemptInfo());
+            
+            // Update failed attempt count and timestamp
+            failedInfo.FailedAttempts++;
+            failedInfo.LastFailedAttempt = DateTime.UtcNow;
+            
+            // Apply progressive delay: 500ms * number of failed attempts
+            int delayMs = failedInfo.FailedAttempts * 500;
+            await Task.Delay(delayMs);
         }
 
         /// <summary>

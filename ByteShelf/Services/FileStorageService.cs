@@ -234,6 +234,21 @@ namespace ByteShelf.Services
         }
 
         /// <inheritdoc/>
+        public async Task<Stream> GetFileStreamAsync(string tenantId, Guid fileId, CancellationToken cancellationToken = default)
+        {
+            ValidateTenantId(tenantId);
+
+            // Get file metadata to verify it exists and get chunk information
+            ShelfFileMetadata? metadata = await GetFileMetadataAsync(tenantId, fileId, cancellationToken);
+            if (metadata == null)
+                throw new FileNotFoundException($"File with ID {fileId} not found for tenant {tenantId}");
+
+            // Create a concatenated stream that reads all chunks in sequence
+            return new ConcatenatedStream(metadata.ChunkIds.Select(chunkId =>
+                GetChunkAsync(tenantId, chunkId, cancellationToken).Result));
+        }
+
+        /// <inheritdoc/>
         public bool CanStoreFile(string tenantId, long fileSizeBytes)
         {
             ValidateTenantId(tenantId);
@@ -273,6 +288,71 @@ namespace ByteShelf.Services
 
             if (string.IsNullOrWhiteSpace(tenantId))
                 throw new ArgumentException("Tenant ID cannot be empty or whitespace", nameof(tenantId));
+        }
+
+        /// <summary>
+        /// A stream that concatenates multiple streams in sequence.
+        /// </summary>
+        private class ConcatenatedStream : Stream
+        {
+            private readonly IEnumerator<Stream> _streamEnumerator;
+            private Stream? _currentStream;
+            private bool _disposed;
+
+            public ConcatenatedStream(IEnumerable<Stream> streams)
+            {
+                _streamEnumerator = streams.GetEnumerator();
+                _currentStream = null;
+            }
+
+            public override bool CanRead => true;
+            public override bool CanSeek => false;
+            public override bool CanWrite => false;
+            public override long Length => throw new NotSupportedException();
+            public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+            public override int Read(byte[] buffer, int offset, int count)
+            {
+                if (_disposed)
+                    throw new ObjectDisposedException(nameof(ConcatenatedStream));
+
+                // If we don't have a current stream, try to get the next one
+                if (_currentStream == null)
+                {
+                    if (!_streamEnumerator.MoveNext())
+                        return 0; // No more streams to read from
+                    _currentStream = _streamEnumerator.Current;
+                }
+
+                // Read from current stream
+                int bytesRead = _currentStream.Read(buffer, offset, count);
+
+                // If we've reached the end of the current stream, move to the next one
+                if (bytesRead == 0)
+                {
+                    _currentStream.Dispose();
+                    _currentStream = null;
+                    return Read(buffer, offset, count); // Recursively try the next stream
+                }
+
+                return bytesRead;
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (!_disposed && disposing)
+                {
+                    _currentStream?.Dispose();
+                    _streamEnumerator.Dispose();
+                    _disposed = true;
+                }
+                base.Dispose(disposing);
+            }
+
+            public override void Flush() => throw new NotSupportedException();
+            public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+            public override void SetLength(long value) => throw new NotSupportedException();
+            public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
         }
     }
 }

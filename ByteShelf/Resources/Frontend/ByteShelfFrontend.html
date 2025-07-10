@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ByteShelf - File Storage Management</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Authentication Section -->
+        <div id="auth-section" class="section">
+            <div class="container">
+                <h1>ByteShelf</h1>
+                <p class="subtitle">File Storage Management</p>
+                
+                <div class="auth-form">
+                    <label for="api-key">API Key:</label>
+                    <input type="password" id="api-key" placeholder="Enter your API key">
+                    <button id="authenticate-btn" onclick="authenticate()">Authenticate</button>
+                </div>
+                
+                <div id="auth-error" class="error-message" style="display: none;"></div>
+            </div>
+        </div>
+
+        <!-- Main Application Section -->
+        <div id="main-section" class="section" style="display: none;">
+            <div class="container">
+                <header>
+                    <h1>ByteShelf</h1>
+                    <div class="user-info">
+                        <span id="tenant-name">Loading...</span>
+                        <button id="admin-btn" onclick="showAdminPanel()" class="admin-btn" style="display: none;">Admin Panel</button>
+                        <button onclick="logout()" class="logout-btn">Logout</button>
+                    </div>
+                </header>
+
+                <!-- Tenant Info -->
+                <div class="info-card">
+                    <h3>Storage Information</h3>
+                    <div class="storage-info">
+                        <div class="storage-item">
+                            <span class="label">Used:</span>
+                            <span id="used-storage">-</span>
+                        </div>
+                        <div class="storage-item">
+                            <span class="label">Available:</span>
+                            <span id="available-storage">-</span>
+                        </div>
+                        <div class="storage-item">
+                            <span class="label">Total:</span>
+                            <span id="total-storage">-</span>
+                        </div>
+                        <div class="storage-item">
+                            <span class="label">Usage:</span>
+                            <span id="usage-percentage">-</span>
+                        </div>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="usage-bar" class="progress-fill"></div>
+                    </div>
+                </div>
+
+                <!-- File Upload -->
+                <div class="upload-section">
+                    <h3>Upload File</h3>
+                    <div class="upload-area">
+                        <input type="file" id="file-input" style="display: none;">
+                        <div id="drop-zone" class="drop-zone">
+                            <p>Drag and drop files here or click to select</p>
+                            <button onclick="document.getElementById('file-input').click()">Choose File</button>
+                        </div>
+                        <div id="upload-progress" class="upload-progress" style="display: none;">
+                            <div class="progress-text">Uploading...</div>
+                            <div class="progress-bar">
+                                <div id="upload-bar" class="progress-fill"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- File List -->
+                <div class="files-section">
+                    <h3>Files</h3>
+                    <div class="files-header">
+                        <button onclick="refreshFiles()" class="refresh-btn">Refresh</button>
+                        <div class="search-box">
+                            <input type="text" id="search-input" placeholder="Search files...">
+                        </div>
+                    </div>
+                    <div id="files-list" class="files-list">
+                        <div class="loading">Loading files...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for file details -->
+    <div id="file-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <h3 id="modal-title">File Details</h3>
+            <div id="modal-content"></div>
+        </div>
+    </div>
+
+    <!-- Custom alert modal -->
+    <div id="alert-modal" class="modal" style="display: none;">
+        <div class="modal-content alert-modal">
+            <div class="alert-header">
+                <span id="alert-icon" class="alert-icon"></span>
+                <h3 id="alert-title">Alert</h3>
+            </div>
+            <div id="alert-message" class="alert-message"></div>
+            <div class="alert-actions">
+                <button id="alert-ok-btn" class="btn btn-primary">OK</button>
+                <button id="alert-cancel-btn" class="btn btn-secondary" style="display: none;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom confirm modal -->
+    <div id="confirm-modal" class="modal" style="display: none;">
+        <div class="modal-content confirm-modal">
+            <div class="alert-header">
+                <span class="alert-icon confirm-icon">⚠️</span>
+                <h3 id="confirm-title">Confirm</h3>
+            </div>
+            <div id="confirm-message" class="alert-message"></div>
+            <div class="alert-actions">
+                <button id="confirm-ok-btn" class="btn btn-danger">Confirm</button>
+                <button id="confirm-cancel-btn" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Panel Modal -->
+    <div id="admin-modal" class="modal" style="display: none;">
+        <div class="modal-content admin-modal">
+            <span class="close" onclick="closeAdminModal()">&times;</span>
+            <h3>Admin Panel</h3>
+            
+            <div class="admin-tabs">
+                <button class="tab-btn active" onclick="switchTab('tenants')">Tenants</button>
+                <button class="tab-btn" onclick="switchTab('create-tenant')">Create Tenant</button>
+            </div>
+            
+            <!-- Tenants Tab -->
+            <div id="tenants-tab" class="tab-content active">
+                <div class="admin-section">
+                    <h4>All Tenants</h4>
+                    <button onclick="loadTenants()" class="btn btn-primary">Refresh</button>
+                    <div id="tenants-list" class="tenants-list">
+                        <div class="loading">Loading tenants...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Create Tenant Tab -->
+            <div id="create-tenant-tab" class="tab-content">
+                <div class="admin-section">
+                    <h4>Create New Tenant</h4>
+                    <form id="create-tenant-form" class="admin-form">
+                        <div class="form-group">
+                            <label for="new-tenant-id">Tenant ID:</label>
+                            <input type="text" id="new-tenant-id" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-api-key">API Key:</label>
+                            <input type="text" id="new-api-key" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-display-name">Display Name:</label>
+                            <input type="text" id="new-display-name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-storage-limit">Storage Limit (bytes):</label>
+                            <input type="number" id="new-storage-limit" required min="1">
+                        </div>
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="new-is-admin">
+                                Is Admin
+                            </label>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Create Tenant</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html> 

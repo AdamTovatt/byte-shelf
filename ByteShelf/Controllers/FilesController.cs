@@ -109,6 +109,41 @@ namespace ByteShelf.Controllers
         }
 
         /// <summary>
+        /// Downloads a complete file by reconstructing it from all its chunks.
+        /// </summary>
+        /// <param name="fileId">The unique identifier of the file to download.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>The complete file as a binary stream.</returns>
+        /// <response code="200">Returns the complete file as application/octet-stream.</response>
+        /// <response code="404">If the file with the specified ID does not exist or does not belong to the tenant.</response>
+        /// <response code="401">If the API key is invalid or missing.</response>
+        /// <remarks>
+        /// This endpoint reconstructs the complete file by reading all chunks in order
+        /// and concatenating them into a single stream. The file is returned with the
+        /// original filename and content type for proper browser handling.
+        /// Only files belonging to the authenticated tenant can be downloaded.
+        /// </remarks>
+        [HttpGet("{fileId}/download")]
+        [ProducesResponseType(typeof(FileStreamResult), 200)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(401)]
+        public async Task<IActionResult> DownloadFile(Guid fileId, CancellationToken cancellationToken)
+        {
+            string tenantId = HttpContext.GetTenantId();
+            
+            // Get file metadata
+            ShelfFileMetadata? metadata = await _fileStorageService.GetFileMetadataAsync(tenantId, fileId, cancellationToken);
+            if (metadata == null)
+                return NotFound();
+
+            // Create a stream that reads all chunks in sequence
+            Stream fileStream = await _fileStorageService.GetFileStreamAsync(tenantId, fileId, cancellationToken);
+            
+            // Return the file with proper headers for download
+            return File(fileStream, metadata.ContentType, metadata.OriginalFilename);
+        }
+
+        /// <summary>
         /// Deletes a file and all its associated chunks, scoped to the authenticated tenant.
         /// </summary>
         /// <param name="fileId">The unique identifier of the file to delete.</param>

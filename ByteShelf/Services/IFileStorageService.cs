@@ -71,6 +71,16 @@ namespace ByteShelf.Services
         Task<bool?> DeleteFileAsync(string tenantId, Guid fileId, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Gets a complete file stream by reconstructing it from all its chunks.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
+        /// <param name="fileId">The unique identifier of the file.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A stream containing the complete file data.</returns>
+        /// <exception cref="FileNotFoundException">Thrown when the specified file does not exist or does not belong to the tenant.</exception>
+        Task<Stream> GetFileStreamAsync(string tenantId, Guid fileId, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Checks if a tenant can store a file of the specified size.
         /// </summary>
         /// <param name="tenantId">The tenant ID.</param>
