@@ -1,0 +1,17 @@
+{
+  "Tenants": {
+    "admin": {
+      "ApiKey": "admin-secure-api-key-here",
+      "StorageLimitBytes": 0,
+      "DisplayName": "System Administrator",
+      "IsAdmin": true
+    },
+    "tenant1": {
+      "ApiKey": "tenant1-secure-api-key-here",
+      "StorageLimitBytes": 1073741824,
+      "DisplayName": "Tenant 1",
+      "IsAdmin": false
+    }
+  },
+  "RequireAuthentication": true
+}

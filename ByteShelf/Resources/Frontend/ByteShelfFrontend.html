@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
     <title>ByteShelf - File Storage Management</title>
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -14,7 +15,7 @@
                 <h1>ByteShelf</h1>
                 <p class="subtitle">File Storage Management</p>
                 
-                <div class="auth-form">
+                <div class="auth-form elevation-element soft-corner">
                     <label for="api-key">API Key:</label>
                     <input type="password" id="api-key" placeholder="Enter your API key">
                     <button id="authenticate-btn" onclick="authenticate()">Authenticate</button>
@@ -27,8 +28,13 @@
         <!-- Main Application Section -->
         <div id="main-section" class="section" style="display: none;">
             <div class="container">
-                <header>
-                    <h1>ByteShelf</h1>
+                <header class="elevation-element soft-corner">
+                    <div class="header-left">
+                        <h1>ByteShelf</h1>
+                        <button id="theme-toggle" class="theme-toggle-btn" onclick="toggleTheme()" title="Toggle dark/light mode">
+                            <span class="theme-icon">🌙</span>
+                        </button>
+                    </div>
                     <div class="user-info">
                         <span id="tenant-name">Loading...</span>
                         <button id="admin-btn" onclick="showAdminPanel()" class="admin-btn" style="display: none;">Admin Panel</button>
@@ -37,7 +43,7 @@
                 </header>
 
                 <!-- Tenant Info -->
-                <div class="info-card">
+                <div class="info-card elevation-element soft-corner">
                     <h3>Storage Information</h3>
                     <div class="storage-info">
                         <div class="storage-item">
@@ -63,7 +69,7 @@
                 </div>
 
                 <!-- File Upload -->
-                <div class="upload-section">
+                <div class="upload-section elevation-element soft-corner">
                     <h3>Upload File</h3>
                     <div class="upload-area">
                         <input type="file" id="file-input" style="display: none;">
@@ -81,7 +87,7 @@
                 </div>
 
                 <!-- File List -->
-                <div class="files-section">
+                <div class="files-section elevation-element soft-corner">
                     <h3>Files</h3>
                     <div class="files-header">
                         <button onclick="refreshFiles()" class="refresh-btn">Refresh</button>
@@ -99,7 +105,7 @@
 
     <!-- Modal for file details -->
     <div id="file-modal" class="modal" style="display: none;">
-        <div class="modal-content">
+        <div class="modal-content elevation-element soft-corner">
             <span class="close" onclick="closeModal()">&times;</span>
             <h3 id="modal-title">File Details</h3>
             <div id="modal-content"></div>
@@ -108,7 +114,7 @@
 
     <!-- Custom alert modal -->
     <div id="alert-modal" class="modal" style="display: none;">
-        <div class="modal-content alert-modal">
+        <div class="modal-content alert-modal elevation-element soft-corner">
             <div class="alert-header">
                 <span id="alert-icon" class="alert-icon"></span>
                 <h3 id="alert-title">Alert</h3>
@@ -123,7 +129,7 @@
 
     <!-- Custom confirm modal -->
     <div id="confirm-modal" class="modal" style="display: none;">
-        <div class="modal-content confirm-modal">
+        <div class="modal-content confirm-modal elevation-element soft-corner">
             <div class="alert-header">
                 <span class="alert-icon confirm-icon">⚠️</span>
                 <h3 id="confirm-title">Confirm</h3>
@@ -138,7 +144,7 @@
 
     <!-- Admin Panel Modal -->
     <div id="admin-modal" class="modal" style="display: none;">
-        <div class="modal-content admin-modal">
+        <div class="modal-content admin-modal elevation-element soft-corner">
             <span class="close" onclick="closeAdminModal()">&times;</span>
             <h3>Admin Panel</h3>
             

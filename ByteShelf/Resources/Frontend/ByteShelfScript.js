@@ -649,6 +649,76 @@ async function deleteTenant(tenantId) {
     }
 }
 
+// Theme management
+let currentTheme = 'auto'; // 'auto', 'light', or 'dark'
+
+function toggleTheme() {
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = themeToggle.querySelector('.theme-icon');
+    
+    if (currentTheme === 'auto') {
+        // If currently auto, switch to the opposite of system preference
+        const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        currentTheme = systemPrefersDark ? 'light' : 'dark';
+    } else if (currentTheme === 'light') {
+        currentTheme = 'dark';
+    } else {
+        currentTheme = 'light';
+    }
+    
+    applyTheme();
+    updateThemeIcon();
+    localStorage.setItem('byteshelf-theme', currentTheme);
+}
+
+function applyTheme() {
+    const root = document.documentElement;
+    
+    if (currentTheme === 'auto') {
+        // Remove any forced theme and let CSS handle it
+        root.removeAttribute('data-theme');
+    } else {
+        // Force the specific theme
+        root.setAttribute('data-theme', currentTheme);
+    }
+}
+
+function updateThemeIcon() {
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = themeToggle.querySelector('.theme-icon');
+    
+    if (currentTheme === 'auto') {
+        const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        themeIcon.textContent = systemPrefersDark ? '🌙' : '☀️';
+    } else if (currentTheme === 'light') {
+        themeIcon.textContent = '☀️';
+    } else {
+        themeIcon.textContent = '🌙';
+    }
+}
+
+function initializeTheme() {
+    // Load saved theme preference
+    const savedTheme = localStorage.getItem('byteshelf-theme');
+    if (savedTheme) {
+        currentTheme = savedTheme;
+    }
+    
+    applyTheme();
+    updateThemeIcon();
+    
+    // Listen for system theme changes when in auto mode
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    mediaQuery.addEventListener('change', () => {
+        if (currentTheme === 'auto') {
+            updateThemeIcon();
+        }
+    });
+}
+
+// Initialize theme when the page loads
+document.addEventListener('DOMContentLoaded', initializeTheme);
+
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
     // Close modal when clicking outside
