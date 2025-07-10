@@ -101,7 +101,20 @@ function showConfirm(message, title = 'Confirm') {
 }
 
 // API endpoints
-const API_BASE = window.location.origin;
+const API_BASE = (() => {
+    // Get the current path and find the base path
+    const pathname = window.location.pathname;
+    
+    // If we're at the root, just use origin
+    if (pathname === '/' || pathname === '') {
+        return window.location.origin;
+    }
+    
+    // If we're in a subdirectory (like /byte-shelf/), use that as the base
+    // Remove trailing slash if present
+    const basePath = pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+    return window.location.origin + basePath;
+})();
 
 // Utility functions
 function formatBytes(bytes) {
