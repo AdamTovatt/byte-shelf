@@ -25,10 +25,10 @@ namespace ByteShelf.Middleware
         private readonly ITenantConfigurationService _configService;
         private const string ApiKeyHeaderName = "X-API-Key";
         private const string TenantIdHeaderName = "X-Tenant-ID";
-        
+
         // Thread-safe dictionary to track failed authentication attempts by IP address
         private static readonly ConcurrentDictionary<string, FailedAttemptInfo> _failedAttempts = new ConcurrentDictionary<string, FailedAttemptInfo>();
-        
+
         // Cleanup timer to remove old entries (runs every 5 minutes)
         private static readonly Timer _cleanupTimer = new Timer(CleanupOldEntries, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
 
@@ -55,7 +55,7 @@ namespace ByteShelf.Middleware
             /// Gets or sets the number of failed attempts.
             /// </summary>
             public int FailedAttempts { get; set; }
-            
+
             /// <summary>
             /// Gets or sets the timestamp of the last failed attempt.
             /// </summary>
@@ -126,7 +126,7 @@ namespace ByteShelf.Middleware
             {
                 // Record failed attempt and apply rate limiting
                 await HandleFailedAuthentication(clientIp);
-                
+
                 context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
                 context.Response.ContentType = "application/json";
 
@@ -213,11 +213,11 @@ namespace ByteShelf.Middleware
         {
             // Get or create failed attempt info for this IP
             FailedAttemptInfo failedInfo = _failedAttempts.GetOrAdd(clientIp, _ => new FailedAttemptInfo());
-            
+
             // Update failed attempt count and timestamp
             failedInfo.FailedAttempts++;
             failedInfo.LastFailedAttempt = DateTime.UtcNow;
-            
+
             // Apply progressive delay: 500ms * number of failed attempts
             int delayMs = failedInfo.FailedAttempts * 500;
             await Task.Delay(delayMs);
