@@ -475,11 +475,13 @@ namespace ByteShelf.Tests
 
         private void SetupAdminUser()
         {
+            _mockHttpContext.Object.Items["TenantId"] = "admin";
             _mockHttpContext.Object.Items["IsAdmin"] = true;
         }
 
         private void SetupNonAdminUser()
         {
+            _mockHttpContext.Object.Items["TenantId"] = "user";
             _mockHttpContext.Object.Items["IsAdmin"] = false;
         }
     }

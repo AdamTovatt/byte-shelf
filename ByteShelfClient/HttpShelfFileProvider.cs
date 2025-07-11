@@ -76,7 +76,7 @@ namespace ByteShelfClient
         }
 
         /// <summary>
-        /// Reads a file by its ID, returning both metadata and content.
+        /// Reads a file by its ID, returning both metadata and content using the efficient single endpoint.
         /// </summary>
         /// <param name="fileId">The unique identifier of the file to read.</param>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
@@ -84,39 +84,43 @@ namespace ByteShelfClient
         /// <exception cref="FileNotFoundException">Thrown when the specified file ID does not exist on the server.</exception>
         /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
         /// <remarks>
-        /// This method first retrieves the file metadata from "/api/files/{fileId}/metadata",
-        /// then creates a content provider that streams chunks from the server as needed.
+        /// This method uses the efficient single endpoint "/api/files/{fileId}/download" to retrieve the complete file.
         /// The returned <see cref="ShelfFile"/> should be disposed when no longer needed.
         /// </remarks>
         public async Task<ShelfFile> ReadFileAsync(
             Guid fileId,
             CancellationToken cancellationToken = default)
         {
-            // First get the metadata
-            ShelfFileMetadata? metadata;
-            try
+            return await ReadFileAsync(fileId, useChunked: false, cancellationToken);
+        }
+
+        /// <summary>
+        /// Reads a file by its ID, returning both metadata and content with configurable retrieval method.
+        /// </summary>
+        /// <param name="fileId">The unique identifier of the file to read.</param>
+        /// <param name="useChunked">Whether to use the chunked endpoint approach. Defaults to false for better performance.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A <see cref="ShelfFile"/> containing the file metadata and content stream.</returns>
+        /// <exception cref="FileNotFoundException">Thrown when the specified file ID does not exist on the server.</exception>
+        /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
+        /// <remarks>
+        /// When useChunked is false (default), this method uses the efficient single endpoint "/api/files/{fileId}/download".
+        /// When useChunked is true, it uses the chunked approach with "/api/files/{fileId}/metadata" and "/api/chunks/{chunkId}".
+        /// The returned <see cref="ShelfFile"/> should be disposed when no longer needed.
+        /// </remarks>
+        public async Task<ShelfFile> ReadFileAsync(
+            Guid fileId,
+            bool useChunked,
+            CancellationToken cancellationToken = default)
+        {
+            if (useChunked)
             {
-                metadata = await _httpClient.GetFromJsonAsync<ShelfFileMetadata>(
-                    $"api/files/{fileId}/metadata",
-                    _jsonOptions,
-                    cancellationToken);
+                return await ReadFileViaChunkedEndpointAsync(fileId, cancellationToken);
             }
-            catch (HttpRequestException ex) when (ex.Message.Contains("404"))
+            else
             {
-                throw new FileNotFoundException($"File with ID {fileId} not found", ex);
+                return await ReadFileViaSingleEndpointAsync(fileId, cancellationToken);
             }
-
-            if (metadata == null)
-                throw new FileNotFoundException($"File with ID {fileId} not found");
-
-            // Create a content provider that will stream from HTTP chunks
-            ChunkedHttpContentProvider contentProvider = new ChunkedHttpContentProvider(
-                _httpClient,
-                fileId,
-                metadata.ChunkIds,
-                cancellationToken);
-
-            return new ShelfFile(metadata, contentProvider);
         }
 
         /// <summary>
@@ -389,6 +393,88 @@ namespace ByteShelfClient
                 throw new HttpRequestException("Failed to get tenant information from server");
 
             return response;
+        }
+
+        /// <summary>
+        /// Reads a file using the efficient single endpoint approach.
+        /// </summary>
+        /// <param name="fileId">The unique identifier of the file to read.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A <see cref="ShelfFile"/> containing the file metadata and content stream.</returns>
+        /// <exception cref="FileNotFoundException">Thrown when the specified file ID does not exist on the server.</exception>
+        /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
+        private async Task<ShelfFile> ReadFileViaSingleEndpointAsync(Guid fileId, CancellationToken cancellationToken = default)
+        {
+            // First get the metadata
+            ShelfFileMetadata? metadata;
+            try
+            {
+                metadata = await _httpClient.GetFromJsonAsync<ShelfFileMetadata>(
+                    $"api/files/{fileId}/metadata",
+                    _jsonOptions,
+                    cancellationToken);
+            }
+            catch (HttpRequestException ex) when (ex.Message.Contains("404"))
+            {
+                throw new FileNotFoundException($"File with ID {fileId} not found", ex);
+            }
+
+            if (metadata == null)
+                throw new FileNotFoundException($"File with ID {fileId} not found");
+
+            // Get the complete file stream from the download endpoint
+            HttpResponseMessage response = await _httpClient.GetAsync(
+                $"api/files/{fileId}/download",
+                cancellationToken);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                throw new FileNotFoundException($"File with ID {fileId} not found");
+
+            response.EnsureSuccessStatusCode();
+
+            // Create a content provider that wraps the response stream
+            SingleEndpointContentProvider contentProvider = new SingleEndpointContentProvider(
+                response.Content,
+                cancellationToken);
+
+            return new ShelfFile(metadata, contentProvider);
+        }
+
+        /// <summary>
+        /// Reads a file using the chunked endpoint approach.
+        /// </summary>
+        /// <param name="fileId">The unique identifier of the file to read.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A <see cref="ShelfFile"/> containing the file metadata and content stream.</returns>
+        /// <exception cref="FileNotFoundException">Thrown when the specified file ID does not exist on the server.</exception>
+        /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
+        private async Task<ShelfFile> ReadFileViaChunkedEndpointAsync(Guid fileId, CancellationToken cancellationToken = default)
+        {
+            // First get the metadata
+            ShelfFileMetadata? metadata;
+            try
+            {
+                metadata = await _httpClient.GetFromJsonAsync<ShelfFileMetadata>(
+                    $"api/files/{fileId}/metadata",
+                    _jsonOptions,
+                    cancellationToken);
+            }
+            catch (HttpRequestException ex) when (ex.Message.Contains("404"))
+            {
+                throw new FileNotFoundException($"File with ID {fileId} not found", ex);
+            }
+
+            if (metadata == null)
+                throw new FileNotFoundException($"File with ID {fileId} not found");
+
+            // Create a content provider that will stream from HTTP chunks
+            ChunkedHttpContentProvider contentProvider = new ChunkedHttpContentProvider(
+                _httpClient,
+                fileId,
+                metadata.ChunkIds,
+                cancellationToken);
+
+            return new ShelfFile(metadata, contentProvider);
         }
     }
 }

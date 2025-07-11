@@ -75,7 +75,7 @@ namespace ByteShelfClient.Tests
 
             string metadataJson = JsonSerializer.Serialize(metadata);
             _messageHandler.SetupResponse($"api/files/{fileId}/metadata", metadataJson);
-            _messageHandler.SetupResponse($"api/chunks/{metadata.ChunkIds[0]}", "Hello World!");
+            _messageHandler.SetupResponse($"api/files/{fileId}/download", "Hello World!");
 
             // Act
             ShelfFile result = await _provider.ReadFileAsync(fileId);
@@ -96,6 +96,31 @@ namespace ByteShelfClient.Tests
             // Act & Assert
             await Assert.ThrowsExceptionAsync<FileNotFoundException>(
                 () => _provider.ReadFileAsync(fileId));
+        }
+
+        [TestMethod]
+        public async Task ReadFileAsync_WithChunkedOption_ReturnsShelfFileWithMetadata()
+        {
+            // Arrange
+            Guid fileId = Guid.NewGuid();
+            ShelfFileMetadata metadata = new ShelfFileMetadata(
+                fileId,
+                "test.txt",
+                "text/plain",
+                1024,
+                new List<Guid> { Guid.NewGuid() });
+
+            string metadataJson = JsonSerializer.Serialize(metadata);
+            _messageHandler.SetupResponse($"api/files/{fileId}/metadata", metadataJson);
+            _messageHandler.SetupResponse($"api/chunks/{metadata.ChunkIds[0]}", "Hello World!");
+
+            // Act
+            ShelfFile result = await _provider.ReadFileAsync(fileId, useChunked: true);
+
+            // Assert
+            Assert.AreEqual(metadata.Id, result.Metadata.Id);
+            Assert.AreEqual(metadata.OriginalFilename, result.Metadata.OriginalFilename);
+            Assert.IsNotNull(result.GetContentStream());
         }
 
         [TestMethod]

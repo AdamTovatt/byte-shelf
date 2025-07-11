@@ -29,8 +29,11 @@ namespace ByteShelf.Middleware
         // Thread-safe dictionary to track failed authentication attempts by IP address
         private static readonly ConcurrentDictionary<string, FailedAttemptInfo> _failedAttempts = new ConcurrentDictionary<string, FailedAttemptInfo>();
 
-        // Cleanup timer to remove old entries (runs every 5 minutes)
-        private static readonly Timer _cleanupTimer = new Timer(CleanupOldEntries, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
+        /// <summary>
+        /// Gets or sets a millisecond value that controls how much delay to add to a request with invalid api key each time one fails.
+        /// Delay is added to prevent brute force attacks.
+        /// </summary>
+        public static int FailedAttemptMillisecondDelay { get; set; } = 500;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ApiKeyAuthenticationMiddleware"/> class.
@@ -60,29 +63,6 @@ namespace ByteShelf.Middleware
             /// Gets or sets the timestamp of the last failed attempt.
             /// </summary>
             public DateTime LastFailedAttempt { get; set; }
-        }
-
-        /// <summary>
-        /// Cleans up old failed attempt entries that are older than 1 hour.
-        /// </summary>
-        /// <param name="state">The timer state (unused).</param>
-        private static void CleanupOldEntries(object? state)
-        {
-            DateTime cutoffTime = DateTime.UtcNow.AddHours(-1);
-            List<string> keysToRemove = new List<string>();
-
-            foreach (KeyValuePair<string, FailedAttemptInfo> entry in _failedAttempts)
-            {
-                if (entry.Value.LastFailedAttempt < cutoffTime)
-                {
-                    keysToRemove.Add(entry.Key);
-                }
-            }
-
-            foreach (string key in keysToRemove)
-            {
-                _failedAttempts.TryRemove(key, out _);
-            }
         }
 
         /// <summary>
@@ -219,7 +199,7 @@ namespace ByteShelf.Middleware
             failedInfo.LastFailedAttempt = DateTime.UtcNow;
 
             // Apply progressive delay: 500ms * number of failed attempts
-            int delayMs = failedInfo.FailedAttempts * 500;
+            int delayMs = Math.Max(1, (failedInfo.FailedAttempts - 1) * FailedAttemptMillisecondDelay);
             await Task.Delay(delayMs);
         }
 

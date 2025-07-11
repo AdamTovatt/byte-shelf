@@ -14,7 +14,6 @@ namespace ByteShelf.Tests
     public class ApiKeyAuthenticationMiddlewareTests
     {
         private Mock<ITenantConfigurationService> _mockConfigService = null!;
-        private Mock<ILogger<ApiKeyAuthenticationMiddleware>> _mockLogger = null!;
         private TenantConfiguration _tenantConfig = null!;
         private ApiKeyAuthenticationMiddleware _middleware = null!;
         private Mock<RequestDelegate> _mockNext = null!;
@@ -23,7 +22,6 @@ namespace ByteShelf.Tests
         public void Setup()
         {
             _mockConfigService = new Mock<ITenantConfigurationService>();
-            _mockLogger = new Mock<ILogger<ApiKeyAuthenticationMiddleware>>();
             _mockNext = new Mock<RequestDelegate>();
 
             // Setup default tenant configuration
@@ -60,6 +58,7 @@ namespace ByteShelf.Tests
             _mockNext.Setup(n => n(It.IsAny<HttpContext>())).Returns(Task.CompletedTask);
 
             _middleware = new ApiKeyAuthenticationMiddleware(_mockNext.Object, _mockConfigService.Object);
+            ApiKeyAuthenticationMiddleware.FailedAttemptMillisecondDelay = 2;
         }
 
         [TestMethod]
