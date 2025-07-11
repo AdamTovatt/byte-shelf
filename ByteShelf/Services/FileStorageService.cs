@@ -276,11 +276,11 @@ namespace ByteShelf.Services
         }
 
         /// <summary>
-        /// Validates that a tenant ID is not null or empty.
+        /// Validates that a tenant ID is not null or empty and doesn't contain path traversal characters.
         /// </summary>
         /// <param name="tenantId">The tenant ID to validate.</param>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="tenantId"/> is null.</exception>
-        /// <exception cref="ArgumentException">Thrown when <paramref name="tenantId"/> is empty or whitespace.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="tenantId"/> is empty, whitespace, or contains invalid characters.</exception>
         private static void ValidateTenantId(string tenantId)
         {
             if (tenantId == null)
@@ -288,6 +288,10 @@ namespace ByteShelf.Services
 
             if (string.IsNullOrWhiteSpace(tenantId))
                 throw new ArgumentException("Tenant ID cannot be empty or whitespace", nameof(tenantId));
+
+            // Prevent path traversal attacks
+            if (tenantId.Contains("..") || tenantId.Contains("\\") || tenantId.Contains("/"))
+                throw new ArgumentException("Tenant ID contains invalid characters", nameof(tenantId));
         }
 
         /// <summary>
