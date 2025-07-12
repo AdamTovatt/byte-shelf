@@ -13,6 +13,7 @@ ByteShelfClient is a .NET client library that provides a simple and intuitive in
 ### Authentication & Security
 - **API Key Authentication**: Automatic inclusion of API keys in requests
 - **Tenant Support**: Full support for multi-tenant ByteShelf deployments
+- **Subtenant Management**: Complete support for hierarchical tenant structures
 - **Secure Communication**: Works with HTTPS endpoints
 
 ### Performance
@@ -56,6 +57,11 @@ Console.WriteLine($"File uploaded with ID: {fileId}");
 // Upload from memory stream
 using MemoryStream memoryStream = new MemoryStream(Encoding.UTF8.GetBytes("Hello, World!"));
 Guid fileId2 = await provider.WriteFileAsync("hello.txt", "text/plain", memoryStream);
+
+// Upload a file to a specific subtenant (parent access required)
+using FileStream subtenantFileStream = File.OpenRead("subtenant-file.txt");
+Guid subtenantFileId = await provider.WriteFileForTenantAsync("subtenant-id", "subtenant-file.txt", "text/plain", subtenantFileStream);
+Console.WriteLine($"File uploaded to subtenant with ID: {subtenantFileId}");
 ```
 
 ### Download a File
@@ -72,6 +78,11 @@ using Stream content2 = file2.GetContentStream();
 using StreamReader reader = new StreamReader(content2);
 string content = await reader.ReadToEndAsync();
 Console.WriteLine($"File content: {content}");
+
+// Download a file from a specific subtenant (parent access required)
+ShelfFile subtenantFile = await provider.ReadFileForTenantAsync("subtenant-id", fileId);
+using Stream subtenantContent = subtenantFile.GetContentStream();
+// Process the file content...
 ```
 
 ### List Files
@@ -85,12 +96,22 @@ foreach (ShelfFileMetadata file in files)
     Console.WriteLine($"  Content Type: {file.ContentType}");
     Console.WriteLine($"  Created: {file.CreatedAt}");
 }
+
+// Get files from a specific subtenant (parent access required)
+IEnumerable<ShelfFileMetadata> subtenantFiles = await provider.GetFilesForTenantAsync("subtenant-id");
+foreach (ShelfFileMetadata file in subtenantFiles)
+{
+    Console.WriteLine($"Subtenant file: {file.OriginalFilename}");
+}
 ```
 
 ### Delete a File
 ```csharp
 // Delete a file and all its chunks
 await provider.DeleteFileAsync(fileId);
+
+// Delete a file from a specific subtenant (parent access required)
+await provider.DeleteFileForTenantAsync("subtenant-id", fileId);
 ```
 
 ### Get File Metadata
@@ -208,36 +229,83 @@ else
 }
 ```
 
+### Subtenant Management
+```csharp
+// Create a new subtenant
+string subTenantId = await provider.CreateSubTenantAsync("Department A");
+Console.WriteLine($"Created subtenant with ID: {subTenantId}");
+
+// List all subtenants
+Dictionary<string, TenantInfo> subTenants = await provider.GetSubTenantsAsync();
+foreach (KeyValuePair<string, TenantInfo> kvp in subTenants)
+{
+    Console.WriteLine($"Subtenant: {kvp.Value.DisplayName}");
+    Console.WriteLine($"  ID: {kvp.Key}");
+    Console.WriteLine($"  API Key: {kvp.Value.ApiKey}");
+    Console.WriteLine($"  Storage Limit: {kvp.Value.StorageLimitBytes} bytes");
+}
+
+// Get specific subtenant information
+TenantInfo subTenant = await provider.GetSubTenantAsync(subTenantId);
+Console.WriteLine($"Subtenant Details:");
+Console.WriteLine($"  Display Name: {subTenant.DisplayName}");
+Console.WriteLine($"  API Key: {subTenant.ApiKey}");
+Console.WriteLine($"  Storage Limit: {subTenant.StorageLimitBytes} bytes");
+Console.WriteLine($"  Is Admin: {subTenant.IsAdmin}");
+
+// Update subtenant storage limit
+long newLimit = 500 * 1024 * 1024; // 500MB
+await provider.UpdateSubTenantStorageLimitAsync(subTenantId, newLimit);
+Console.WriteLine($"Updated storage limit to {newLimit} bytes");
+
+// Delete a subtenant
+await provider.DeleteSubTenantAsync(subTenantId);
+Console.WriteLine("Subtenant deleted successfully");
+```
+
+### Working with Shared Storage Quotas
+```csharp
+// Check storage availability considering shared quotas
+TenantInfoResponse tenantInfo = await provider.GetTenantInfoAsync();
+
+if (tenantInfo.StorageLimitBytes > 0)
+{
+    // Tenant has a specific storage limit
+    double usagePercent = tenantInfo.UsagePercentage;
+    long availableBytes = tenantInfo.AvailableSpaceBytes;
+    
+    Console.WriteLine($"Usage: {usagePercent:F1}%");
+    Console.WriteLine($"Available: {availableBytes} bytes");
+    
+    if (usagePercent > 90)
+    {
+        Console.WriteLine("Warning: Storage usage is high!");
+    }
+}
+else
+{
+    // Unlimited storage (admin tenant)
+    Console.WriteLine("Unlimited storage available");
+}
+
+// Check if a large file can be stored (considers shared quotas)
+long largeFileSize = 100 * 1024 * 1024; // 100MB
+bool canStore = await provider.CanStoreFileAsync(largeFileSize);
+
+if (canStore)
+{
+    Console.WriteLine("Large file can be stored");
+}
+else
+{
+    Console.WriteLine("Cannot store large file - quota exceeded");
+}
+```
+
 ## 📁 Project Structure
 
 ```
-ByteShelfClient/
-├── HttpShelfFileProvider.cs      # Main HTTP client implementation
-├── ChunkedStream.cs              # Stream wrapper for chunked operations
-├── ChunkedHttpContentProvider.cs # HTTP content provider for chunks
-├── ChunkConfiguration.cs         # Chunk size configuration
-└── ByteShelfClient.csproj        # Project file
 ```
-
-## 🔌 API Reference
-
-### IShelfFileProvider Interface
-
-The core interface for file storage operations:
-
-#### File Operations
-- `WriteFileAsync(string filename, string contentType, Stream content)` - Upload a file
-- `ReadFileAsync(Guid fileId)` - Download a file
-- `DeleteFileAsync(Guid fileId)` - Delete a file
-- `GetFilesAsync()` - List all files
-
-### HttpShelfFileProvider Class
-
-HTTP-based implementation of `IShelfFileProvider` with additional tenant-specific operations.
-
-#### Constructor Overloads
-- `HttpShelfFileProvider(HttpClient httpClient, string apiKey)` - Basic constructor
-- `HttpShelfFileProvider(HttpClient httpClient, string apiKey, ChunkConfiguration config)` - With custom chunk size
 
 #### Additional Methods (Beyond IShelfFileProvider)
 
@@ -249,74 +317,12 @@ HTTP-based implementation of `IShelfFileProvider` with additional tenant-specifi
 ##### Tenant Operations
 - `GetTenantInfoAsync()` - Get tenant information including admin status
 
-## 🧪 Testing
-
-### Unit Tests
-```bash
-dotnet test ByteShelfClient.Tests
-```
-
-### Integration Tests
-```bash
-dotnet test ByteShelf.Integration.Tests
-```
-
-## 🔒 Security Considerations
-
-### API Key Management
-- Store API keys in environment variables or secure configuration
-- Never hardcode API keys in source code
-- Rotate API keys regularly
-- Use different API keys for different environments
-
-### HTTPS Usage
-- Always use HTTPS in production
-- Validate SSL certificates
-- Consider certificate pinning for additional security
-
-### Error Handling
-- Don't expose sensitive information in error messages
-- Log errors appropriately for debugging
-- Handle authentication failures gracefully
-
-## 🚀 Performance Tips
-
-### Chunk Size Optimization
-- **Small files**: Use smaller chunks (512KB - 1MB)
-- **Large files**: Use larger chunks (2MB - 4MB)
-- **Network conditions**: Consider network latency when choosing chunk size
-
-### Memory Management
-- Use `using` statements for streams
-- Dispose of resources properly
-- Consider using `MemoryStream` for small files in memory
-
-### Concurrent Operations
-- The client supports concurrent operations
-- Use `Task.WhenAll` for multiple file operations
-- Be mindful of server-side rate limits
-
-## 🔧 Troubleshooting
-
-### Common Issues
-
-#### Authentication Errors
-```
-System.Net.Http.HttpRequestException: Response status code does not indicate success: 401 (Unauthorized)
-```
-**Solution**: Check that your API key is correct and the tenant exists.
-
-#### File Not Found
-```
-System.IO.FileNotFoundException: File not found
-```
-**Solution**: Verify the file ID exists and belongs to your tenant.
-
-#### Quota Exceeded
-```
-ByteShelfClient.QuotaExceededException: Storage quota exceeded
-```
-**Solution**: Check your tenant's storage quota and delete unnecessary files.
+##### Subtenant Management
+- `CreateSubTenantAsync(string displayName)` - Create a new subtenant
+- `GetSubTenantsAsync()` - List all subtenants
+- `GetSubTenantAsync(string subTenantId)` - Get specific subtenant information
+- `UpdateSubTenantStorageLimitAsync(string subTenantId, long storageLimitBytes)` - Update subtenant storage limit
+- `DeleteSubTenantAsync(string subTenantId)` - Delete a subtenant
 
 #### Network Issues
 ```
@@ -324,9 +330,42 @@ System.Net.Http.HttpRequestException: Unable to connect to the remote server
 ```
 **Solution**: Verify the server URL and network connectivity.
 
-## 📚 Related Documentation
+#### Subtenant Management Issues
+```
+System.IO.FileNotFoundException: Subtenant not found
+```
+**Solution**: Verify the subtenant ID exists and belongs to your tenant.
 
-- [ByteShelf API Server](../ByteShelf/README.md) - Server documentation
-- [ByteShelfCommon](../ByteShelfCommon/README.md) - Shared data structures
-- [Main README](../README.md) - Overview of the entire solution
-- [API Documentation](../ByteShelf/README.md#api-endpoints) - Complete API reference 
+```
+System.InvalidOperationException: Cannot create subtenant: maximum depth reached
+```
+**Solution**: The tenant hierarchy has reached the maximum depth of 10 levels. Create subtenants under a different parent.
+
+```
+System.ArgumentException: Storage limit cannot be negative
+```
+**Solution**: Ensure the storage limit is a positive number or zero for unlimited storage.
+
+```
+System.ArgumentException: Subtenant storage limit exceeds parent limit
+```
+**Solution**: The subtenant's storage limit cannot exceed the parent's storage limit.
+
+### Parent Access to Subtenant Files
+The client library supports hierarchical access where parent tenants can access files from their subtenants:
+
+```csharp
+// List files from a subtenant
+IEnumerable<ShelfFileMetadata> subtenantFiles = await provider.GetFilesForTenantAsync("subtenant-id");
+
+// Download a file from a subtenant
+ShelfFile subtenantFile = await provider.ReadFileForTenantAsync("subtenant-id", fileId);
+
+// Upload a file to a subtenant
+Guid uploadedFileId = await provider.WriteFileForTenantAsync("subtenant-id", "filename.txt", "text/plain", contentStream);
+
+// Delete a file from a subtenant
+await provider.DeleteFileForTenantAsync("subtenant-id", fileId);
+```
+
+**Access Control**: All tenant-specific operations require that the authenticated tenant has access to the target tenant (either be the same tenant or a parent). If access is denied, an `UnauthorizedAccessException` is thrown.

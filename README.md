@@ -47,6 +47,8 @@ ByteShelf consists of several interconnected projects that work together to prov
 ### Multi-Tenant Architecture
 - **Tenant Isolation**: Each tenant's files are completely isolated
 - **Per-Tenant Quotas**: Configurable storage limits per tenant
+- **Subtenant Hierarchy**: Support for nested tenant structures with up to 10 levels deep
+- **Shared Storage**: Parent and subtenants can share storage quotas
 - **API Key Authentication**: Secure access with tenant-specific API keys
 - **Admin Management**: Administrative interface for tenant management
 
@@ -114,7 +116,7 @@ The API server is configured through `appsettings.json` and environment variable
 ```
 
 ### Tenant Configuration
-Tenants are managed through an external JSON file with hot-reload support:
+Tenants are managed through an external JSON file with hot-reload support. The configuration supports hierarchical tenant structures with shared storage quotas:
 
 ```json
 {
@@ -124,17 +126,41 @@ Tenants are managed through an external JSON file with hot-reload support:
       "ApiKey": "admin-secure-api-key-here",
       "StorageLimitBytes": 0,
       "DisplayName": "System Administrator",
-      "IsAdmin": true
+      "IsAdmin": true,
+      "SubTenants": {}
     },
-    "tenant1": {
-      "ApiKey": "tenant1-secure-api-key-here",
+    "parent-tenant": {
+      "ApiKey": "parent-secure-api-key-here",
       "StorageLimitBytes": 1073741824,
-      "DisplayName": "Tenant 1",
-      "IsAdmin": false
+      "DisplayName": "Parent Organization",
+      "IsAdmin": false,
+      "SubTenants": {
+        "child-tenant-1": {
+          "ApiKey": "child1-secure-api-key-here",
+          "StorageLimitBytes": 1073741824,
+          "DisplayName": "Child Department 1",
+          "IsAdmin": false,
+          "SubTenants": {}
+        },
+        "child-tenant-2": {
+          "ApiKey": "child2-secure-api-key-here",
+          "StorageLimitBytes": 536870912,
+          "DisplayName": "Child Department 2",
+          "IsAdmin": false,
+          "SubTenants": {}
+        }
+      }
     }
   }
 }
 ```
+
+**Subtenant Features:**
+- **Hierarchical Structure**: Up to 10 levels of nesting supported
+- **Shared Storage**: Parent and subtenants share the parent's storage quota
+- **Individual Limits**: Subtenants can have their own storage limits (must not exceed parent's limit)
+- **API Key Inheritance**: Subtenants can access parent's files, but not vice versa
+- **Automatic Parent Relationships**: Parent references are automatically rebuilt when configuration is loaded
 
 ### Environment Variables
 ```bash
@@ -182,6 +208,13 @@ dotnet test ByteShelf.Integration.Tests
 - `PUT /api/admin/tenants/{tenantId}/storage-limit` - Update tenant storage limit
 - `DELETE /api/admin/tenants/{tenantId}` - Delete tenant
 
+### Subtenant Management Endpoints
+- `POST /api/tenant/subtenants` - Create a new subtenant under the authenticated tenant
+- `GET /api/tenant/subtenants` - List all subtenants of the authenticated tenant
+- `GET /api/tenant/subtenants/{subTenantId}` - Get information about a specific subtenant
+- `PUT /api/tenant/subtenants/{subTenantId}/storage-limit` - Update subtenant storage limit
+- `DELETE /api/tenant/subtenants/{subTenantId}` - Delete a subtenant
+
 ### Configuration Endpoints
 - `GET /api/config/chunk-size` - Get chunk size configuration
 - `GET /api/tenant/info` - Get tenant information including admin status
@@ -196,12 +229,29 @@ dotnet test ByteShelf.Integration.Tests
 - **Quota Enforcement**: Storage limits are enforced per tenant
 - **Admin Privileges**: Admin tenants have additional management capabilities
 
+### Shared Storage Behavior
+When using subtenants, storage quotas work as follows:
+
+- **Parent Quota**: The parent tenant's storage limit is shared among all subtenants
+- **Individual Limits**: Subtenants can have their own storage limits (must not exceed parent's limit)
+- **Shared Consumption**: When a subtenant stores data, it consumes from the parent's shared quota
+- **Quota Enforcement**: Storage is denied when the combined usage would exceed the parent's limit
+- **Unlimited Storage**: Admin tenants (with 0 storage limit) have unlimited storage for themselves and subtenants
+
+**Example Scenario:**
+- Parent tenant has 500MB storage limit
+- Two subtenants each think they can use 500MB (inheriting parent's limit)
+- If subtenant A uses 400MB, subtenant B can only use 100MB
+- Parent tenant can also only use 100MB remaining
+
 ### Best Practices
 1. Use strong, cryptographically secure API keys
 2. Store API keys in environment variables
 3. Use HTTPS in production environments
 4. Regularly rotate API keys
 5. Monitor API access for suspicious activity
+6. Plan storage quotas carefully when using subtenants
+7. Consider the shared nature of storage when designing tenant hierarchies
 
 ## 🚀 Deployment
 

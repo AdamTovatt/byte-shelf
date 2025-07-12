@@ -86,6 +86,53 @@ namespace ByteShelf.Integration.Tests
             File.WriteAllText(configPath, json);
         }
 
+        private void CreateHierarchicalTenantConfiguration(string configPath)
+        {
+            TenantConfiguration config = new TenantConfiguration
+            {
+                Tenants = new Dictionary<string, TenantInfo>
+                {
+                    ["parent-tenant"] = new TenantInfo
+                    {
+                        ApiKey = "parent-api-key",
+                        DisplayName = "Parent Tenant",
+                        StorageLimitBytes = 1000000000L, // 1GB
+                        IsAdmin = false,
+                        SubTenants = new Dictionary<string, TenantInfo>
+                        {
+                            ["subtenant-1"] = new TenantInfo
+                            {
+                                ApiKey = "subtenant-1-api-key",
+                                DisplayName = "Subtenant 1",
+                                StorageLimitBytes = 500000000L, // 500MB
+                                IsAdmin = false,
+                                SubTenants = new Dictionary<string, TenantInfo>()
+                            },
+                            ["subtenant-2"] = new TenantInfo
+                            {
+                                ApiKey = "subtenant-2-api-key",
+                                DisplayName = "Subtenant 2",
+                                StorageLimitBytes = 500000000L, // 500MB
+                                IsAdmin = false,
+                                SubTenants = new Dictionary<string, TenantInfo>()
+                            }
+                        }
+                    }
+                }
+            };
+
+            // Set parent references
+            config.Tenants["parent-tenant"].SubTenants["subtenant-1"].Parent = config.Tenants["parent-tenant"];
+            config.Tenants["parent-tenant"].SubTenants["subtenant-2"].Parent = config.Tenants["parent-tenant"];
+
+            string json = JsonSerializer.Serialize(config, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            File.WriteAllText(configPath, json);
+        }
+
         [TestCleanup]
         public void Cleanup()
         {
@@ -559,6 +606,405 @@ namespace ByteShelf.Integration.Tests
         }
 
 
+
+        [TestMethod]
+        public async Task TenantSpecificAccess_ParentCanListSubtenantFiles()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            using HttpClient subtenantClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+            HttpShelfFileProvider subtenantProvider = new HttpShelfFileProvider(subtenantClient, "subtenant-1-api-key");
+
+            // Upload files to subtenant
+            string content1 = "Subtenant file 1";
+            string content2 = "Subtenant file 2";
+            
+            using MemoryStream stream1 = new MemoryStream(Encoding.UTF8.GetBytes(content1));
+            using MemoryStream stream2 = new MemoryStream(Encoding.UTF8.GetBytes(content2));
+            
+            Guid fileId1 = await subtenantProvider.WriteFileAsync("subtenant-file-1.txt", "text/plain", stream1);
+            Guid fileId2 = await subtenantProvider.WriteFileAsync("subtenant-file-2.txt", "text/plain", stream2);
+
+            // Act - Parent lists files from subtenant
+            IEnumerable<ShelfFileMetadata> subtenantFiles = await parentProvider.GetFilesForTenantAsync("subtenant-1");
+
+            // Assert - Parent should see subtenant's files
+            List<ShelfFileMetadata> fileList = new List<ShelfFileMetadata>(subtenantFiles);
+            Assert.AreEqual(2, fileList.Count);
+            Assert.IsTrue(fileList.Exists(f => f.OriginalFilename == "subtenant-file-1.txt"));
+            Assert.IsTrue(fileList.Exists(f => f.OriginalFilename == "subtenant-file-2.txt"));
+        }
+
+        [TestMethod]
+        public async Task TenantSpecificAccess_ParentCanReadSubtenantFiles()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            using HttpClient subtenantClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+            HttpShelfFileProvider subtenantProvider = new HttpShelfFileProvider(subtenantClient, "subtenant-1-api-key");
+
+            // Upload file to subtenant
+            string content = "Subtenant file content";
+            using MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
+            Guid fileId = await subtenantProvider.WriteFileAsync("subtenant-file.txt", "text/plain", stream);
+
+            // Act - Parent reads file from subtenant
+            ShelfFile downloadedFile = await parentProvider.ReadFileForTenantAsync("subtenant-1", fileId);
+
+            // Assert - Parent should be able to read subtenant's file
+            Assert.AreEqual("subtenant-file.txt", downloadedFile.Metadata.OriginalFilename);
+            Assert.AreEqual("text/plain", downloadedFile.Metadata.ContentType);
+            Assert.AreEqual(content.Length, downloadedFile.Metadata.FileSize);
+
+            // Verify content
+            using Stream contentStream = downloadedFile.GetContentStream();
+            using StreamReader reader = new StreamReader(contentStream);
+            string downloadedContent = reader.ReadToEnd();
+            Assert.AreEqual(content, downloadedContent);
+        }
+
+        [TestMethod]
+        public async Task TenantSpecificAccess_ParentCanWriteToSubtenant()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            using HttpClient subtenantClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+            HttpShelfFileProvider subtenantProvider = new HttpShelfFileProvider(subtenantClient, "subtenant-1-api-key");
+
+            // Act - Parent uploads file to subtenant
+            string content = "File uploaded by parent to subtenant";
+            using MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
+            Guid fileId = await parentProvider.WriteFileForTenantAsync("subtenant-1", "parent-uploaded-file.txt", "text/plain", stream);
+
+            // Assert - File should be accessible by subtenant
+            ShelfFile subtenantFile = await subtenantProvider.ReadFileAsync(fileId);
+            Assert.AreEqual("parent-uploaded-file.txt", subtenantFile.Metadata.OriginalFilename);
+            Assert.AreEqual("text/plain", subtenantFile.Metadata.ContentType);
+
+            // Verify content
+            using Stream contentStream = subtenantFile.GetContentStream();
+            using StreamReader reader = new StreamReader(contentStream);
+            string downloadedContent = reader.ReadToEnd();
+            Assert.AreEqual(content, downloadedContent);
+        }
+
+        [TestMethod]
+        public async Task TenantSpecificAccess_ParentCanDeleteSubtenantFiles()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            using HttpClient subtenantClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+            HttpShelfFileProvider subtenantProvider = new HttpShelfFileProvider(subtenantClient, "subtenant-1-api-key");
+
+            // Upload file to subtenant
+            string content = "File to be deleted by parent";
+            using MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
+            Guid fileId = await subtenantProvider.WriteFileAsync("file-to-delete.txt", "text/plain", stream);
+
+            // Verify file exists
+            IEnumerable<ShelfFileMetadata> filesBeforeDelete = await subtenantProvider.GetFilesAsync();
+            Assert.AreEqual(1, new List<ShelfFileMetadata>(filesBeforeDelete).Count);
+
+            // Act - Parent deletes file from subtenant
+            await parentProvider.DeleteFileForTenantAsync("subtenant-1", fileId);
+
+            // Assert - File should be deleted
+            IEnumerable<ShelfFileMetadata> filesAfterDelete = await subtenantProvider.GetFilesAsync();
+            Assert.AreEqual(0, new List<ShelfFileMetadata>(filesAfterDelete).Count);
+
+            // Verify file cannot be read
+            await Assert.ThrowsExceptionAsync<FileNotFoundException>(
+                async () => await subtenantProvider.ReadFileAsync(fileId));
+        }
+
+        [TestMethod]
+        public async Task TenantSpecificAccess_SubtenantCannotAccessParentFiles()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            using HttpClient subtenantClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+            HttpShelfFileProvider subtenantProvider = new HttpShelfFileProvider(subtenantClient, "subtenant-1-api-key");
+
+            // Upload file to parent
+            string content = "Parent file";
+            using MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
+            Guid fileId = await parentProvider.WriteFileAsync("parent-file.txt", "text/plain", stream);
+
+            // Act & Assert - Subtenant should not be able to access parent's files
+            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+                async () => await subtenantProvider.GetFilesForTenantAsync("parent-tenant"));
+
+            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+                async () => await subtenantProvider.ReadFileForTenantAsync("parent-tenant", fileId));
+
+            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+                async () => await subtenantProvider.WriteFileForTenantAsync("parent-tenant", "test.txt", "text/plain", stream));
+
+            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+                async () => await subtenantProvider.DeleteFileForTenantAsync("parent-tenant", fileId));
+        }
+
+        [TestMethod]
+        public async Task TenantSpecificAccess_SiblingSubtenantsCannotAccessEachOther()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient subtenant1Client = _factory.CreateClient();
+            using HttpClient subtenant2Client = _factory.CreateClient();
+            HttpShelfFileProvider subtenant1Provider = new HttpShelfFileProvider(subtenant1Client, "subtenant-1-api-key");
+            HttpShelfFileProvider subtenant2Provider = new HttpShelfFileProvider(subtenant2Client, "subtenant-2-api-key");
+
+            // Upload file to subtenant 1
+            string content = "Subtenant 1 file";
+            using MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
+            Guid fileId = await subtenant1Provider.WriteFileAsync("subtenant1-file.txt", "text/plain", stream);
+
+            // Act & Assert - Subtenant 2 should not be able to access subtenant 1's files
+            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+                async () => await subtenant2Provider.GetFilesForTenantAsync("subtenant-1"));
+
+            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+                async () => await subtenant2Provider.ReadFileForTenantAsync("subtenant-1", fileId));
+
+            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+                async () => await subtenant2Provider.WriteFileForTenantAsync("subtenant-1", "test.txt", "text/plain", stream));
+
+            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+                async () => await subtenant2Provider.DeleteFileForTenantAsync("subtenant-1", fileId));
+        }
+
+        [TestMethod]
+        public async Task TenantSpecificAccess_NonExistentTenant_ReturnsNotFound()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+
+            // Act & Assert - Accessing non-existent tenant should return 404
+            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+                async () => await parentProvider.GetFilesForTenantAsync("non-existent-tenant"));
+
+            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+                async () => await parentProvider.ReadFileForTenantAsync("non-existent-tenant", Guid.NewGuid()));
+
+            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+                async () => await parentProvider.WriteFileForTenantAsync("non-existent-tenant", "test.txt", "text/plain", new MemoryStream()));
+
+            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+                async () => await parentProvider.DeleteFileForTenantAsync("non-existent-tenant", Guid.NewGuid()));
+        }
+
+        [TestMethod]
+        public async Task TenantSpecificAccess_ParentCanAccessMultipleSubtenants()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            using HttpClient subtenant1Client = _factory.CreateClient();
+            using HttpClient subtenant2Client = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+            HttpShelfFileProvider subtenant1Provider = new HttpShelfFileProvider(subtenant1Client, "subtenant-1-api-key");
+            HttpShelfFileProvider subtenant2Provider = new HttpShelfFileProvider(subtenant2Client, "subtenant-2-api-key");
+
+            // Upload files to both subtenants
+            string content1 = "Subtenant 1 content";
+            string content2 = "Subtenant 2 content";
+            
+            using MemoryStream stream1 = new MemoryStream(Encoding.UTF8.GetBytes(content1));
+            using MemoryStream stream2 = new MemoryStream(Encoding.UTF8.GetBytes(content2));
+            
+            Guid fileId1 = await subtenant1Provider.WriteFileAsync("subtenant1-file.txt", "text/plain", stream1);
+            Guid fileId2 = await subtenant2Provider.WriteFileAsync("subtenant2-file.txt", "text/plain", stream2);
+
+            // Act - Parent accesses files from both subtenants
+            IEnumerable<ShelfFileMetadata> subtenant1Files = await parentProvider.GetFilesForTenantAsync("subtenant-1");
+            IEnumerable<ShelfFileMetadata> subtenant2Files = await parentProvider.GetFilesForTenantAsync("subtenant-2");
+
+            // Assert - Parent should see files from both subtenants
+            List<ShelfFileMetadata> subtenant1FileList = new List<ShelfFileMetadata>(subtenant1Files);
+            List<ShelfFileMetadata> subtenant2FileList = new List<ShelfFileMetadata>(subtenant2Files);
+
+            Assert.AreEqual(1, subtenant1FileList.Count);
+            Assert.AreEqual(1, subtenant2FileList.Count);
+            Assert.AreEqual("subtenant1-file.txt", subtenant1FileList[0].OriginalFilename);
+            Assert.AreEqual("subtenant2-file.txt", subtenant2FileList[0].OriginalFilename);
+
+            // Verify parent can read files from both subtenants
+            ShelfFile file1 = await parentProvider.ReadFileForTenantAsync("subtenant-1", fileId1);
+            ShelfFile file2 = await parentProvider.ReadFileForTenantAsync("subtenant-2", fileId2);
+
+            using Stream contentStream1 = file1.GetContentStream();
+            using Stream contentStream2 = file2.GetContentStream();
+            using StreamReader reader1 = new StreamReader(contentStream1);
+            using StreamReader reader2 = new StreamReader(contentStream2);
+            
+            string downloadedContent1 = reader1.ReadToEnd();
+            string downloadedContent2 = reader2.ReadToEnd();
+            
+            Assert.AreEqual(content1, downloadedContent1);
+            Assert.AreEqual(content2, downloadedContent2);
+        }
+
+        [TestMethod]
+        public async Task TenantSpecificAccess_ChunkOperations_WorkWithTenantSpecificEndpoints()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            using HttpClient subtenantClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+            HttpShelfFileProvider subtenantProvider = new HttpShelfFileProvider(subtenantClient, "subtenant-1-api-key");
+
+            // Upload a large file to subtenant (will be chunked)
+            string largeContent = new string('X', 1200000); // 1.2MB, larger than 1MB chunk size
+            using MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(largeContent));
+            Guid fileId = await subtenantProvider.WriteFileAsync("large-file.txt", "text/plain", stream);
+
+            // Act - Parent reads the large file from subtenant
+            ShelfFile downloadedFile = await parentProvider.ReadFileForTenantAsync("subtenant-1", fileId);
+
+            // Assert - File should be properly chunked and readable
+            Assert.AreEqual("large-file.txt", downloadedFile.Metadata.OriginalFilename);
+            Assert.AreEqual("text/plain", downloadedFile.Metadata.ContentType);
+            Assert.AreEqual(largeContent.Length, downloadedFile.Metadata.FileSize);
+            Assert.IsTrue(downloadedFile.Metadata.ChunkIds.Count > 1, "Large file should be split into multiple chunks");
+
+            // Verify content integrity
+            using Stream contentStream = downloadedFile.GetContentStream();
+            using StreamReader reader = new StreamReader(contentStream);
+            string downloadedContent = reader.ReadToEnd();
+            Assert.AreEqual(largeContent, downloadedContent);
+        }
+
+        [TestMethod]
+        public async Task TenantSpecificAccess_SharedStorageQuota_EnforcedAcrossHierarchy()
+        {
+            // Arrange - Create hierarchical tenant configuration with small quota
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfigurationWithSmallQuota(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            using HttpClient subtenantClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+            HttpShelfFileProvider subtenantProvider = new HttpShelfFileProvider(subtenantClient, "subtenant-1-api-key");
+
+            // Upload file to subtenant (should succeed)
+            string content = "Subtenant file";
+            using MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
+            Guid fileId = await subtenantProvider.WriteFileAsync("subtenant-file.txt", "text/plain", stream);
+
+            // Act - Try to upload large file to parent (should fail due to shared quota)
+            string largeContent = new string('X', 1000); // 1000 bytes, exceeds 500 byte quota
+            using MemoryStream largeStream = new MemoryStream(Encoding.UTF8.GetBytes(largeContent));
+
+            // Assert - Large file upload should fail due to shared quota
+            await Assert.ThrowsExceptionAsync<Exception>(
+                async () => await parentProvider.WriteFileAsync("large-file.txt", "text/plain", largeStream));
+
+            // Verify subtenant file still exists and is accessible
+            ShelfFile subtenantFile = await subtenantProvider.ReadFileAsync(fileId);
+            using Stream contentStream = subtenantFile.GetContentStream();
+            using StreamReader reader = new StreamReader(contentStream);
+            string downloadedContent = reader.ReadToEnd();
+            Assert.AreEqual(content, downloadedContent);
+        }
+
+        private void CreateHierarchicalTenantConfigurationWithSmallQuota(string configPath)
+        {
+            TenantConfiguration config = new TenantConfiguration
+            {
+                Tenants = new Dictionary<string, TenantInfo>
+                {
+                    ["parent-tenant"] = new TenantInfo
+                    {
+                        ApiKey = "parent-api-key",
+                        DisplayName = "Parent Tenant",
+                        StorageLimitBytes = 500L, // 500 bytes total quota
+                        IsAdmin = false,
+                        SubTenants = new Dictionary<string, TenantInfo>
+                        {
+                            ["subtenant-1"] = new TenantInfo
+                            {
+                                ApiKey = "subtenant-1-api-key",
+                                DisplayName = "Subtenant 1",
+                                StorageLimitBytes = 500L, // 500 bytes (inherits from parent)
+                                IsAdmin = false,
+                                SubTenants = new Dictionary<string, TenantInfo>()
+                            }
+                        }
+                    }
+                }
+            };
+
+            // Set parent references
+            config.Tenants["parent-tenant"].SubTenants["subtenant-1"].Parent = config.Tenants["parent-tenant"];
+
+            string json = JsonSerializer.Serialize(config, new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            File.WriteAllText(configPath, json);
+        }
 
         public void Dispose()
         {

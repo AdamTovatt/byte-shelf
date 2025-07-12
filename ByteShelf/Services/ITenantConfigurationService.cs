@@ -137,5 +137,13 @@ namespace ByteShelf.Services
         /// <param name="tenantId">The tenant ID.</param>
         /// <returns>The tenant information, or null if not found.</returns>
         TenantInfo? GetTenant(string tenantId);
+
+        /// <summary>
+        /// Validates if a tenant has access to a specific subtenant.
+        /// </summary>
+        /// <param name="accessingTenantId">The ID of the tenant requesting access.</param>
+        /// <param name="targetTenantId">The ID of the tenant being accessed.</param>
+        /// <returns>True if the accessing tenant has access to the target tenant.</returns>
+        bool HasAccessToTenant(string accessingTenantId, string targetTenantId);
     }
 }

@@ -53,7 +53,9 @@ namespace ByteShelf.Services
         public bool CanStoreData(string tenantId, long sizeBytes)
         {
             TenantConfiguration config = _configService.GetConfiguration();
-            if (!config.Tenants.ContainsKey(tenantId))
+            TenantInfo? tenant = GetTenantRecursive(config, tenantId);
+
+            if (tenant == null)
             {
                 _logger.LogWarning("Tenant {TenantId} not found in configuration", tenantId);
                 return false;
@@ -61,31 +63,69 @@ namespace ByteShelf.Services
 
             lock (_usageLock)
             {
-                long currentUsage = GetCurrentUsageInternal(tenantId);
-                long limit = config.Tenants[tenantId].StorageLimitBytes;
+                long currentUsage = GetTotalUsageIncludingSubTenants(tenantId);
+                long individualLimit = tenant.StorageLimitBytes;
 
-                // Admins with 0 storage limit have unlimited storage
-                bool isUnlimited = limit == 0 && config.Tenants[tenantId].IsAdmin;
-                bool canStore = isUnlimited || currentUsage + sizeBytes <= limit;
+                if (individualLimit == 0) // A value of 0 means unlimited
+                {
+                    _logger.LogDebug(
+                        "Quota check for tenant {TenantId}: unlimited storage, canStore=true",
+                        tenantId);
+                    return true;
+                }
 
-                _logger.LogDebug(
-                    "Quota check for tenant {TenantId}: current={CurrentUsage}, limit={Limit}, unlimited={Unlimited}, requested={Requested}, canStore={CanStore}",
-                    tenantId, currentUsage, limit, isUnlimited, sizeBytes, canStore);
+                // Check individual limit first
+                bool canStoreIndividual = currentUsage + sizeBytes <= individualLimit;
+                if (!canStoreIndividual)
+                {
+                    _logger.LogDebug(
+                        "Quota check for tenant {TenantId}: exceeds individual limit, canStore=false",
+                        tenantId);
+                    return false;
+                }
 
-                return canStore;
+                // If this tenant has a parent, check shared storage limit
+                if (tenant.Parent != null)
+                {
+                    long parentLimit = tenant.Parent.StorageLimitBytes;
+
+                    // If parent has unlimited storage, subtenant can use unlimited (subject to own limit)
+                    if (parentLimit == 0 && tenant.Parent.IsAdmin)
+                    {
+                        _logger.LogDebug(
+                            "Quota check for tenant {TenantId}: parent has unlimited storage, canStore=true",
+                            tenantId);
+                        return true;
+                    }
+
+                    // Calculate total usage of parent and all subtenants
+                    long totalParentUsage = CalculateTotalUsageRecursive(tenant.Parent);
+
+                    // The subtenant is limited by both its own limit and the parent's remaining quota
+                    bool canStoreShared = totalParentUsage + sizeBytes <= parentLimit;
+                    bool canStore = canStoreIndividual && canStoreShared;
+
+                    _logger.LogDebug(
+                        "Quota check for tenant {TenantId}: individual={Individual}, shared={Shared}, parentUsage={ParentUsage}, parentLimit={ParentLimit}, canStore={CanStore}",
+                        tenantId, canStoreIndividual, canStoreShared, totalParentUsage, parentLimit, canStore);
+
+                    return canStore;
+                }
+                else
+                {
+                    // Root tenant - only check individual limit
+                    _logger.LogDebug(
+                        "Quota check for tenant {TenantId}: root tenant, current={CurrentUsage}, limit={Limit}, requested={Requested}, canStore={CanStore}",
+                        tenantId, currentUsage, individualLimit, sizeBytes, canStoreIndividual);
+
+                    return canStoreIndividual;
+                }
             }
         }
 
         /// <inheritdoc/>
         public void RecordStorageUsed(string tenantId, long sizeBytes)
         {
-            TenantConfiguration config = _configService.GetConfiguration();
-            if (!config.Tenants.ContainsKey(tenantId))
-            {
-                _logger.LogWarning("Attempted to record storage for unknown tenant {TenantId}", tenantId);
-                return;
-            }
-
             lock (_usageLock)
             {
                 long currentUsage = GetCurrentUsageInternal(tenantId);
@@ -103,13 +143,6 @@ namespace ByteShelf.Services
         /// <inheritdoc/>
         public void RecordStorageFreed(string tenantId, long sizeBytes)
         {
-            TenantConfiguration config = _configService.GetConfiguration();
-            if (!config.Tenants.ContainsKey(tenantId))
-            {
-                _logger.LogWarning("Attempted to record storage freed for unknown tenant {TenantId}", tenantId);
-                return;
-            }
-
             lock (_usageLock)
             {
                 long currentUsage = GetCurrentUsageInternal(tenantId);
@@ -195,31 +228,37 @@ namespace ByteShelf.Services
         {
             TenantConfiguration config = _configService.GetConfiguration();
             TenantInfo? tenant = GetTenantRecursive(config, tenantId);
-            
+
             if (tenant == null)
                 return 0;
-            
-            return CalculateTotalUsageRecursive(tenantId, tenant);
+
+            return CalculateTotalUsageRecursive(tenant);
         }
 
         /// <summary>
         /// Recursively calculates the total usage for a tenant and all its subtenants.
         /// </summary>
-        /// <param name="tenantId">The tenant ID.</param>
         /// <param name="tenant">The tenant information.</param>
         /// <returns>The total usage including all subtenants.</returns>
-        private long CalculateTotalUsageRecursive(string tenantId, TenantInfo tenant)
+        private long CalculateTotalUsageRecursive(TenantInfo tenant)
         {
+            // Find the tenant ID by searching for this tenant in the configuration
+            TenantConfiguration config = _configService.GetConfiguration();
+            string? tenantId = FindTenantId(tenant, config);
+
+            if (tenantId == null)
+                return 0;
+
             // Get own usage
-            long ownUsage = GetCurrentUsage(tenantId);
-            
+            long ownUsage = GetCurrentUsageInternal(tenantId);
+
             // Add usage from all subtenants
             long subTenantUsage = 0;
             foreach (KeyValuePair<string, TenantInfo> subTenant in tenant.SubTenants)
             {
-                subTenantUsage += CalculateTotalUsageRecursive(subTenant.Key, subTenant.Value);
+                subTenantUsage += CalculateTotalUsageRecursive(subTenant.Value);
             }
-            
+
             return ownUsage + subTenantUsage;
         }
 
@@ -270,6 +309,53 @@ namespace ByteShelf.Services
                 {
                     return result;
                 }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Finds the tenant ID for a given tenant by searching through the configuration.
+        /// </summary>
+        /// <param name="tenant">The tenant to find the ID for.</param>
+        /// <param name="config">The tenant configuration.</param>
+        /// <returns>The tenant ID, or null if not found.</returns>
+        private string? FindTenantId(TenantInfo tenant, TenantConfiguration config)
+        {
+            // Search in root tenants
+            foreach (KeyValuePair<string, TenantInfo> kvp in config.Tenants)
+            {
+                if (ReferenceEquals(kvp.Value, tenant))
+                    return kvp.Key;
+            }
+
+            // Search in subtenants recursively
+            foreach (TenantInfo rootTenant in config.Tenants.Values)
+            {
+                string? found = FindTenantIdInSubTenants(tenant, rootTenant);
+                if (found != null)
+                    return found;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Recursively searches for a tenant ID in subtenants.
+        /// </summary>
+        /// <param name="tenant">The tenant to find.</param>
+        /// <param name="parentTenant">The parent tenant to search in.</param>
+        /// <returns>The tenant ID, or null if not found.</returns>
+        private string? FindTenantIdInSubTenants(TenantInfo tenant, TenantInfo parentTenant)
+        {
+            foreach (KeyValuePair<string, TenantInfo> kvp in parentTenant.SubTenants)
+            {
+                if (ReferenceEquals(kvp.Value, tenant))
+                    return kvp.Key;
+
+                string? found = FindTenantIdInSubTenants(tenant, kvp.Value);
+                if (found != null)
+                    return found;
             }
 
             return null;

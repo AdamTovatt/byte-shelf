@@ -471,6 +471,57 @@ namespace ByteShelf.Services
             return null;
         }
 
+        /// <summary>
+        /// Validates if a tenant has access to a specific subtenant.
+        /// </summary>
+        /// <param name="accessingTenantId">The ID of the tenant requesting access.</param>
+        /// <param name="targetTenantId">The ID of the tenant being accessed.</param>
+        /// <returns>True if the accessing tenant has access to the target tenant.</returns>
+        public bool HasAccessToTenant(string accessingTenantId, string targetTenantId)
+        {
+            if (string.IsNullOrWhiteSpace(accessingTenantId) || string.IsNullOrWhiteSpace(targetTenantId))
+                return false;
+
+            // If the tenant is accessing itself, allow it
+            if (accessingTenantId == targetTenantId)
+                return true;
+
+            TenantConfiguration config = GetConfiguration();
+
+            // Get the accessing tenant
+            TenantInfo? accessingTenant = GetTenant(accessingTenantId);
+            if (accessingTenant == null)
+                return false;
+
+            // Get the target tenant
+            TenantInfo? targetTenant = GetTenant(targetTenantId);
+            if (targetTenant == null)
+                return false;
+
+            // Check if the target tenant is a descendant of the accessing tenant
+            return IsDescendantOf(targetTenant, accessingTenant);
+        }
+
+        /// <summary>
+        /// Checks if a tenant is a descendant of another tenant.
+        /// </summary>
+        /// <param name="potentialDescendant">The tenant to check if it's a descendant.</param>
+        /// <param name="potentialAncestor">The tenant to check if it's an ancestor.</param>
+        /// <returns>True if potentialDescendant is a descendant of potentialAncestor.</returns>
+        private bool IsDescendantOf(TenantInfo potentialDescendant, TenantInfo potentialAncestor)
+        {
+            // Check if the potential descendant has the potential ancestor as a parent
+            TenantInfo? current = potentialDescendant.Parent;
+            while (current != null)
+            {
+                if (ReferenceEquals(current, potentialAncestor))
+                    return true;
+                current = current.Parent;
+            }
+
+            return false;
+        }
+
         private const int MaxSubTenantDepth = 10;
 
         /// <summary>

@@ -18,10 +18,11 @@ ByteShelfCommon/
 ├── ShelfFile.cs                   # File representation with content
 ├── IContentProvider.cs            # Content provider interface
 ├── IShelfFileProvider.cs          # File provider interface
-├── TenantInfo.cs                  # Tenant information model
+├── TenantInfo.cs                  # Tenant information model with hierarchy
 ├── TenantStorageInfo.cs           # Tenant storage usage information
 ├── QuotaCheckResult.cs            # Storage quota check results
 ├── CreateTenantRequest.cs         # Tenant creation request model
+├── CreateSubTenantRequest.cs      # Subtenant creation request model
 ├── UpdateStorageLimitRequest.cs   # Storage limit update request
 └── ByteShelfCommon.csproj         # Project file
 ```
@@ -40,8 +41,26 @@ public interface IShelfFileProvider
     Task<ShelfFile> ReadFileAsync(Guid fileId);
     Task DeleteFileAsync(Guid fileId);
     Task<IEnumerable<ShelfFileMetadata>> GetFilesAsync();
+    
+    // Tenant-specific file operations (parent access required)
+    Task<Guid> WriteFileForTenantAsync(string targetTenantId, string filename, string contentType, Stream content);
+    Task<ShelfFile> ReadFileForTenantAsync(string targetTenantId, Guid fileId);
+    Task DeleteFileForTenantAsync(string targetTenantId, Guid fileId);
+    Task<IEnumerable<ShelfFileMetadata>> GetFilesForTenantAsync(string targetTenantId);
 }
 ```
+
+**Note**: The `HttpShelfFileProvider` implementation provides additional methods beyond the core `IShelfFileProvider` interface, including tenant-specific operations like `GetTenantInfoAsync()`, `GetStorageInfoAsync()`, `CanStoreFileAsync()`, and subtenant management methods. These are specific to the HTTP API implementation and not part of the core interface.
+
+**Additional HTTP API Methods:**
+- `GetTenantInfoAsync()` - Get tenant information including admin status
+- `GetStorageInfoAsync()` - Get storage usage information
+- `CanStoreFileAsync(long fileSize)` - Check if a file can be stored
+- `CreateSubTenantAsync(string displayName)` - Create a new subtenant
+- `GetSubTenantsAsync()` - List all subtenants
+- `GetSubTenantAsync(string subTenantId)` - Get subtenant information
+- `UpdateSubTenantStorageLimitAsync(string subTenantId, long storageLimitBytes)` - Update subtenant storage limit
+- `DeleteSubTenantAsync(string subTenantId)` - Delete a subtenant
 
 ### IContentProvider
 
@@ -111,25 +130,33 @@ using Stream content = file.GetContentStream();
 
 ### TenantInfo
 
-Represents tenant configuration and information.
+Represents tenant configuration and information, including hierarchical relationships.
 
 ```csharp
 public class TenantInfo
 {
-    public string TenantId { get; set; }
-    public string DisplayName { get; set; }
     public string ApiKey { get; set; }
     public long StorageLimitBytes { get; set; }
+    public string DisplayName { get; set; }
     public bool IsAdmin { get; set; }
+    public TenantInfo? Parent { get; set; }
+    public Dictionary<string, TenantInfo> SubTenants { get; set; }
 }
 ```
 
 **Properties:**
-- `TenantId`: Unique identifier for the tenant
-- `DisplayName`: Human-readable name for the tenant
 - `ApiKey`: API key for authentication
 - `StorageLimitBytes`: Maximum storage allowed (0 = unlimited for admins)
+- `DisplayName`: Human-readable name for the tenant
 - `IsAdmin`: Whether the tenant has administrative privileges
+- `Parent`: Reference to the parent tenant (null for root tenants)
+- `SubTenants`: Dictionary of subtenants keyed by tenant ID
+
+**Hierarchical Features:**
+- **Parent References**: Runtime navigation to parent tenant (not serialized to avoid circular references)
+- **Subtenant Management**: Support for nested tenant structures up to 10 levels deep
+- **Shared Storage**: Parent and subtenants can share storage quotas
+- **API Key Inheritance**: Subtenants can access parent's files, but not vice versa
 
 ### TenantStorageInfo
 
@@ -199,6 +226,17 @@ public class QuotaCheckResult
 
 ## 📝 Request/Response Models
 
+### UpdateStorageLimitRequest
+
+Request model for updating tenant storage limits.
+
+```csharp
+public class UpdateStorageLimitRequest
+{
+    public long StorageLimitBytes { get; set; }
+}
+```
+
 ### CreateTenantRequest
 
 Request model for creating a new tenant.
@@ -213,16 +251,25 @@ public class CreateTenantRequest
 }
 ```
 
-### UpdateStorageLimitRequest
+### CreateSubTenantRequest
 
-Request model for updating tenant storage limits.
+Request model for creating a new subtenant.
 
 ```csharp
-public class UpdateStorageLimitRequest
+public class CreateSubTenantRequest
 {
-    public long StorageLimitBytes { get; set; }
+    public string DisplayName { get; set; }
 }
 ```
+
+**Properties:**
+- `DisplayName`: Human-readable name for the subtenant
+
+**Notes:**
+- The subtenant ID is automatically generated as a GUID
+- The API key is automatically generated as a unique key
+- The storage limit is initially set to match the parent's limit
+- The subtenant inherits the parent's storage quota
 
 ## 🔧 Usage Examples
 
@@ -351,6 +398,74 @@ else
 }
 ```
 
+### Working with Hierarchical Tenant Structures
+
+```csharp
+// Create a subtenant
+string subTenantId = await provider.CreateSubTenantAsync("Department A");
+
+// List all subtenants
+var subTenants = await provider.GetSubTenantsAsync();
+foreach (var subTenant in subTenants)
+{
+    Console.WriteLine($"Subtenant: {subTenant.DisplayName}");
+    Console.WriteLine($"Storage Limit: {subTenant.StorageLimitBytes} bytes");
+}
+
+// Get specific subtenant information
+var subTenant = await provider.GetSubTenantAsync(subTenantId);
+Console.WriteLine($"Subtenant ID: {subTenantId}");
+Console.WriteLine($"Display Name: {subTenant.DisplayName}");
+Console.WriteLine($"API Key: {subTenant.ApiKey}");
+
+// Update subtenant storage limit
+long newLimit = 500 * 1024 * 1024; // 500MB
+await provider.UpdateSubTenantStorageLimitAsync(subTenantId, newLimit);
+
+// Delete a subtenant
+await provider.DeleteSubTenantAsync(subTenantId);
+```
+
+### Working with Shared Storage Quotas
+
+```csharp
+// Check storage availability considering shared quotas
+TenantInfoResponse tenantInfo = await provider.GetTenantInfoAsync();
+
+if (tenantInfo.StorageLimitBytes > 0)
+{
+    // Tenant has a specific storage limit
+    double usagePercent = tenantInfo.UsagePercentage;
+    long availableBytes = tenantInfo.AvailableSpaceBytes;
+    
+    Console.WriteLine($"Usage: {usagePercent:F1}%");
+    Console.WriteLine($"Available: {availableBytes} bytes");
+    
+    if (usagePercent > 90)
+    {
+        Console.WriteLine("Warning: Storage usage is high!");
+    }
+}
+else
+{
+    // Unlimited storage (admin tenant)
+    Console.WriteLine("Unlimited storage available");
+}
+
+// Check if a large file can be stored (considers shared quotas)
+long largeFileSize = 100 * 1024 * 1024; // 100MB
+bool canStore = await provider.CanStoreFileAsync(largeFileSize);
+
+if (canStore)
+{
+    Console.WriteLine("Large file can be stored");
+}
+else
+{
+    Console.WriteLine("Cannot store large file - quota exceeded");
+}
+```
+
 ## 🧪 Testing
 
 ### Unit Tests
@@ -416,6 +531,25 @@ The library is designed to work across different .NET platforms:
 - Follow semantic versioning
 - Maintain backward compatibility when possible
 - Document breaking changes clearly
+
+### Working with Parent Access to Subtenant Files
+The ByteShelf system supports hierarchical access where parent tenants can access files from their subtenants:
+
+```csharp
+// List files from a subtenant
+IEnumerable<ShelfFileMetadata> subtenantFiles = await provider.GetFilesForTenantAsync("subtenant-id");
+
+// Download a file from a subtenant
+ShelfFile subtenantFile = await provider.ReadFileForTenantAsync("subtenant-id", fileId);
+
+// Upload a file to a subtenant
+Guid uploadedFileId = await provider.WriteFileForTenantAsync("subtenant-id", "filename.txt", "text/plain", contentStream);
+
+// Delete a file from a subtenant
+await provider.DeleteFileForTenantAsync("subtenant-id", fileId);
+```
+
+**Access Control**: All tenant-specific operations require that the authenticated tenant has access to the target tenant (either be the same tenant or a parent). If access is denied, an `UnauthorizedAccessException` is thrown.
 
 ## 📚 Related Documentation
 

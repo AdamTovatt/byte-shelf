@@ -242,6 +242,280 @@ namespace ByteShelf.Tests
         }
 
         [TestMethod]
+        public void CanStoreData_WithSharedStorage_WhenParentAndSubTenantsShareQuota()
+        {
+            // Arrange - Parent has 500MB, two subtenants share this quota
+            TenantConfiguration configWithSubTenants = new TenantConfiguration
+            {
+                RequireAuthentication = true,
+                Tenants = new Dictionary<string, TenantInfo>
+                {
+                    ["parent"] = new TenantInfo
+                    {
+                        ApiKey = "parent-key",
+                        DisplayName = "Parent Tenant",
+                        StorageLimitBytes = 500 * 1024 * 1024, // 500MB
+                        IsAdmin = false,
+                        SubTenants = new Dictionary<string, TenantInfo>
+                        {
+                            ["child1"] = new TenantInfo
+                            {
+                                ApiKey = "child1-key",
+                                DisplayName = "Child 1",
+                                StorageLimitBytes = 500 * 1024 * 1024, // Inherits parent's 500MB
+                                IsAdmin = false,
+                                SubTenants = new Dictionary<string, TenantInfo>()
+                            },
+                            ["child2"] = new TenantInfo
+                            {
+                                ApiKey = "child2-key",
+                                DisplayName = "Child 2",
+                                StorageLimitBytes = 500 * 1024 * 1024, // Inherits parent's 500MB
+                                IsAdmin = false,
+                                SubTenants = new Dictionary<string, TenantInfo>()
+                            }
+                        }
+                    }
+                }
+            };
+
+            configWithSubTenants.Tenants["parent"].SubTenants["child1"].Parent = configWithSubTenants.Tenants["parent"];
+            configWithSubTenants.Tenants["parent"].SubTenants["child2"].Parent = configWithSubTenants.Tenants["parent"];
+
+            _mockConfigService.Setup(c => c.GetConfiguration()).Returns(configWithSubTenants);
+
+            // Act & Assert - Initially all tenants can store up to 500MB
+            Assert.IsTrue(_service.CanStoreData("parent", 500 * 1024 * 1024)); // Parent can use full 500MB
+            Assert.IsTrue(_service.CanStoreData("child1", 500 * 1024 * 1024)); // Child1 can use full 500MB
+            Assert.IsTrue(_service.CanStoreData("child2", 500 * 1024 * 1024)); // Child2 can use full 500MB
+
+            // Child1 uses 400MB
+            _service.RecordStorageUsed("child1", 400 * 1024 * 1024);
+
+            // Now only 100MB should be available for everyone
+            Assert.IsFalse(_service.CanStoreData("parent", 200 * 1024 * 1024)); // Parent cannot use 200MB
+            Assert.IsTrue(_service.CanStoreData("parent", 100 * 1024 * 1024)); // Parent can use 100MB
+            Assert.IsFalse(_service.CanStoreData("child1", 200 * 1024 * 1024)); // Child1 cannot use 200MB more
+            Assert.IsTrue(_service.CanStoreData("child1", 100 * 1024 * 1024)); // Child1 can use 100MB more
+            Assert.IsFalse(_service.CanStoreData("child2", 200 * 1024 * 1024)); // Child2 cannot use 200MB
+            Assert.IsTrue(_service.CanStoreData("child2", 100 * 1024 * 1024)); // Child2 can use 100MB
+
+            // Child2 uses the remaining 100MB
+            _service.RecordStorageUsed("child2", 100 * 1024 * 1024);
+
+            // Now no one should be able to store anything
+            Assert.IsFalse(_service.CanStoreData("parent", 1 * 1024 * 1024)); // Parent cannot use 1MB
+            Assert.IsFalse(_service.CanStoreData("child1", 1 * 1024 * 1024)); // Child1 cannot use 1MB
+            Assert.IsFalse(_service.CanStoreData("child2", 1 * 1024 * 1024)); // Child2 cannot use 1MB
+        }
+
+        [TestMethod]
+        public void CanStoreData_WithSharedStorage_WhenParentAlsoUsesStorage()
+        {
+            // Arrange - Parent has 500MB, parent and subtenants share this quota
+            TenantConfiguration configWithSubTenants = new TenantConfiguration
+            {
+                RequireAuthentication = true,
+                Tenants = new Dictionary<string, TenantInfo>
+                {
+                    ["parent"] = new TenantInfo
+                    {
+                        ApiKey = "parent-key",
+                        DisplayName = "Parent Tenant",
+                        StorageLimitBytes = 500 * 1024 * 1024, // 500MB
+                        IsAdmin = false,
+                        SubTenants = new Dictionary<string, TenantInfo>
+                        {
+                            ["child"] = new TenantInfo
+                            {
+                                ApiKey = "child-key",
+                                DisplayName = "Child",
+                                StorageLimitBytes = 500 * 1024 * 1024, // Inherits parent's 500MB
+                                IsAdmin = false,
+                                SubTenants = new Dictionary<string, TenantInfo>()
+                            }
+                        }
+                    }
+                }
+            };
+
+            configWithSubTenants.Tenants["parent"].SubTenants["child"].Parent = configWithSubTenants.Tenants["parent"];
+
+            _mockConfigService.Setup(c => c.GetConfiguration()).Returns(configWithSubTenants);
+
+            // Parent uses 300MB
+            _service.RecordStorageUsed("parent", 300 * 1024 * 1024);
+
+            // Child should only be able to use 200MB
+            Assert.IsFalse(_service.CanStoreData("child", 250 * 1024 * 1024)); // Child cannot use 250MB
+            Assert.IsTrue(_service.CanStoreData("child", 200 * 1024 * 1024)); // Child can use 200MB
+
+            // Parent should only be able to use 200MB more
+            Assert.IsFalse(_service.CanStoreData("parent", 250 * 1024 * 1024)); // Parent cannot use 250MB more
+            Assert.IsTrue(_service.CanStoreData("parent", 200 * 1024 * 1024)); // Parent can use 200MB more
+        }
+
+        [TestMethod]
+        public void CanStoreData_WithSharedStorage_WhenSubTenantFreesStorage()
+        {
+            // Arrange - Parent has 500MB, two subtenants share this quota
+            TenantConfiguration configWithSubTenants = new TenantConfiguration
+            {
+                RequireAuthentication = true,
+                Tenants = new Dictionary<string, TenantInfo>
+                {
+                    ["parent"] = new TenantInfo
+                    {
+                        ApiKey = "parent-key",
+                        DisplayName = "Parent Tenant",
+                        StorageLimitBytes = 500 * 1024 * 1024, // 500MB
+                        IsAdmin = false,
+                        SubTenants = new Dictionary<string, TenantInfo>
+                        {
+                            ["child1"] = new TenantInfo
+                            {
+                                ApiKey = "child1-key",
+                                DisplayName = "Child 1",
+                                StorageLimitBytes = 500 * 1024 * 1024, // Inherits parent's 500MB
+                                IsAdmin = false,
+                                SubTenants = new Dictionary<string, TenantInfo>()
+                            },
+                            ["child2"] = new TenantInfo
+                            {
+                                ApiKey = "child2-key",
+                                DisplayName = "Child 2",
+                                StorageLimitBytes = 500 * 1024 * 1024, // Inherits parent's 500MB
+                                IsAdmin = false,
+                                SubTenants = new Dictionary<string, TenantInfo>()
+                            }
+                        }
+                    }
+                }
+            };
+
+            configWithSubTenants.Tenants["parent"].SubTenants["child1"].Parent = configWithSubTenants.Tenants["parent"];
+            configWithSubTenants.Tenants["parent"].SubTenants["child2"].Parent = configWithSubTenants.Tenants["parent"];
+
+            _mockConfigService.Setup(c => c.GetConfiguration()).Returns(configWithSubTenants);
+
+            // Child1 uses 400MB, Child2 uses 100MB
+            _service.RecordStorageUsed("child1", 400 * 1024 * 1024);
+            _service.RecordStorageUsed("child2", 100 * 1024 * 1024);
+
+            // No one should be able to store anything
+            Assert.IsFalse(_service.CanStoreData("parent", 1 * 1024 * 1024));
+            Assert.IsFalse(_service.CanStoreData("child1", 1 * 1024 * 1024));
+            Assert.IsFalse(_service.CanStoreData("child2", 1 * 1024 * 1024));
+
+            // Child1 frees 200MB
+            _service.RecordStorageFreed("child1", 200 * 1024 * 1024);
+
+            // Now everyone should be able to use 200MB
+            Assert.IsTrue(_service.CanStoreData("parent", 200 * 1024 * 1024));
+            Assert.IsTrue(_service.CanStoreData("child1", 200 * 1024 * 1024));
+            Assert.IsTrue(_service.CanStoreData("child2", 200 * 1024 * 1024));
+        }
+
+        [TestMethod]
+        public void CanStoreData_WithSharedStorage_WhenParentHasUnlimitedStorage()
+        {
+            // Arrange - Parent has unlimited storage (0), subtenants inherit unlimited
+            TenantConfiguration configWithSubTenants = new TenantConfiguration
+            {
+                RequireAuthentication = true,
+                Tenants = new Dictionary<string, TenantInfo>
+                {
+                    ["parent"] = new TenantInfo
+                    {
+                        ApiKey = "parent-key",
+                        DisplayName = "Parent Tenant",
+                        StorageLimitBytes = 0, // Unlimited
+                        IsAdmin = true,
+                        SubTenants = new Dictionary<string, TenantInfo>
+                        {
+                            ["child"] = new TenantInfo
+                            {
+                                ApiKey = "child-key",
+                                DisplayName = "Child",
+                                StorageLimitBytes = 0, // Inherits parent's unlimited
+                                IsAdmin = false,
+                                SubTenants = new Dictionary<string, TenantInfo>()
+                            }
+                        }
+                    }
+                }
+            };
+
+            configWithSubTenants.Tenants["parent"].SubTenants["child"].Parent = configWithSubTenants.Tenants["parent"];
+
+            _mockConfigService.Setup(c => c.GetConfiguration()).Returns(configWithSubTenants);
+
+            // Both parent and child should be able to store unlimited amounts
+            Assert.IsTrue(_service.CanStoreData("parent", 1024L * 1024L * 1024L * 10L)); // 10GB
+            Assert.IsTrue(_service.CanStoreData("child", 1024L * 1024L * 1024L * 10L)); // 10GB
+
+            // Even after using storage, they should still be unlimited
+            _service.RecordStorageUsed("parent", 1024L * 1024L * 1024L * 5L); // 5GB
+            _service.RecordStorageUsed("child", 1024L * 1024L * 1024L * 5L); // 5GB
+
+            Assert.IsTrue(_service.CanStoreData("parent", 1024L * 1024L * 1024L * 10L)); // 10GB more
+            Assert.IsTrue(_service.CanStoreData("child", 1024L * 1024L * 1024L * 10L)); // 10GB more
+        }
+
+        [TestMethod]
+        public void CanStoreData_WithSharedStorage_WhenSubTenantHasLowerLimitThanParent()
+        {
+            // Arrange - Parent has 500MB, subtenant has 200MB (lower than parent)
+            TenantConfiguration configWithSubTenants = new TenantConfiguration
+            {
+                RequireAuthentication = true,
+                Tenants = new Dictionary<string, TenantInfo>
+                {
+                    ["parent"] = new TenantInfo
+                    {
+                        ApiKey = "parent-key",
+                        DisplayName = "Parent Tenant",
+                        StorageLimitBytes = 500 * 1024 * 1024, // 500MB
+                        IsAdmin = false,
+                        SubTenants = new Dictionary<string, TenantInfo>
+                        {
+                            ["child"] = new TenantInfo
+                            {
+                                ApiKey = "child-key",
+                                DisplayName = "Child",
+                                StorageLimitBytes = 200 * 1024 * 1024, // 200MB (lower than parent)
+                                IsAdmin = false,
+                                SubTenants = new Dictionary<string, TenantInfo>(),
+                            }
+                        }
+                    }
+                }
+            };
+
+            configWithSubTenants.Tenants["parent"].SubTenants["child"].Parent = configWithSubTenants.Tenants["parent"];
+
+            _mockConfigService.Setup(c => c.GetConfiguration()).Returns(configWithSubTenants);
+
+            // Child should be limited by its own limit (200MB), not parent's limit (500MB)
+            Assert.IsTrue(_service.CanStoreData("child", 200 * 1024 * 1024)); // Child can use 200MB
+            Assert.IsFalse(_service.CanStoreData("child", 250 * 1024 * 1024)); // Child cannot use 250MB
+
+            // Parent should be limited by its own limit (500MB)
+            Assert.IsTrue(_service.CanStoreData("parent", 500 * 1024 * 1024)); // Parent can use 500MB
+            Assert.IsFalse(_service.CanStoreData("parent", 600 * 1024 * 1024)); // Parent cannot use 600MB
+
+            // Child uses 150MB
+            _service.RecordStorageUsed("child", 150 * 1024 * 1024);
+
+            // Child should only be able to use 50MB more (200MB - 150MB = 50MB)
+            Assert.IsTrue(_service.CanStoreData("child", 50 * 1024 * 1024)); // Child can use 50MB
+            Assert.IsFalse(_service.CanStoreData("child", 60 * 1024 * 1024)); // Child cannot use 60MB
+
+            // Parent should not still be able to use 500MB (it's affected by child's usage)
+            Assert.IsFalse(_service.CanStoreData("parent", 500 * 1024 * 1024)); // Parent can use 500MB
+        }
+
+        [TestMethod]
         public void RebuildUsageCache_CalculatesUsageFromMetadataFiles()
         {
             // Arrange

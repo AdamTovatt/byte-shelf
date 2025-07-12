@@ -128,6 +128,41 @@ namespace ByteShelfClient
         }
 
         /// <summary>
+        /// Retrieves metadata for all stored files from a specific tenant.
+        /// </summary>
+        /// <param name="targetTenantId">The ID of the tenant whose files to retrieve.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A collection of file metadata for all stored files in the specified tenant.</returns>
+        /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
+        /// <exception cref="UnauthorizedAccessException">Thrown when the authenticated tenant does not have access to the specified tenant.</exception>
+        /// <remarks>
+        /// This method makes a GET request to the "/api/files/{targetTenantId}" endpoint.
+        /// The authenticated tenant must have access to the specified tenant (either be the same tenant or a parent).
+        /// Returns an empty collection if no files are found.
+        /// </remarks>
+        public async Task<IEnumerable<ShelfFileMetadata>> GetFilesForTenantAsync(
+            string targetTenantId,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(targetTenantId))
+                throw new ArgumentException("Target tenant ID cannot be null or empty", nameof(targetTenantId));
+
+            try
+            {
+                List<ShelfFileMetadata>? response = await _httpClient.GetFromJsonAsync<List<ShelfFileMetadata>>(
+                    NormalizePath($"api/files/{targetTenantId}"),
+                    _jsonOptions,
+                    cancellationToken);
+
+                return response ?? new List<ShelfFileMetadata>();
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                throw new UnauthorizedAccessException($"Access denied to tenant '{targetTenantId}'", ex);
+            }
+        }
+
+        /// <summary>
         /// Reads a file by its ID, returning both metadata and content using the efficient single endpoint.
         /// </summary>
         /// <param name="fileId">The unique identifier of the file to read.</param>
@@ -172,6 +207,63 @@ namespace ByteShelfClient
             else
             {
                 return await ReadFileViaSingleEndpointAsync(fileId, cancellationToken);
+            }
+        }
+
+        /// <summary>
+        /// Reads a file by its ID from a specific tenant, returning both metadata and content.
+        /// </summary>
+        /// <param name="targetTenantId">The ID of the tenant whose file to read.</param>
+        /// <param name="fileId">The unique identifier of the file to read.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A <see cref="ShelfFile"/> containing the file metadata and content stream.</returns>
+        /// <exception cref="FileNotFoundException">Thrown when the specified file ID does not exist on the server.</exception>
+        /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
+        /// <exception cref="UnauthorizedAccessException">Thrown when the authenticated tenant does not have access to the specified tenant.</exception>
+        /// <remarks>
+        /// This method uses the efficient single endpoint "/api/files/{targetTenantId}/{fileId}/download" to retrieve the complete file.
+        /// The authenticated tenant must have access to the specified tenant (either be the same tenant or a parent).
+        /// The returned <see cref="ShelfFile"/> should be disposed when no longer needed.
+        /// </remarks>
+        public async Task<ShelfFile> ReadFileForTenantAsync(
+            string targetTenantId,
+            Guid fileId,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(targetTenantId))
+                throw new ArgumentException("Target tenant ID cannot be null or empty", nameof(targetTenantId));
+
+            try
+            {
+                // First get the metadata
+                ShelfFileMetadata? metadata = await _httpClient.GetFromJsonAsync<ShelfFileMetadata>(
+                    NormalizePath($"api/files/{targetTenantId}/{fileId}/metadata"),
+                    _jsonOptions,
+                    cancellationToken);
+
+                if (metadata == null)
+                    throw new FileNotFoundException($"File with ID {fileId} not found in tenant {targetTenantId}");
+
+                // Get the complete file stream from the download endpoint
+                HttpResponseMessage response = await _httpClient.GetAsync(
+                    NormalizePath($"api/files/{targetTenantId}/{fileId}/download"),
+                    cancellationToken);
+
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    throw new FileNotFoundException($"File with ID {fileId} not found in tenant {targetTenantId}");
+
+                response.EnsureSuccessStatusCode();
+
+                // Create a content provider that wraps the response stream
+                SingleEndpointContentProvider contentProvider = new SingleEndpointContentProvider(
+                    response.Content,
+                    cancellationToken);
+
+                return new ShelfFile(metadata, contentProvider);
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                throw new UnauthorizedAccessException($"Access denied to tenant '{targetTenantId}'", ex);
             }
         }
 
@@ -262,6 +354,110 @@ namespace ByteShelfClient
         }
 
         /// <summary>
+        /// Writes a file to a specific tenant on the server, automatically chunking it if necessary.
+        /// </summary>
+        /// <param name="targetTenantId">The ID of the tenant for which to write the file.</param>
+        /// <param name="originalFilename">The original filename of the file being stored.</param>
+        /// <param name="contentType">The MIME type of the file content.</param>
+        /// <param name="content">A stream containing the file content to be stored.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>The unique identifier assigned to the stored file.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="targetTenantId"/>, <paramref name="originalFilename"/>, <paramref name="contentType"/>, or <paramref name="content"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="targetTenantId"/>, <paramref name="originalFilename"/>, or <paramref name="contentType"/> is empty.</exception>
+        /// <exception cref="HttpRequestException">Thrown when any HTTP request fails or returns an error status code.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when the server configuration cannot be retrieved.</exception>
+        /// <exception cref="UnauthorizedAccessException">Thrown when the authenticated tenant does not have access to the specified tenant.</exception>
+        /// <remarks>
+        /// This method:
+        /// 1. Retrieves the chunk size configuration from the server
+        /// 2. Splits the content into chunks if it exceeds the chunk size
+        /// 3. Uploads each chunk to "/api/chunks/{targetTenantId}/{chunkId}"
+        /// 4. Creates and uploads the file metadata to "/api/files/{targetTenantId}/metadata"
+        /// The authenticated tenant must have access to the specified tenant (either be the same tenant or a parent).
+        /// The content stream will be read from its current position to the end.
+        /// </remarks>
+        public async Task<Guid> WriteFileForTenantAsync(
+            string targetTenantId,
+            string originalFilename,
+            string contentType,
+            Stream content,
+            CancellationToken cancellationToken = default)
+        {
+            if (targetTenantId == null) throw new ArgumentNullException(nameof(targetTenantId));
+            if (originalFilename == null) throw new ArgumentNullException(nameof(originalFilename));
+            if (contentType == null) throw new ArgumentNullException(nameof(contentType));
+            if (content == null) throw new ArgumentNullException(nameof(content));
+            if (string.IsNullOrEmpty(targetTenantId)) throw new ArgumentException("Target tenant ID cannot be empty", nameof(targetTenantId));
+            if (string.IsNullOrEmpty(originalFilename)) throw new ArgumentException("Original filename cannot be empty", nameof(originalFilename));
+            if (string.IsNullOrEmpty(contentType)) throw new ArgumentException("Content type cannot be empty", nameof(contentType));
+
+            try
+            {
+                int chunkSize = await GetChunkSizeAsync(cancellationToken);
+                Guid fileId = Guid.NewGuid();
+                List<Guid> chunkIds = new List<Guid>();
+
+                // Split the content into chunks
+                byte[] buffer = new byte[chunkSize];
+                int chunkIndex = 0;
+                long totalBytesRead = 0;
+
+                while (true)
+                {
+                    int bytesRead = await content.ReadAsync(buffer, 0, chunkSize, cancellationToken);
+                    if (bytesRead == 0)
+                        break;
+
+                    Guid chunkId = Guid.NewGuid();
+                    chunkIds.Add(chunkId);
+
+                    // Create a chunk stream
+                    using MemoryStream chunkStream = new MemoryStream(buffer, 0, bytesRead);
+
+                    // Upload the chunk to the specific tenant
+                    HttpResponseMessage chunkResponse = await _httpClient.PutAsync(
+                        NormalizePath($"api/chunks/{targetTenantId}/{chunkId}"),
+                        new StreamContent(chunkStream),
+                        cancellationToken);
+
+                    if (!chunkResponse.IsSuccessStatusCode)
+                        throw new Exception($"Failed to write file: {await chunkResponse.Content.ReadAsStringAsync()}");
+
+                    totalBytesRead += bytesRead;
+                    chunkIndex++;
+                }
+
+                // Create and upload the metadata to the specific tenant
+                ShelfFileMetadata metadata = new ShelfFileMetadata(
+                    fileId,
+                    originalFilename,
+                    contentType,
+                    totalBytesRead,
+                    chunkIds);
+
+                HttpResponseMessage metadataResponse = await _httpClient.PostAsJsonAsync(
+                    NormalizePath($"api/files/{targetTenantId}/metadata"),
+                    metadata,
+                    _jsonOptions,
+                    cancellationToken);
+
+                if (!metadataResponse.IsSuccessStatusCode)
+                {
+                    if (metadataResponse.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                        throw new UnauthorizedAccessException($"Access denied to tenant '{targetTenantId}'");
+
+                    throw new Exception($"Failed to create file metadata: {await metadataResponse.Content.ReadAsStringAsync()}");
+                }
+
+                return fileId;
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized || ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                throw new UnauthorizedAccessException($"Access denied to tenant '{targetTenantId}'", ex);
+            }
+        }
+
+        /// <summary>
         /// Deletes a file and all its associated chunks from the server.
         /// </summary>
         /// <param name="fileId">The unique identifier of the file to delete.</param>
@@ -287,6 +483,53 @@ namespace ByteShelfClient
 
             if (!response.IsSuccessStatusCode)
                 throw new Exception($"Failed to delete file {fileId}: {await response.Content.ReadAsStringAsync()}");
+        }
+
+        /// <summary>
+        /// Deletes a file and all its associated chunks from a specific tenant.
+        /// </summary>
+        /// <param name="targetTenantId">The ID of the tenant whose file to delete.</param>
+        /// <param name="fileId">The unique identifier of the file to delete.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A task that represents the asynchronous delete operation.</returns>
+        /// <exception cref="FileNotFoundException">Thrown when the specified file ID does not exist on the server.</exception>
+        /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
+        /// <exception cref="UnauthorizedAccessException">Thrown when the authenticated tenant does not have access to the specified tenant.</exception>
+        /// <remarks>
+        /// This method makes a DELETE request to "/api/files/{targetTenantId}/{fileId}".
+        /// The authenticated tenant must have access to the specified tenant (either be the same tenant or a parent).
+        /// The server is responsible for deleting both the file metadata and all associated chunks.
+        /// This operation is idempotent - deleting a non-existent file will not throw an exception.
+        /// </remarks>
+        public async Task DeleteFileForTenantAsync(
+            string targetTenantId,
+            Guid fileId,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(targetTenantId))
+                throw new ArgumentException("Target tenant ID cannot be null or empty", nameof(targetTenantId));
+
+            try
+            {
+                HttpResponseMessage response = await _httpClient.DeleteAsync(
+                    NormalizePath($"api/files/{targetTenantId}/{fileId}"),
+                    cancellationToken);
+
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    throw new FileNotFoundException($"File with ID {fileId} not found in tenant {targetTenantId}");
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                        throw new UnauthorizedAccessException($"Access denied to tenant '{targetTenantId}'");
+
+                    throw new Exception($"Failed to delete file {fileId} from tenant {targetTenantId}: {await response.Content.ReadAsStringAsync()}");
+                }
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                throw new UnauthorizedAccessException($"Access denied to tenant '{targetTenantId}'", ex);
+            }
         }
 
         /// <summary>
