@@ -30,6 +30,29 @@ namespace ByteShelfClient
             _position = 0;
         }
 
+        /// <summary>
+        /// Normalizes a path for HTTP requests by ensuring it starts with a forward slash
+        /// if the HttpClient's base address doesn't end with one.
+        /// </summary>
+        /// <param name="path">The path to normalize.</param>
+        /// <returns>The normalized path.</returns>
+        private string NormalizePath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return path;
+
+            // If the base address ends with a slash, we don't need to add one to the path
+            if (_httpClient.BaseAddress != null && _httpClient.BaseAddress.ToString().EndsWith("/"))
+                return path;
+
+            // If the path already starts with a slash, return as-is
+            if (path.StartsWith("/"))
+                return path;
+
+            // Add a leading slash
+            return "/" + path;
+        }
+
         /// <inheritdoc/>
         public override bool CanRead => true;
 
@@ -90,7 +113,7 @@ namespace ByteShelfClient
 
             Guid chunkId = _chunkIds[_currentChunkIndex];
             HttpResponseMessage response = await _httpClient.GetAsync(
-                $"api/chunks/{chunkId}",
+                NormalizePath($"api/chunks/{chunkId}"),
                 _cancellationToken);
 
             response.EnsureSuccessStatusCode();

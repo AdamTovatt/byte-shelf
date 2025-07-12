@@ -21,6 +21,35 @@ namespace ByteShelfClient
         private int? _chunkSize;
 
         /// <summary>
+        /// Creates and configures an HttpClient for use with ByteShelf.
+        /// </summary>
+        /// <param name="baseUrl">The base URL of the ByteShelf server (e.g., "https://localhost:7001" or "https://myserver.com").</param>
+        /// <returns>A configured HttpClient with the base address set.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="baseUrl"/> is null.</exception>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="baseUrl"/> is empty or whitespace.</exception>
+        /// <remarks>
+        /// This method creates a new HttpClient and sets its base address to the provided URL.
+        /// The URL will be automatically normalized to end with a forward slash if it doesn't already.
+        /// This is the recommended way to create an HttpClient for use with HttpShelfFileProvider.
+        /// </remarks>
+        public static HttpClient CreateHttpClient(string baseUrl)
+        {
+            if (baseUrl == null)
+                throw new ArgumentNullException(nameof(baseUrl));
+
+            if (string.IsNullOrWhiteSpace(baseUrl))
+                throw new ArgumentException("Base URL cannot be empty or whitespace", nameof(baseUrl));
+
+            // Ensure the URL ends with a forward slash
+            string normalizedUrl = baseUrl.TrimEnd('/') + "/";
+
+            HttpClient httpClient = new HttpClient();
+            httpClient.BaseAddress = new Uri(normalizedUrl);
+
+            return httpClient;
+        }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="HttpShelfFileProvider"/> class.
         /// </summary>
         /// <param name="httpClient">The HTTP client to use for server communication.</param>
@@ -55,6 +84,29 @@ namespace ByteShelfClient
         }
 
         /// <summary>
+        /// Normalizes a path for HTTP requests by ensuring it starts with a forward slash
+        /// if the HttpClient's base address doesn't end with one.
+        /// </summary>
+        /// <param name="path">The path to normalize.</param>
+        /// <returns>The normalized path.</returns>
+        private string NormalizePath(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return path;
+
+            // If the base address ends with a slash, we don't need to add one to the path
+            if (_httpClient.BaseAddress != null && _httpClient.BaseAddress.ToString().EndsWith("/"))
+                return path;
+
+            // If the path already starts with a slash, return as-is
+            if (path.StartsWith("/"))
+                return path;
+
+            // Add a leading slash
+            return "/" + path;
+        }
+
+        /// <summary>
         /// Retrieves metadata for all stored files from the server.
         /// </summary>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
@@ -68,7 +120,7 @@ namespace ByteShelfClient
             CancellationToken cancellationToken = default)
         {
             List<ShelfFileMetadata>? response = await _httpClient.GetFromJsonAsync<List<ShelfFileMetadata>>(
-                "api/files",
+                NormalizePath("api/files"),
                 _jsonOptions,
                 cancellationToken);
 
@@ -178,7 +230,7 @@ namespace ByteShelfClient
 
                 // Upload the chunk
                 HttpResponseMessage chunkResponse = await _httpClient.PutAsync(
-                    $"api/chunks/{chunkId}",
+                    NormalizePath($"api/chunks/{chunkId}"),
                     new StreamContent(chunkStream),
                     cancellationToken);
 
@@ -198,7 +250,7 @@ namespace ByteShelfClient
                 chunkIds);
 
             HttpResponseMessage metadataResponse = await _httpClient.PostAsJsonAsync(
-                "api/files/metadata",
+                NormalizePath("api/files/metadata"),
                 metadata,
                 _jsonOptions,
                 cancellationToken);
@@ -227,7 +279,7 @@ namespace ByteShelfClient
             CancellationToken cancellationToken = default)
         {
             HttpResponseMessage response = await _httpClient.DeleteAsync(
-                $"api/files/{fileId}",
+                NormalizePath($"api/files/{fileId}"),
                 cancellationToken);
 
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -250,7 +302,7 @@ namespace ByteShelfClient
         public async Task<TenantStorageInfo> GetStorageInfoAsync(CancellationToken cancellationToken = default)
         {
             TenantStorageInfo? response = await _httpClient.GetFromJsonAsync<TenantStorageInfo>(
-                "api/tenant/storage",
+                NormalizePath("api/tenant/storage"),
                 _jsonOptions,
                 cancellationToken);
 
@@ -276,7 +328,7 @@ namespace ByteShelfClient
         public async Task<QuotaCheckResult> CanStoreFileAsync(long fileSizeBytes, CancellationToken cancellationToken = default)
         {
             QuotaCheckResult? response = await _httpClient.GetFromJsonAsync<QuotaCheckResult>(
-                $"api/tenant/storage/can-store?fileSizeBytes={fileSizeBytes}",
+                NormalizePath($"api/tenant/storage/can-store?fileSizeBytes={fileSizeBytes}"),
                 _jsonOptions,
                 cancellationToken);
 
@@ -358,7 +410,7 @@ namespace ByteShelfClient
                 return _chunkSize.Value;
 
             ChunkConfiguration? config = await _httpClient.GetFromJsonAsync<ChunkConfiguration>(
-                "api/config/chunk-size",
+                NormalizePath("api/config/chunk-size"),
                 _jsonOptions,
                 cancellationToken);
 
@@ -385,7 +437,7 @@ namespace ByteShelfClient
         public async Task<TenantInfoResponse> GetTenantInfoAsync(CancellationToken cancellationToken = default)
         {
             TenantInfoResponse? response = await _httpClient.GetFromJsonAsync<TenantInfoResponse>(
-                "api/tenant/info",
+                NormalizePath("api/tenant/info"),
                 _jsonOptions,
                 cancellationToken);
 
@@ -410,7 +462,7 @@ namespace ByteShelfClient
             try
             {
                 metadata = await _httpClient.GetFromJsonAsync<ShelfFileMetadata>(
-                    $"api/files/{fileId}/metadata",
+                    NormalizePath($"api/files/{fileId}/metadata"),
                     _jsonOptions,
                     cancellationToken);
             }
@@ -424,7 +476,7 @@ namespace ByteShelfClient
 
             // Get the complete file stream from the download endpoint
             HttpResponseMessage response = await _httpClient.GetAsync(
-                $"api/files/{fileId}/download",
+                NormalizePath($"api/files/{fileId}/download"),
                 cancellationToken);
 
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -455,7 +507,7 @@ namespace ByteShelfClient
             try
             {
                 metadata = await _httpClient.GetFromJsonAsync<ShelfFileMetadata>(
-                    $"api/files/{fileId}/metadata",
+                    NormalizePath($"api/files/{fileId}/metadata"),
                     _jsonOptions,
                     cancellationToken);
             }

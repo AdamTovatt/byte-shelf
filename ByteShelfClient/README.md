@@ -39,9 +39,8 @@ dotnet add reference ../ByteShelfClient/ByteShelfClient.csproj
 using ByteShelfClient;
 using ByteShelfCommon;
 
-// Create HTTP client
-using HttpClient httpClient = new HttpClient();
-httpClient.BaseAddress = new Uri("https://localhost:7001");
+// Create HTTP client using the helper method
+using HttpClient httpClient = HttpShelfFileProvider.CreateHttpClient("https://localhost:7001");
 
 // Create client with tenant API key
 IShelfFileProvider provider = new HttpShelfFileProvider(httpClient, "your-api-key");
@@ -147,6 +146,14 @@ builder.Services.AddHttpClient<IShelfFileProvider, HttpShelfFileProvider>(client
 {
     client.BaseAddress = new Uri("https://localhost:7001");
     client.DefaultRequestHeaders.Add("X-API-Key", "your-api-key");
+});
+
+// Or using the helper method for simpler setup
+builder.Services.AddSingleton<IShelfFileProvider>(provider =>
+{
+    return new HttpShelfFileProvider(
+        HttpShelfFileProvider.CreateHttpClient("https://localhost:7001"),
+        "your-api-key");
 });
 
 // In your service or controller
