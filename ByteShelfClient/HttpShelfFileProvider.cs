@@ -448,6 +448,183 @@ namespace ByteShelfClient
         }
 
         /// <summary>
+        /// Gets all subtenants of the current tenant.
+        /// </summary>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A dictionary of subtenants keyed by tenant ID.</returns>
+        /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
+        /// <remarks>
+        /// This method makes a GET request to the "/api/tenant/subtenants" endpoint.
+        /// Returns an empty dictionary if the current tenant has no subtenants.
+        /// </remarks>
+        public async Task<Dictionary<string, TenantInfo>> GetSubTenantsAsync(CancellationToken cancellationToken = default)
+        {
+            Dictionary<string, TenantInfo>? response = await _httpClient.GetFromJsonAsync<Dictionary<string, TenantInfo>>(
+                NormalizePath("api/tenant/subtenants"),
+                _jsonOptions,
+                cancellationToken);
+
+            return response ?? new Dictionary<string, TenantInfo>();
+        }
+
+        /// <summary>
+        /// Gets information about a specific subtenant.
+        /// </summary>
+        /// <param name="subTenantId">The subtenant ID.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>The subtenant information.</returns>
+        /// <exception cref="FileNotFoundException">Thrown when the specified subtenant does not exist.</exception>
+        /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
+        /// <remarks>
+        /// This method makes a GET request to the "/api/tenant/subtenants/{subTenantId}" endpoint.
+        /// </remarks>
+        public async Task<TenantInfo> GetSubTenantAsync(string subTenantId, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(subTenantId))
+                throw new ArgumentException("Subtenant ID cannot be null or empty", nameof(subTenantId));
+
+            try
+            {
+                TenantInfo? response = await _httpClient.GetFromJsonAsync<TenantInfo>(
+                    NormalizePath($"api/tenant/subtenants/{subTenantId}"),
+                    _jsonOptions,
+                    cancellationToken);
+
+                if (response == null)
+                    throw new FileNotFoundException($"Subtenant with ID {subTenantId} not found");
+
+                return response;
+            }
+            catch (HttpRequestException ex) when (ex.Message.Contains("404"))
+            {
+                throw new FileNotFoundException($"Subtenant with ID {subTenantId} not found", ex);
+            }
+        }
+
+        /// <summary>
+        /// Creates a new subtenant under the current tenant.
+        /// </summary>
+        /// <param name="displayName">The display name for the subtenant.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>The ID of the created subtenant.</returns>
+        /// <exception cref="ArgumentException">Thrown when display name is null or empty.</exception>
+        /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when maximum depth is reached.</exception>
+        /// <remarks>
+        /// This method makes a POST request to the "/api/tenant/subtenants" endpoint.
+        /// The subtenant will have a unique ID and API key generated automatically.
+        /// </remarks>
+        public async Task<string> CreateSubTenantAsync(string displayName, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(displayName))
+                throw new ArgumentException("Display name cannot be null or empty", nameof(displayName));
+
+            CreateSubTenantRequest request = new CreateSubTenantRequest
+            {
+                DisplayName = displayName
+            };
+
+            HttpResponseMessage response = await _httpClient.PostAsJsonAsync(
+                NormalizePath("api/tenant/subtenants"),
+                request,
+                _jsonOptions,
+                cancellationToken);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+            {
+                string errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                throw new InvalidOperationException($"Cannot create subtenant: {errorContent}");
+            }
+
+            response.EnsureSuccessStatusCode();
+
+            try
+            {
+                // Parse the response to get the tenant ID
+                var result = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>(_jsonOptions, cancellationToken);
+                if (result != null && result.TryGetValue("TenantId", out object? tenantIdObj))
+                {
+                    return tenantIdObj.ToString() ?? string.Empty;
+                }
+            }
+            catch (System.Text.Json.JsonException ex)
+            {
+                throw new HttpRequestException("Failed to parse create subtenant response", ex);
+            }
+
+            throw new HttpRequestException("Failed to get tenant ID from create subtenant response");
+        }
+
+        /// <summary>
+        /// Updates the storage limit of a subtenant.
+        /// </summary>
+        /// <param name="subTenantId">The subtenant ID.</param>
+        /// <param name="storageLimitBytes">The new storage limit in bytes.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <exception cref="ArgumentException">Thrown when subtenant ID is null or empty, or storage limit is negative.</exception>
+        /// <exception cref="FileNotFoundException">Thrown when the specified subtenant does not exist.</exception>
+        /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
+        /// <remarks>
+        /// This method makes a PUT request to the "/api/tenant/subtenants/{subTenantId}/storage-limit" endpoint.
+        /// The new limit cannot exceed the parent tenant's limit.
+        /// </remarks>
+        public async Task UpdateSubTenantStorageLimitAsync(string subTenantId, long storageLimitBytes, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(subTenantId))
+                throw new ArgumentException("Subtenant ID cannot be null or empty", nameof(subTenantId));
+
+            if (storageLimitBytes < 0)
+                throw new ArgumentException("Storage limit cannot be negative", nameof(storageLimitBytes));
+
+            UpdateStorageLimitRequest request = new UpdateStorageLimitRequest
+            {
+                StorageLimitBytes = storageLimitBytes
+            };
+
+            HttpResponseMessage response = await _httpClient.PutAsJsonAsync(
+                NormalizePath($"api/tenant/subtenants/{subTenantId}/storage-limit"),
+                request,
+                _jsonOptions,
+                cancellationToken);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                throw new FileNotFoundException($"Subtenant with ID {subTenantId} not found");
+            }
+
+            response.EnsureSuccessStatusCode();
+        }
+
+        /// <summary>
+        /// Deletes a subtenant.
+        /// </summary>
+        /// <param name="subTenantId">The subtenant ID.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <exception cref="ArgumentException">Thrown when subtenant ID is null or empty.</exception>
+        /// <exception cref="FileNotFoundException">Thrown when the specified subtenant does not exist.</exception>
+        /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
+        /// <remarks>
+        /// This method makes a DELETE request to the "/api/tenant/subtenants/{subTenantId}" endpoint.
+        /// This operation cannot be undone.
+        /// </remarks>
+        public async Task DeleteSubTenantAsync(string subTenantId, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(subTenantId))
+                throw new ArgumentException("Subtenant ID cannot be null or empty", nameof(subTenantId));
+
+            HttpResponseMessage response = await _httpClient.DeleteAsync(
+                NormalizePath($"api/tenant/subtenants/{subTenantId}"),
+                cancellationToken);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                throw new FileNotFoundException($"Subtenant with ID {subTenantId} not found");
+            }
+
+            response.EnsureSuccessStatusCode();
+        }
+
+        /// <summary>
         /// Reads a file using the efficient single endpoint approach.
         /// </summary>
         /// <param name="fileId">The unique identifier of the file to read.</param>

@@ -185,6 +185,500 @@ namespace ByteShelfClient.Tests
             Assert.IsTrue(_messageHandler.Requests.Count > 0);
         }
 
+        [TestMethod]
+        public async Task GetTenantInfo_WithValidResponse_ReturnsTenantInfo()
+        {
+            // Arrange
+            TenantInfoResponse expectedTenantInfo = new TenantInfoResponse(
+                "test-tenant",
+                "Test Tenant",
+                false,
+                1024 * 1024 * 100,
+                1024 * 1024 * 25,
+                1024 * 1024 * 75,
+                25.0
+            );
 
+            string jsonResponse = JsonSerializer.Serialize(expectedTenantInfo);
+            _messageHandler.SetupResponse("api/tenant/info", jsonResponse);
+
+            // Act
+            TenantInfoResponse result = await _provider.GetTenantInfoAsync();
+
+            // Assert
+            Assert.IsNotNull(result);
+            Assert.AreEqual(expectedTenantInfo.TenantId, result.TenantId);
+            Assert.AreEqual(expectedTenantInfo.DisplayName, result.DisplayName);
+            Assert.AreEqual(expectedTenantInfo.StorageLimitBytes, result.StorageLimitBytes);
+            Assert.AreEqual(expectedTenantInfo.IsAdmin, result.IsAdmin);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenants_WithValidResponse_ReturnsSubTenants()
+        {
+            // Arrange
+            Dictionary<string, TenantInfo> expectedSubTenants = new Dictionary<string, TenantInfo>
+            {
+                ["subtenant1"] = new TenantInfo
+                {
+                    ApiKey = "sub-key-1",
+                    DisplayName = "Sub Tenant 1",
+                    StorageLimitBytes = 1024 * 1024 * 50,
+                    IsAdmin = false
+                },
+                ["subtenant2"] = new TenantInfo
+                {
+                    ApiKey = "sub-key-2",
+                    DisplayName = "Sub Tenant 2",
+                    StorageLimitBytes = 1024 * 1024 * 100,
+                    IsAdmin = false
+                }
+            };
+
+            string jsonResponse = JsonSerializer.Serialize(expectedSubTenants);
+            _messageHandler.SetupResponse("api/tenant/subtenants", jsonResponse);
+
+            // Act
+            Dictionary<string, TenantInfo> result = await _provider.GetSubTenantsAsync();
+
+            // Assert
+            Assert.IsNotNull(result);
+            Assert.AreEqual(2, result.Count);
+            Assert.IsTrue(result.ContainsKey("subtenant1"));
+            Assert.IsTrue(result.ContainsKey("subtenant2"));
+            Assert.AreEqual("Sub Tenant 1", result["subtenant1"].DisplayName);
+            Assert.AreEqual("Sub Tenant 2", result["subtenant2"].DisplayName);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenants_WithEmptyResponse_ReturnsEmptyDictionary()
+        {
+            // Arrange
+            Dictionary<string, TenantInfo> emptySubTenants = new Dictionary<string, TenantInfo>();
+            string jsonResponse = JsonSerializer.Serialize(emptySubTenants);
+            _messageHandler.SetupResponse("api/tenant/subtenants", jsonResponse);
+
+            // Act
+            Dictionary<string, TenantInfo> result = await _provider.GetSubTenantsAsync();
+
+            // Assert
+            Assert.IsNotNull(result);
+            Assert.AreEqual(0, result.Count);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenants_WithHttpError_ThrowsHttpRequestException()
+        {
+            // Arrange
+            _messageHandler.SetupResponse("api/tenant/subtenants", "Server Error", HttpStatusCode.InternalServerError);
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
+                _provider.GetSubTenantsAsync());
+        }
+
+        [TestMethod]
+        public async Task GetSubTenant_WithValidResponse_ReturnsSubTenant()
+        {
+            // Arrange
+            string subTenantId = "subtenant1";
+            TenantInfo expectedSubTenant = new TenantInfo
+            {
+                ApiKey = "sub-key",
+                DisplayName = "Sub Tenant",
+                StorageLimitBytes = 1024 * 1024 * 50,
+                IsAdmin = false
+            };
+
+            string jsonResponse = JsonSerializer.Serialize(expectedSubTenant);
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{subTenantId}", jsonResponse);
+
+            // Act
+            TenantInfo result = await _provider.GetSubTenantAsync(subTenantId);
+
+            // Assert
+            Assert.IsNotNull(result);
+            Assert.AreEqual(expectedSubTenant.DisplayName, result.DisplayName);
+            Assert.AreEqual(expectedSubTenant.ApiKey, result.ApiKey);
+            Assert.AreEqual(expectedSubTenant.StorageLimitBytes, result.StorageLimitBytes);
+            Assert.AreEqual(expectedSubTenant.IsAdmin, result.IsAdmin);
+            Assert.AreEqual(expectedSubTenant.Parent, result.Parent);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenant_WithNullSubTenantId_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.GetSubTenantAsync(null!));
+        }
+
+        [TestMethod]
+        public async Task GetSubTenant_WithEmptySubTenantId_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.GetSubTenantAsync(""));
+        }
+
+        [TestMethod]
+        public async Task GetSubTenant_WithWhitespaceSubTenantId_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.GetSubTenantAsync("   "));
+        }
+
+        [TestMethod]
+        public async Task GetSubTenant_WithNotFoundResponse_ThrowsFileNotFoundException()
+        {
+            // Arrange
+            string subTenantId = "nonexistent";
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{subTenantId}", "Subtenant not found", HttpStatusCode.NotFound);
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<FileNotFoundException>(() =>
+                _provider.GetSubTenantAsync(subTenantId));
+        }
+
+        [TestMethod]
+        public async Task GetSubTenant_WithHttpError_ThrowsHttpRequestException()
+        {
+            // Arrange
+            string subTenantId = "subtenant1";
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{subTenantId}", "Server Error", HttpStatusCode.InternalServerError);
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
+                _provider.GetSubTenantAsync(subTenantId));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_WithValidResponse_ReturnsSubTenantId()
+        {
+            // Arrange
+            string displayName = "New Subtenant";
+            string expectedSubTenantId = "new-subtenant-id";
+
+            CreateSubTenantResponse expectedResponse = new CreateSubTenantResponse(expectedSubTenantId, displayName, "Subtenant created successfully");
+
+            string jsonResponse = JsonSerializer.Serialize(expectedResponse);
+            _messageHandler.SetupResponse("api/tenant/subtenants", jsonResponse, HttpStatusCode.Created);
+
+            // Act
+            string result = await _provider.CreateSubTenantAsync(displayName);
+
+            // Assert
+            Assert.AreEqual(expectedSubTenantId, result);
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_WithNullDisplayName_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.CreateSubTenantAsync(null!));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_WithEmptyDisplayName_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.CreateSubTenantAsync(""));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_WithWhitespaceDisplayName_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.CreateSubTenantAsync("   "));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_WithBadRequestResponse_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            string displayName = "New Subtenant";
+            string errorMessage = "Cannot create subtenant: maximum depth reached";
+            _messageHandler.SetupResponse("api/tenant/subtenants", errorMessage, HttpStatusCode.BadRequest);
+
+            // Act & Assert
+            InvalidOperationException exception = await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+                _provider.CreateSubTenantAsync(displayName));
+            Assert.AreEqual($"Cannot create subtenant: {errorMessage}", exception.Message);
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_WithHttpError_ThrowsHttpRequestException()
+        {
+            // Arrange
+            string displayName = "New Subtenant";
+            _messageHandler.SetupResponse("api/tenant/subtenants", "Server Error", HttpStatusCode.InternalServerError);
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
+                _provider.CreateSubTenantAsync(displayName));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_WithInvalidResponse_ThrowsHttpRequestException()
+        {
+            // Arrange
+            string displayName = "New Subtenant";
+            _messageHandler.SetupResponse("api/tenant/subtenants", "invalid json", HttpStatusCode.Created);
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
+                _provider.CreateSubTenantAsync(displayName));
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimit_WithValidResponse_CompletesSuccessfully()
+        {
+            // Arrange
+            string subTenantId = "subtenant1";
+            long storageLimitBytes = 1024 * 1024 * 200; // 200MB
+
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{subTenantId}/storage-limit", "");
+
+            // Act & Assert - Should not throw
+            await _provider.UpdateSubTenantStorageLimitAsync(subTenantId, storageLimitBytes);
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimit_WithNullSubTenantId_ThrowsArgumentException()
+        {
+            // Arrange
+            long storageLimitBytes = 1024 * 1024 * 200;
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.UpdateSubTenantStorageLimitAsync(null!, storageLimitBytes));
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimit_WithEmptySubTenantId_ThrowsArgumentException()
+        {
+            // Arrange
+            long storageLimitBytes = 1024 * 1024 * 200;
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.UpdateSubTenantStorageLimitAsync("", storageLimitBytes));
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimit_WithWhitespaceSubTenantId_ThrowsArgumentException()
+        {
+            // Arrange
+            long storageLimitBytes = 1024 * 1024 * 200;
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.UpdateSubTenantStorageLimitAsync("   ", storageLimitBytes));
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimit_WithNegativeStorageLimit_ThrowsArgumentException()
+        {
+            // Arrange
+            string subTenantId = "subtenant1";
+            long negativeStorageLimit = -1024;
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.UpdateSubTenantStorageLimitAsync(subTenantId, negativeStorageLimit));
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimit_WithNotFoundResponse_ThrowsFileNotFoundException()
+        {
+            // Arrange
+            string subTenantId = "nonexistent";
+            long storageLimitBytes = 1024 * 1024 * 200;
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{subTenantId}/storage-limit", "Subtenant not found", HttpStatusCode.NotFound);
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<FileNotFoundException>(() =>
+                _provider.UpdateSubTenantStorageLimitAsync(subTenantId, storageLimitBytes));
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimit_WithHttpError_ThrowsHttpRequestException()
+        {
+            // Arrange
+            string subTenantId = "subtenant1";
+            long storageLimitBytes = 1024 * 1024 * 200;
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{subTenantId}/storage-limit", "Server Error", HttpStatusCode.InternalServerError);
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
+                _provider.UpdateSubTenantStorageLimitAsync(subTenantId, storageLimitBytes));
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenant_WithValidResponse_CompletesSuccessfully()
+        {
+            // Arrange
+            string subTenantId = "subtenant1";
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{subTenantId}", "");
+
+            // Act & Assert - Should not throw
+            await _provider.DeleteSubTenantAsync(subTenantId);
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenant_WithNullSubTenantId_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.DeleteSubTenantAsync(null!));
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenant_WithEmptySubTenantId_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.DeleteSubTenantAsync(""));
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenant_WithWhitespaceSubTenantId_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.DeleteSubTenantAsync("   "));
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenant_WithNotFoundResponse_ThrowsFileNotFoundException()
+        {
+            // Arrange
+            string subTenantId = "nonexistent";
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{subTenantId}", "Subtenant not found", HttpStatusCode.NotFound);
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<FileNotFoundException>(() =>
+                _provider.DeleteSubTenantAsync(subTenantId));
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenant_WithHttpError_ThrowsHttpRequestException()
+        {
+            // Arrange
+            string subTenantId = "subtenant1";
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{subTenantId}", "Server Error", HttpStatusCode.InternalServerError);
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
+                _provider.DeleteSubTenantAsync(subTenantId));
+        }
+
+        [TestMethod]
+        public async Task GetSubTenants_SendsCorrectRequest()
+        {
+            // Arrange
+            Dictionary<string, TenantInfo> expectedSubTenants = new Dictionary<string, TenantInfo>();
+            string jsonResponse = JsonSerializer.Serialize(expectedSubTenants);
+            _messageHandler.SetupResponse("api/tenant/subtenants", jsonResponse);
+
+            // Act
+            await _provider.GetSubTenantsAsync();
+
+            // Assert
+            Assert.AreEqual(1, _messageHandler.Requests.Count);
+            Assert.AreEqual(
+                "api/tenant/subtenants",
+                _messageHandler.Requests[0].RequestUri!.PathAndQuery.TrimStart('/'),
+                "Request path should match expected endpoint (ignoring leading slash)"
+            );
+        }
+
+        [TestMethod]
+        public async Task GetSubTenant_SendsCorrectRequest()
+        {
+            // Arrange
+            string subTenantId = "subtenant1";
+            TenantInfo expectedSubTenant = new TenantInfo();
+            string jsonResponse = JsonSerializer.Serialize(expectedSubTenant);
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{subTenantId}", jsonResponse);
+
+            // Act
+            await _provider.GetSubTenantAsync(subTenantId);
+
+            // Assert
+            Assert.AreEqual(1, _messageHandler.Requests.Count);
+            Assert.AreEqual(
+                $"api/tenant/subtenants/{subTenantId}",
+                _messageHandler.Requests[0].RequestUri!.PathAndQuery.TrimStart('/'),
+                "Request path should match expected endpoint (ignoring leading slash)"
+            );
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_SendsCorrectRequest()
+        {
+            // Arrange
+            string displayName = "New Subtenant";
+            CreateSubTenantResponse expectedResponse = new CreateSubTenantResponse("new-subtenant-id", displayName, "Subtenant created successfully");
+            string jsonResponse = JsonSerializer.Serialize(expectedResponse);
+            _messageHandler.SetupResponse("api/tenant/subtenants", jsonResponse, HttpStatusCode.Created);
+
+            // Act
+            await _provider.CreateSubTenantAsync(displayName);
+
+            // Assert
+            Assert.AreEqual(1, _messageHandler.Requests.Count);
+            Assert.AreEqual(
+                "api/tenant/subtenants",
+                _messageHandler.Requests[0].RequestUri!.PathAndQuery.TrimStart('/'),
+                "Request path should match expected endpoint (ignoring leading slash)"
+            );
+            Assert.AreEqual(HttpMethod.Post, _messageHandler.Requests[0].Method);
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimit_SendsCorrectRequest()
+        {
+            // Arrange
+            string subTenantId = "subtenant1";
+            long storageLimitBytes = 1024 * 1024 * 200;
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{subTenantId}/storage-limit", "");
+
+            // Act
+            await _provider.UpdateSubTenantStorageLimitAsync(subTenantId, storageLimitBytes);
+
+            // Assert
+            Assert.AreEqual(1, _messageHandler.Requests.Count);
+            Assert.AreEqual(
+                $"api/tenant/subtenants/{subTenantId}/storage-limit",
+                _messageHandler.Requests[0].RequestUri!.PathAndQuery.TrimStart('/'),
+                "Request path should match expected endpoint (ignoring leading slash)"
+            );
+            Assert.AreEqual(HttpMethod.Put, _messageHandler.Requests[0].Method);
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenant_SendsCorrectRequest()
+        {
+            // Arrange
+            string subTenantId = "subtenant1";
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{subTenantId}", "");
+
+            // Act
+            await _provider.DeleteSubTenantAsync(subTenantId);
+
+            // Assert
+            Assert.AreEqual(1, _messageHandler.Requests.Count);
+            Assert.AreEqual(
+                $"api/tenant/subtenants/{subTenantId}",
+                _messageHandler.Requests[0].RequestUri!.PathAndQuery.TrimStart('/'),
+                "Request path should match expected endpoint (ignoring leading slash)"
+            );
+            Assert.AreEqual(HttpMethod.Delete, _messageHandler.Requests[0].Method);
+        }
     }
 }

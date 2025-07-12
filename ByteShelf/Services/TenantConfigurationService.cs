@@ -197,6 +197,9 @@ namespace ByteShelf.Services
                     return false;
                 }
 
+                // Rebuild parent relationships after deserialization
+                RebuildParentRelationships(newConfig);
+
                 lock (_configLock)
                 {
                     _currentConfiguration = newConfig;
@@ -213,6 +216,406 @@ namespace ByteShelf.Services
         }
 
         /// <summary>
+        /// Creates a new subtenant under the specified parent tenant.
+        /// </summary>
+        /// <param name="parentTenantId">The parent tenant ID.</param>
+        /// <param name="displayName">The display name for the subtenant.</param>
+        /// <returns>The ID of the created subtenant.</returns>
+        /// <exception cref="ArgumentException">Thrown when parameters are invalid.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when maximum depth is reached or parent not found.</exception>
+        public async Task<string> CreateSubTenantAsync(string parentTenantId, string displayName)
+        {
+            if (string.IsNullOrWhiteSpace(parentTenantId))
+                throw new ArgumentException("Parent tenant ID cannot be null or empty", nameof(parentTenantId));
+
+            if (string.IsNullOrWhiteSpace(displayName))
+                throw new ArgumentException("Display name cannot be null or empty", nameof(displayName));
+
+            // Check depth limit
+            if (!await CanCreateSubTenantAsync(parentTenantId))
+            {
+                throw new InvalidOperationException($"Cannot create subtenant: maximum depth of {MaxSubTenantDepth} levels reached");
+            }
+
+            // Generate unique tenant ID (GUID)
+            string tenantId = Guid.NewGuid().ToString();
+
+            // Generate unique API key (GUID + random suffix)
+            string apiKey = GenerateUniqueApiKey();
+
+            // Create subtenant with parent's storage limit by default
+            TenantInfo subTenant = new TenantInfo
+            {
+                ApiKey = apiKey,
+                DisplayName = displayName,
+                StorageLimitBytes = 0, // Will be set from parent
+                IsAdmin = false,
+                SubTenants = new Dictionary<string, TenantInfo>()
+            };
+
+            // Add to parent's subtenants under lock
+            lock (_configLock)
+            {
+                TenantInfo? parentTenant = GetTenant(parentTenantId);
+                if (parentTenant == null)
+                {
+                    throw new InvalidOperationException($"Parent tenant '{parentTenantId}' not found");
+                }
+
+                // Set storage limit from parent
+                subTenant.StorageLimitBytes = parentTenant.StorageLimitBytes;
+
+                // Set the parent of the subtenant to the parent tenant
+                subTenant.Parent = parentTenant;
+
+                // Add to parent's subtenants
+                parentTenant.SubTenants[tenantId] = subTenant;
+            }
+
+            // Save configuration
+            bool saved = await SaveConfigurationAsync();
+            if (!saved)
+            {
+                throw new InvalidOperationException("Failed to save subtenant configuration");
+            }
+
+            _logger.LogInformation("Created subtenant '{TenantId}' under parent '{ParentTenantId}'", tenantId, parentTenantId);
+            return tenantId;
+        }
+
+        /// <summary>
+        /// Gets all subtenants of the specified tenant.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
+        /// <returns>A dictionary of subtenants keyed by tenant ID.</returns>
+        public Dictionary<string, TenantInfo> GetSubTenants(string tenantId)
+        {
+            if (string.IsNullOrWhiteSpace(tenantId))
+                return new Dictionary<string, TenantInfo>();
+
+            TenantInfo? tenant = GetTenant(tenantId);
+            return tenant?.SubTenants ?? new Dictionary<string, TenantInfo>();
+        }
+
+        /// <summary>
+        /// Gets a specific subtenant.
+        /// </summary>
+        /// <param name="parentTenantId">The parent tenant ID.</param>
+        /// <param name="subTenantId">The subtenant ID.</param>
+        /// <returns>The subtenant information, or null if not found.</returns>
+        public TenantInfo? GetSubTenant(string parentTenantId, string subTenantId)
+        {
+            if (string.IsNullOrWhiteSpace(parentTenantId) || string.IsNullOrWhiteSpace(subTenantId))
+                return null;
+
+            TenantInfo? parentTenant = GetTenant(parentTenantId);
+            if (parentTenant?.SubTenants.TryGetValue(subTenantId, out TenantInfo? subTenant) == true)
+            {
+                return subTenant;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Updates a subtenant's storage limit.
+        /// </summary>
+        /// <param name="parentTenantId">The parent tenant ID.</param>
+        /// <param name="subTenantId">The subtenant ID.</param>
+        /// <param name="newStorageLimit">The new storage limit in bytes.</param>
+        /// <returns>True if the update was successful.</returns>
+        public async Task<bool> UpdateSubTenantStorageLimitAsync(string parentTenantId, string subTenantId, long newStorageLimit)
+        {
+            if (string.IsNullOrWhiteSpace(parentTenantId))
+                throw new ArgumentException("Parent tenant ID cannot be null or empty", nameof(parentTenantId));
+
+            if (string.IsNullOrWhiteSpace(subTenantId))
+                throw new ArgumentException("Subtenant ID cannot be null or empty", nameof(subTenantId));
+
+            if (newStorageLimit < 0)
+                throw new ArgumentException("Storage limit cannot be negative", nameof(newStorageLimit));
+
+            // Get parent tenant to validate storage limit
+            TenantInfo? parentTenant = GetTenant(parentTenantId);
+            if (parentTenant == null)
+            {
+                _logger.LogWarning("Parent tenant not found: {ParentTenantId}", parentTenantId);
+                return false;
+            }
+
+            // Check if subtenant exists
+            if (!parentTenant.SubTenants.TryGetValue(subTenantId, out TenantInfo? subTenant))
+            {
+                _logger.LogWarning("Subtenant not found: {SubTenantId} under parent {ParentTenantId}", subTenantId, parentTenantId);
+                return false;
+            }
+
+            // Validate that new limit doesn't exceed parent's limit
+            if (parentTenant.StorageLimitBytes > 0 && newStorageLimit > parentTenant.StorageLimitBytes)
+            {
+                _logger.LogWarning("Subtenant storage limit {NewLimit} exceeds parent limit {ParentLimit}", newStorageLimit, parentTenant.StorageLimitBytes);
+                return false;
+            }
+
+            // Update the storage limit
+            subTenant.StorageLimitBytes = newStorageLimit;
+
+            bool saved = await SaveConfigurationAsync();
+            if (saved)
+            {
+                _logger.LogInformation("Updated subtenant {SubTenantId} storage limit to {NewLimit} bytes", subTenantId, newStorageLimit);
+            }
+
+            return saved;
+        }
+
+        /// <summary>
+        /// Deletes a subtenant.
+        /// </summary>
+        /// <param name="parentTenantId">The parent tenant ID.</param>
+        /// <param name="subTenantId">The subtenant ID.</param>
+        /// <returns>True if the deletion was successful.</returns>
+        public async Task<bool> DeleteSubTenantAsync(string parentTenantId, string subTenantId)
+        {
+            if (string.IsNullOrWhiteSpace(parentTenantId))
+                throw new ArgumentException("Parent tenant ID cannot be null or empty", nameof(parentTenantId));
+
+            if (string.IsNullOrWhiteSpace(subTenantId))
+                throw new ArgumentException("Subtenant ID cannot be null or empty", nameof(subTenantId));
+
+            TenantInfo? parentTenant = GetTenant(parentTenantId);
+            if (parentTenant == null)
+            {
+                _logger.LogWarning("Parent tenant not found: {ParentTenantId}", parentTenantId);
+                return false;
+            }
+
+            if (!parentTenant.SubTenants.Remove(subTenantId))
+            {
+                _logger.LogWarning("Subtenant not found: {SubTenantId} under parent {ParentTenantId}", subTenantId, parentTenantId);
+                return false;
+            }
+
+            bool saved = await SaveConfigurationAsync();
+            if (saved)
+            {
+                _logger.LogInformation("Deleted subtenant {SubTenantId} under parent {ParentTenantId}", subTenantId, parentTenantId);
+            }
+
+            return saved;
+        }
+
+        /// <summary>
+        /// Checks if a tenant can create subtenants (depth limit not reached).
+        /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
+        /// <returns>True if the tenant can create subtenants.</returns>
+        public async Task<bool> CanCreateSubTenantAsync(string tenantId)
+        {
+            await Task.CompletedTask; // So that we can keep the interface async in case we want to create an actually async version
+
+            if (string.IsNullOrWhiteSpace(tenantId))
+                throw new ArgumentException("Tenant ID cannot be null or empty.", nameof(tenantId));
+
+            TenantInfo? tenant = GetTenant(tenantId);
+            if (tenant == null)
+                return false;
+
+            int currentDepth = FindTenantDepth(tenantId, 0);
+            return currentDepth < MaxSubTenantDepth;
+        }
+
+        /// <summary>
+        /// Gets the depth of a tenant in the hierarchy.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
+        /// <returns>The depth (0 for root tenants).</returns>
+        public int GetTenantDepth(string tenantId)
+        {
+            TenantInfo? tenant = GetTenant(tenantId);
+            if (tenant == null)
+                return 0;
+
+            // Find the depth by searching from root tenants
+            return FindTenantDepth(tenantId, 0);
+        }
+
+        /// <summary>
+        /// Gets a tenant by ID, searching through all levels.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
+        /// <returns>The tenant information, or null if not found.</returns>
+        public TenantInfo? GetTenant(string tenantId)
+        {
+            if (string.IsNullOrWhiteSpace(tenantId))
+                return null;
+
+            TenantConfiguration config = GetConfiguration();
+
+            // Check root tenants first
+            if (config.Tenants.TryGetValue(tenantId, out TenantInfo? tenant))
+            {
+                return tenant;
+            }
+
+            // Search in subtenants recursively
+            foreach (TenantInfo rootTenant in config.Tenants.Values)
+            {
+                TenantInfo? found = FindTenantInSubTenants(tenantId, rootTenant);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+
+        private const int MaxSubTenantDepth = 10;
+
+        /// <summary>
+        /// Recursively calculates the depth of a tenant in the hierarchy.
+        /// </summary>
+        /// <param name="tenantId">The tenant to check.</param>
+        /// <param name="currentDepth">The current depth level.</param>
+        /// <returns>The maximum depth of this tenant and its subtenants.</returns>
+        private int FindTenantDepth(string tenantId, int currentDepth)
+        {
+            TenantConfiguration config = GetConfiguration();
+
+            // Check root tenants first
+            if (config.Tenants.TryGetValue(tenantId, out _))
+            {
+                return currentDepth; // Root tenant
+            }
+
+            // Search in subtenants recursively
+            foreach (TenantInfo rootTenant in config.Tenants.Values)
+            {
+                int depth = FindTenantDepthInSubTenants(tenantId, rootTenant, currentDepth + 1);
+                if (depth >= 0)
+                {
+                    return depth;
+                }
+            }
+
+            return -1; // Not found
+        }
+
+        private int FindTenantDepthInSubTenants(string tenantId, TenantInfo tenant, int currentDepth)
+        {
+            if (tenant.SubTenants.TryGetValue(tenantId, out _))
+            {
+                return currentDepth; // Found the tenant
+            }
+
+            // Search deeper in subtenants
+            foreach (TenantInfo subTenant in tenant.SubTenants.Values)
+            {
+                int depth = FindTenantDepthInSubTenants(tenantId, subTenant, currentDepth + 1);
+                if (depth >= 0)
+                {
+                    return depth;
+                }
+            }
+
+            return -1; // Not found in this branch
+        }
+
+        /// <summary>
+        /// Recursively searches for a tenant in subtenants.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID to find.</param>
+        /// <param name="tenant">The tenant to search in.</param>
+        /// <returns>The found tenant, or null if not found.</returns>
+        private TenantInfo? FindTenantInSubTenants(string tenantId, TenantInfo tenant)
+        {
+            if (tenant.SubTenants.TryGetValue(tenantId, out TenantInfo? found))
+            {
+                return found;
+            }
+
+            foreach (TenantInfo subTenant in tenant.SubTenants.Values)
+            {
+                TenantInfo? result = FindTenantInSubTenants(tenantId, subTenant);
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Generates a unique API key.
+        /// </summary>
+        /// <returns>A unique API key.</returns>
+        private string GenerateUniqueApiKey()
+        {
+            TenantConfiguration config = GetConfiguration();
+            string apiKey;
+
+            do
+            {
+                // Generate base GUID
+                string baseGuid = Guid.NewGuid().ToString("N"); // No hyphens
+
+                // Add random suffix for extra uniqueness
+                string suffix = Convert.ToBase64String(Guid.NewGuid().ToByteArray())
+                    .Replace("/", "").Replace("+", "").Replace("=", "")
+                    .Substring(0, 8);
+
+                apiKey = $"{baseGuid}{suffix}";
+
+            } while (ApiKeyExists(apiKey, config));
+
+            return apiKey;
+        }
+
+        /// <summary>
+        /// Checks if an API key already exists in the configuration.
+        /// </summary>
+        /// <param name="apiKey">The API key to check.</param>
+        /// <param name="config">The configuration to search in.</param>
+        /// <returns>True if the API key exists.</returns>
+        private bool ApiKeyExists(string apiKey, TenantConfiguration config)
+        {
+            // Check root tenants
+            if (config.Tenants.Values.Any(t => t.ApiKey == apiKey))
+                return true;
+
+            // Check all subtenants recursively
+            foreach (TenantInfo tenant in config.Tenants.Values)
+            {
+                if (ApiKeyExistsInSubTenants(apiKey, tenant))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Recursively checks if an API key exists in subtenants.
+        /// </summary>
+        /// <param name="apiKey">The API key to check.</param>
+        /// <param name="tenant">The tenant to search in.</param>
+        /// <returns>True if the API key exists.</returns>
+        private bool ApiKeyExistsInSubTenants(string apiKey, TenantInfo tenant)
+        {
+            if (tenant.SubTenants.Values.Any(t => t.ApiKey == apiKey))
+                return true;
+
+            foreach (TenantInfo subTenant in tenant.SubTenants.Values)
+            {
+                if (ApiKeyExistsInSubTenants(apiKey, subTenant))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Loads the configuration from file or creates a default configuration file if it doesn't exist.
         /// </summary>
         private void LoadOrCreateConfigurationFile()
@@ -226,6 +629,8 @@ namespace ByteShelf.Services
 
                     if (loadedConfig != null)
                     {
+                        // Rebuild parent relationships after deserialization
+                        RebuildParentRelationships(loadedConfig);
                         _currentConfiguration = loadedConfig;
                         _logger.LogInformation("Configuration loaded from file: {ConfigPath}", _configFilePath);
                         return;
@@ -373,6 +778,40 @@ namespace ByteShelf.Services
             {
                 _fileWatcher?.Dispose();
                 _disposed = true;
+            }
+        }
+
+        /// <summary>
+        /// Rebuilds parent relationships in the tenant hierarchy after deserialization.
+        /// </summary>
+        /// <param name="config">The tenant configuration to rebuild parent relationships for.</param>
+        /// <remarks>
+        /// This method traverses the tenant hierarchy and sets the Parent property on each subtenant
+        /// to reference its parent tenant. This is necessary because the Parent property is marked
+        /// with [JsonIgnore] to avoid circular references during serialization.
+        /// </remarks>
+        private void RebuildParentRelationships(TenantConfiguration config)
+        {
+            foreach (TenantInfo rootTenant in config.Tenants.Values)
+            {
+                RebuildParentRelationshipsForTenant(rootTenant, null);
+            }
+        }
+
+        /// <summary>
+        /// Recursively rebuilds parent relationships for a tenant and all its subtenants.
+        /// </summary>
+        /// <param name="tenant">The tenant to rebuild parent relationships for.</param>
+        /// <param name="parent">The parent tenant, or null if this is a root tenant.</param>
+        private void RebuildParentRelationshipsForTenant(TenantInfo tenant, TenantInfo? parent)
+        {
+            // Set the parent for this tenant
+            tenant.Parent = parent;
+
+            // Rebuild parent relationships for all subtenants
+            foreach (TenantInfo subTenant in tenant.SubTenants.Values)
+            {
+                RebuildParentRelationshipsForTenant(subTenant, tenant);
             }
         }
     }

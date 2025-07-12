@@ -60,9 +60,9 @@ namespace ByteShelf.Controllers
 
             string tenantId = HttpContext.GetTenantId();
 
-            // Get tenant configuration
-            TenantConfiguration config = _tenantConfigurationService.GetConfiguration();
-            if (!config.Tenants.TryGetValue(tenantId, out TenantInfo? tenantInfo))
+            // Get tenant configuration (could be root tenant or subtenant)
+            TenantInfo? tenantInfo = _tenantConfigurationService.GetTenant(tenantId);
+            if (tenantInfo == null)
             {
                 return NotFound("Tenant not found");
             }
@@ -152,6 +152,178 @@ namespace ByteShelf.Controllers
                 !canStore);
 
             return Ok(response);
+        }
+
+        /// <summary>
+        /// Gets all subtenants of the authenticated tenant.
+        /// </summary>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>List of subtenants.</returns>
+        /// <response code="200">Returns the list of subtenants.</response>
+        /// <response code="401">If the API key is invalid or missing.</response>
+        /// <remarks>
+        /// This endpoint returns all subtenants that belong to the authenticated tenant.
+        /// </remarks>
+        [HttpGet("subtenants")]
+        [ProducesResponseType(typeof(Dictionary<string, TenantInfo>), 200)]
+        [ProducesResponseType(401)]
+        public async Task<IActionResult> GetSubTenants(CancellationToken cancellationToken)
+        {
+            await Task.CompletedTask; // No async operations needed
+
+            string tenantId = HttpContext.GetTenantId();
+            Dictionary<string, TenantInfo> subTenants = _tenantConfigurationService.GetSubTenants(tenantId);
+
+            return Ok(subTenants);
+        }
+
+        /// <summary>
+        /// Gets information about a specific subtenant.
+        /// </summary>
+        /// <param name="subTenantId">The subtenant ID.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>Subtenant information.</returns>
+        /// <response code="200">Returns the subtenant information.</response>
+        /// <response code="401">If the API key is invalid or missing.</response>
+        /// <response code="404">If the subtenant is not found.</response>
+        /// <remarks>
+        /// This endpoint returns information about a specific subtenant that belongs to the authenticated tenant.
+        /// </remarks>
+        [HttpGet("subtenants/{subTenantId}")]
+        [ProducesResponseType(typeof(TenantInfo), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> GetSubTenant(string subTenantId, CancellationToken cancellationToken)
+        {
+            await Task.CompletedTask; // No async operations needed
+
+            string tenantId = HttpContext.GetTenantId();
+            TenantInfo? subTenant = _tenantConfigurationService.GetSubTenant(tenantId, subTenantId);
+
+            if (subTenant == null)
+            {
+                return NotFound("Subtenant not found");
+            }
+
+            return Ok(subTenant);
+        }
+
+        /// <summary>
+        /// Creates a new subtenant under the authenticated tenant.
+        /// </summary>
+        /// <param name="request">The subtenant creation request.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>The created subtenant information.</returns>
+        /// <response code="201">Returns the created subtenant information.</response>
+        /// <response code="400">If the request is invalid.</response>
+        /// <response code="401">If the API key is invalid or missing.</response>
+        /// <response code="409">If maximum depth is reached.</response>
+        /// <remarks>
+        /// This endpoint creates a new subtenant under the authenticated tenant.
+        /// The subtenant will have a unique ID and API key generated automatically.
+        /// </remarks>
+        [HttpPost("subtenants")]
+        [ProducesResponseType(typeof(object), 201)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(409)]
+        public async Task<IActionResult> CreateSubTenant([FromBody] CreateSubTenantRequest? request, CancellationToken cancellationToken)
+        {
+            if (request == null)
+            {
+                return BadRequest("Request cannot be null");
+            }
+
+            if (string.IsNullOrWhiteSpace(request.DisplayName))
+            {
+                return BadRequest("Display name is required");
+            }
+
+            try
+            {
+                string tenantId = HttpContext.GetTenantId();
+                string subTenantId = await _tenantConfigurationService.CreateSubTenantAsync(tenantId, request.DisplayName);
+                
+                CreateSubTenantResponse response = new CreateSubTenantResponse(subTenantId, request.DisplayName, "Subtenant created successfully");
+                return CreatedAtAction(nameof(GetSubTenant), new { subTenantId = subTenantId }, response);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Updates the storage limit of a subtenant.
+        /// </summary>
+        /// <param name="subTenantId">The subtenant ID.</param>
+        /// <param name="request">The storage limit update request.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>Success status.</returns>
+        /// <response code="200">Returns success status.</response>
+        /// <response code="400">If the request is invalid.</response>
+        /// <response code="401">If the API key is invalid or missing.</response>
+        /// <response code="404">If the subtenant is not found.</response>
+        /// <remarks>
+        /// This endpoint updates the storage limit of a subtenant.
+        /// The new limit cannot exceed the parent tenant's limit.
+        /// </remarks>
+        [HttpPut("subtenants/{subTenantId}/storage-limit")]
+        [ProducesResponseType(typeof(object), 200)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> UpdateSubTenantStorageLimit(string subTenantId, [FromBody] UpdateStorageLimitRequest? request, CancellationToken cancellationToken)
+        {
+            if (request == null)
+            {
+                return BadRequest("Request cannot be null");
+            }
+
+            if (request.StorageLimitBytes < 0)
+            {
+                return BadRequest("Storage limit must be non-negative");
+            }
+
+            string tenantId = HttpContext.GetTenantId();
+            bool success = await _tenantConfigurationService.UpdateSubTenantStorageLimitAsync(tenantId, subTenantId, request.StorageLimitBytes);
+
+            if (!success)
+            {
+                return NotFound("Subtenant not found");
+            }
+
+            return Ok();
+        }
+
+        /// <summary>
+        /// Deletes a subtenant.
+        /// </summary>
+        /// <param name="subTenantId">The subtenant ID.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>Success status.</returns>
+        /// <response code="204">Returns success status.</response>
+        /// <response code="401">If the API key is invalid or missing.</response>
+        /// <response code="404">If the subtenant is not found.</response>
+        /// <remarks>
+        /// This endpoint deletes a subtenant and all its data.
+        /// This operation cannot be undone.
+        /// </remarks>
+        [HttpDelete("subtenants/{subTenantId}")]
+        [ProducesResponseType(204)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> DeleteSubTenant(string subTenantId, CancellationToken cancellationToken)
+        {
+            string tenantId = HttpContext.GetTenantId();
+            bool success = await _tenantConfigurationService.DeleteSubTenantAsync(tenantId, subTenantId);
+
+            if (!success)
+            {
+                return NotFound("Subtenant not found");
+            }
+
+            return Ok();
         }
     }
 }

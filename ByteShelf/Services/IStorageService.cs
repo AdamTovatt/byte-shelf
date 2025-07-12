@@ -58,5 +58,12 @@ namespace ByteShelf.Services
         /// <param name="tenantId">The tenant ID.</param>
         /// <returns>The storage limit in bytes, or 0 if the tenant is not found.</returns>
         long GetStorageLimit(string tenantId);
+
+        /// <summary>
+        /// Gets the total storage usage for a tenant including all subtenants recursively.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
+        /// <returns>The total storage usage including subtenants in bytes.</returns>
+        long GetTotalUsageIncludingSubTenants(string tenantId);
     }
 }

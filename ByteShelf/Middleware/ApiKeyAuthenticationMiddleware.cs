@@ -116,9 +116,21 @@ namespace ByteShelf.Middleware
                 return;
             }
 
+            // Get tenant info (could be root tenant or subtenant)
+            TenantInfo? tenantInfo = GetTenantInfo(tenantId, config);
+            if (tenantInfo == null)
+            {
+                context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
+                context.Response.ContentType = "application/json";
+                string errorResponse = "{\"error\":\"Tenant not found\",\"message\":\"The authenticated tenant was not found in configuration\"}";
+                byte[] errorBytes = Encoding.UTF8.GetBytes(errorResponse);
+                await context.Response.Body.WriteAsync(errorBytes);
+                return;
+            }
+
             // Add tenant ID and admin status to the request context for downstream components
             context.Items["TenantId"] = tenantId;
-            context.Items["IsAdmin"] = config.Tenants[tenantId].IsAdmin;
+            context.Items["IsAdmin"] = tenantInfo.IsAdmin;
             context.Request.Headers[TenantIdHeaderName] = tenantId;
 
             await _next(context);
@@ -210,9 +222,10 @@ namespace ByteShelf.Middleware
         /// <returns>The tenant ID if the API key is valid; otherwise, <c>null</c>.</returns>
         /// <remarks>
         /// This method checks for the presence of the "X-API-Key" header and validates
-        /// that it matches one of the configured tenant API keys. The comparison is case-sensitive.
-        /// Returns the tenant ID if the header is present and matches a configured key,
-        /// or <c>null</c> if the header is missing, empty, or doesn't match any tenant.
+        /// that it matches one of the configured tenant API keys, including subtenants.
+        /// The comparison is case-sensitive. Returns the tenant ID if the header is present
+        /// and matches a configured key, or <c>null</c> if the header is missing, empty,
+        /// or doesn't match any tenant.
         /// </remarks>
         private string? GetTenantIdFromApiKey(HttpRequest request)
         {
@@ -223,13 +236,103 @@ namespace ByteShelf.Middleware
             if (string.IsNullOrEmpty(providedApiKey))
                 return null;
 
-            // Find the tenant with the matching API key
+            // Find the tenant with the matching API key (including subtenants)
             TenantConfiguration config = _configService.GetConfiguration();
+            
+            // Check root tenants first
             foreach (KeyValuePair<string, TenantInfo> tenant in config.Tenants)
             {
                 if (tenant.Value.ApiKey == providedApiKey)
                 {
                     return tenant.Key;
+                }
+            }
+
+            // Search in subtenants recursively
+            foreach (TenantInfo rootTenant in config.Tenants.Values)
+            {
+                string? foundTenantId = FindTenantByApiKeyInSubTenants(providedApiKey, rootTenant);
+                if (foundTenantId != null)
+                {
+                    return foundTenantId;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Recursively searches for a tenant with the specified API key in subtenants.
+        /// </summary>
+        /// <param name="apiKey">The API key to search for.</param>
+        /// <param name="tenant">The tenant to search in.</param>
+        /// <returns>The tenant ID if found, or null if not found.</returns>
+        private string? FindTenantByApiKeyInSubTenants(string apiKey, TenantInfo tenant)
+        {
+            foreach (KeyValuePair<string, TenantInfo> subTenant in tenant.SubTenants)
+            {
+                if (subTenant.Value.ApiKey == apiKey)
+                {
+                    return subTenant.Key;
+                }
+
+                // Recursively search in this subtenant's subtenants
+                string? found = FindTenantByApiKeyInSubTenants(apiKey, subTenant.Value);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Gets tenant information by tenant ID, searching through root tenants and subtenants.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID to find.</param>
+        /// <param name="config">The tenant configuration.</param>
+        /// <returns>The tenant information, or null if not found.</returns>
+        private TenantInfo? GetTenantInfo(string tenantId, TenantConfiguration config)
+        {
+            // Check root tenants first
+            if (config.Tenants.TryGetValue(tenantId, out TenantInfo? tenant))
+            {
+                return tenant;
+            }
+
+            // Search in subtenants recursively
+            foreach (TenantInfo rootTenant in config.Tenants.Values)
+            {
+                TenantInfo? found = FindTenantInSubTenants(tenantId, rootTenant);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Recursively searches for a tenant in subtenants.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID to find.</param>
+        /// <param name="tenant">The tenant to search in.</param>
+        /// <returns>The found tenant, or null if not found.</returns>
+        private TenantInfo? FindTenantInSubTenants(string tenantId, TenantInfo tenant)
+        {
+            if (tenant.SubTenants.TryGetValue(tenantId, out TenantInfo? found))
+            {
+                return found;
+            }
+
+            foreach (TenantInfo subTenant in tenant.SubTenants.Values)
+            {
+                TenantInfo? result = FindTenantInSubTenants(tenantId, subTenant);
+                if (result != null)
+                {
+                    return result;
                 }
             }
 

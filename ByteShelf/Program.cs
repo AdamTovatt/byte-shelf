@@ -2,6 +2,7 @@ using ByteShelf.Configuration;
 using ByteShelf.Middleware;
 using ByteShelf.Resources;
 using ByteShelf.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ByteShelf
 {
@@ -55,7 +56,7 @@ namespace ByteShelf
             {
                 ILogger<FileStorageService>? logger = serviceProvider.GetService<ILogger<FileStorageService>>();
                 IStorageService storageService = serviceProvider.GetRequiredService<IStorageService>();
-                return new FileStorageService(storagePath, storageService, logger);
+                return new FileStorageService(storagePath, storageService, logger ?? new NullLogger<FileStorageService>());
             });
 
             WebApplication app = builder.Build();

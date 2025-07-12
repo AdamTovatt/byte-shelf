@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace ByteShelfCommon
 {
     /// <summary>
@@ -44,6 +46,25 @@ namespace ByteShelfCommon
         /// other tenants. They typically have unlimited storage when StorageLimitBytes is 0.
         /// </remarks>
         public bool IsAdmin { get; set; } = false;
+
+        /// <summary>
+        /// Gets or sets the parent tenant reference.
+        /// </summary>
+        /// <remarks>
+        /// This property is used for runtime navigation and is not serialized to JSON
+        /// to avoid circular references. The parent relationship is stored in the child tenant.
+        /// </remarks>
+        [JsonIgnore]
+        public TenantInfo? Parent { get; set; }
+
+        /// <summary>
+        /// Gets or sets the dictionary of subtenants, keyed by tenant ID.
+        /// </summary>
+        /// <remarks>
+        /// Each subtenant is a complete TenantInfo object with its own configuration.
+        /// Subtenants inherit access from their parent but have their own storage limits.
+        /// </remarks>
+        public Dictionary<string, TenantInfo> SubTenants { get; set; } = new Dictionary<string, TenantInfo>();
     }
 
     /// <summary>

@@ -187,6 +187,95 @@ namespace ByteShelf.Services
         }
 
         /// <summary>
+        /// Gets the total usage for a tenant including all subtenants recursively.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
+        /// <returns>The total usage including subtenants.</returns>
+        public long GetTotalUsageIncludingSubTenants(string tenantId)
+        {
+            TenantConfiguration config = _configService.GetConfiguration();
+            TenantInfo? tenant = GetTenantRecursive(config, tenantId);
+            
+            if (tenant == null)
+                return 0;
+            
+            return CalculateTotalUsageRecursive(tenantId, tenant);
+        }
+
+        /// <summary>
+        /// Recursively calculates the total usage for a tenant and all its subtenants.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
+        /// <param name="tenant">The tenant information.</param>
+        /// <returns>The total usage including all subtenants.</returns>
+        private long CalculateTotalUsageRecursive(string tenantId, TenantInfo tenant)
+        {
+            // Get own usage
+            long ownUsage = GetCurrentUsage(tenantId);
+            
+            // Add usage from all subtenants
+            long subTenantUsage = 0;
+            foreach (KeyValuePair<string, TenantInfo> subTenant in tenant.SubTenants)
+            {
+                subTenantUsage += CalculateTotalUsageRecursive(subTenant.Key, subTenant.Value);
+            }
+            
+            return ownUsage + subTenantUsage;
+        }
+
+        /// <summary>
+        /// Recursively finds a tenant in the configuration.
+        /// </summary>
+        /// <param name="config">The tenant configuration.</param>
+        /// <param name="tenantId">The tenant ID to find.</param>
+        /// <returns>The tenant information, or null if not found.</returns>
+        private TenantInfo? GetTenantRecursive(TenantConfiguration config, string tenantId)
+        {
+            // Check root tenants first
+            if (config.Tenants.TryGetValue(tenantId, out TenantInfo? tenant))
+            {
+                return tenant;
+            }
+
+            // Search in subtenants recursively
+            foreach (TenantInfo rootTenant in config.Tenants.Values)
+            {
+                TenantInfo? found = FindTenantInSubTenants(tenantId, rootTenant);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Recursively searches for a tenant in subtenants.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID to find.</param>
+        /// <param name="tenant">The tenant to search in.</param>
+        /// <returns>The found tenant, or null if not found.</returns>
+        private TenantInfo? FindTenantInSubTenants(string tenantId, TenantInfo tenant)
+        {
+            if (tenant.SubTenants.TryGetValue(tenantId, out TenantInfo? found))
+            {
+                return found;
+            }
+
+            foreach (TenantInfo subTenant in tenant.SubTenants.Values)
+            {
+                TenantInfo? result = FindTenantInSubTenants(tenantId, subTenant);
+                if (result != null)
+                {
+                    return result;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
         /// Increments the operation count and persists data if needed.
         /// This method should only be called from within a lock.
         /// </summary>

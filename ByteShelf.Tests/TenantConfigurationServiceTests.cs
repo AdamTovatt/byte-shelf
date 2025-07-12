@@ -221,6 +221,254 @@ namespace ByteShelf.Tests
         }
 
         [TestMethod]
+        public async Task ReloadConfigurationAsync_RebuildsParentRelationships_WhenConfigurationHasSubTenants()
+        {
+            // Arrange
+            TenantConfiguration newConfig = new TenantConfiguration
+            {
+                RequireAuthentication = true,
+                Tenants = new Dictionary<string, TenantInfo>
+                {
+                    ["parent1"] = new TenantInfo
+                    {
+                        ApiKey = "parent1-key",
+                        DisplayName = "Parent 1",
+                        StorageLimitBytes = 1024 * 1024 * 100,
+                        IsAdmin = false,
+                        SubTenants = new Dictionary<string, TenantInfo>
+                        {
+                            ["child1"] = new TenantInfo
+                            {
+                                ApiKey = "child1-key",
+                                DisplayName = "Child 1",
+                                StorageLimitBytes = 1024 * 1024 * 50,
+                                IsAdmin = false,
+                                SubTenants = new Dictionary<string, TenantInfo>
+                                {
+                                    ["grandchild1"] = new TenantInfo
+                                    {
+                                        ApiKey = "grandchild1-key",
+                                        DisplayName = "Grandchild 1",
+                                        StorageLimitBytes = 1024 * 1024 * 25,
+                                        IsAdmin = false,
+                                        SubTenants = new Dictionary<string, TenantInfo>()
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    ["parent2"] = new TenantInfo
+                    {
+                        ApiKey = "parent2-key",
+                        DisplayName = "Parent 2",
+                        StorageLimitBytes = 1024 * 1024 * 200,
+                        IsAdmin = false,
+                        SubTenants = new Dictionary<string, TenantInfo>()
+                    }
+                }
+            };
+
+            string jsonContent = JsonSerializer.Serialize(newConfig, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(_testConfigPath, jsonContent);
+
+            // Act
+            bool result = await _service.ReloadConfigurationAsync();
+
+            // Assert
+            Assert.IsTrue(result);
+
+            TenantConfiguration config = _service.GetConfiguration();
+            
+            // Verify parent relationships are correctly set
+            TenantInfo parent1 = config.Tenants["parent1"];
+            TenantInfo parent2 = config.Tenants["parent2"];
+            TenantInfo child1 = parent1.SubTenants["child1"];
+            TenantInfo grandchild1 = child1.SubTenants["grandchild1"];
+
+            // Root tenants should have no parent
+            Assert.IsNull(parent1.Parent);
+            Assert.IsNull(parent2.Parent);
+
+            // Child tenants should have correct parent
+            Assert.AreSame(parent1, child1.Parent);
+            Assert.AreSame(child1, grandchild1.Parent);
+        }
+
+        [TestMethod]
+        public void Constructor_RebuildsParentRelationships_WhenLoadingExistingConfigurationWithSubTenants()
+        {
+            // Arrange
+            TenantConfiguration configWithSubTenants = new TenantConfiguration
+            {
+                RequireAuthentication = true,
+                Tenants = new Dictionary<string, TenantInfo>
+                {
+                    ["root"] = new TenantInfo
+                    {
+                        ApiKey = "root-key",
+                        DisplayName = "Root Tenant",
+                        StorageLimitBytes = 1024 * 1024 * 100,
+                        IsAdmin = false,
+                        SubTenants = new Dictionary<string, TenantInfo>
+                        {
+                            ["sub1"] = new TenantInfo
+                            {
+                                ApiKey = "sub1-key",
+                                DisplayName = "Sub Tenant 1",
+                                StorageLimitBytes = 1024 * 1024 * 50,
+                                IsAdmin = false,
+                                SubTenants = new Dictionary<string, TenantInfo>()
+                            },
+                            ["sub2"] = new TenantInfo
+                            {
+                                ApiKey = "sub2-key",
+                                DisplayName = "Sub Tenant 2",
+                                StorageLimitBytes = 1024 * 1024 * 50,
+                                IsAdmin = false,
+                                SubTenants = new Dictionary<string, TenantInfo>()
+                            }
+                        }
+                    }
+                }
+            };
+
+            string jsonContent = JsonSerializer.Serialize(configWithSubTenants, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(_testConfigPath, jsonContent);
+
+            // Act - Create new service instance to trigger loading from file
+            TenantConfigurationService newService = new TenantConfigurationService(_logger);
+
+            // Assert
+            TenantConfiguration loadedConfig = newService.GetConfiguration();
+            
+            TenantInfo root = loadedConfig.Tenants["root"];
+            TenantInfo sub1 = root.SubTenants["sub1"];
+            TenantInfo sub2 = root.SubTenants["sub2"];
+
+            // Root tenant should have no parent
+            Assert.IsNull(root.Parent);
+
+            // Sub tenants should have root as parent
+            Assert.AreSame(root, sub1.Parent);
+            Assert.AreSame(root, sub2.Parent);
+
+            newService.Dispose();
+        }
+
+        [TestMethod]
+        public void Constructor_RebuildsParentRelationships_WhenCreatingDefaultConfiguration()
+        {
+            // Arrange & Act
+            // The service constructor should create a default configuration and rebuild relationships
+
+            // Assert
+            TenantConfiguration config = _service.GetConfiguration();
+            
+            // Default configuration has admin and tenant1 as root tenants
+            TenantInfo admin = config.Tenants["admin"];
+            TenantInfo tenant1 = config.Tenants["tenant1"];
+
+            // Root tenants should have no parent
+            Assert.IsNull(admin.Parent);
+            Assert.IsNull(tenant1.Parent);
+
+            // Default tenants should have empty subtenants collections
+            Assert.AreEqual(0, admin.SubTenants.Count);
+            Assert.AreEqual(0, tenant1.SubTenants.Count);
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantAsync_RebuildsParentRelationships_AfterSavingConfiguration()
+        {
+            // Arrange
+            string parentTenantId = "admin";
+            string displayName = "Test Subtenant";
+
+            // Act
+            string subTenantId = await _service.CreateSubTenantAsync(parentTenantId, displayName);
+
+            // Assert
+            TenantConfiguration config = _service.GetConfiguration();
+            TenantInfo parent = config.Tenants[parentTenantId];
+            TenantInfo subTenant = parent.SubTenants[subTenantId];
+
+            // Verify parent relationship is correctly set
+            Assert.AreSame(parent, subTenant.Parent);
+            Assert.AreEqual(displayName, subTenant.DisplayName);
+        }
+
+        [TestMethod]
+        public async Task ReloadConfigurationAsync_PreservesParentRelationships_AfterReloadingComplexHierarchy()
+        {
+            // Arrange - Create a complex hierarchy
+            TenantConfiguration complexConfig = new TenantConfiguration
+            {
+                RequireAuthentication = true,
+                Tenants = new Dictionary<string, TenantInfo>
+                {
+                    ["level1"] = new TenantInfo
+                    {
+                        ApiKey = "level1-key",
+                        DisplayName = "Level 1",
+                        StorageLimitBytes = 1024 * 1024 * 100,
+                        IsAdmin = false,
+                        SubTenants = new Dictionary<string, TenantInfo>
+                        {
+                            ["level2a"] = new TenantInfo
+                            {
+                                ApiKey = "level2a-key",
+                                DisplayName = "Level 2A",
+                                StorageLimitBytes = 1024 * 1024 * 50,
+                                IsAdmin = false,
+                                SubTenants = new Dictionary<string, TenantInfo>
+                                {
+                                    ["level3a"] = new TenantInfo
+                                    {
+                                        ApiKey = "level3a-key",
+                                        DisplayName = "Level 3A",
+                                        StorageLimitBytes = 1024 * 1024 * 25,
+                                        IsAdmin = false,
+                                        SubTenants = new Dictionary<string, TenantInfo>()
+                                    }
+                                }
+                            },
+                            ["level2b"] = new TenantInfo
+                            {
+                                ApiKey = "level2b-key",
+                                DisplayName = "Level 2B",
+                                StorageLimitBytes = 1024 * 1024 * 50,
+                                IsAdmin = false,
+                                SubTenants = new Dictionary<string, TenantInfo>()
+                            }
+                        }
+                    }
+                }
+            };
+
+            string jsonContent = JsonSerializer.Serialize(complexConfig, new JsonSerializerOptions { WriteIndented = true });
+            await File.WriteAllTextAsync(_testConfigPath, jsonContent);
+
+            // Act
+            bool result = await _service.ReloadConfigurationAsync();
+
+            // Assert
+            Assert.IsTrue(result);
+
+            TenantConfiguration config = _service.GetConfiguration();
+            
+            TenantInfo level1 = config.Tenants["level1"];
+            TenantInfo level2a = level1.SubTenants["level2a"];
+            TenantInfo level2b = level1.SubTenants["level2b"];
+            TenantInfo level3a = level2a.SubTenants["level3a"];
+
+            // Verify all parent relationships are correctly set
+            Assert.IsNull(level1.Parent);
+            Assert.AreSame(level1, level2a.Parent);
+            Assert.AreSame(level1, level2b.Parent);
+            Assert.AreSame(level2a, level3a.Parent);
+        }
+
+        [TestMethod]
         public async Task ReloadConfigurationAsync_ReturnsFalse_WhenFileDoesNotExist()
         {
             // Arrange
@@ -291,6 +539,474 @@ namespace ByteShelf.Tests
         {
             // Act & Assert
             await Assert.ThrowsExceptionAsync<ArgumentException>(() => _service.RemoveTenantAsync(null!));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantAsync_CreatesNewSubTenant_WhenValidParameters()
+        {
+            // Arrange
+            string parentTenantId = "tenant1";
+            string displayName = "Test Subtenant";
+
+            // Act
+            string subTenantId = await _service.CreateSubTenantAsync(parentTenantId, displayName);
+
+            // Assert
+            Assert.IsNotNull(subTenantId);
+            Assert.IsTrue(Guid.TryParse(subTenantId, out _));
+
+            TenantConfiguration config = _service.GetConfiguration();
+            Assert.IsTrue(config.Tenants[parentTenantId].SubTenants.ContainsKey(subTenantId));
+
+            TenantInfo subTenant = config.Tenants[parentTenantId].SubTenants[subTenantId];
+            Assert.AreEqual(displayName, subTenant.DisplayName);
+            Assert.IsNotNull(subTenant.ApiKey);
+            Assert.AreEqual(config.Tenants[parentTenantId].StorageLimitBytes, subTenant.StorageLimitBytes);
+            Assert.IsFalse(subTenant.IsAdmin);
+            Assert.IsNotNull(subTenant.Parent);
+
+            TenantInfo? parent = _service.GetTenant(parentTenantId);
+
+            Assert.IsNotNull(parent);
+            Assert.AreEqual(subTenant.Parent, parent);
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantAsync_ThrowsInvalidOperationException_WhenParentTenantDoesNotExist()
+        {
+            // Arrange
+            string parentTenantId = "nonexistent";
+            string displayName = "Test Subtenant";
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+                _service.CreateSubTenantAsync(parentTenantId, displayName));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantAsync_ThrowsArgumentException_WhenParentTenantIdIsNull()
+        {
+            // Arrange
+            string displayName = "Test Subtenant";
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _service.CreateSubTenantAsync(null!, displayName));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantAsync_ThrowsArgumentException_WhenDisplayNameIsNull()
+        {
+            // Arrange
+            string parentTenantId = "tenant1";
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _service.CreateSubTenantAsync(parentTenantId, null!));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantAsync_ThrowsArgumentException_WhenDisplayNameIsEmpty()
+        {
+            // Arrange
+            string parentTenantId = "tenant1";
+            string displayName = "";
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _service.CreateSubTenantAsync(parentTenantId, displayName));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantAsync_ThrowsArgumentException_WhenDisplayNameIsWhitespace()
+        {
+            // Arrange
+            string parentTenantId = "tenant1";
+            string displayName = "   ";
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _service.CreateSubTenantAsync(parentTenantId, displayName));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantAsync_ThrowsInvalidOperationException_WhenMaxDepthReached()
+        {
+            // Arrange - Create a chain of 10 subtenants
+            string currentTenantId = "tenant1";
+            for (int i = 0; i < 10; i++)
+            {
+                currentTenantId = await _service.CreateSubTenantAsync(currentTenantId, $"Level {i + 1}");
+            }
+
+            // Act & Assert - Try to create an 11th level subtenant
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+                _service.CreateSubTenantAsync(currentTenantId, "Level 11"));
+        }
+
+        [TestMethod]
+        public void GetSubTenants_ReturnsEmptyDictionary_WhenTenantHasNoSubTenants()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+
+            // Act
+            Dictionary<string, TenantInfo> subTenants = _service.GetSubTenants(tenantId);
+
+            // Assert
+            Assert.IsNotNull(subTenants);
+            Assert.AreEqual(0, subTenants.Count);
+        }
+
+        [TestMethod]
+        public void GetSubTenants_ReturnsSubTenants_WhenTenantHasSubTenants()
+        {
+            // Arrange
+            string parentTenantId = "tenant1";
+            string subTenantId = "subtenant1";
+
+            TenantInfo subTenant = new TenantInfo
+            {
+                ApiKey = "sub-key",
+                DisplayName = "Sub Tenant",
+                StorageLimitBytes = 1024 * 1024 * 50,
+                IsAdmin = false
+            };
+
+            TenantConfiguration config = _service.GetConfiguration();
+            subTenant.Parent = config.Tenants[parentTenantId];
+            config.Tenants[parentTenantId].SubTenants[subTenantId] = subTenant;
+
+            // Act
+            Dictionary<string, TenantInfo> subTenants = _service.GetSubTenants(parentTenantId);
+
+            // Assert
+            Assert.IsNotNull(subTenants);
+            Assert.AreEqual(1, subTenants.Count);
+            Assert.IsTrue(subTenants.ContainsKey(subTenantId));
+            Assert.AreEqual(subTenant.DisplayName, subTenants[subTenantId].DisplayName);
+        }
+
+        [TestMethod]
+        public void GetSubTenants_ReturnsEmptyDictionary_WhenTenantDoesNotExist()
+        {
+            // Arrange
+            string tenantId = "nonexistent";
+
+            // Act
+            Dictionary<string, TenantInfo> subTenants = _service.GetSubTenants(tenantId);
+
+            // Assert
+            Assert.IsNotNull(subTenants);
+            Assert.AreEqual(0, subTenants.Count);
+        }
+
+        [TestMethod]
+        public void GetSubTenant_ReturnsSubTenant_WhenSubTenantExists()
+        {
+            // Arrange
+            string parentTenantId = "tenant1";
+            string subTenantId = "subtenant1";
+
+            TenantInfo subTenant = new TenantInfo
+            {
+                ApiKey = "sub-key",
+                DisplayName = "Sub Tenant",
+                StorageLimitBytes = 1024 * 1024 * 50,
+                IsAdmin = false
+            };
+
+            TenantConfiguration config = _service.GetConfiguration();
+            subTenant.Parent = config.Tenants[parentTenantId];
+            config.Tenants[parentTenantId].SubTenants[subTenantId] = subTenant;
+
+            // Act
+            TenantInfo? result = _service.GetSubTenant(parentTenantId, subTenantId);
+
+            // Assert
+            Assert.IsNotNull(result);
+            Assert.AreEqual(subTenant.DisplayName, result.DisplayName);
+            Assert.AreEqual(subTenant.ApiKey, result!.ApiKey);
+            Assert.AreEqual(subTenant.StorageLimitBytes, result.StorageLimitBytes);
+            Assert.AreEqual(subTenant.IsAdmin, result.IsAdmin);
+            Assert.AreEqual(subTenant.Parent, result.Parent);
+        }
+
+        [TestMethod]
+        public void GetSubTenant_ReturnsNull_WhenSubTenantDoesNotExist()
+        {
+            // Arrange
+            string parentTenantId = "tenant1";
+            string subTenantId = "nonexistent";
+
+            // Act
+            TenantInfo? result = _service.GetSubTenant(parentTenantId, subTenantId);
+
+            // Assert
+            Assert.IsNull(result);
+        }
+
+        [TestMethod]
+        public void GetSubTenant_ReturnsNull_WhenParentTenantDoesNotExist()
+        {
+            // Arrange
+            string parentTenantId = "nonexistent";
+            string subTenantId = "subtenant1";
+
+            // Act
+            TenantInfo? result = _service.GetSubTenant(parentTenantId, subTenantId);
+
+            // Assert
+            Assert.IsNull(result);
+        }
+
+        [TestMethod]
+        public void GetSubTenant_ReturnsNull_WhenParentTenantIdIsNull()
+        {
+            // Arrange
+            string subTenantId = "subtenant1";
+
+            // Act
+            TenantInfo? result = _service.GetSubTenant(null!, subTenantId);
+
+            // Assert
+            Assert.IsNull(result);
+        }
+
+        [TestMethod]
+        public void GetSubTenant_ReturnsNull_WhenSubTenantIdIsNull()
+        {
+            // Arrange
+            string parentTenantId = "tenant1";
+
+            // Act
+            TenantInfo? result = _service.GetSubTenant(parentTenantId, null!);
+
+            // Assert
+            Assert.IsNull(result);
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimitAsync_UpdatesStorageLimit_WhenSubTenantExists()
+        {
+            // Arrange
+            string parentTenantId = "tenant1";
+            string subTenantId = "subtenant1";
+            long newStorageLimit = 1024 * 1024 * 200; // 200MB
+
+            TenantInfo subTenant = new TenantInfo
+            {
+                ApiKey = "sub-key",
+                DisplayName = "Sub Tenant",
+                StorageLimitBytes = 1024 * 1024 * 50,
+                IsAdmin = false
+            };
+
+            TenantConfiguration config = _service.GetConfiguration();
+            subTenant.Parent = config.Tenants[parentTenantId];
+            config.Tenants[parentTenantId].SubTenants[subTenantId] = subTenant;
+
+            // Act
+            bool result = await _service.UpdateSubTenantStorageLimitAsync(parentTenantId, subTenantId, newStorageLimit);
+
+            // Assert
+            Assert.IsTrue(result);
+            Assert.AreEqual(newStorageLimit, config.Tenants[parentTenantId].SubTenants[subTenantId].StorageLimitBytes);
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimitAsync_ReturnsFalse_WhenSubTenantDoesNotExist()
+        {
+            // Arrange
+            string parentTenantId = "tenant1";
+            string subTenantId = "nonexistent";
+            long newStorageLimit = 1024 * 1024 * 200;
+
+            // Act
+            bool result = await _service.UpdateSubTenantStorageLimitAsync(parentTenantId, subTenantId, newStorageLimit);
+
+            // Assert
+            Assert.IsFalse(result);
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimitAsync_ReturnsFalse_WhenParentTenantDoesNotExist()
+        {
+            // Arrange
+            string parentTenantId = "nonexistent";
+            string subTenantId = "subtenant1";
+            long newStorageLimit = 1024 * 1024 * 200;
+
+            // Act
+            bool result = await _service.UpdateSubTenantStorageLimitAsync(parentTenantId, subTenantId, newStorageLimit);
+
+            // Assert
+            Assert.IsFalse(result);
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimitAsync_ThrowsArgumentException_WhenParentTenantIdIsNull()
+        {
+            // Arrange
+            string subTenantId = "subtenant1";
+            long newStorageLimit = 1024 * 1024 * 200;
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _service.UpdateSubTenantStorageLimitAsync(null!, subTenantId, newStorageLimit));
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimitAsync_ThrowsArgumentException_WhenSubTenantIdIsNull()
+        {
+            // Arrange
+            string parentTenantId = "tenant1";
+            long newStorageLimit = 1024 * 1024 * 200;
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _service.UpdateSubTenantStorageLimitAsync(parentTenantId, null!, newStorageLimit));
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimitAsync_ThrowsArgumentException_WhenStorageLimitIsNegative()
+        {
+            // Arrange
+            string parentTenantId = "tenant1";
+            string subTenantId = "subtenant1";
+            long newStorageLimit = -1024;
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _service.UpdateSubTenantStorageLimitAsync(parentTenantId, subTenantId, newStorageLimit));
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenantAsync_DeletesSubTenant_WhenSubTenantExists()
+        {
+            // Arrange
+            string parentTenantId = "tenant1";
+            string subTenantId = "subtenant1";
+
+            TenantInfo subTenant = new TenantInfo
+            {
+                ApiKey = "sub-key",
+                DisplayName = "Sub Tenant",
+                StorageLimitBytes = 1024 * 1024 * 50,
+                IsAdmin = false
+            };
+
+            TenantConfiguration config = _service.GetConfiguration();
+            subTenant.Parent = config.Tenants[parentTenantId];
+            config.Tenants[parentTenantId].SubTenants[subTenantId] = subTenant;
+
+            // Act
+            bool result = await _service.DeleteSubTenantAsync(parentTenantId, subTenantId);
+
+            // Assert
+            Assert.IsTrue(result);
+            Assert.IsFalse(config.Tenants[parentTenantId].SubTenants.ContainsKey(subTenantId));
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenantAsync_ReturnsFalse_WhenSubTenantDoesNotExist()
+        {
+            // Arrange
+            string parentTenantId = "tenant1";
+            string subTenantId = "nonexistent";
+
+            // Act
+            bool result = await _service.DeleteSubTenantAsync(parentTenantId, subTenantId);
+
+            // Assert
+            Assert.IsFalse(result);
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenantAsync_ReturnsFalse_WhenParentTenantDoesNotExist()
+        {
+            // Arrange
+            string parentTenantId = "nonexistent";
+            string subTenantId = "subtenant1";
+
+            // Act
+            bool result = await _service.DeleteSubTenantAsync(parentTenantId, subTenantId);
+
+            // Assert
+            Assert.IsFalse(result);
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenantAsync_ThrowsArgumentException_WhenParentTenantIdIsNull()
+        {
+            // Arrange
+            string subTenantId = "subtenant1";
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _service.DeleteSubTenantAsync(null!, subTenantId));
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenantAsync_ThrowsArgumentException_WhenSubTenantIdIsNull()
+        {
+            // Arrange
+            string parentTenantId = "tenant1";
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _service.DeleteSubTenantAsync(parentTenantId, null!));
+        }
+
+        [TestMethod]
+        public async Task CanCreateSubTenantAsync_ReturnsTrue_WhenTenantExistsAndDepthNotExceeded()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+
+            // Act
+            bool result = await _service.CanCreateSubTenantAsync(tenantId);
+
+            // Assert
+            Assert.IsTrue(result);
+        }
+
+        [TestMethod]
+        public async Task CanCreateSubTenantAsync_ReturnsFalse_WhenTenantDoesNotExist()
+        {
+            // Arrange
+            string tenantId = "nonexistent";
+
+            // Act
+            bool result = await _service.CanCreateSubTenantAsync(tenantId);
+
+            // Assert
+            Assert.IsFalse(result);
+        }
+
+        [TestMethod]
+        public async Task CanCreateSubTenantAsync_ReturnsFalse_WhenMaxDepthReached()
+        {
+            // Arrange - Create a chain of 10 subtenants
+            string currentTenantId = "tenant1";
+            for (int i = 0; i < 10; i++)
+            {
+                currentTenantId = await _service.CreateSubTenantAsync(currentTenantId, $"Level {i + 1}");
+            }
+
+            // Act
+            bool result = await _service.CanCreateSubTenantAsync(currentTenantId);
+
+            // Assert
+            Assert.IsFalse(result);
+        }
+
+        [TestMethod]
+        public async Task CanCreateSubTenantAsync_ThrowsArgumentException_WhenTenantIdIsNull()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _service.CanCreateSubTenantAsync(null!));
         }
 
         private class TestLogger<T> : ILogger<T>

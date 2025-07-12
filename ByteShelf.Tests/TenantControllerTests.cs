@@ -86,6 +86,7 @@ namespace ByteShelf.Tests
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
             _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockConfigService.Setup(c => c.GetTenant(tenantId)).Returns(_tenantConfig.Tenants[tenantId]);
 
             // Act
             IActionResult result = await _controller.GetTenantInfo(CancellationToken.None);
@@ -116,6 +117,7 @@ namespace ByteShelf.Tests
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
             _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockConfigService.Setup(c => c.GetTenant(tenantId)).Returns(_tenantConfig.Tenants[tenantId]);
 
             // Act
             IActionResult result = await _controller.GetTenantInfo(CancellationToken.None);
@@ -171,12 +173,13 @@ namespace ByteShelf.Tests
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
             _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockConfigService.Setup(c => c.GetTenant(tenantId)).Returns(_tenantConfig.Tenants[tenantId]);
 
             // Act
             await _controller.GetTenantInfo(CancellationToken.None);
 
             // Assert
-            _mockConfigService.Verify(c => c.GetConfiguration(), Times.Once);
+            _mockConfigService.Verify(c => c.GetTenant(tenantId), Times.Once);
             _mockStorageService.Verify(s => s.GetCurrentUsage(tenantId), Times.Once);
         }
 
@@ -413,6 +416,549 @@ namespace ByteShelf.Tests
             _mockStorageService.Verify(s => s.CanStoreData(tenantId, fileSize), Times.Once);
             _mockStorageService.Verify(s => s.GetCurrentUsage(tenantId), Times.Once);
             _mockStorageService.Verify(s => s.GetStorageLimit(tenantId), Times.Once);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenants_ReturnsSubTenants_WhenTenantHasSubTenants()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            Dictionary<string, TenantInfo> subTenants = new Dictionary<string, TenantInfo>
+            {
+                ["subtenant1"] = new TenantInfo
+                {
+                    ApiKey = "sub-key-1",
+                    DisplayName = "Sub Tenant 1",
+                    StorageLimitBytes = 1024 * 1024 * 50,
+                    IsAdmin = false
+                },
+                ["subtenant2"] = new TenantInfo
+                {
+                    ApiKey = "sub-key-2",
+                    DisplayName = "Sub Tenant 2",
+                    StorageLimitBytes = 1024 * 1024 * 100,
+                    IsAdmin = false
+                }
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.GetSubTenants(tenantId)).Returns(subTenants);
+
+            // Act
+            IActionResult result = await _controller.GetSubTenants(CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+            OkObjectResult okResult = (OkObjectResult)result;
+            Assert.IsNotNull(okResult.Value);
+
+            Dictionary<string, TenantInfo> response = (Dictionary<string, TenantInfo>)okResult.Value;
+            Assert.AreEqual(2, response.Count);
+            Assert.IsTrue(response.ContainsKey("subtenant1"));
+            Assert.IsTrue(response.ContainsKey("subtenant2"));
+            Assert.AreEqual("Sub Tenant 1", response["subtenant1"].DisplayName);
+            Assert.AreEqual("Sub Tenant 2", response["subtenant2"].DisplayName);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenants_ReturnsEmptyDictionary_WhenTenantHasNoSubTenants()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            Dictionary<string, TenantInfo> emptySubTenants = new Dictionary<string, TenantInfo>();
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.GetSubTenants(tenantId)).Returns(emptySubTenants);
+
+            // Act
+            IActionResult result = await _controller.GetSubTenants(CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+            OkObjectResult okResult = (OkObjectResult)result;
+            Assert.IsNotNull(okResult.Value);
+
+            Dictionary<string, TenantInfo> response = (Dictionary<string, TenantInfo>)okResult.Value;
+            Assert.AreEqual(0, response.Count);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenants_WithTenantIdNotInContext_ThrowsInvalidOperationException()
+        {
+            // Arrange - No tenant ID in context
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+                _controller.GetSubTenants(CancellationToken.None));
+        }
+
+        [TestMethod]
+        public async Task GetSubTenant_ReturnsSubTenant_WhenSubTenantExists()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "subtenant1";
+            TenantInfo subTenant = new TenantInfo
+            {
+                ApiKey = "sub-key",
+                DisplayName = "Sub Tenant",
+                StorageLimitBytes = 1024 * 1024 * 50,
+                IsAdmin = false
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.GetSubTenant(tenantId, subTenantId)).Returns(subTenant!);
+
+            // Act
+            IActionResult result = await _controller.GetSubTenant(subTenantId, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+            OkObjectResult okResult = (OkObjectResult)result;
+            Assert.IsNotNull(okResult.Value);
+
+            TenantInfo response = (TenantInfo)okResult.Value;
+            Assert.AreEqual(subTenant.DisplayName, response.DisplayName);
+            Assert.AreEqual(subTenant.ApiKey, response.ApiKey);
+            Assert.AreEqual(subTenant.StorageLimitBytes, response.StorageLimitBytes);
+            Assert.AreEqual(subTenant.IsAdmin, response.IsAdmin);
+            Assert.AreEqual(subTenant.Parent, response.Parent);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenant_ReturnsNotFound_WhenSubTenantDoesNotExist()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "nonexistent";
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.GetSubTenant(tenantId, subTenantId)).Returns((TenantInfo?)null);
+
+            // Act
+            IActionResult result = await _controller.GetSubTenant(subTenantId, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(NotFoundObjectResult));
+            NotFoundObjectResult notFoundResult = (NotFoundObjectResult)result;
+            Assert.AreEqual("Subtenant not found", notFoundResult.Value);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenant_WithTenantIdNotInContext_ThrowsInvalidOperationException()
+        {
+            // Arrange - No tenant ID in context
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+                _controller.GetSubTenant("subtenant1", CancellationToken.None));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_CreatesSubTenant_WhenValidRequest()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string displayName = "New Subtenant";
+            string newSubTenantId = "new-subtenant-id";
+
+            CreateSubTenantRequest request = new CreateSubTenantRequest
+            {
+                DisplayName = displayName
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.CreateSubTenantAsync(tenantId, displayName))
+                .ReturnsAsync(newSubTenantId);
+
+            // Act
+            IActionResult result = await _controller.CreateSubTenant(request, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(CreatedAtActionResult));
+            CreatedAtActionResult createdResult = (CreatedAtActionResult)result;
+            Assert.AreEqual("GetSubTenant", createdResult.ActionName);
+            Assert.AreEqual(newSubTenantId, createdResult.RouteValues!["subTenantId"]);
+
+            CreateSubTenantResponse response = (CreateSubTenantResponse)createdResult.Value!;
+            Assert.AreEqual(newSubTenantId, response.TenantId);
+            Assert.AreEqual(displayName, response.DisplayName);
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_ReturnsBadRequest_WhenRequestIsNull()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+
+            // Act
+            IActionResult result = await _controller.CreateSubTenant(null!, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult));
+            BadRequestObjectResult badRequestResult = (BadRequestObjectResult)result;
+            Assert.AreEqual("Request cannot be null", badRequestResult.Value);
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_ReturnsBadRequest_WhenDisplayNameIsNull()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            CreateSubTenantRequest request = new CreateSubTenantRequest
+            {
+                DisplayName = null!
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+
+            // Act
+            IActionResult result = await _controller.CreateSubTenant(request, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult));
+            BadRequestObjectResult badRequestResult = (BadRequestObjectResult)result;
+            Assert.AreEqual("Display name is required", badRequestResult.Value);
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_ReturnsBadRequest_WhenDisplayNameIsEmpty()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            CreateSubTenantRequest request = new CreateSubTenantRequest
+            {
+                DisplayName = ""
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+
+            // Act
+            IActionResult result = await _controller.CreateSubTenant(request, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult));
+            BadRequestObjectResult badRequestResult = (BadRequestObjectResult)result;
+            Assert.AreEqual("Display name is required", badRequestResult.Value);
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_ReturnsBadRequest_WhenDisplayNameIsWhitespace()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            CreateSubTenantRequest request = new CreateSubTenantRequest
+            {
+                DisplayName = "   "
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+
+            // Act
+            IActionResult result = await _controller.CreateSubTenant(request, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult));
+            BadRequestObjectResult badRequestResult = (BadRequestObjectResult)result;
+            Assert.AreEqual("Display name is required", badRequestResult.Value);
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_ReturnsBadRequest_WhenServiceThrowsInvalidOperationException()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string displayName = "New Subtenant";
+            string errorMessage = "Cannot create subtenant: maximum depth reached";
+
+            CreateSubTenantRequest request = new CreateSubTenantRequest
+            {
+                DisplayName = displayName
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.CreateSubTenantAsync(tenantId, displayName))
+                .ThrowsAsync(new InvalidOperationException(errorMessage));
+
+            // Act
+            IActionResult result = await _controller.CreateSubTenant(request, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult));
+            BadRequestObjectResult badRequestResult = (BadRequestObjectResult)result;
+            Assert.AreEqual(errorMessage, badRequestResult.Value);
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_WithTenantIdNotInContext_ThrowsInvalidOperationException()
+        {
+            // Arrange - No tenant ID in context
+            CreateSubTenantRequest request = new CreateSubTenantRequest
+            {
+                DisplayName = "New Subtenant"
+            };
+
+            // Act & Assert
+            IActionResult response = await _controller.CreateSubTenant(request, CancellationToken.None);
+            Assert.IsTrue(response.GetType() == typeof(BadRequestObjectResult), "Should create a bad request response without tenant id in context");
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimit_UpdatesStorageLimit_WhenValidRequest()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "subtenant1";
+            long newStorageLimit = 1024 * 1024 * 200; // 200MB
+
+            UpdateStorageLimitRequest request = new UpdateStorageLimitRequest
+            {
+                StorageLimitBytes = newStorageLimit
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.UpdateSubTenantStorageLimitAsync(tenantId, subTenantId, newStorageLimit))
+                .ReturnsAsync(true);
+
+            // Act
+            IActionResult result = await _controller.UpdateSubTenantStorageLimit(subTenantId, request, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkResult));
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimit_ReturnsBadRequest_WhenRequestIsNull()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "subtenant1";
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+
+            // Act
+            IActionResult result = await _controller.UpdateSubTenantStorageLimit(subTenantId, null!, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult));
+            BadRequestObjectResult badRequestResult = (BadRequestObjectResult)result;
+            Assert.AreEqual("Request cannot be null", badRequestResult.Value);
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimit_ReturnsBadRequest_WhenStorageLimitIsNegative()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "subtenant1";
+            long negativeStorageLimit = -1024;
+
+            UpdateStorageLimitRequest request = new UpdateStorageLimitRequest
+            {
+                StorageLimitBytes = negativeStorageLimit
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+
+            // Act
+            IActionResult result = await _controller.UpdateSubTenantStorageLimit(subTenantId, request, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(BadRequestObjectResult));
+            BadRequestObjectResult badRequestResult = (BadRequestObjectResult)result;
+            Assert.AreEqual("Storage limit must be non-negative", badRequestResult.Value);
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimit_ReturnsNotFound_WhenSubTenantDoesNotExist()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "nonexistent";
+            long newStorageLimit = 1024 * 1024 * 200;
+
+            UpdateStorageLimitRequest request = new UpdateStorageLimitRequest
+            {
+                StorageLimitBytes = newStorageLimit
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.UpdateSubTenantStorageLimitAsync(tenantId, subTenantId, newStorageLimit))
+                .ReturnsAsync(false);
+
+            // Act
+            IActionResult result = await _controller.UpdateSubTenantStorageLimit(subTenantId, request, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(NotFoundObjectResult));
+            NotFoundObjectResult notFoundResult = (NotFoundObjectResult)result;
+            Assert.AreEqual("Subtenant not found", notFoundResult.Value);
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimit_WithTenantIdNotInContext_ThrowsInvalidOperationException()
+        {
+            // Arrange - No tenant ID in context
+            string subTenantId = "subtenant1";
+            UpdateStorageLimitRequest request = new UpdateStorageLimitRequest
+            {
+                StorageLimitBytes = 1024 * 1024 * 200
+            };
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+                _controller.UpdateSubTenantStorageLimit(subTenantId, request, CancellationToken.None));
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenant_DeletesSubTenant_WhenSubTenantExists()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "subtenant1";
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.DeleteSubTenantAsync(tenantId, subTenantId))
+                .ReturnsAsync(true);
+
+            // Act
+            IActionResult result = await _controller.DeleteSubTenant(subTenantId, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkResult));
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenant_ReturnsNotFound_WhenSubTenantDoesNotExist()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "nonexistent";
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.DeleteSubTenantAsync(tenantId, subTenantId))
+                .ReturnsAsync(false);
+
+            // Act
+            IActionResult result = await _controller.DeleteSubTenant(subTenantId, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(NotFoundObjectResult));
+            NotFoundObjectResult notFoundResult = (NotFoundObjectResult)result;
+            Assert.AreEqual("Subtenant not found", notFoundResult.Value);
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenant_WithTenantIdNotInContext_ThrowsInvalidOperationException()
+        {
+            // Arrange - No tenant ID in context
+            string subTenantId = "subtenant1";
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+                _controller.DeleteSubTenant(subTenantId, CancellationToken.None));
+        }
+
+        [TestMethod]
+        public async Task GetSubTenants_DelegatesToConfigService()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            Dictionary<string, TenantInfo> subTenants = new Dictionary<string, TenantInfo>();
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.GetSubTenants(tenantId)).Returns(subTenants);
+
+            // Act
+            await _controller.GetSubTenants(CancellationToken.None);
+
+            // Assert
+            _mockConfigService.Verify(c => c.GetSubTenants(tenantId), Times.Once);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenant_DelegatesToConfigService()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "subtenant1";
+            TenantInfo subTenant = new TenantInfo();
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.GetSubTenant(tenantId, subTenantId)).Returns(subTenant);
+
+            // Act
+            await _controller.GetSubTenant(subTenantId, CancellationToken.None);
+
+            // Assert
+            _mockConfigService.Verify(c => c.GetSubTenant(tenantId, subTenantId), Times.Once);
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_DelegatesToConfigService()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string displayName = "New Subtenant";
+            string newSubTenantId = "new-subtenant-id";
+
+            CreateSubTenantRequest request = new CreateSubTenantRequest
+            {
+                DisplayName = displayName
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.CreateSubTenantAsync(tenantId, displayName))
+                .ReturnsAsync(newSubTenantId);
+
+            // Act
+            await _controller.CreateSubTenant(request, CancellationToken.None);
+
+            // Assert
+            _mockConfigService.Verify(c => c.CreateSubTenantAsync(tenantId, displayName), Times.Once);
+        }
+
+        [TestMethod]
+        public async Task UpdateSubTenantStorageLimit_DelegatesToConfigService()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "subtenant1";
+            long newStorageLimit = 1024 * 1024 * 200;
+
+            UpdateStorageLimitRequest request = new UpdateStorageLimitRequest
+            {
+                StorageLimitBytes = newStorageLimit
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.UpdateSubTenantStorageLimitAsync(tenantId, subTenantId, newStorageLimit))
+                .ReturnsAsync(true);
+
+            // Act
+            await _controller.UpdateSubTenantStorageLimit(subTenantId, request, CancellationToken.None);
+
+            // Assert
+            _mockConfigService.Verify(c => c.UpdateSubTenantStorageLimitAsync(tenantId, subTenantId, newStorageLimit), Times.Once);
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenant_DelegatesToConfigService()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "subtenant1";
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.DeleteSubTenantAsync(tenantId, subTenantId))
+                .ReturnsAsync(true);
+
+            // Act
+            await _controller.DeleteSubTenant(subTenantId, CancellationToken.None);
+
+            // Assert
+            _mockConfigService.Verify(c => c.DeleteSubTenantAsync(tenantId, subTenantId), Times.Once);
         }
     }
 }
