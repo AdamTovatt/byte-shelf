@@ -86,15 +86,22 @@
                     </div>
                 </div>
 
-                <!-- File List -->
+                                <!-- File List -->
                 <div class="files-section elevation-element soft-corner">
-                    <h3>Files</h3>
                     <div class="files-header">
-                        <button onclick="refreshFiles()" class="refresh-btn">Refresh</button>
-                        <div class="search-box">
-                            <input type="text" id="search-input" placeholder="Search files...">
-                        </div>
+                    <div class="header-left">
+                        <h3>Files</h3>
+                        <button onclick="refreshFiles(event)" class="refresh-icon-btn" title="Refresh files" type="button">
+                            <span class="refresh-icon">⟳</span>
+                        </button>
+                        <button onclick="createFolder(event)" class="create-folder-icon-btn" title="Create new folder" type="button">
+                            <span class="create-folder-icon">📁+</span>
+                        </button>
                     </div>
+                    <div class="search-box">
+                        <input type="text" id="search-input" placeholder="Search files...">
+                    </div>
+                </div>
                     <div id="files-list" class="files-list">
                         <div class="loading">Loading files...</div>
                     </div>

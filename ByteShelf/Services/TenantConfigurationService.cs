@@ -309,12 +309,11 @@ namespace ByteShelf.Services
                 return null;
 
             TenantInfo? parentTenant = GetTenant(parentTenantId);
-            if (parentTenant?.SubTenants.TryGetValue(subTenantId, out TenantInfo? subTenant) == true)
-            {
-                return subTenant;
-            }
 
-            return null;
+            if (parentTenant == null)
+                return null;
+
+            return FindTenantInSubTenants(subTenantId, parentTenant);
         }
 
         /// <summary>

@@ -1006,6 +1006,149 @@ namespace ByteShelf.Integration.Tests
             File.WriteAllText(configPath, json);
         }
 
+        [TestMethod]
+        public async Task HierarchicalSubtenantCreation_CreateSubtenantUnderSubtenant_SuccessfullyCreatesNestedStructure()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+
+            // Act - Create a subtenant under the parent
+            string firstLevelSubtenantId = await parentProvider.CreateSubTenantAsync("First Level Department");
+            Assert.IsNotNull(firstLevelSubtenantId);
+            Assert.AreNotEqual(string.Empty, firstLevelSubtenantId);
+
+            // Act - Create a subtenant under the first-level subtenant
+            string secondLevelSubtenantId = await parentProvider.CreateSubTenantUnderSubTenantAsync(firstLevelSubtenantId, "Second Level Team");
+            Assert.IsNotNull(secondLevelSubtenantId);
+            Assert.AreNotEqual(string.Empty, secondLevelSubtenantId);
+
+            // Assert - Verify the hierarchical structure
+            Dictionary<string, TenantInfo> parentSubtenants = await parentProvider.GetSubTenantsAsync();
+            Assert.IsTrue(parentSubtenants.ContainsKey(firstLevelSubtenantId), "First level subtenant should exist under parent");
+
+            // Get the first-level subtenant and verify it has the second-level subtenant
+            TenantInfo firstLevelSubtenant = await parentProvider.GetSubTenantAsync(firstLevelSubtenantId);
+            Assert.AreEqual("First Level Department", firstLevelSubtenant.DisplayName);
+            Assert.AreNotEqual("parent-api-key", firstLevelSubtenant.ApiKey); // Should not inherit parent's API key
+
+            // Create a client for the first-level subtenant to verify its subtenants
+            using HttpClient firstLevelClient = _factory.CreateClient();
+            HttpShelfFileProvider firstLevelProvider = new HttpShelfFileProvider(firstLevelClient, firstLevelSubtenant.ApiKey);
+            
+            Dictionary<string, TenantInfo> secondLevelSubtenants = await firstLevelProvider.GetSubTenantsAsync();
+            Assert.IsTrue(secondLevelSubtenants.ContainsKey(secondLevelSubtenantId), "Second level subtenant should exist under first level");
+
+            // Get the second-level subtenant and verify its properties
+            TenantInfo secondLevelSubtenant = await firstLevelProvider.GetSubTenantAsync(secondLevelSubtenantId);
+            Assert.AreEqual("Second Level Team", secondLevelSubtenant.DisplayName);
+            Assert.AreNotEqual("parent-api-key", secondLevelSubtenant.ApiKey); // Should not inherit parent's API key
+        }
+
+        [TestMethod]
+        public async Task HierarchicalSubtenantCreation_CreateSubtenantUnderNonExistentParent_ThrowsFileNotFoundException()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+
+            // Act & Assert - Try to create a subtenant under a non-existent parent
+            string nonExistentParentId = "non-existent-parent-id";
+            
+            FileNotFoundException exception = await Assert.ThrowsExceptionAsync<FileNotFoundException>(
+                async () => await parentProvider.CreateSubTenantUnderSubTenantAsync(nonExistentParentId, "Test Subtenant"));
+            
+            Assert.IsTrue(exception.Message.Contains(nonExistentParentId), "Error message should contain the non-existent parent ID");
+        }
+
+        [TestMethod]
+        public async Task HierarchicalSubtenantCreation_CreateSubtenantUnderSubtenantWithFiles_CanAccessFilesInHierarchy()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+
+            // Create hierarchical structure
+            string firstLevelSubtenantId = await parentProvider.CreateSubTenantAsync("First Level Department");
+            string secondLevelSubtenantId = await parentProvider.CreateSubTenantUnderSubTenantAsync(firstLevelSubtenantId, "Second Level Team");
+
+            // Get API keys for the subtenants
+            TenantInfo firstLevelSubtenant = await parentProvider.GetSubTenantAsync(firstLevelSubtenantId);
+            TenantInfo secondLevelSubtenant = await parentProvider.GetSubTenantAsync(secondLevelSubtenantId);
+
+            // Create clients for each level
+            using HttpClient firstLevelClient = _factory.CreateClient();
+            using HttpClient secondLevelClient = _factory.CreateClient();
+            HttpShelfFileProvider firstLevelProvider = new HttpShelfFileProvider(firstLevelClient, firstLevelSubtenant.ApiKey);
+            HttpShelfFileProvider secondLevelProvider = new HttpShelfFileProvider(secondLevelClient, secondLevelSubtenant.ApiKey);
+
+            // Upload files to each level
+            string parentContent = "Parent file content";
+            string firstLevelContent = "First level file content";
+            string secondLevelContent = "Second level file content";
+
+            using MemoryStream parentStream = new MemoryStream(Encoding.UTF8.GetBytes(parentContent));
+            using MemoryStream firstLevelStream = new MemoryStream(Encoding.UTF8.GetBytes(firstLevelContent));
+            using MemoryStream secondLevelStream = new MemoryStream(Encoding.UTF8.GetBytes(secondLevelContent));
+
+            Guid parentFileId = await parentProvider.WriteFileAsync("parent-file.txt", "text/plain", parentStream);
+            Guid firstLevelFileId = await firstLevelProvider.WriteFileAsync("first-level-file.txt", "text/plain", firstLevelStream);
+            Guid secondLevelFileId = await secondLevelProvider.WriteFileAsync("second-level-file.txt", "text/plain", secondLevelStream);
+
+            // Act & Assert - Verify each level can access their own files
+            ShelfFile parentFile = await parentProvider.ReadFileAsync(parentFileId);
+            ShelfFile firstLevelFile = await firstLevelProvider.ReadFileAsync(firstLevelFileId);
+            ShelfFile secondLevelFile = await secondLevelProvider.ReadFileAsync(secondLevelFileId);
+
+            using Stream parentContentStream = parentFile.GetContentStream();
+            using Stream firstLevelContentStream = firstLevelFile.GetContentStream();
+            using Stream secondLevelContentStream = secondLevelFile.GetContentStream();
+            using StreamReader parentReader = new StreamReader(parentContentStream);
+            using StreamReader firstLevelReader = new StreamReader(firstLevelContentStream);
+            using StreamReader secondLevelReader = new StreamReader(secondLevelContentStream);
+
+            string downloadedParentContent = parentReader.ReadToEnd();
+            string downloadedFirstLevelContent = firstLevelReader.ReadToEnd();
+            string downloadedSecondLevelContent = secondLevelReader.ReadToEnd();
+
+            Assert.AreEqual(parentContent, downloadedParentContent);
+            Assert.AreEqual(firstLevelContent, downloadedFirstLevelContent);
+            Assert.AreEqual(secondLevelContent, downloadedSecondLevelContent);
+
+            // Verify parent can access files from all levels
+            ShelfFile parentAccessFirstLevelFile = await parentProvider.ReadFileForTenantAsync(firstLevelSubtenantId, firstLevelFileId);
+            ShelfFile parentAccessSecondLevelFile = await parentProvider.ReadFileForTenantAsync(secondLevelSubtenantId, secondLevelFileId);
+
+            using Stream parentAccessFirstLevelStream = parentAccessFirstLevelFile.GetContentStream();
+            using Stream parentAccessSecondLevelStream = parentAccessSecondLevelFile.GetContentStream();
+            using StreamReader parentAccessFirstLevelReader = new StreamReader(parentAccessFirstLevelStream);
+            using StreamReader parentAccessSecondLevelReader = new StreamReader(parentAccessSecondLevelStream);
+
+            string parentDownloadedFirstLevelContent = parentAccessFirstLevelReader.ReadToEnd();
+            string parentDownloadedSecondLevelContent = parentAccessSecondLevelReader.ReadToEnd();
+
+            Assert.AreEqual(firstLevelContent, parentDownloadedFirstLevelContent);
+            Assert.AreEqual(secondLevelContent, parentDownloadedSecondLevelContent);
+        }
+
         public void Dispose()
         {
             Cleanup();

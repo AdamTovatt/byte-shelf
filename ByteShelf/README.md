@@ -6,7 +6,7 @@ The ByteShelf API Server is a multi-tenant file storage service built with ASP.N
 
 ### Multi-Tenant Architecture
 - **Tenant Isolation**: Each tenant's files are stored in separate directories
-- **Hierarchical Tenants**: Support for subtenants with parent-child relationships
+- **Hierarchical Tenants**: Support for subtenants with parent-child relationships and unlimited nesting depth
 - **API Key Authentication**: Secure access with tenant-specific API keys
 - **Per-Tenant Quotas**: Configurable storage limits per tenant
 - **Shared Storage Quotas**: Parent and subtenants can share storage limits
@@ -154,6 +154,7 @@ Tenants are managed through an external JSON file with hot-reload support. The c
 ### Subtenant Operations
 - `GET /api/tenant/subtenants` - List all subtenants for the authenticated tenant
 - `POST /api/tenant/subtenants` - Create a new subtenant
+- `POST /api/tenant/subtenants/{parentSubtenantId}/subtenants` - Create a new subtenant under a specific subtenant (hierarchical folder creation)
 - `GET /api/tenant/subtenants/{subtenantId}` - Get specific subtenant information
 - `PUT /api/tenant/subtenants/{subtenantId}/storage-limit` - Update subtenant storage limit
 - `DELETE /api/tenant/subtenants/{subtenantId}` - Delete a subtenant
@@ -166,6 +167,15 @@ ByteShelf supports hierarchical access where parent tenants can access files fro
 - **File Upload**: Parent tenants can upload files to subtenants using `/api/files/{targetTenantId}/metadata` and `/api/chunks/{targetTenantId}/{chunkId}`
 - **File Deletion**: Parent tenants can delete files from subtenants using `/api/files/{targetTenantId}/{fileId}`
 - **Access Control**: The system validates that the authenticated tenant has access to the target tenant before allowing any operations
+
+### Hierarchical Folder Creation
+ByteShelf supports true hierarchical folder creation through nested subtenants:
+
+- **Unlimited Nesting**: Create subtenants under subtenants to any depth (up to 10 levels by default)
+- **Folder-like Structure**: Each subtenant acts as a folder in the hierarchy
+- **Parent Access**: Parent tenants can create subtenants under any of their descendants
+- **Automatic API Keys**: Each subtenant gets a unique API key for secure access
+- **Shared Quotas**: Storage quotas are inherited and shared through the hierarchy
 
 ### Admin Operations
 - `GET /api/admin/tenants` - List all tenants with usage information

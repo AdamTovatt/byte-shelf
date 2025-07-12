@@ -235,6 +235,11 @@ else
 string subTenantId = await provider.CreateSubTenantAsync("Department A");
 Console.WriteLine($"Created subtenant with ID: {subTenantId}");
 
+// Create a subtenant under another subtenant (hierarchical folder creation)
+string parentSubTenantId = "parent-subtenant-id";
+string nestedSubTenantId = await provider.CreateSubTenantUnderSubTenantAsync(parentSubTenantId, "Nested Department");
+Console.WriteLine($"Created nested subtenant with ID: {nestedSubTenantId}");
+
 // List all subtenants
 Dictionary<string, TenantInfo> subTenants = await provider.GetSubTenantsAsync();
 foreach (KeyValuePair<string, TenantInfo> kvp in subTenants)
@@ -319,6 +324,7 @@ else
 
 ##### Subtenant Management
 - `CreateSubTenantAsync(string displayName)` - Create a new subtenant
+- `CreateSubTenantUnderSubTenantAsync(string parentSubtenantId, string displayName)` - Create a new subtenant under a specific subtenant (hierarchical folder creation)
 - `GetSubTenantsAsync()` - List all subtenants
 - `GetSubTenantAsync(string subTenantId)` - Get specific subtenant information
 - `UpdateSubTenantStorageLimitAsync(string subTenantId, long storageLimitBytes)` - Update subtenant storage limit
@@ -340,6 +346,11 @@ System.IO.FileNotFoundException: Subtenant not found
 System.InvalidOperationException: Cannot create subtenant: maximum depth reached
 ```
 **Solution**: The tenant hierarchy has reached the maximum depth of 10 levels. Create subtenants under a different parent.
+
+```
+System.IO.FileNotFoundException: Parent subtenant with ID {parentSubtenantId} not found
+```
+**Solution**: The parent subtenant ID does not exist or you don't have access to it. Verify the parent subtenant ID and your permissions.
 
 ```
 System.ArgumentException: Storage limit cannot be negative

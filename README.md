@@ -48,6 +48,7 @@ ByteShelf consists of several interconnected projects that work together to prov
 - **Tenant Isolation**: Each tenant's files are completely isolated
 - **Per-Tenant Quotas**: Configurable storage limits per tenant
 - **Subtenant Hierarchy**: Support for nested tenant structures with up to 10 levels deep
+- **Hierarchical Folder Creation**: Create subtenants under subtenants for true folder-like organization
 - **Shared Storage**: Parent and subtenants can share storage quotas
 - **API Key Authentication**: Secure access with tenant-specific API keys
 - **Admin Management**: Administrative interface for tenant management
@@ -157,6 +158,7 @@ Tenants are managed through an external JSON file with hot-reload support. The c
 
 **Subtenant Features:**
 - **Hierarchical Structure**: Up to 10 levels of nesting supported
+- **Hierarchical Creation**: Create subtenants under subtenants via API endpoints
 - **Shared Storage**: Parent and subtenants share the parent's storage quota
 - **Individual Limits**: Subtenants can have their own storage limits (must not exceed parent's limit)
 - **API Key Inheritance**: Subtenants can access parent's files, but not vice versa
@@ -210,6 +212,7 @@ dotnet test ByteShelf.Integration.Tests
 
 ### Subtenant Management Endpoints
 - `POST /api/tenant/subtenants` - Create a new subtenant under the authenticated tenant
+- `POST /api/tenant/subtenants/{parentSubtenantId}/subtenants` - Create a new subtenant under a specific subtenant (hierarchical folder creation)
 - `GET /api/tenant/subtenants` - List all subtenants of the authenticated tenant
 - `GET /api/tenant/subtenants/{subTenantId}` - Get information about a specific subtenant
 - `PUT /api/tenant/subtenants/{subTenantId}/storage-limit` - Update subtenant storage limit

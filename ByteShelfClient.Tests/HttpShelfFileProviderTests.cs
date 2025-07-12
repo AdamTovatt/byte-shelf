@@ -435,6 +435,153 @@ namespace ByteShelfClient.Tests
         }
 
         [TestMethod]
+        public async Task CreateSubTenantUnderSubTenant_WithValidResponse_ReturnsSubTenantId()
+        {
+            // Arrange
+            string parentSubtenantId = "parent-subtenant";
+            string displayName = "New Subtenant";
+            string expectedSubTenantId = "new-subtenant-id";
+
+            CreateSubTenantResponse expectedResponse = new CreateSubTenantResponse(expectedSubTenantId, displayName, "Subtenant created successfully");
+
+            string jsonResponse = JsonSerializer.Serialize(expectedResponse);
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{parentSubtenantId}/subtenants", jsonResponse, HttpStatusCode.Created);
+
+            // Act
+            string result = await _provider.CreateSubTenantUnderSubTenantAsync(parentSubtenantId, displayName);
+
+            // Assert
+            Assert.AreEqual(expectedSubTenantId, result);
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantUnderSubTenant_WithNullParentSubtenantId_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.CreateSubTenantUnderSubTenantAsync(null!, "New Subtenant"));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantUnderSubTenant_WithEmptyParentSubtenantId_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.CreateSubTenantUnderSubTenantAsync("", "New Subtenant"));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantUnderSubTenant_WithWhitespaceParentSubtenantId_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.CreateSubTenantUnderSubTenantAsync("   ", "New Subtenant"));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantUnderSubTenant_WithNullDisplayName_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.CreateSubTenantUnderSubTenantAsync("parent-subtenant", null!));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantUnderSubTenant_WithEmptyDisplayName_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.CreateSubTenantUnderSubTenantAsync("parent-subtenant", ""));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantUnderSubTenant_WithWhitespaceDisplayName_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.CreateSubTenantUnderSubTenantAsync("parent-subtenant", "   "));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantUnderSubTenant_WithBadRequestResponse_ThrowsInvalidOperationException()
+        {
+            // Arrange
+            string parentSubtenantId = "parent-subtenant";
+            string displayName = "New Subtenant";
+            string errorMessage = "Cannot create subtenant: maximum depth reached";
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{parentSubtenantId}/subtenants", errorMessage, HttpStatusCode.BadRequest);
+
+            // Act & Assert
+            InvalidOperationException exception = await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+                _provider.CreateSubTenantUnderSubTenantAsync(parentSubtenantId, displayName));
+            Assert.AreEqual($"Cannot create subtenant: {errorMessage}", exception.Message);
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantUnderSubTenant_WithNotFoundResponse_ThrowsFileNotFoundException()
+        {
+            // Arrange
+            string parentSubtenantId = "nonexistent";
+            string displayName = "New Subtenant";
+            string errorMessage = "Parent subtenant with ID nonexistent not found";
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{parentSubtenantId}/subtenants", errorMessage, HttpStatusCode.NotFound);
+
+            // Act & Assert
+            FileNotFoundException exception = await Assert.ThrowsExceptionAsync<FileNotFoundException>(() =>
+                _provider.CreateSubTenantUnderSubTenantAsync(parentSubtenantId, displayName));
+            Assert.AreEqual($"Parent subtenant with ID {parentSubtenantId} not found", exception.Message);
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantUnderSubTenant_WithHttpError_ThrowsHttpRequestException()
+        {
+            // Arrange
+            string parentSubtenantId = "parent-subtenant";
+            string displayName = "New Subtenant";
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{parentSubtenantId}/subtenants", "Server Error", HttpStatusCode.InternalServerError);
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
+                _provider.CreateSubTenantUnderSubTenantAsync(parentSubtenantId, displayName));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantUnderSubTenant_WithInvalidResponse_ThrowsHttpRequestException()
+        {
+            // Arrange
+            string parentSubtenantId = "parent-subtenant";
+            string displayName = "New Subtenant";
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{parentSubtenantId}/subtenants", "invalid json", HttpStatusCode.Created);
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
+                _provider.CreateSubTenantUnderSubTenantAsync(parentSubtenantId, displayName));
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantUnderSubTenant_SendsCorrectRequest()
+        {
+            // Arrange
+            string parentSubtenantId = "parent-subtenant";
+            string displayName = "New Subtenant";
+            CreateSubTenantResponse expectedResponse = new CreateSubTenantResponse("new-subtenant-id", displayName, "Subtenant created successfully");
+            string jsonResponse = JsonSerializer.Serialize(expectedResponse);
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{parentSubtenantId}/subtenants", jsonResponse, HttpStatusCode.Created);
+
+            // Act
+            await _provider.CreateSubTenantUnderSubTenantAsync(parentSubtenantId, displayName);
+
+            // Assert
+            Assert.AreEqual(1, _messageHandler.Requests.Count);
+            Assert.AreEqual(
+                $"api/tenant/subtenants/{parentSubtenantId}/subtenants",
+                _messageHandler.Requests[0].RequestUri!.PathAndQuery.TrimStart('/'),
+                "Request path should match expected endpoint (ignoring leading slash)"
+            );
+            Assert.AreEqual(HttpMethod.Post, _messageHandler.Requests[0].Method);
+        }
+
+        [TestMethod]
         public async Task UpdateSubTenantStorageLimit_WithValidResponse_CompletesSuccessfully()
         {
             // Arrange

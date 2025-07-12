@@ -784,8 +784,73 @@ namespace ByteShelfClient
             try
             {
                 // Parse the response to get the tenant ID
-                var result = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>(_jsonOptions, cancellationToken);
-                if (result != null && result.TryGetValue("TenantId", out object? tenantIdObj))
+                Dictionary<string, object>? result = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>(_jsonOptions, cancellationToken);
+                if (result != null && result.TryGetValue("tenantId", out object? tenantIdObj))
+                {
+                    return tenantIdObj.ToString() ?? string.Empty;
+                }
+            }
+            catch (System.Text.Json.JsonException ex)
+            {
+                throw new HttpRequestException("Failed to parse create subtenant response", ex);
+            }
+
+            throw new HttpRequestException("Failed to get tenant ID from create subtenant response");
+        }
+
+        /// <summary>
+        /// Creates a new subtenant under a specific subtenant.
+        /// </summary>
+        /// <param name="parentSubtenantId">The parent subtenant ID.</param>
+        /// <param name="displayName">The display name for the subtenant.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>The ID of the created subtenant.</returns>
+        /// <exception cref="ArgumentException">Thrown when parent subtenant ID or display name is null or empty.</exception>
+        /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
+        /// <exception cref="InvalidOperationException">Thrown when maximum depth is reached.</exception>
+        /// <exception cref="FileNotFoundException">Thrown when the parent subtenant does not exist.</exception>
+        /// <remarks>
+        /// This method makes a POST request to the "/api/tenant/subtenants/{parentSubtenantId}/subtenants" endpoint.
+        /// The subtenant will have a unique ID and API key generated automatically.
+        /// The authenticated tenant must have access to the parent subtenant.
+        /// </remarks>
+        public async Task<string> CreateSubTenantUnderSubTenantAsync(string parentSubtenantId, string displayName, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(parentSubtenantId))
+                throw new ArgumentException("Parent subtenant ID cannot be null or empty", nameof(parentSubtenantId));
+
+            if (string.IsNullOrWhiteSpace(displayName))
+                throw new ArgumentException("Display name cannot be null or empty", nameof(displayName));
+
+            CreateSubTenantRequest request = new CreateSubTenantRequest
+            {
+                DisplayName = displayName
+            };
+
+            HttpResponseMessage response = await _httpClient.PostAsJsonAsync(
+                NormalizePath($"api/tenant/subtenants/{parentSubtenantId}/subtenants"),
+                request,
+                _jsonOptions,
+                cancellationToken);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+            {
+                string errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+                throw new InvalidOperationException($"Cannot create subtenant: {errorContent}");
+            }
+
+            if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                throw new FileNotFoundException($"Parent subtenant with ID {parentSubtenantId} not found");
+            }
+
+            response.EnsureSuccessStatusCode();
+
+            try
+            {
+                // Parse the response to get the tenant ID
+                Dictionary<string, object>? result = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>(_jsonOptions, cancellationToken);
+                if (result != null && result.TryGetValue("tenantId", out object? tenantIdObj))
                 {
                     return tenantIdObj.ToString() ?? string.Empty;
                 }

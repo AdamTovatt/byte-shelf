@@ -254,6 +254,69 @@ namespace ByteShelf.Controllers
         }
 
         /// <summary>
+        /// Creates a new subtenant under a specific subtenant.
+        /// </summary>
+        /// <param name="parentSubtenantId">The parent subtenant ID.</param>
+        /// <param name="request">The subtenant creation request.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>The created subtenant information.</returns>
+        /// <response code="201">Returns the created subtenant information.</response>
+        /// <response code="400">If the request is invalid.</response>
+        /// <response code="401">If the API key is invalid or missing.</response>
+        /// <response code="404">If the parent subtenant is not found.</response>
+        /// <response code="409">If maximum depth is reached.</response>
+        /// <remarks>
+        /// This endpoint creates a new subtenant under a specific subtenant, enabling hierarchical folder creation.
+        /// The subtenant will have a unique ID and API key generated automatically.
+        /// The authenticated tenant must have access to the parent subtenant.
+        /// </remarks>
+        [HttpPost("subtenants/{parentSubtenantId}/subtenants")]
+        [ProducesResponseType(typeof(object), 201)]
+        [ProducesResponseType(400)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(409)]
+        public async Task<IActionResult> CreateSubTenantUnderSubTenant(string parentSubtenantId, [FromBody] CreateSubTenantRequest? request, CancellationToken cancellationToken)
+        {
+            if (request == null)
+            {
+                return BadRequest("Request cannot be null");
+            }
+
+            if (string.IsNullOrWhiteSpace(request.DisplayName))
+            {
+                return BadRequest("Display name is required");
+            }
+
+            if (string.IsNullOrWhiteSpace(parentSubtenantId))
+            {
+                return BadRequest("Parent subtenant ID is required");
+            }
+
+            try
+            {
+                string tenantId = HttpContext.GetTenantId();
+                
+                // Verify the parent subtenant exists and the authenticated tenant has access to it
+                TenantInfo? parentSubtenant = _tenantConfigurationService.GetSubTenant(tenantId, parentSubtenantId);
+                if (parentSubtenant == null)
+                {
+                    return NotFound("Parent subtenant not found");
+                }
+
+                // Create the subtenant under the parent subtenant
+                string subTenantId = await _tenantConfigurationService.CreateSubTenantAsync(parentSubtenantId, request.DisplayName);
+                
+                CreateSubTenantResponse response = new CreateSubTenantResponse(subTenantId, request.DisplayName, "Subtenant created successfully");
+                return CreatedAtAction(nameof(GetSubTenant), new { subTenantId = subTenantId }, response);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
+        /// <summary>
         /// Updates the storage limit of a subtenant.
         /// </summary>
         /// <param name="subTenantId">The subtenant ID.</param>
