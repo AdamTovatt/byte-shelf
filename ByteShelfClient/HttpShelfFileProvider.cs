@@ -776,7 +776,7 @@ namespace ByteShelfClient
             {
                 throw new FileNotFoundException($"Parent subtenant with ID {parentSubtenantId} not found", ex);
             }
-            catch(HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
                 throw new UnauthorizedAccessException($"The requested subtenant does not exist or you do not have access to it.");
             }

@@ -3,7 +3,6 @@ using ByteShelf.Middleware;
 using ByteShelf.Services;
 using ByteShelfCommon;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
 using System.Net;

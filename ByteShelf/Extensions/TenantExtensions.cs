@@ -45,7 +45,7 @@ namespace ByteShelf.Extensions
             IStorageService storageService)
         {
             Dictionary<string, TenantInfoResponse> response = new Dictionary<string, TenantInfoResponse>();
-            
+
             foreach (KeyValuePair<string, TenantInfo> subTenant in subTenants)
             {
                 response[subTenant.Key] = subTenant.Value.ToTenantInfoResponse(subTenant.Key, storageService);
@@ -54,4 +54,4 @@ namespace ByteShelf.Extensions
             return response;
         }
     }
-} 
+}

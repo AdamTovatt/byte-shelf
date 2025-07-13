@@ -48,4 +48,4 @@ namespace ByteShelfClient
             // Nothing to dispose here as the HttpClient is managed externally
         }
     }
-} 
+}

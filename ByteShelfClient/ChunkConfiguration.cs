@@ -10,4 +10,4 @@ namespace ByteShelfClient
         /// </summary>
         public int ChunkSizeBytes { get; set; }
     }
-} 
+}

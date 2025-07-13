@@ -2,9 +2,9 @@ using ByteShelf.Configuration;
 using ByteShelf.Services;
 using ByteShelfCommon;
 using Microsoft.Extensions.Primitives;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
-using System.Collections.Concurrent;
 
 namespace ByteShelf.Middleware
 {
@@ -239,7 +239,7 @@ namespace ByteShelf.Middleware
 
             // Find the tenant with the matching API key (including subtenants)
             TenantConfiguration config = _configService.GetConfiguration();
-            
+
             // Check root tenants first
             foreach (KeyValuePair<string, TenantInfo> tenant in config.Tenants)
             {

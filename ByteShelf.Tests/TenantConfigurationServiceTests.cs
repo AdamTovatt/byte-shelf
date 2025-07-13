@@ -278,7 +278,7 @@ namespace ByteShelf.Tests
             Assert.IsTrue(result);
 
             TenantConfiguration config = _service.GetConfiguration();
-            
+
             // Verify parent relationships are correctly set
             TenantInfo parent1 = config.Tenants["parent1"];
             TenantInfo parent2 = config.Tenants["parent2"];
@@ -340,7 +340,7 @@ namespace ByteShelf.Tests
 
             // Assert
             TenantConfiguration loadedConfig = newService.GetConfiguration();
-            
+
             TenantInfo root = loadedConfig.Tenants["root"];
             TenantInfo sub1 = root.SubTenants["sub1"];
             TenantInfo sub2 = root.SubTenants["sub2"];
@@ -363,7 +363,7 @@ namespace ByteShelf.Tests
 
             // Assert
             TenantConfiguration config = _service.GetConfiguration();
-            
+
             // Default configuration has admin and tenant1 as root tenants
             TenantInfo admin = config.Tenants["admin"];
             TenantInfo tenant1 = config.Tenants["tenant1"];
@@ -455,7 +455,7 @@ namespace ByteShelf.Tests
             Assert.IsTrue(result);
 
             TenantConfiguration config = _service.GetConfiguration();
-            
+
             TenantInfo level1 = config.Tenants["level1"];
             TenantInfo level2a = level1.SubTenants["level2a"];
             TenantInfo level2b = level1.SubTenants["level2b"];
@@ -1007,6 +1007,58 @@ namespace ByteShelf.Tests
             // Act & Assert
             await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
                 _service.CanCreateSubTenantAsync(null!));
+        }
+
+        [TestMethod]
+        public async Task CanCreateSubTenantAsync_ReturnsFalse_WhenMaxHorizontalLimitReached()
+        {
+            // Arrange - Create 50 subtenants under tenant1
+            string parentTenantId = "tenant1";
+            for (int i = 0; i < 50; i++)
+            {
+                await _service.CreateSubTenantAsync(parentTenantId, $"Subtenant {i + 1}");
+            }
+
+            // Act
+            bool result = await _service.CanCreateSubTenantAsync(parentTenantId);
+
+            // Assert
+            Assert.IsFalse(result);
+        }
+
+        [TestMethod]
+        public async Task CanCreateSubTenantAsync_ReturnsTrue_WhenHorizontalLimitNotReached()
+        {
+            // Arrange - Create 49 subtenants under tenant1 (just under the limit)
+            string parentTenantId = "tenant1";
+            for (int i = 0; i < 49; i++)
+            {
+                await _service.CreateSubTenantAsync(parentTenantId, $"Subtenant {i + 1}");
+            }
+
+            // Act
+            bool result = await _service.CanCreateSubTenantAsync(parentTenantId);
+
+            // Assert
+            Assert.IsTrue(result);
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantAsync_ThrowsInvalidOperationException_WhenMaxHorizontalLimitReached()
+        {
+            // Arrange - Create 50 subtenants under tenant1
+            string parentTenantId = "tenant1";
+            for (int i = 0; i < 50; i++)
+            {
+                await _service.CreateSubTenantAsync(parentTenantId, $"Subtenant {i + 1}");
+            }
+
+            // Act & Assert
+            InvalidOperationException exception = await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+                _service.CreateSubTenantAsync(parentTenantId, "One Too Many"));
+
+            // Assert
+            Assert.IsTrue(exception.Message.Contains("maximum of 50 subtenants per tenant reached"));
         }
 
         private class TestLogger<T> : ILogger<T>

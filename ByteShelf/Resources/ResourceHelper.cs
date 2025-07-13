@@ -15,7 +15,7 @@ namespace ByteShelf.Resources
     public class ResourceHelper
     {
         private static readonly Lazy<ResourceHelper> instance = new Lazy<ResourceHelper>(() => new ResourceHelper());
-        
+
         /// <summary>
         /// Gets the singleton instance of the ResourceHelper.
         /// </summary>
@@ -268,4 +268,4 @@ namespace ByteShelf.Resources
             return embeddedResources;
         }
     }
-} 
+}

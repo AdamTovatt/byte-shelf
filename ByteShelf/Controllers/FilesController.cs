@@ -264,7 +264,7 @@ namespace ByteShelf.Controllers
         public async Task<IActionResult> DownloadFile(Guid fileId, CancellationToken cancellationToken)
         {
             string tenantId = HttpContext.GetTenantId();
-            
+
             // Get file metadata
             ShelfFileMetadata? metadata = await _fileStorageService.GetFileMetadataAsync(tenantId, fileId, cancellationToken);
             if (metadata == null)
@@ -272,7 +272,7 @@ namespace ByteShelf.Controllers
 
             // Create a stream that reads all chunks in sequence
             Stream fileStream = await _fileStorageService.GetFileStreamAsync(tenantId, fileId, cancellationToken);
-            
+
             // Return the file with proper headers for download
             return File(fileStream, metadata.ContentType, metadata.OriginalFilename);
         }
@@ -315,7 +315,7 @@ namespace ByteShelf.Controllers
             {
                 return NotFound();
             }
-            
+
             // Get file metadata
             ShelfFileMetadata? metadata = await _fileStorageService.GetFileMetadataAsync(targetTenantId, fileId, cancellationToken);
             if (metadata == null)
@@ -323,7 +323,7 @@ namespace ByteShelf.Controllers
 
             // Create a stream that reads all chunks in sequence
             Stream fileStream = await _fileStorageService.GetFileStreamAsync(targetTenantId, fileId, cancellationToken);
-            
+
             // Return the file with proper headers for download
             return File(fileStream, metadata.ContentType, metadata.OriginalFilename);
         }

@@ -4,9 +4,9 @@ using ByteShelf.Services;
 using ByteShelfCommon;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
-using Microsoft.Extensions.Logging;
 
 namespace ByteShelf.Tests
 {

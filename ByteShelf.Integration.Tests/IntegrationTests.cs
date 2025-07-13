@@ -1,12 +1,9 @@
-using ByteShelf.Services;
+using ByteShelf.Configuration;
 using ByteShelfClient;
 using ByteShelfCommon;
-using ByteShelf.Configuration;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Text;
 using System.Text.Json;
@@ -179,8 +176,8 @@ namespace ByteShelf.Integration.Tests
         [TestMethod]
         public async Task FullPipeline_LargeFile_UploadAndDownloadSuccessfully()
         {
-            // Arrange - Create a file larger than the chunk size (1MB = 1,048,576 bytes)
-            string largeContent = new string('A', 600000) + new string('B', 600000) + new string('C', 600000);
+            // Arrange - Create a file larger than the chunk size
+            string largeContent = new string('A', 10000000) + new string('B', 10000000) + new string('C', 10000000);
             string filename = "large-file.txt";
             string contentType = "text/plain";
             using MemoryStream uploadStream = new MemoryStream(Encoding.UTF8.GetBytes(largeContent));
@@ -285,7 +282,7 @@ namespace ByteShelf.Integration.Tests
         public async Task FullPipeline_Chunking_VerifiesChunkCreation()
         {
             // Arrange - Create content that will definitely be chunked (larger than 1MB)
-            string content = new string('X', 1200000); // 1.2MB, larger than 1MB chunk size
+            string content = new string('X', 30000000); // ~30MB, larger than ~25MB chunk size
             string filename = "chunked-file.txt";
             using MemoryStream uploadStream = new MemoryStream(Encoding.UTF8.GetBytes(content));
 
@@ -400,10 +397,10 @@ namespace ByteShelf.Integration.Tests
             // Create tenant configuration with both tenants
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateMultiTenantConfiguration(tenantConfigPath, tenant1ApiKey, tenant2ApiKey);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             // Use the existing factory but with updated tenant configuration
             using HttpClient client1 = _factory.CreateClient();
             using HttpClient client2 = _factory.CreateClient();
@@ -413,10 +410,10 @@ namespace ByteShelf.Integration.Tests
             // Act - Upload files to both tenants
             string content1 = "Tenant 1 content";
             string content2 = "Tenant 2 content";
-            
+
             using MemoryStream stream1 = new MemoryStream(Encoding.UTF8.GetBytes(content1));
             using MemoryStream stream2 = new MemoryStream(Encoding.UTF8.GetBytes(content2));
-            
+
             Guid fileId1 = await provider1.WriteFileAsync("tenant1-file.txt", "text/plain", stream1);
             Guid fileId2 = await provider2.WriteFileAsync("tenant2-file.txt", "text/plain", stream2);
 
@@ -446,10 +443,10 @@ namespace ByteShelf.Integration.Tests
             const string tenantApiKey = "storage-test-tenant";
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateMultiTenantConfiguration(tenantConfigPath, tenantApiKey);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient client = _factory.CreateClient();
             HttpShelfFileProvider provider = new HttpShelfFileProvider(client, tenantApiKey);
 
@@ -494,10 +491,10 @@ namespace ByteShelf.Integration.Tests
 
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateMultiTenantConfiguration(tenantConfigPath, tenant1ApiKey, tenant2ApiKey);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient client1 = _factory.CreateClient();
             using HttpClient client2 = _factory.CreateClient();
             HttpShelfFileProvider provider1 = new HttpShelfFileProvider(client1, tenant1ApiKey);
@@ -527,10 +524,10 @@ namespace ByteShelf.Integration.Tests
             const string tenantApiKey = "quota-test-tenant";
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateTenantWithQuota(tenantConfigPath, tenantApiKey, 100); // 100 bytes quota
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient client = _factory.CreateClient();
             HttpShelfFileProvider provider = new HttpShelfFileProvider(client, tenantApiKey);
 
@@ -613,10 +610,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             using HttpClient subtenantClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
@@ -625,10 +622,10 @@ namespace ByteShelf.Integration.Tests
             // Upload files to subtenant
             string content1 = "Subtenant file 1";
             string content2 = "Subtenant file 2";
-            
+
             using MemoryStream stream1 = new MemoryStream(Encoding.UTF8.GetBytes(content1));
             using MemoryStream stream2 = new MemoryStream(Encoding.UTF8.GetBytes(content2));
-            
+
             Guid fileId1 = await subtenantProvider.WriteFileAsync("subtenant-file-1.txt", "text/plain", stream1);
             Guid fileId2 = await subtenantProvider.WriteFileAsync("subtenant-file-2.txt", "text/plain", stream2);
 
@@ -648,10 +645,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             using HttpClient subtenantClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
@@ -683,10 +680,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             using HttpClient subtenantClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
@@ -715,10 +712,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             using HttpClient subtenantClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
@@ -751,10 +748,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             using HttpClient subtenantClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
@@ -785,10 +782,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient subtenant1Client = _factory.CreateClient();
             using HttpClient subtenant2Client = _factory.CreateClient();
             HttpShelfFileProvider subtenant1Provider = new HttpShelfFileProvider(subtenant1Client, "subtenant-1-api-key");
@@ -819,10 +816,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
 
@@ -846,10 +843,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             using HttpClient subtenant1Client = _factory.CreateClient();
             using HttpClient subtenant2Client = _factory.CreateClient();
@@ -860,10 +857,10 @@ namespace ByteShelf.Integration.Tests
             // Upload files to both subtenants
             string content1 = "Subtenant 1 content";
             string content2 = "Subtenant 2 content";
-            
+
             using MemoryStream stream1 = new MemoryStream(Encoding.UTF8.GetBytes(content1));
             using MemoryStream stream2 = new MemoryStream(Encoding.UTF8.GetBytes(content2));
-            
+
             Guid fileId1 = await subtenant1Provider.WriteFileAsync("subtenant1-file.txt", "text/plain", stream1);
             Guid fileId2 = await subtenant2Provider.WriteFileAsync("subtenant2-file.txt", "text/plain", stream2);
 
@@ -888,10 +885,10 @@ namespace ByteShelf.Integration.Tests
             using Stream contentStream2 = file2.GetContentStream();
             using StreamReader reader1 = new StreamReader(contentStream1);
             using StreamReader reader2 = new StreamReader(contentStream2);
-            
+
             string downloadedContent1 = reader1.ReadToEnd();
             string downloadedContent2 = reader2.ReadToEnd();
-            
+
             Assert.AreEqual(content1, downloadedContent1);
             Assert.AreEqual(content2, downloadedContent2);
         }
@@ -902,17 +899,17 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             using HttpClient subtenantClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
             HttpShelfFileProvider subtenantProvider = new HttpShelfFileProvider(subtenantClient, "subtenant-1-api-key");
 
             // Upload a large file to subtenant (will be chunked)
-            string largeContent = new string('X', 1200000); // 1.2MB, larger than 1MB chunk size
+            string largeContent = new string('X', 50000000); // ~50MB, larger than 1MB chunk size
             using MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(largeContent));
             Guid fileId = await subtenantProvider.WriteFileAsync("large-file.txt", "text/plain", stream);
 
@@ -938,10 +935,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration with small quota
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfigurationWithSmallQuota(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             using HttpClient subtenantClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
@@ -1012,10 +1009,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
 
@@ -1056,19 +1053,19 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
 
             // Act & Assert - Try to create a subtenant under a non-existent parent
             string nonExistentParentId = "non-existent-parent-id";
-            
+
             FileNotFoundException exception = await Assert.ThrowsExceptionAsync<FileNotFoundException>(
                 async () => await parentProvider.CreateSubTenantUnderSubTenantAsync(nonExistentParentId, "Test Subtenant"));
-            
+
             Assert.IsTrue(exception.Message.Contains(nonExistentParentId), "Error message should contain the non-existent parent ID");
         }
 
@@ -1078,10 +1075,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
 
@@ -1129,10 +1126,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
 
@@ -1158,10 +1155,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
 
@@ -1181,19 +1178,19 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
 
             // Act & Assert - Try to get subtenants under a non-existent parent
             string nonExistentParentId = "non-existent-parent-id";
-            
+
             FileNotFoundException exception = await Assert.ThrowsExceptionAsync<FileNotFoundException>(
                 async () => await parentProvider.GetSubTenantsUnderSubTenantAsync(nonExistentParentId));
-            
+
             Assert.IsTrue(exception.Message.Contains(nonExistentParentId), "Error message should contain the non-existent parent ID");
         }
 
@@ -1203,10 +1200,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
 
@@ -1241,10 +1238,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
 
@@ -1273,10 +1270,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
 
@@ -1310,10 +1307,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient subtenant1Client = _factory.CreateClient();
             using HttpClient subtenant2Client = _factory.CreateClient();
             HttpShelfFileProvider subtenant1Provider = new HttpShelfFileProvider(subtenant1Client, "subtenant-1-api-key");
@@ -1337,10 +1334,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             using HttpClient subtenantClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
@@ -1360,10 +1357,10 @@ namespace ByteShelf.Integration.Tests
             // Arrange - Create hierarchical tenant configuration
             string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
             CreateHierarchicalTenantConfiguration(tenantConfigPath);
-            
+
             // Wait for configuration to be reloaded
             await Task.Delay(200);
-            
+
             using HttpClient parentClient = _factory.CreateClient();
             HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
 

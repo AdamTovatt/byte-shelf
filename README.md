@@ -158,6 +158,7 @@ Tenants are managed through an external JSON file with hot-reload support. The c
 
 **Subtenant Features:**
 - **Hierarchical Structure**: Up to 10 levels of nesting supported
+- **Horizontal Limits**: Maximum of 50 subtenants per tenant
 - **Hierarchical Creation**: Create subtenants under subtenants via API endpoints
 - **Shared Storage**: Parent and subtenants share the parent's storage quota
 - **Individual Limits**: Subtenants can have their own storage limits (must not exceed parent's limit)

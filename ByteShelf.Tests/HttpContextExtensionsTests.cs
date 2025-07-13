@@ -1,6 +1,6 @@
+using ByteShelf.Extensions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using ByteShelf.Extensions;
 
 namespace ByteShelf.Tests
 {

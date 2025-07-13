@@ -10,4 +10,4 @@ namespace ByteShelfCommon
         /// </summary>
         public string DisplayName { get; set; } = string.Empty;
     }
-} 
+}

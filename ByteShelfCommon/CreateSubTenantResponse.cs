@@ -33,4 +33,4 @@ namespace ByteShelfCommon
         /// </summary>
         public string Message { get; }
     }
-} 
+}

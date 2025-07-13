@@ -332,7 +332,7 @@ namespace ByteShelf.Services
                 }
             }
 
-            _logger.LogInformation("Total deleted {TotalDeletedCount} files across {TenantCount} tenants (including {DescendantCount} descendants)", 
+            _logger.LogInformation("Total deleted {TotalDeletedCount} files across {TenantCount} tenants (including {DescendantCount} descendants)",
                 totalDeletedCount, 1 + descendantTenantIds.Count(), descendantTenantIds.Count());
 
             return totalDeletedCount;
@@ -372,7 +372,7 @@ namespace ByteShelf.Services
                 }
             }
 
-            _logger.LogInformation("Total cleaned up {TotalRemovedCount} empty directories across {TenantCount} tenants (including {DescendantCount} descendants)", 
+            _logger.LogInformation("Total cleaned up {TotalRemovedCount} empty directories across {TenantCount} tenants (including {DescendantCount} descendants)",
                 totalRemovedCount, 1 + descendantTenantIds.Count(), descendantTenantIds.Count());
 
             return totalRemovedCount;

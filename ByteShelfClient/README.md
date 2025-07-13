@@ -360,6 +360,11 @@ System.InvalidOperationException: Cannot create subtenant: maximum depth reached
 **Solution**: The tenant hierarchy has reached the maximum depth of 10 levels. Create subtenants under a different parent.
 
 ```
+System.InvalidOperationException: Cannot create subtenant: maximum of 50 subtenants per tenant reached
+```
+**Solution**: The tenant has reached the maximum of 50 subtenants. Create subtenants under a different parent tenant.
+
+```
 System.IO.FileNotFoundException: Parent subtenant with ID {parentSubtenantId} not found
 ```
 **Solution**: The parent subtenant ID does not exist or you don't have access to it. Verify the parent subtenant ID and your permissions.

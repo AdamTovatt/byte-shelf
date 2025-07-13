@@ -231,10 +231,24 @@ namespace ByteShelf.Services
             if (string.IsNullOrWhiteSpace(displayName))
                 throw new ArgumentException("Display name cannot be null or empty", nameof(displayName));
 
-            // Check depth limit
+            // Check limits
             if (!await CanCreateSubTenantAsync(parentTenantId))
             {
-                throw new InvalidOperationException($"Cannot create subtenant: maximum depth of {MaxSubTenantDepth} levels reached");
+                TenantInfo? parentTenant = GetTenant(parentTenantId);
+                if (parentTenant != null)
+                {
+                    int currentDepth = FindTenantDepth(parentTenantId, 0);
+                    if (currentDepth >= MaxSubTenantDepth)
+                    {
+                        throw new InvalidOperationException($"Cannot create subtenant: maximum depth of {MaxSubTenantDepth} levels reached");
+                    }
+                    else if (parentTenant.SubTenants.Count >= MaxSubTenantsPerTenant)
+                    {
+                        throw new InvalidOperationException($"Cannot create subtenant: maximum of {MaxSubTenantsPerTenant} subtenants per tenant reached");
+                    }
+                }
+
+                throw new InvalidOperationException("Cannot create subtenant: limits exceeded");
             }
 
             // Generate unique tenant ID (GUID)
@@ -405,7 +419,7 @@ namespace ByteShelf.Services
         }
 
         /// <summary>
-        /// Checks if a tenant can create subtenants (depth limit not reached).
+        /// Checks if a tenant can create subtenants (depth and horizontal limits not reached).
         /// </summary>
         /// <param name="tenantId">The tenant ID.</param>
         /// <returns>True if the tenant can create subtenants.</returns>
@@ -420,8 +434,16 @@ namespace ByteShelf.Services
             if (tenant == null)
                 return false;
 
+            // Check depth limit
             int currentDepth = FindTenantDepth(tenantId, 0);
-            return currentDepth < MaxSubTenantDepth;
+            if (currentDepth >= MaxSubTenantDepth)
+                return false;
+
+            // Check horizontal limit (number of direct subtenants)
+            if (tenant.SubTenants.Count >= MaxSubTenantsPerTenant)
+                return false;
+
+            return true;
         }
 
         /// <summary>
@@ -555,6 +577,7 @@ namespace ByteShelf.Services
         }
 
         private const int MaxSubTenantDepth = 10;
+        private const int MaxSubTenantsPerTenant = 50;
 
         /// <summary>
         /// Recursively calculates the depth of a tenant in the hierarchy.

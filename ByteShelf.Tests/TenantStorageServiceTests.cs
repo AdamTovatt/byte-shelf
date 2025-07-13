@@ -1,7 +1,6 @@
 using ByteShelf.Configuration;
 using ByteShelf.Services;
 using ByteShelfCommon;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;

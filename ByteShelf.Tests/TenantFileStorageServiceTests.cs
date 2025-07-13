@@ -383,7 +383,7 @@ namespace ByteShelf.Tests
 
             // Create valid metadata file
             await File.WriteAllTextAsync(Path.Combine(tenantMetadataPath, $"{fileId1}.json"), JsonSerializer.Serialize(metadata1, _jsonOptions));
-            
+
             // Create corrupted metadata file
             await File.WriteAllTextAsync(Path.Combine(tenantMetadataPath, $"{fileId2}.json"), "invalid json content");
 

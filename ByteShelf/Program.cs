@@ -3,6 +3,7 @@ using ByteShelf.Middleware;
 using ByteShelf.Resources;
 using ByteShelf.Services;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Threading.RateLimiting;
 
 namespace ByteShelf
 {
@@ -33,14 +34,14 @@ namespace ByteShelf
             {
                 ChunkConfiguration config = new ChunkConfiguration();
                 builder.Configuration.GetSection("ChunkConfiguration").Bind(config);
-                
+
                 // Override with environment variable if set
                 string? envChunkSize = Environment.GetEnvironmentVariable("BYTESHELF_CHUNK_SIZE_BYTES");
                 if (!string.IsNullOrWhiteSpace(envChunkSize) && int.TryParse(envChunkSize, out int chunkSize))
                 {
                     config.ChunkSizeBytes = chunkSize;
                 }
-                
+
                 return config;
             });
 
@@ -63,6 +64,9 @@ namespace ByteShelf
                 IStorageService storageService = serviceProvider.GetRequiredService<IStorageService>();
                 return new FileStorageService(storagePath, storageService, logger ?? new NullLogger<FileStorageService>());
             });
+
+            // Configure rate limiting
+            ConfigureRateLimiting(builder.Services);
 
             WebApplication app = builder.Build();
 
@@ -90,10 +94,83 @@ namespace ByteShelf
             // Add API key authentication middleware
             app.UseApiKeyAuthentication();
 
+            // Add rate limiting middleware
+            app.UseRateLimiter();
+
             app.UseAuthorization();
             app.MapControllers();
 
             app.Run();
+        }
+
+        /// <summary>
+        /// Configures rate limiting with different limits per endpoint type.
+        /// </summary>
+        /// <param name="services">The service collection to configure.</param>
+        private static void ConfigureRateLimiting(IServiceCollection services)
+        {
+            services.AddRateLimiter(options =>
+            {
+                options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+                {
+                    string apiKey = httpContext.Request.Headers["X-API-Key"].ToString() ?? "no-key";
+                    string path = httpContext.Request.Path.ToString();
+
+                    // Different limits based on endpoint type
+                    if (path.StartsWith("/api/chunks"))
+                    {
+                        // Chunk operations: 10,000 per minute (high throughput for file uploads/downloads)
+                        return RateLimitPartition.GetFixedWindowLimiter(
+                            partitionKey: $"{apiKey}-chunks",
+                            factory: _ => new FixedWindowRateLimiterOptions
+                            {
+                                PermitLimit = 10000,
+                                Window = TimeSpan.FromMinutes(1)
+                            });
+                    }
+
+                    if (path.StartsWith("/api/files"))
+                    {
+                        // File operations: 1,000 per 3 minutes (moderate throughput for file metadata)
+                        return RateLimitPartition.GetFixedWindowLimiter(
+                            partitionKey: $"{apiKey}-files",
+                            factory: _ => new FixedWindowRateLimiterOptions
+                            {
+                                PermitLimit = 1000,
+                                Window = TimeSpan.FromMinutes(3)
+                            });
+                    }
+
+                    if (path.StartsWith("/api/tenant") || path.StartsWith("/api/admin"))
+                    {
+                        // Tenant and admin operations: 100 per minute (low throughput for configuration)
+                        return RateLimitPartition.GetFixedWindowLimiter(
+                            partitionKey: $"{apiKey}-config",
+                            factory: _ => new FixedWindowRateLimiterOptions
+                            {
+                                PermitLimit = 100,
+                                Window = TimeSpan.FromMinutes(1)
+                            });
+                    }
+
+                    // All other operations: 200 per minute (default)
+                    return RateLimitPartition.GetFixedWindowLimiter(
+                        partitionKey: $"{apiKey}-default",
+                        factory: _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = 200,
+                            Window = TimeSpan.FromMinutes(1)
+                        });
+                });
+
+                // Configure rate limiting options
+                options.RejectionStatusCode = 429; // Too Many Requests
+                options.OnRejected = async (context, token) =>
+                {
+                    context.HttpContext.Response.StatusCode = 429;
+                    await context.HttpContext.Response.WriteAsync("Rate limit exceeded. Please try again later.", token);
+                };
+            });
         }
     }
 }

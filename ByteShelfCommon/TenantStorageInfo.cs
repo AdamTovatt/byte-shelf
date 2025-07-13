@@ -53,4 +53,4 @@ namespace ByteShelfCommon
         /// </summary>
         public double UsagePercentage { get; }
     }
-} 
+}

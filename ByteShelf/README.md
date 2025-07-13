@@ -208,6 +208,16 @@ All API endpoints require authentication via API key in the `X-API-Key` header, 
 - Admin tenants can have unlimited storage (when StorageLimitBytes is 0)
 - Subtenants are limited by both their own quota and their parent's quota
 
+### Rate Limiting
+Rate limits are enforced per API key and endpoint type:
+
+- **Chunk Operations** (`/api/chunks/*`): 10,000 requests per minute (high throughput for file uploads/downloads)
+- **File Operations** (`/api/files/*`): 1,000 requests per 3 minutes (moderate throughput for file metadata)
+- **Configuration Operations** (`/api/tenant/*`, `/api/admin/*`): 100 requests per minute (low throughput for configuration)
+- **Other Operations**: 200 requests per minute (default)
+
+Exceeded requests return HTTP 429 (Too Many Requests)
+
 ## 📊 Shared Storage Behavior
 
 ### Hierarchical Quota Management

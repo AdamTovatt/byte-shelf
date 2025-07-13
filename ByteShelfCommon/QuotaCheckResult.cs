@@ -69,4 +69,4 @@ namespace ByteShelfCommon
         /// </summary>
         public bool WouldExceedQuota { get; }
     }
-} 
+}

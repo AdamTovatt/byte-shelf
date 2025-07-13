@@ -40,15 +40,15 @@ namespace ByteShelf.Controllers
             try
             {
                 string htmlContent = ResourceHelper.Instance.ReadAsStringAsync(Resource.Frontend.ByteShelfFrontend).Result;
-                
+
                 // Get the external URL from forwarded headers, but hardcode https
                 string scheme = "https"; // Hardcoded to fix mixed content
                 string host = Request.Headers["X-Forwarded-Host"].FirstOrDefault() ?? Request.Host.Value;
                 string prefix = Request.Headers["X-Forwarded-Prefix"].FirstOrDefault() ?? "";
-                
+
                 string requestUrl = $"{scheme}://{host}{prefix}";
                 htmlContent = htmlContent.Replace("http://localhost:5001", requestUrl);
-                
+
                 return Content(htmlContent, "text/html");
             }
             catch (Exception ex)
@@ -128,4 +128,4 @@ namespace ByteShelf.Controllers
             return Ok(new { message = "ByteShelf Frontend is running", timestamp = DateTime.UtcNow });
         }
     }
-} 
+}

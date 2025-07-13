@@ -485,7 +485,7 @@ namespace ByteShelf.Services
                 foreach (string tenantDir in tenantDirectories)
                 {
                     string tenantId = Path.GetFileName(tenantDir);
-                    
+
                     // Skip tenants that are no longer in the configuration
                     if (!validTenantIds.Contains(tenantId))
                     {
