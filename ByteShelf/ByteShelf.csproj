@@ -27,4 +27,8 @@
     <EmbeddedResource Remove="Resources\ResourceHelper.cs" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Remove="Resources\Frontend\ByteShelfIcon256.png" />
+  </ItemGroup>
+
 </Project>

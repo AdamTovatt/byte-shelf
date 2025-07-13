@@ -98,6 +98,26 @@ namespace ByteShelf.Controllers
         }
 
         /// <summary>
+        /// Serves the favicon for the ByteShelf frontend.
+        /// </summary>
+        /// <returns>The favicon image content.</returns>
+        /// <response code="200">Returns the favicon image.</response>
+        /// <response code="404">If the favicon resource is not found.</response>
+        [HttpGet("favicon.ico")]
+        public IActionResult GetFavicon()
+        {
+            try
+            {
+                Stream iconStream = ResourceHelper.Instance.GetFileStream(Resource.Frontend.ByteShelfIcon256);
+                return File(iconStream, "image/png");
+            }
+            catch (Exception ex)
+            {
+                return NotFound($"Favicon not found: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Health check endpoint for the frontend.
         /// </summary>
         /// <returns>A simple health check response.</returns>

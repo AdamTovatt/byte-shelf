@@ -84,6 +84,11 @@ namespace ByteShelf.Resources
             /// The JavaScript code for the ByteShelf frontend.
             /// </summary>
             public static readonly Resource ByteShelfScript = new Resource("Frontend/ByteShelfScript.js");
+
+            /// <summary>
+            /// A large icon for ByteShelf.
+            /// </summary>
+            public static readonly Resource ByteShelfIcon256 = new Resource("Frontend/ByteShelfIcon256.png");
         }
     }
 }

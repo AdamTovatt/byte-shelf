@@ -145,7 +145,7 @@ namespace ByteShelf.Middleware
         /// Currently skips authentication for:
         /// - Health check endpoints ("/health", "/healthz")
         /// - Swagger/OpenAPI documentation endpoints ("/swagger", "/swagger-ui")
-        /// - Frontend resources ("/", "/styles.css", "/script.js", "/ping")
+        /// - Frontend resources ("/", "/styles.css", "/script.js", "/ping", "/favicon.ico")
         /// Additional paths can be added as needed.
         /// </remarks>
         private static bool ShouldSkipAuthentication(PathString path)
@@ -158,7 +158,8 @@ namespace ByteShelf.Middleware
                    pathValue == "/" ||
                    pathValue == "/styles.css" ||
                    pathValue == "/script.js" ||
-                   pathValue == "/ping";
+                   pathValue == "/ping" ||
+                   pathValue == "/favicon.ico";
         }
 
         /// <summary>
