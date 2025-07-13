@@ -149,6 +149,24 @@
         </div>
     </div>
 
+    <!-- Custom prompt modal for folder creation -->
+    <div id="prompt-modal" class="modal" style="display: none;">
+        <div class="modal-content prompt-modal elevation-element soft-corner">
+            <div class="alert-header">
+                <span class="alert-icon prompt-icon">📁</span>
+                <h3 id="prompt-title">Create Folder</h3>
+            </div>
+            <div class="prompt-message">
+                <label for="folder-name-input">Folder name:</label>
+                <input type="text" id="folder-name-input" placeholder="Enter folder name" autocomplete="off">
+            </div>
+            <div class="alert-actions">
+                <button id="prompt-ok-btn" class="btn btn-primary">Create</button>
+                <button id="prompt-cancel-btn" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Admin Panel Modal -->
     <div id="admin-modal" class="modal" style="display: none;">
         <div class="modal-content admin-modal elevation-element soft-corner">

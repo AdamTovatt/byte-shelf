@@ -103,6 +103,66 @@ function showConfirm(message, title = 'Confirm') {
     });
 }
 
+function showPrompt(message, title = 'Prompt', defaultValue = '') {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('prompt-modal');
+        const titleElement = document.getElementById('prompt-title');
+        const messageElement = document.querySelector('.prompt-message label');
+        const inputElement = document.getElementById('folder-name-input');
+        const okBtn = document.getElementById('prompt-ok-btn');
+        const cancelBtn = document.getElementById('prompt-cancel-btn');
+        
+        // Set content
+        titleElement.textContent = title;
+        messageElement.textContent = message;
+        inputElement.value = defaultValue;
+        
+        // Show modal and focus input
+        modal.style.display = 'flex';
+        inputElement.focus();
+        inputElement.select();
+        
+        // Handle buttons
+        const handleOk = () => {
+            const value = inputElement.value.trim();
+            modal.style.display = 'none';
+            okBtn.removeEventListener('click', handleOk);
+            cancelBtn.removeEventListener('click', handleCancel);
+            inputElement.removeEventListener('keypress', handleKeyPress);
+            modal.removeEventListener('click', handleOutsideClick);
+            resolve(value);
+        };
+        
+        const handleCancel = () => {
+            modal.style.display = 'none';
+            okBtn.removeEventListener('click', handleOk);
+            cancelBtn.removeEventListener('click', handleCancel);
+            inputElement.removeEventListener('keypress', handleKeyPress);
+            modal.removeEventListener('click', handleOutsideClick);
+            resolve(null);
+        };
+        
+        const handleKeyPress = (e) => {
+            if (e.key === 'Enter') {
+                handleOk();
+            } else if (e.key === 'Escape') {
+                handleCancel();
+            }
+        };
+        
+        const handleOutsideClick = (e) => {
+            if (e.target === modal) {
+                handleCancel();
+            }
+        };
+        
+        okBtn.addEventListener('click', handleOk);
+        cancelBtn.addEventListener('click', handleCancel);
+        inputElement.addEventListener('keypress', handleKeyPress);
+        modal.addEventListener('click', handleOutsideClick);
+    });
+}
+
 // API endpoints
 const API_BASE = (() => {
     // Get the current path and find the base path
@@ -432,8 +492,8 @@ async function createFolder(event) {
         event.preventDefault();
     }
     
-    // Prompt user for folder name
-    const folderName = prompt('Enter folder name:');
+    // Show custom prompt for folder name
+    const folderName = await showPrompt('Folder name:', 'Create Folder');
     if (!folderName || folderName.trim() === '') {
         return;
     }
@@ -541,6 +601,9 @@ async function deleteSubtenant(tenantId, folderName) {
         
         // Refresh the file list to show the updated folder list
         await loadFiles();
+        
+        // Refresh tenant info to update storage usage display
+        await loadTenantInfo();
         
         await showAlert(`Folder "${folderName}" has been deleted successfully.`, 'Folder Deleted', 'success');
         
