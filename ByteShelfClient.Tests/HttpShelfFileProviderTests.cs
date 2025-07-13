@@ -217,29 +217,31 @@ namespace ByteShelfClient.Tests
         public async Task GetSubTenants_WithValidResponse_ReturnsSubTenants()
         {
             // Arrange
-            Dictionary<string, TenantInfo> expectedSubTenants = new Dictionary<string, TenantInfo>
+            Dictionary<string, TenantInfoResponse> expectedSubTenants = new Dictionary<string, TenantInfoResponse>
             {
-                ["subtenant1"] = new TenantInfo
-                {
-                    ApiKey = "sub-key-1",
-                    DisplayName = "Sub Tenant 1",
-                    StorageLimitBytes = 1024 * 1024 * 50,
-                    IsAdmin = false
-                },
-                ["subtenant2"] = new TenantInfo
-                {
-                    ApiKey = "sub-key-2",
-                    DisplayName = "Sub Tenant 2",
-                    StorageLimitBytes = 1024 * 1024 * 100,
-                    IsAdmin = false
-                }
+                ["subtenant1"] = new TenantInfoResponse(
+                    "subtenant1",
+                    "Sub Tenant 1",
+                    false,
+                    1024 * 1024 * 50,
+                    0,
+                    1024 * 1024 * 50,
+                    0.0),
+                ["subtenant2"] = new TenantInfoResponse(
+                    "subtenant2",
+                    "Sub Tenant 2",
+                    false,
+                    1024 * 1024 * 100,
+                    0,
+                    1024 * 1024 * 100,
+                    0.0)
             };
 
             string jsonResponse = JsonSerializer.Serialize(expectedSubTenants);
             _messageHandler.SetupResponse("api/tenant/subtenants", jsonResponse);
 
             // Act
-            Dictionary<string, TenantInfo> result = await _provider.GetSubTenantsAsync();
+            Dictionary<string, TenantInfoResponse> result = await _provider.GetSubTenantsAsync();
 
             // Assert
             Assert.IsNotNull(result);
@@ -254,12 +256,12 @@ namespace ByteShelfClient.Tests
         public async Task GetSubTenants_WithEmptyResponse_ReturnsEmptyDictionary()
         {
             // Arrange
-            Dictionary<string, TenantInfo> emptySubTenants = new Dictionary<string, TenantInfo>();
+            Dictionary<string, TenantInfoResponse> emptySubTenants = new Dictionary<string, TenantInfoResponse>();
             string jsonResponse = JsonSerializer.Serialize(emptySubTenants);
             _messageHandler.SetupResponse("api/tenant/subtenants", jsonResponse);
 
             // Act
-            Dictionary<string, TenantInfo> result = await _provider.GetSubTenantsAsync();
+            Dictionary<string, TenantInfoResponse> result = await _provider.GetSubTenantsAsync();
 
             // Assert
             Assert.IsNotNull(result);
@@ -294,15 +296,14 @@ namespace ByteShelfClient.Tests
             _messageHandler.SetupResponse($"api/tenant/subtenants/{subTenantId}", jsonResponse);
 
             // Act
-            TenantInfo result = await _provider.GetSubTenantAsync(subTenantId);
+            TenantInfoResponse result = await _provider.GetSubTenantAsync(subTenantId);
 
             // Assert
             Assert.IsNotNull(result);
             Assert.AreEqual(expectedSubTenant.DisplayName, result.DisplayName);
-            Assert.AreEqual(expectedSubTenant.ApiKey, result.ApiKey);
             Assert.AreEqual(expectedSubTenant.StorageLimitBytes, result.StorageLimitBytes);
             Assert.AreEqual(expectedSubTenant.IsAdmin, result.IsAdmin);
-            Assert.AreEqual(expectedSubTenant.Parent, result.Parent);
+            // Note: API key is no longer returned in TenantInfoResponse for security
         }
 
         [TestMethod]
@@ -358,29 +359,31 @@ namespace ByteShelfClient.Tests
         {
             // Arrange
             string parentSubtenantId = "parent-subtenant1";
-            Dictionary<string, TenantInfo> expectedSubTenants = new Dictionary<string, TenantInfo>
+            Dictionary<string, TenantInfoResponse> expectedSubTenants = new Dictionary<string, TenantInfoResponse>
             {
-                ["subtenant1"] = new TenantInfo
-                {
-                    ApiKey = "sub-key-1",
-                    DisplayName = "Sub Tenant 1",
-                    StorageLimitBytes = 1024 * 1024 * 50,
-                    IsAdmin = false
-                },
-                ["subtenant2"] = new TenantInfo
-                {
-                    ApiKey = "sub-key-2",
-                    DisplayName = "Sub Tenant 2",
-                    StorageLimitBytes = 1024 * 1024 * 100,
-                    IsAdmin = false
-                }
+                ["subtenant1"] = new TenantInfoResponse(
+                    "subtenant1",
+                    "Sub Tenant 1",
+                    false,
+                    1024 * 1024 * 50,
+                    0,
+                    1024 * 1024 * 50,
+                    0.0),
+                ["subtenant2"] = new TenantInfoResponse(
+                    "subtenant2",
+                    "Sub Tenant 2",
+                    false,
+                    1024 * 1024 * 100,
+                    0,
+                    1024 * 1024 * 100,
+                    0.0)
             };
 
             string jsonResponse = JsonSerializer.Serialize(expectedSubTenants);
             _messageHandler.SetupResponse($"api/tenant/subtenants/{parentSubtenantId}/subtenants", jsonResponse);
 
             // Act
-            Dictionary<string, TenantInfo> result = await _provider.GetSubTenantsUnderSubTenantAsync(parentSubtenantId);
+            Dictionary<string, TenantInfoResponse> result = await _provider.GetSubTenantsUnderSubTenantAsync(parentSubtenantId);
 
             // Assert
             Assert.IsNotNull(result);
@@ -396,12 +399,12 @@ namespace ByteShelfClient.Tests
         {
             // Arrange
             string parentSubtenantId = "parent-subtenant1";
-            Dictionary<string, TenantInfo> emptySubTenants = new Dictionary<string, TenantInfo>();
+            Dictionary<string, TenantInfoResponse> emptySubTenants = new Dictionary<string, TenantInfoResponse>();
             string jsonResponse = JsonSerializer.Serialize(emptySubTenants);
             _messageHandler.SetupResponse($"api/tenant/subtenants/{parentSubtenantId}/subtenants", jsonResponse);
 
             // Act
-            Dictionary<string, TenantInfo> result = await _provider.GetSubTenantsUnderSubTenantAsync(parentSubtenantId);
+            Dictionary<string, TenantInfoResponse> result = await _provider.GetSubTenantsUnderSubTenantAsync(parentSubtenantId);
 
             // Assert
             Assert.IsNotNull(result);
@@ -951,5 +954,7 @@ namespace ByteShelfClient.Tests
             );
             Assert.AreEqual(HttpMethod.Delete, _messageHandler.Requests[0].Method);
         }
+
+
     }
 }

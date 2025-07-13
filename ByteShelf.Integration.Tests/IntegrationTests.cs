@@ -1030,25 +1030,24 @@ namespace ByteShelf.Integration.Tests
             Assert.AreNotEqual(string.Empty, secondLevelSubtenantId);
 
             // Assert - Verify the hierarchical structure
-            Dictionary<string, TenantInfo> parentSubtenants = await parentProvider.GetSubTenantsAsync();
+            Dictionary<string, TenantInfoResponse> parentSubtenants = await parentProvider.GetSubTenantsAsync();
             Assert.IsTrue(parentSubtenants.ContainsKey(firstLevelSubtenantId), "First level subtenant should exist under parent");
 
             // Get the first-level subtenant and verify it has the second-level subtenant
-            TenantInfo firstLevelSubtenant = await parentProvider.GetSubTenantAsync(firstLevelSubtenantId);
+            TenantInfoResponse firstLevelSubtenant = await parentProvider.GetSubTenantAsync(firstLevelSubtenantId);
             Assert.AreEqual("First Level Department", firstLevelSubtenant.DisplayName);
-            Assert.AreNotEqual("parent-api-key", firstLevelSubtenant.ApiKey); // Should not inherit parent's API key
 
-            // Create a client for the first-level subtenant to verify its subtenants
-            using HttpClient firstLevelClient = _factory.CreateClient();
-            HttpShelfFileProvider firstLevelProvider = new HttpShelfFileProvider(firstLevelClient, firstLevelSubtenant.ApiKey);
-            
-            Dictionary<string, TenantInfo> secondLevelSubtenants = await firstLevelProvider.GetSubTenantsAsync();
+            // Verify that the parent can access subtenants under the first-level subtenant
+            Dictionary<string, TenantInfoResponse> secondLevelSubtenants = await parentProvider.GetSubTenantsUnderSubTenantAsync(firstLevelSubtenantId);
             Assert.IsTrue(secondLevelSubtenants.ContainsKey(secondLevelSubtenantId), "Second level subtenant should exist under first level");
 
             // Get the second-level subtenant and verify its properties
-            TenantInfo secondLevelSubtenant = await firstLevelProvider.GetSubTenantAsync(secondLevelSubtenantId);
+            TenantInfoResponse secondLevelSubtenant = await parentProvider.GetSubTenantAsync(secondLevelSubtenantId);
             Assert.AreEqual("Second Level Team", secondLevelSubtenant.DisplayName);
-            Assert.AreNotEqual("parent-api-key", secondLevelSubtenant.ApiKey); // Should not inherit parent's API key
+
+            // Verify that the parent can access the second-level subtenant's subtenants (if any)
+            Dictionary<string, TenantInfoResponse> thirdLevelSubtenants = await parentProvider.GetSubTenantsUnderSubTenantAsync(secondLevelSubtenantId);
+            Assert.AreEqual(0, thirdLevelSubtenants.Count, "Second level subtenant should have no children");
         }
 
         [TestMethod]
@@ -1090,17 +1089,7 @@ namespace ByteShelf.Integration.Tests
             string firstLevelSubtenantId = await parentProvider.CreateSubTenantAsync("First Level Department");
             string secondLevelSubtenantId = await parentProvider.CreateSubTenantUnderSubTenantAsync(firstLevelSubtenantId, "Second Level Team");
 
-            // Get API keys for the subtenants
-            TenantInfo firstLevelSubtenant = await parentProvider.GetSubTenantAsync(firstLevelSubtenantId);
-            TenantInfo secondLevelSubtenant = await parentProvider.GetSubTenantAsync(secondLevelSubtenantId);
-
-            // Create clients for each level
-            using HttpClient firstLevelClient = _factory.CreateClient();
-            using HttpClient secondLevelClient = _factory.CreateClient();
-            HttpShelfFileProvider firstLevelProvider = new HttpShelfFileProvider(firstLevelClient, firstLevelSubtenant.ApiKey);
-            HttpShelfFileProvider secondLevelProvider = new HttpShelfFileProvider(secondLevelClient, secondLevelSubtenant.ApiKey);
-
-            // Upload files to each level
+            // Upload files to each level using parent's access to subtenants
             string parentContent = "Parent file content";
             string firstLevelContent = "First level file content";
             string secondLevelContent = "Second level file content";
@@ -1110,13 +1099,13 @@ namespace ByteShelf.Integration.Tests
             using MemoryStream secondLevelStream = new MemoryStream(Encoding.UTF8.GetBytes(secondLevelContent));
 
             Guid parentFileId = await parentProvider.WriteFileAsync("parent-file.txt", "text/plain", parentStream);
-            Guid firstLevelFileId = await firstLevelProvider.WriteFileAsync("first-level-file.txt", "text/plain", firstLevelStream);
-            Guid secondLevelFileId = await secondLevelProvider.WriteFileAsync("second-level-file.txt", "text/plain", secondLevelStream);
+            Guid firstLevelFileId = await parentProvider.WriteFileForTenantAsync(firstLevelSubtenantId, "first-level-file.txt", "text/plain", firstLevelStream);
+            Guid secondLevelFileId = await parentProvider.WriteFileForTenantAsync(secondLevelSubtenantId, "second-level-file.txt", "text/plain", secondLevelStream);
 
-            // Act & Assert - Verify each level can access their own files
+            // Act & Assert - Verify parent can access files from all levels
             ShelfFile parentFile = await parentProvider.ReadFileAsync(parentFileId);
-            ShelfFile firstLevelFile = await firstLevelProvider.ReadFileAsync(firstLevelFileId);
-            ShelfFile secondLevelFile = await secondLevelProvider.ReadFileAsync(secondLevelFileId);
+            ShelfFile firstLevelFile = await parentProvider.ReadFileForTenantAsync(firstLevelSubtenantId, firstLevelFileId);
+            ShelfFile secondLevelFile = await parentProvider.ReadFileForTenantAsync(secondLevelSubtenantId, secondLevelFileId);
 
             using Stream parentContentStream = parentFile.GetContentStream();
             using Stream firstLevelContentStream = firstLevelFile.GetContentStream();
@@ -1132,21 +1121,6 @@ namespace ByteShelf.Integration.Tests
             Assert.AreEqual(parentContent, downloadedParentContent);
             Assert.AreEqual(firstLevelContent, downloadedFirstLevelContent);
             Assert.AreEqual(secondLevelContent, downloadedSecondLevelContent);
-
-            // Verify parent can access files from all levels
-            ShelfFile parentAccessFirstLevelFile = await parentProvider.ReadFileForTenantAsync(firstLevelSubtenantId, firstLevelFileId);
-            ShelfFile parentAccessSecondLevelFile = await parentProvider.ReadFileForTenantAsync(secondLevelSubtenantId, secondLevelFileId);
-
-            using Stream parentAccessFirstLevelStream = parentAccessFirstLevelFile.GetContentStream();
-            using Stream parentAccessSecondLevelStream = parentAccessSecondLevelFile.GetContentStream();
-            using StreamReader parentAccessFirstLevelReader = new StreamReader(parentAccessFirstLevelStream);
-            using StreamReader parentAccessSecondLevelReader = new StreamReader(parentAccessSecondLevelStream);
-
-            string parentDownloadedFirstLevelContent = parentAccessFirstLevelReader.ReadToEnd();
-            string parentDownloadedSecondLevelContent = parentAccessSecondLevelReader.ReadToEnd();
-
-            Assert.AreEqual(firstLevelContent, parentDownloadedFirstLevelContent);
-            Assert.AreEqual(secondLevelContent, parentDownloadedSecondLevelContent);
         }
 
         [TestMethod]
@@ -1168,7 +1142,7 @@ namespace ByteShelf.Integration.Tests
             string secondLevelSubtenantId2 = await parentProvider.CreateSubTenantUnderSubTenantAsync(firstLevelSubtenantId, "Second Level Team 2");
 
             // Act - Get subtenants under the first-level subtenant
-            Dictionary<string, TenantInfo> subTenantsUnderFirstLevel = await parentProvider.GetSubTenantsUnderSubTenantAsync(firstLevelSubtenantId);
+            Dictionary<string, TenantInfoResponse> subTenantsUnderFirstLevel = await parentProvider.GetSubTenantsUnderSubTenantAsync(firstLevelSubtenantId);
 
             // Assert - Should return both second-level subtenants
             Assert.AreEqual(2, subTenantsUnderFirstLevel.Count);
@@ -1195,7 +1169,7 @@ namespace ByteShelf.Integration.Tests
             string firstLevelSubtenantId = await parentProvider.CreateSubTenantAsync("First Level Department");
 
             // Act - Get subtenants under the first-level subtenant
-            Dictionary<string, TenantInfo> subTenantsUnderFirstLevel = await parentProvider.GetSubTenantsUnderSubTenantAsync(firstLevelSubtenantId);
+            Dictionary<string, TenantInfoResponse> subTenantsUnderFirstLevel = await parentProvider.GetSubTenantsUnderSubTenantAsync(firstLevelSubtenantId);
 
             // Assert - Should return empty dictionary
             Assert.AreEqual(0, subTenantsUnderFirstLevel.Count);
@@ -1243,9 +1217,9 @@ namespace ByteShelf.Integration.Tests
             string level4SubtenantId = await parentProvider.CreateSubTenantUnderSubTenantAsync(level3SubtenantId, "Level 4 Subgroup");
 
             // Act - Get subtenants under each level
-            Dictionary<string, TenantInfo> level1SubTenants = await parentProvider.GetSubTenantsUnderSubTenantAsync(level1SubtenantId);
-            Dictionary<string, TenantInfo> level2SubTenants = await parentProvider.GetSubTenantsUnderSubTenantAsync(level2SubtenantId);
-            Dictionary<string, TenantInfo> level3SubTenants = await parentProvider.GetSubTenantsUnderSubTenantAsync(level3SubtenantId);
+            Dictionary<string, TenantInfoResponse> level1SubTenants = await parentProvider.GetSubTenantsUnderSubTenantAsync(level1SubtenantId);
+            Dictionary<string, TenantInfoResponse> level2SubTenants = await parentProvider.GetSubTenantsUnderSubTenantAsync(level2SubtenantId);
+            Dictionary<string, TenantInfoResponse> level3SubTenants = await parentProvider.GetSubTenantsUnderSubTenantAsync(level3SubtenantId);
 
             // Assert - Verify each level returns the correct subtenants
             Assert.AreEqual(1, level1SubTenants.Count);
@@ -1281,7 +1255,7 @@ namespace ByteShelf.Integration.Tests
             string sibling3Id = await parentProvider.CreateSubTenantUnderSubTenantAsync(parentSubtenantId, "Sibling 3");
 
             // Act - Get all siblings under the parent
-            Dictionary<string, TenantInfo> siblings = await parentProvider.GetSubTenantsUnderSubTenantAsync(parentSubtenantId);
+            Dictionary<string, TenantInfoResponse> siblings = await parentProvider.GetSubTenantsUnderSubTenantAsync(parentSubtenantId);
 
             // Assert - Should return all three siblings
             Assert.AreEqual(3, siblings.Count);
@@ -1310,27 +1284,20 @@ namespace ByteShelf.Integration.Tests
             string firstLevelSubtenantId = await parentProvider.CreateSubTenantAsync("First Level Department");
             string secondLevelSubtenantId = await parentProvider.CreateSubTenantUnderSubTenantAsync(firstLevelSubtenantId, "Second Level Team");
 
-            // Get API key for the second-level subtenant
-            TenantInfo secondLevelSubtenant = await parentProvider.GetSubTenantAsync(secondLevelSubtenantId);
-
-            // Create client for the second-level subtenant
-            using HttpClient secondLevelClient = _factory.CreateClient();
-            HttpShelfFileProvider secondLevelProvider = new HttpShelfFileProvider(secondLevelClient, secondLevelSubtenant.ApiKey);
-
-            // Upload a file to the second-level subtenant
+            // Upload a file to the second-level subtenant using parent's access
             string content = "Test file content";
             using MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
-            Guid fileId = await secondLevelProvider.WriteFileAsync("test-file.txt", "text/plain", stream);
+            Guid fileId = await parentProvider.WriteFileForTenantAsync(secondLevelSubtenantId, "test-file.txt", "text/plain", stream);
 
             // Act - Get subtenants under the first-level subtenant (should not affect file operations)
-            Dictionary<string, TenantInfo> subTenantsUnderFirstLevel = await parentProvider.GetSubTenantsUnderSubTenantAsync(firstLevelSubtenantId);
+            Dictionary<string, TenantInfoResponse> subTenantsUnderFirstLevel = await parentProvider.GetSubTenantsUnderSubTenantAsync(firstLevelSubtenantId);
 
             // Assert - File operations should still work correctly
             Assert.AreEqual(1, subTenantsUnderFirstLevel.Count);
             Assert.IsTrue(subTenantsUnderFirstLevel.ContainsKey(secondLevelSubtenantId));
 
-            // Verify the file can still be read
-            ShelfFile file = await secondLevelProvider.ReadFileAsync(fileId);
+            // Verify the file can still be read using parent's access
+            ShelfFile file = await parentProvider.ReadFileForTenantAsync(secondLevelSubtenantId, fileId);
             using Stream contentStream = file.GetContentStream();
             using StreamReader reader = new StreamReader(contentStream);
             string downloadedContent = reader.ReadToEnd();

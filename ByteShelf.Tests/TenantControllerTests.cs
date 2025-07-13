@@ -452,7 +452,7 @@ namespace ByteShelf.Tests
             OkObjectResult okResult = (OkObjectResult)result;
             Assert.IsNotNull(okResult.Value);
 
-            Dictionary<string, TenantInfo> response = (Dictionary<string, TenantInfo>)okResult.Value;
+            Dictionary<string, TenantInfoResponse> response = (Dictionary<string, TenantInfoResponse>)okResult.Value;
             Assert.AreEqual(2, response.Count);
             Assert.IsTrue(response.ContainsKey("subtenant1"));
             Assert.IsTrue(response.ContainsKey("subtenant2"));
@@ -478,7 +478,7 @@ namespace ByteShelf.Tests
             OkObjectResult okResult = (OkObjectResult)result;
             Assert.IsNotNull(okResult.Value);
 
-            Dictionary<string, TenantInfo> response = (Dictionary<string, TenantInfo>)okResult.Value;
+            Dictionary<string, TenantInfoResponse> response = (Dictionary<string, TenantInfoResponse>)okResult.Value;
             Assert.AreEqual(0, response.Count);
         }
 
@@ -517,12 +517,11 @@ namespace ByteShelf.Tests
             OkObjectResult okResult = (OkObjectResult)result;
             Assert.IsNotNull(okResult.Value);
 
-            TenantInfo response = (TenantInfo)okResult.Value;
+            TenantInfoResponse response = (TenantInfoResponse)okResult.Value;
             Assert.AreEqual(subTenant.DisplayName, response.DisplayName);
-            Assert.AreEqual(subTenant.ApiKey, response.ApiKey);
             Assert.AreEqual(subTenant.StorageLimitBytes, response.StorageLimitBytes);
             Assert.AreEqual(subTenant.IsAdmin, response.IsAdmin);
-            Assert.AreEqual(subTenant.Parent, response.Parent);
+            // Note: ApiKey and Parent are not included in TenantInfoResponse for security
         }
 
         [TestMethod]
@@ -598,7 +597,7 @@ namespace ByteShelf.Tests
             OkObjectResult okResult = (OkObjectResult)result;
             Assert.IsNotNull(okResult.Value);
 
-            Dictionary<string, TenantInfo> response = (Dictionary<string, TenantInfo>)okResult.Value;
+            Dictionary<string, TenantInfoResponse> response = (Dictionary<string, TenantInfoResponse>)okResult.Value;
             Assert.AreEqual(2, response.Count);
             Assert.IsTrue(response.ContainsKey("subtenant1"));
             Assert.IsTrue(response.ContainsKey("subtenant2"));
@@ -634,7 +633,7 @@ namespace ByteShelf.Tests
             OkObjectResult okResult = (OkObjectResult)result;
             Assert.IsNotNull(okResult.Value);
 
-            Dictionary<string, TenantInfo> response = (Dictionary<string, TenantInfo>)okResult.Value;
+            Dictionary<string, TenantInfoResponse> response = (Dictionary<string, TenantInfoResponse>)okResult.Value;
             Assert.AreEqual(0, response.Count);
         }
 
@@ -739,10 +738,12 @@ namespace ByteShelf.Tests
             OkObjectResult okResult = (OkObjectResult)result;
             Assert.IsNotNull(okResult.Value);
 
-            Dictionary<string, TenantInfo> response = (Dictionary<string, TenantInfo>)okResult.Value;
+            Dictionary<string, TenantInfoResponse> response = (Dictionary<string, TenantInfoResponse>)okResult.Value;
             Assert.AreEqual(2, response.Count);
             Assert.IsTrue(response.ContainsKey("child1"));
             Assert.IsTrue(response.ContainsKey("child2"));
+            Assert.AreEqual("Child Subtenant 1", response["child1"].DisplayName);
+            Assert.AreEqual("Child Subtenant 2", response["child2"].DisplayName);
         }
 
         [TestMethod]
@@ -1448,6 +1449,249 @@ namespace ByteShelf.Tests
 
             // Assert
             _mockConfigService.Verify(c => c.DeleteSubTenantAsync(tenantId, subTenantId), Times.Once);
+        }
+
+        [TestMethod]
+        public async Task GetTenantInfo_DoesNotReturnApiKey()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            long currentUsage = 1024 * 1024 * 25; // 25MB
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockConfigService.Setup(c => c.GetTenant(tenantId)).Returns(_tenantConfig.Tenants[tenantId]);
+
+            // Act
+            IActionResult result = await _controller.GetTenantInfo(CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+            OkObjectResult okResult = (OkObjectResult)result;
+            Assert.IsNotNull(okResult.Value);
+
+            // Serialize to JSON to check for API key
+            string jsonResponse = System.Text.Json.JsonSerializer.Serialize(okResult.Value);
+            Assert.IsFalse(jsonResponse.Contains("ApiKey"), "API key should not be present in response");
+            Assert.IsFalse(jsonResponse.Contains("key1"), "API key value should not be present in response");
+        }
+
+        [TestMethod]
+        public async Task GetStorageInfo_DoesNotReturnApiKey()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            long currentUsage = 1024 * 1024 * 25; // 25MB
+            long storageLimit = 1024 * 1024 * 100; // 100MB
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockStorageService.Setup(s => s.GetStorageLimit(tenantId)).Returns(storageLimit);
+
+            // Act
+            IActionResult result = await _controller.GetStorageInfo(CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+            OkObjectResult okResult = (OkObjectResult)result;
+            Assert.IsNotNull(okResult.Value);
+
+            // Serialize to JSON to check for API key
+            string jsonResponse = System.Text.Json.JsonSerializer.Serialize(okResult.Value);
+            Assert.IsFalse(jsonResponse.Contains("ApiKey"), "API key should not be present in response");
+        }
+
+        [TestMethod]
+        public async Task GetSubTenants_DoesNotReturnApiKeys()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            Dictionary<string, TenantInfo> subTenants = new Dictionary<string, TenantInfo>
+            {
+                ["subtenant1"] = new TenantInfo
+                {
+                    ApiKey = "sub-key-1",
+                    DisplayName = "Sub Tenant 1",
+                    StorageLimitBytes = 1024 * 1024 * 50,
+                    IsAdmin = false
+                },
+                ["subtenant2"] = new TenantInfo
+                {
+                    ApiKey = "sub-key-2",
+                    DisplayName = "Sub Tenant 2",
+                    StorageLimitBytes = 1024 * 1024 * 100,
+                    IsAdmin = false
+                }
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.GetSubTenants(tenantId)).Returns(subTenants);
+
+            // Act
+            IActionResult result = await _controller.GetSubTenants(CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+            OkObjectResult okResult = (OkObjectResult)result;
+            Assert.IsNotNull(okResult.Value);
+
+            // Serialize to JSON to check for API keys
+            string jsonResponse = System.Text.Json.JsonSerializer.Serialize(okResult.Value);
+            Assert.IsFalse(jsonResponse.Contains("ApiKey"), "API keys should not be present in response");
+            Assert.IsFalse(jsonResponse.Contains("sub-key-1"), "API key values should not be present in response");
+            Assert.IsFalse(jsonResponse.Contains("sub-key-2"), "API key values should not be present in response");
+        }
+
+        [TestMethod]
+        public async Task GetSubTenant_DoesNotReturnApiKey()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "subtenant1";
+            TenantInfo subTenant = new TenantInfo
+            {
+                ApiKey = "sub-key",
+                DisplayName = "Sub Tenant",
+                StorageLimitBytes = 1024 * 1024 * 50,
+                IsAdmin = false
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.GetSubTenant(tenantId, subTenantId)).Returns(subTenant);
+
+            // Act
+            IActionResult result = await _controller.GetSubTenant(subTenantId, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+            OkObjectResult okResult = (OkObjectResult)result;
+            Assert.IsNotNull(okResult.Value);
+
+            // Serialize to JSON to check for API key
+            string jsonResponse = System.Text.Json.JsonSerializer.Serialize(okResult.Value);
+            Assert.IsFalse(jsonResponse.Contains("ApiKey"), "API key should not be present in response");
+            Assert.IsFalse(jsonResponse.Contains("sub-key"), "API key value should not be present in response");
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_DoesNotReturnApiKeys()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string parentSubtenantId = "parent-subtenant1";
+            Dictionary<string, TenantInfo> subTenants = new Dictionary<string, TenantInfo>
+            {
+                ["subtenant1"] = new TenantInfo
+                {
+                    ApiKey = "sub-key-1",
+                    DisplayName = "Sub Tenant 1",
+                    StorageLimitBytes = 1024 * 1024 * 50,
+                    IsAdmin = false
+                },
+                ["subtenant2"] = new TenantInfo
+                {
+                    ApiKey = "sub-key-2",
+                    DisplayName = "Sub Tenant 2",
+                    StorageLimitBytes = 1024 * 1024 * 100,
+                    IsAdmin = false
+                }
+            };
+
+            TenantInfo parentSubtenant = new TenantInfo
+            {
+                ApiKey = "parent-key",
+                DisplayName = "Parent Subtenant",
+                StorageLimitBytes = 1024 * 1024 * 200,
+                IsAdmin = false
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.GetSubTenant(tenantId, parentSubtenantId)).Returns(parentSubtenant);
+            _mockConfigService.Setup(c => c.GetSubTenants(parentSubtenantId)).Returns(subTenants);
+
+            // Act
+            IActionResult result = await _controller.GetSubTenantsUnderSubTenant(parentSubtenantId, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+            OkObjectResult okResult = (OkObjectResult)result;
+            Assert.IsNotNull(okResult.Value);
+
+            // Serialize to JSON to check for API keys
+            string jsonResponse = System.Text.Json.JsonSerializer.Serialize(okResult.Value);
+            Assert.IsFalse(jsonResponse.Contains("ApiKey"), "API keys should not be present in response");
+            Assert.IsFalse(jsonResponse.Contains("sub-key-1"), "API key values should not be present in response");
+            Assert.IsFalse(jsonResponse.Contains("sub-key-2"), "API key values should not be present in response");
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenant_DoesNotReturnApiKey()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string displayName = "New Subtenant";
+            string newSubTenantId = "new-subtenant-id";
+
+            CreateSubTenantRequest request = new CreateSubTenantRequest
+            {
+                DisplayName = displayName
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.CreateSubTenantAsync(tenantId, displayName))
+                .ReturnsAsync(newSubTenantId);
+
+            // Act
+            IActionResult result = await _controller.CreateSubTenant(request, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(CreatedAtActionResult));
+            CreatedAtActionResult createdResult = (CreatedAtActionResult)result;
+            Assert.IsNotNull(createdResult.Value);
+
+            // Serialize to JSON to check for API key
+            string jsonResponse = System.Text.Json.JsonSerializer.Serialize(createdResult.Value);
+            Assert.IsFalse(jsonResponse.Contains("ApiKey"), "API key should not be present in response");
+        }
+
+        [TestMethod]
+        public async Task CreateSubTenantUnderSubTenant_DoesNotReturnApiKey()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string parentSubtenantId = "parent-subtenant";
+            string displayName = "New Subtenant";
+            string newSubTenantId = "new-subtenant-id";
+
+            CreateSubTenantRequest request = new CreateSubTenantRequest
+            {
+                DisplayName = displayName
+            };
+
+            TenantInfo parentSubtenant = new TenantInfo
+            {
+                ApiKey = "parent-key",
+                DisplayName = "Parent Subtenant",
+                StorageLimitBytes = 1024 * 1024 * 100,
+                IsAdmin = false
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.GetSubTenant(tenantId, parentSubtenantId)).Returns(parentSubtenant);
+            _mockConfigService.Setup(c => c.CreateSubTenantAsync(parentSubtenantId, displayName))
+                .ReturnsAsync(newSubTenantId);
+
+            // Act
+            IActionResult result = await _controller.CreateSubTenantUnderSubTenant(parentSubtenantId, request, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(CreatedAtActionResult));
+            CreatedAtActionResult createdResult = (CreatedAtActionResult)result;
+            Assert.IsNotNull(createdResult.Value);
+
+            // Serialize to JSON to check for API key
+            string jsonResponse = System.Text.Json.JsonSerializer.Serialize(createdResult.Value);
+            Assert.IsFalse(jsonResponse.Contains("ApiKey"), "API key should not be present in response");
         }
     }
 }

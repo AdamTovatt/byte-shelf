@@ -417,7 +417,8 @@ foreach (var subTenant in subTenants)
 var subTenant = await provider.GetSubTenantAsync(subTenantId);
 Console.WriteLine($"Subtenant ID: {subTenantId}");
 Console.WriteLine($"Display Name: {subTenant.DisplayName}");
-Console.WriteLine($"API Key: {subTenant.ApiKey}");
+Console.WriteLine($"Storage Limit: {subTenant.StorageLimitBytes} bytes");
+Console.WriteLine($"Current Usage: {subTenant.CurrentUsageBytes} bytes");
 
 // Update subtenant storage limit
 long newLimit = 500 * 1024 * 1024; // 500MB

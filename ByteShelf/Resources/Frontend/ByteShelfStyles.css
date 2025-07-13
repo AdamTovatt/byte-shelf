@@ -1069,4 +1069,16 @@ header h1 {
     .file-actions {
         justify-content: center;
     }
+    
+    /* Keep folder items horizontal on mobile */
+    .folder-item {
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 12px;
+    }
+    
+    .folder-item .file-actions {
+        justify-content: flex-end;
+        margin-left: auto;
+    }
 } 

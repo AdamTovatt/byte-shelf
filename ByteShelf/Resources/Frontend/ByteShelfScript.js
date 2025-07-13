@@ -466,10 +466,88 @@ async function createFolder(event) {
     }
 }
 
-function showFolderActions(tenantId, folderName) {
-    // For now, just show a simple alert
-    // Later we can implement a proper context menu
-    showAlert(`Folder: ${folderName}\nTenant ID: ${tenantId}`, 'Folder Info');
+async function showFolderActions(tenantId, folderName) {
+    // Show a custom modal with folder info and delete button
+    const modal = document.getElementById('alert-modal');
+    const title = document.getElementById('alert-title');
+    const message = document.getElementById('alert-message');
+    const icon = document.getElementById('alert-icon');
+    const okBtn = document.getElementById('alert-ok-btn');
+    const cancelBtn = document.getElementById('alert-cancel-btn');
+    
+    title.textContent = 'Folder Info';
+    message.innerHTML = `
+        <div style="text-align: left; margin-bottom: 16px;">
+            <strong>Folder Name:</strong> ${folderName}<br>
+            <strong>Tenant ID:</strong> ${tenantId}
+        </div>
+        <div style="text-align: center;">
+            <button onclick="deleteSubtenant('${tenantId}', '${folderName}')" class="btn btn-danger" style="margin-right: 8px;">
+                Delete Folder
+            </button>
+            <button onclick="closeFolderModal()" class="btn btn-secondary">
+                Close
+            </button>
+        </div>
+    `;
+    icon.textContent = '📁';
+    icon.className = 'alert-icon info';
+    
+    // Hide the default OK button since we have custom buttons
+    okBtn.style.display = 'none';
+    cancelBtn.style.display = 'none';
+    
+    modal.style.display = 'flex';
+}
+
+function closeFolderModal() {
+    const modal = document.getElementById('alert-modal');
+    const okBtn = document.getElementById('alert-ok-btn');
+    const cancelBtn = document.getElementById('alert-cancel-btn');
+    
+    modal.style.display = 'none';
+    // Restore the default OK button for future use
+    okBtn.style.display = 'inline-block';
+    cancelBtn.style.display = 'none';
+}
+
+async function deleteSubtenant(tenantId, folderName) {
+    try {
+        // Show confirmation dialog
+        const confirmed = await showConfirm(
+            `Are you sure you want to delete the folder "${folderName}"?\n\nThis will permanently delete the folder and all its contents. This action cannot be undone.`,
+            'Delete Folder'
+        );
+        
+        if (!confirmed) {
+            return;
+        }
+        
+        // Delete the subtenant using fetch directly (like deleteFile does)
+        const deleteUrl = `${API_BASE}/api/tenant/subtenants/${tenantId}`;
+        const response = await fetch(deleteUrl, {
+            method: 'DELETE',
+            headers: {
+                'X-API-Key': currentApiKey
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Delete failed: ${response.statusText}`);
+        }
+        
+        // Close the modal
+        closeFolderModal();
+        
+        // Refresh the file list to show the updated folder list
+        await loadFiles();
+        
+        await showAlert(`Folder "${folderName}" has been deleted successfully.`, 'Folder Deleted', 'success');
+        
+    } catch (error) {
+        console.error('Failed to delete folder:', error);
+        await showAlert('Failed to delete folder: ' + error.message, 'Delete Failed', 'error');
+    }
 }
 
 function displayFiles(filesToDisplay) {
@@ -679,9 +757,23 @@ async function downloadFile(fileId) {
         const contentDisposition = response.headers.get('Content-Disposition');
         let filename = 'download';
         if (contentDisposition) {
-            const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+            // Try multiple patterns to extract filename
+            let filenameMatch = contentDisposition.match(/filename\*?=UTF-8''([^;]+)/);
             if (filenameMatch) {
-                filename = filenameMatch[1];
+                // Handle UTF-8 encoded filename
+                filename = decodeURIComponent(filenameMatch[1]);
+            } else {
+                // Try standard filename format
+                filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+                if (filenameMatch) {
+                    filename = filenameMatch[1];
+                } else {
+                    // Try filename without quotes
+                    filenameMatch = contentDisposition.match(/filename=([^;]+)/);
+                    if (filenameMatch) {
+                        filename = filenameMatch[1];
+                    }
+                }
             }
         }
         

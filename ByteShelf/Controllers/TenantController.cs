@@ -165,7 +165,7 @@ namespace ByteShelf.Controllers
         /// This endpoint returns all subtenants that belong to the authenticated tenant.
         /// </remarks>
         [HttpGet("subtenants")]
-        [ProducesResponseType(typeof(Dictionary<string, TenantInfo>), 200)]
+        [ProducesResponseType(typeof(Dictionary<string, TenantInfoResponse>), 200)]
         [ProducesResponseType(401)]
         public async Task<IActionResult> GetSubTenants(CancellationToken cancellationToken)
         {
@@ -174,7 +174,10 @@ namespace ByteShelf.Controllers
             string tenantId = HttpContext.GetTenantId();
             Dictionary<string, TenantInfo> subTenants = _tenantConfigurationService.GetSubTenants(tenantId);
 
-            return Ok(subTenants);
+            // Convert to TenantInfoResponse to avoid exposing API keys
+            Dictionary<string, TenantInfoResponse> response = subTenants.ToTenantInfoResponses(_storageService);
+
+            return Ok(response);
         }
 
         /// <summary>
@@ -190,7 +193,7 @@ namespace ByteShelf.Controllers
         /// This endpoint returns information about a specific subtenant that belongs to the authenticated tenant.
         /// </remarks>
         [HttpGet("subtenants/{subTenantId}")]
-        [ProducesResponseType(typeof(TenantInfo), 200)]
+        [ProducesResponseType(typeof(TenantInfoResponse), 200)]
         [ProducesResponseType(401)]
         [ProducesResponseType(404)]
         public async Task<IActionResult> GetSubTenant(string subTenantId, CancellationToken cancellationToken)
@@ -205,7 +208,10 @@ namespace ByteShelf.Controllers
                 return NotFound("Subtenant not found");
             }
 
-            return Ok(subTenant);
+            // Convert to TenantInfoResponse to avoid exposing API keys
+            TenantInfoResponse response = subTenant.ToTenantInfoResponse(subTenantId, _storageService);
+
+            return Ok(response);
         }
 
         /// <summary>
@@ -222,7 +228,7 @@ namespace ByteShelf.Controllers
         /// The authenticated tenant must have access to the parent subtenant.
         /// </remarks>
         [HttpGet("subtenants/{parentSubtenantId}/subtenants")]
-        [ProducesResponseType(typeof(Dictionary<string, TenantInfo>), 200)]
+        [ProducesResponseType(typeof(Dictionary<string, TenantInfoResponse>), 200)]
         [ProducesResponseType(401)]
         [ProducesResponseType(404)]
         public async Task<IActionResult> GetSubTenantsUnderSubTenant(string parentSubtenantId, CancellationToken cancellationToken)
@@ -241,7 +247,10 @@ namespace ByteShelf.Controllers
             // Get all subtenants under the parent subtenant
             Dictionary<string, TenantInfo> subTenants = _tenantConfigurationService.GetSubTenants(parentSubtenantId);
 
-            return Ok(subTenants);
+            // Convert to TenantInfoResponse to avoid exposing API keys
+            Dictionary<string, TenantInfoResponse> response = subTenants.ToTenantInfoResponses(_storageService);
+
+            return Ok(response);
         }
 
         /// <summary>

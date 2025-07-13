@@ -241,32 +241,32 @@ string nestedSubTenantId = await provider.CreateSubTenantUnderSubTenantAsync(par
 Console.WriteLine($"Created nested subtenant with ID: {nestedSubTenantId}");
 
 // List all subtenants
-Dictionary<string, TenantInfo> subTenants = await provider.GetSubTenantsAsync();
-foreach (KeyValuePair<string, TenantInfo> kvp in subTenants)
+Dictionary<string, TenantInfoResponse> subTenants = await provider.GetSubTenantsAsync();
+foreach (KeyValuePair<string, TenantInfoResponse> kvp in subTenants)
 {
     Console.WriteLine($"Subtenant: {kvp.Value.DisplayName}");
     Console.WriteLine($"  ID: {kvp.Key}");
-    Console.WriteLine($"  API Key: {kvp.Value.ApiKey}");
     Console.WriteLine($"  Storage Limit: {kvp.Value.StorageLimitBytes} bytes");
+    Console.WriteLine($"  Current Usage: {kvp.Value.CurrentUsageBytes} bytes");
 }
 
 // List subtenants under a specific subtenant (hierarchical folder browsing)
 string parentSubTenantId = "parent-subtenant-id";
-Dictionary<string, TenantInfo> nestedSubTenants = await provider.GetSubTenantsUnderSubTenantAsync(parentSubTenantId);
-foreach (KeyValuePair<string, TenantInfo> kvp in nestedSubTenants)
+Dictionary<string, TenantInfoResponse> nestedSubTenants = await provider.GetSubTenantsUnderSubTenantAsync(parentSubTenantId);
+foreach (KeyValuePair<string, TenantInfoResponse> kvp in nestedSubTenants)
 {
     Console.WriteLine($"Nested Subtenant: {kvp.Value.DisplayName}");
     Console.WriteLine($"  ID: {kvp.Key}");
-    Console.WriteLine($"  API Key: {kvp.Value.ApiKey}");
     Console.WriteLine($"  Storage Limit: {kvp.Value.StorageLimitBytes} bytes");
+    Console.WriteLine($"  Current Usage: {kvp.Value.CurrentUsageBytes} bytes");
 }
 
 // Get specific subtenant information
-TenantInfo subTenant = await provider.GetSubTenantAsync(subTenantId);
+TenantInfoResponse subTenant = await provider.GetSubTenantAsync(subTenantId);
 Console.WriteLine($"Subtenant Details:");
 Console.WriteLine($"  Display Name: {subTenant.DisplayName}");
-Console.WriteLine($"  API Key: {subTenant.ApiKey}");
 Console.WriteLine($"  Storage Limit: {subTenant.StorageLimitBytes} bytes");
+Console.WriteLine($"  Current Usage: {subTenant.CurrentUsageBytes} bytes");
 Console.WriteLine($"  Is Admin: {subTenant.IsAdmin}");
 
 // Update subtenant storage limit

@@ -700,14 +700,14 @@ namespace ByteShelfClient
         /// This method makes a GET request to the "/api/tenant/subtenants" endpoint.
         /// Returns an empty dictionary if the current tenant has no subtenants.
         /// </remarks>
-        public async Task<Dictionary<string, TenantInfo>> GetSubTenantsAsync(CancellationToken cancellationToken = default)
+        public async Task<Dictionary<string, TenantInfoResponse>> GetSubTenantsAsync(CancellationToken cancellationToken = default)
         {
-            Dictionary<string, TenantInfo>? response = await _httpClient.GetFromJsonAsync<Dictionary<string, TenantInfo>>(
+            Dictionary<string, TenantInfoResponse>? response = await _httpClient.GetFromJsonAsync<Dictionary<string, TenantInfoResponse>>(
                 NormalizePath("api/tenant/subtenants"),
                 _jsonOptions,
                 cancellationToken);
 
-            return response ?? new Dictionary<string, TenantInfo>();
+            return response ?? new Dictionary<string, TenantInfoResponse>();
         }
 
         /// <summary>
@@ -721,14 +721,14 @@ namespace ByteShelfClient
         /// <remarks>
         /// This method makes a GET request to the "/api/tenant/subtenants/{subTenantId}" endpoint.
         /// </remarks>
-        public async Task<TenantInfo> GetSubTenantAsync(string subTenantId, CancellationToken cancellationToken = default)
+        public async Task<TenantInfoResponse> GetSubTenantAsync(string subTenantId, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(subTenantId))
                 throw new ArgumentException("Subtenant ID cannot be null or empty", nameof(subTenantId));
 
             try
             {
-                TenantInfo? response = await _httpClient.GetFromJsonAsync<TenantInfo>(
+                TenantInfoResponse? response = await _httpClient.GetFromJsonAsync<TenantInfoResponse>(
                     NormalizePath($"api/tenant/subtenants/{subTenantId}"),
                     _jsonOptions,
                     cancellationToken);
@@ -758,19 +758,19 @@ namespace ByteShelfClient
         /// The authenticated tenant must have access to the parent subtenant.
         /// Returns an empty dictionary if the parent subtenant has no subtenants.
         /// </remarks>
-        public async Task<Dictionary<string, TenantInfo>> GetSubTenantsUnderSubTenantAsync(string parentSubtenantId, CancellationToken cancellationToken = default)
+        public async Task<Dictionary<string, TenantInfoResponse>> GetSubTenantsUnderSubTenantAsync(string parentSubtenantId, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(parentSubtenantId))
                 throw new ArgumentException("Parent subtenant ID cannot be null or empty", nameof(parentSubtenantId));
 
             try
             {
-                Dictionary<string, TenantInfo>? response = await _httpClient.GetFromJsonAsync<Dictionary<string, TenantInfo>>(
+                Dictionary<string, TenantInfoResponse>? response = await _httpClient.GetFromJsonAsync<Dictionary<string, TenantInfoResponse>>(
                     NormalizePath($"api/tenant/subtenants/{parentSubtenantId}/subtenants"),
                     _jsonOptions,
                     cancellationToken);
 
-                return response ?? new Dictionary<string, TenantInfo>();
+                return response ?? new Dictionary<string, TenantInfoResponse>();
             }
             catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
@@ -781,6 +781,8 @@ namespace ByteShelfClient
                 throw new UnauthorizedAccessException($"The requested subtenant does not exist or you do not have access to it.");
             }
         }
+
+
 
         /// <summary>
         /// Creates a new subtenant under the current tenant.
