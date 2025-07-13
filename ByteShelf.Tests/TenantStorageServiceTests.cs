@@ -38,6 +38,13 @@ namespace ByteShelf.Tests
                         StorageLimitBytes = 1024 * 1024 * 100, // 100MB
                         IsAdmin = false
                     },
+                    ["tenant2"] = new TenantInfo
+                    {
+                        ApiKey = "tenant2-key",
+                        DisplayName = "Tenant 2",
+                        StorageLimitBytes = 1024 * 1024 * 50, // 50MB
+                        IsAdmin = false
+                    },
                     ["admin"] = new TenantInfo
                     {
                         ApiKey = "admin-key",

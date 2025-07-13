@@ -73,7 +73,7 @@ namespace ByteShelf.Controllers
 
             foreach (KeyValuePair<string, TenantInfo> tenant in config.Tenants)
             {
-                long currentUsage = _storageService.GetCurrentUsage(tenant.Key);
+                long currentUsage = _storageService.GetTotalUsageIncludingSubTenants(tenant.Key);
                 long storageLimit = tenant.Value.StorageLimitBytes;
                 long availableSpace = Math.Max(0, storageLimit - currentUsage);
 
@@ -128,7 +128,7 @@ namespace ByteShelf.Controllers
                 return NotFound("Tenant not found");
             }
 
-            long currentUsage = _storageService.GetCurrentUsage(tenantId);
+            long currentUsage = _storageService.GetTotalUsageIncludingSubTenants(tenantId);
             long storageLimit = tenantInfo.StorageLimitBytes;
             long availableSpace = Math.Max(0, storageLimit - currentUsage);
 

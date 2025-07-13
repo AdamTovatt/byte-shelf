@@ -20,7 +20,7 @@ namespace ByteShelf.Extensions
             string tenantId,
             IStorageService storageService)
         {
-            long currentUsage = storageService.GetCurrentUsage(tenantId);
+            long currentUsage = storageService.GetTotalUsageIncludingSubTenants(tenantId);
             long storageLimit = tenantInfo.StorageLimitBytes;
             long availableSpace = Math.Max(0, storageLimit - currentUsage);
 

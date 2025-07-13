@@ -75,8 +75,8 @@ namespace ByteShelf.Controllers
                 return NotFound("Tenant not found");
             }
 
-            // Get storage information
-            long currentUsage = _storageService.GetCurrentUsage(tenantId);
+            // Get storage information including subtenants
+            long currentUsage = _storageService.GetTotalUsageIncludingSubTenants(tenantId);
             long storageLimit = tenantInfo.StorageLimitBytes;
             long availableSpace = Math.Max(0, storageLimit - currentUsage);
 
@@ -111,7 +111,7 @@ namespace ByteShelf.Controllers
             await Task.CompletedTask; // No async operations needed
 
             string tenantId = HttpContext.GetTenantId();
-            long currentUsage = _storageService.GetCurrentUsage(tenantId);
+            long currentUsage = _storageService.GetTotalUsageIncludingSubTenants(tenantId);
             long storageLimit = _storageService.GetStorageLimit(tenantId);
             long availableSpace = Math.Max(0, storageLimit - currentUsage);
 
@@ -146,7 +146,7 @@ namespace ByteShelf.Controllers
 
             string tenantId = HttpContext.GetTenantId();
             bool canStore = _storageService.CanStoreData(tenantId, fileSizeBytes);
-            long currentUsage = _storageService.GetCurrentUsage(tenantId);
+            long currentUsage = _storageService.GetTotalUsageIncludingSubTenants(tenantId);
             long storageLimit = _storageService.GetStorageLimit(tenantId);
             long availableSpace = Math.Max(0, storageLimit - currentUsage);
 

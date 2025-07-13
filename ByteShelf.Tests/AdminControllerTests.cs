@@ -63,9 +63,9 @@ namespace ByteShelf.Tests
             };
 
             _mockConfigService.Setup(c => c.GetConfiguration()).Returns(_tenantConfig);
-            _mockStorageService.Setup(s => s.GetCurrentUsage("tenant1")).Returns(1024 * 1024 * 25); // 25MB used
-            _mockStorageService.Setup(s => s.GetCurrentUsage("tenant2")).Returns(1024 * 1024 * 10); // 10MB used
-            _mockStorageService.Setup(s => s.GetCurrentUsage("admin")).Returns(1024 * 1024 * 5); // 5MB used
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants("tenant1")).Returns(1024 * 1024 * 25); // 25MB used
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants("tenant2")).Returns(1024 * 1024 * 10); // 10MB used
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants("admin")).Returns(1024 * 1024 * 5); // 5MB used
 
             _controller = new AdminController(_mockConfigService.Object, _mockStorageService.Object, _mockFileStorageService.Object);
             _controller.ControllerContext = new ControllerContext
@@ -483,6 +483,48 @@ namespace ByteShelf.Tests
         {
             _mockHttpContext.Object.Items["TenantId"] = "user";
             _mockHttpContext.Object.Items["IsAdmin"] = false;
+        }
+
+        [TestMethod]
+        public async Task GetTenants_UsesTotalUsageIncludingSubTenants()
+        {
+            // Arrange
+            SetupAdminUser();
+            long totalUsageIncludingSubTenants = 1024 * 1024 * 45; // 45MB total (including subtenants)
+
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants("tenant1")).Returns(totalUsageIncludingSubTenants);
+
+            // Act
+            IActionResult result = await _controller.GetTenants(CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+            OkObjectResult okResult = (OkObjectResult)result;
+            Assert.IsNotNull(okResult.Value);
+
+            // Verify that GetTotalUsageIncludingSubTenants was called
+            _mockStorageService.Verify(s => s.GetTotalUsageIncludingSubTenants("tenant1"), Times.Once);
+        }
+
+        [TestMethod]
+        public async Task GetTenant_UsesTotalUsageIncludingSubTenants()
+        {
+            // Arrange
+            SetupAdminUser();
+            long totalUsageIncludingSubTenants = 1024 * 1024 * 40; // 40MB total (including subtenants)
+
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants("tenant1")).Returns(totalUsageIncludingSubTenants);
+
+            // Act
+            IActionResult result = await _controller.GetTenant("tenant1", CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+            OkObjectResult okResult = (OkObjectResult)result;
+            Assert.IsNotNull(okResult.Value);
+
+            // Verify that GetTotalUsageIncludingSubTenants was called
+            _mockStorageService.Verify(s => s.GetTotalUsageIncludingSubTenants("tenant1"), Times.Once);
         }
     }
 }

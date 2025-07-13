@@ -106,7 +106,7 @@ namespace ByteShelf.Tests
             long storageLimit = 1024 * 1024 * 100; // 100MB
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
-            _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants(tenantId)).Returns(currentUsage);
             _mockConfigService.Setup(c => c.GetTenant(tenantId)).Returns(_tenantConfig.Tenants[tenantId]);
 
             // Act
@@ -137,7 +137,7 @@ namespace ByteShelf.Tests
             long currentUsage = 1024 * 1024 * 5; // 5MB
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
-            _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants(tenantId)).Returns(currentUsage);
             _mockConfigService.Setup(c => c.GetTenant(tenantId)).Returns(_tenantConfig.Tenants[tenantId]);
 
             // Act
@@ -193,7 +193,7 @@ namespace ByteShelf.Tests
             long currentUsage = 1024 * 1024 * 10; // 10MB
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
-            _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants(tenantId)).Returns(currentUsage);
             _mockConfigService.Setup(c => c.GetTenant(tenantId)).Returns(_tenantConfig.Tenants[tenantId]);
 
             // Act
@@ -201,7 +201,7 @@ namespace ByteShelf.Tests
 
             // Assert
             _mockConfigService.Verify(c => c.GetTenant(tenantId), Times.Once);
-            _mockStorageService.Verify(s => s.GetCurrentUsage(tenantId), Times.Once);
+            _mockStorageService.Verify(s => s.GetTotalUsageIncludingSubTenants(tenantId), Times.Once);
         }
 
         [TestMethod]
@@ -213,7 +213,7 @@ namespace ByteShelf.Tests
             long storageLimit = 1024 * 1024 * 100; // 100MB
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
-            _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants(tenantId)).Returns(currentUsage);
             _mockStorageService.Setup(s => s.GetStorageLimit(tenantId)).Returns(storageLimit);
 
             // Act
@@ -243,7 +243,7 @@ namespace ByteShelf.Tests
             long storageLimit = 0; // Unlimited
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
-            _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants(tenantId)).Returns(currentUsage);
             _mockStorageService.Setup(s => s.GetStorageLimit(tenantId)).Returns(storageLimit);
 
             // Act
@@ -273,7 +273,7 @@ namespace ByteShelf.Tests
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
             _mockStorageService.Setup(s => s.CanStoreData(tenantId, fileSize)).Returns(true);
-            _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants(tenantId)).Returns(currentUsage);
             _mockStorageService.Setup(s => s.GetStorageLimit(tenantId)).Returns(storageLimit);
 
             // Act
@@ -302,7 +302,7 @@ namespace ByteShelf.Tests
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
             _mockStorageService.Setup(s => s.CanStoreData(tenantId, fileSize)).Returns(false);
-            _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants(tenantId)).Returns(currentUsage);
             _mockStorageService.Setup(s => s.GetStorageLimit(tenantId)).Returns(storageLimit);
 
             // Act
@@ -331,7 +331,7 @@ namespace ByteShelf.Tests
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
             _mockStorageService.Setup(s => s.CanStoreData(tenantId, fileSize)).Returns(true);
-            _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants(tenantId)).Returns(currentUsage);
             _mockStorageService.Setup(s => s.GetStorageLimit(tenantId)).Returns(storageLimit);
 
             // Act
@@ -359,7 +359,7 @@ namespace ByteShelf.Tests
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
             _mockStorageService.Setup(s => s.CanStoreData(tenantId, fileSize)).Returns(true);
-            _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants(tenantId)).Returns(currentUsage);
             _mockStorageService.Setup(s => s.GetStorageLimit(tenantId)).Returns(storageLimit);
 
             // Act
@@ -372,6 +372,33 @@ namespace ByteShelf.Tests
 
             QuotaCheckResult response = (QuotaCheckResult)okResult.Value;
             Assert.AreEqual(fileSize, response.FileSizeBytes);
+        }
+
+        [TestMethod]
+        public async Task CanStoreFile_UsesTotalUsageIncludingSubTenants()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            long fileSize = 1024 * 1024 * 10; // 10MB
+            long totalUsageIncludingSubTenants = 1024 * 1024 * 50; // 50MB total (including subtenants)
+            long storageLimit = 1024 * 1024 * 100; // 100MB
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockStorageService.Setup(s => s.CanStoreData(tenantId, fileSize)).Returns(true);
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants(tenantId)).Returns(totalUsageIncludingSubTenants);
+            _mockStorageService.Setup(s => s.GetStorageLimit(tenantId)).Returns(storageLimit);
+
+            // Act
+            IActionResult result = await _controller.CanStoreFile(fileSize, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+            OkObjectResult okResult = (OkObjectResult)result;
+            Assert.IsNotNull(okResult.Value);
+
+            QuotaCheckResult response = (QuotaCheckResult)okResult.Value;
+            Assert.AreEqual(totalUsageIncludingSubTenants, response.CurrentUsageBytes, "Should use total usage including subtenants");
+            Assert.AreEqual(storageLimit - totalUsageIncludingSubTenants, response.AvailableSpaceBytes, "Should calculate available space based on total usage");
         }
 
         [TestMethod]
@@ -405,14 +432,14 @@ namespace ByteShelf.Tests
             long storageLimit = 1024 * 1024 * 100;
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
-            _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants(tenantId)).Returns(currentUsage);
             _mockStorageService.Setup(s => s.GetStorageLimit(tenantId)).Returns(storageLimit);
 
             // Act
             await _controller.GetStorageInfo(CancellationToken.None);
 
             // Assert
-            _mockStorageService.Verify(s => s.GetCurrentUsage(tenantId), Times.Once);
+            _mockStorageService.Verify(s => s.GetTotalUsageIncludingSubTenants(tenantId), Times.Once);
             _mockStorageService.Verify(s => s.GetStorageLimit(tenantId), Times.Once);
         }
 
@@ -427,7 +454,7 @@ namespace ByteShelf.Tests
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
             _mockStorageService.Setup(s => s.CanStoreData(tenantId, fileSize)).Returns(true);
-            _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants(tenantId)).Returns(currentUsage);
             _mockStorageService.Setup(s => s.GetStorageLimit(tenantId)).Returns(storageLimit);
 
             // Act
@@ -435,7 +462,7 @@ namespace ByteShelf.Tests
 
             // Assert
             _mockStorageService.Verify(s => s.CanStoreData(tenantId, fileSize), Times.Once);
-            _mockStorageService.Verify(s => s.GetCurrentUsage(tenantId), Times.Once);
+            _mockStorageService.Verify(s => s.GetTotalUsageIncludingSubTenants(tenantId), Times.Once);
             _mockStorageService.Verify(s => s.GetStorageLimit(tenantId), Times.Once);
         }
 
@@ -1618,7 +1645,7 @@ namespace ByteShelf.Tests
             long currentUsage = 1024 * 1024 * 25; // 25MB
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
-            _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants(tenantId)).Returns(currentUsage);
             _mockConfigService.Setup(c => c.GetTenant(tenantId)).Returns(_tenantConfig.Tenants[tenantId]);
 
             // Act
@@ -1636,6 +1663,30 @@ namespace ByteShelf.Tests
         }
 
         [TestMethod]
+        public async Task GetTenantInfo_UsesTotalUsageIncludingSubTenants()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            long totalUsageIncludingSubTenants = 1024 * 1024 * 35; // 35MB total (including subtenants)
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants(tenantId)).Returns(totalUsageIncludingSubTenants);
+            _mockConfigService.Setup(c => c.GetTenant(tenantId)).Returns(_tenantConfig.Tenants[tenantId]);
+
+            // Act
+            IActionResult result = await _controller.GetTenantInfo(CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+            OkObjectResult okResult = (OkObjectResult)result;
+            Assert.IsNotNull(okResult.Value);
+
+            TenantInfoResponse response = (TenantInfoResponse)okResult.Value;
+            Assert.AreEqual(totalUsageIncludingSubTenants, response.CurrentUsageBytes, "Should use total usage including subtenants");
+            Assert.AreEqual(35.0, response.UsagePercentage, "Should calculate percentage based on total usage");
+        }
+
+        [TestMethod]
         public async Task GetStorageInfo_DoesNotReturnApiKey()
         {
             // Arrange
@@ -1644,7 +1695,7 @@ namespace ByteShelf.Tests
             long storageLimit = 1024 * 1024 * 100; // 100MB
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
-            _mockStorageService.Setup(s => s.GetCurrentUsage(tenantId)).Returns(currentUsage);
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants(tenantId)).Returns(currentUsage);
             _mockStorageService.Setup(s => s.GetStorageLimit(tenantId)).Returns(storageLimit);
 
             // Act
@@ -1658,6 +1709,32 @@ namespace ByteShelf.Tests
             // Serialize to JSON to check for API key
             string jsonResponse = System.Text.Json.JsonSerializer.Serialize(okResult.Value);
             Assert.IsFalse(jsonResponse.Contains("ApiKey"), "API key should not be present in response");
+        }
+
+        [TestMethod]
+        public async Task GetStorageInfo_UsesTotalUsageIncludingSubTenants()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            long totalUsageIncludingSubTenants = 1024 * 1024 * 45; // 45MB total (including subtenants)
+            long storageLimit = 1024 * 1024 * 100; // 100MB
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockStorageService.Setup(s => s.GetTotalUsageIncludingSubTenants(tenantId)).Returns(totalUsageIncludingSubTenants);
+            _mockStorageService.Setup(s => s.GetStorageLimit(tenantId)).Returns(storageLimit);
+
+            // Act
+            IActionResult result = await _controller.GetStorageInfo(CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+            OkObjectResult okResult = (OkObjectResult)result;
+            Assert.IsNotNull(okResult.Value);
+
+            TenantStorageInfo response = (TenantStorageInfo)okResult.Value;
+            Assert.AreEqual(totalUsageIncludingSubTenants, response.CurrentUsageBytes, "Should use total usage including subtenants");
+            Assert.AreEqual(45.0, response.UsagePercentage, "Should calculate percentage based on total usage");
+            Assert.AreEqual(storageLimit - totalUsageIncludingSubTenants, response.AvailableSpaceBytes, "Should calculate available space based on total usage");
         }
 
         [TestMethod]
