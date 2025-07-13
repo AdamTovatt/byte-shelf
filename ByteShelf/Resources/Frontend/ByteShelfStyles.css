@@ -178,6 +178,20 @@ body {
     width: 100%;
 }
 
+.title-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 10px;
+}
+
+.title-icon {
+    width: 256px;
+    height: 256px;
+}
+
 .auth-form h1 {
     color: light-dark(var(--light-text-color), var(--dark-text-color));
     margin-bottom: 10px;
