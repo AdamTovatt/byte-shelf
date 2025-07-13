@@ -185,6 +185,8 @@ namespace ByteShelf.Services
         /// This method scans all tenant metadata directories to recalculate usage
         /// from actual stored files. This is useful for correcting inconsistencies
         /// or after manual file operations outside the normal API.
+        /// The method validates against the tenant configuration to ensure only
+        /// valid tenants are included in the cache.
         /// </remarks>
         public void RebuildUsageCache()
         {
@@ -394,6 +396,9 @@ namespace ByteShelf.Services
                 // Then rebuild usage from actual metadata files
                 Dictionary<string, long> actualUsage = RebuildUsageFromMetadata();
 
+                // Get all valid tenant IDs from configuration
+                HashSet<string> validTenantIds = GetAllValidTenantIds();
+
                 // Merge the data, preferring actual usage but keeping cached data for tenants with no files
                 lock (_usageLock)
                 {
@@ -406,9 +411,10 @@ namespace ByteShelf.Services
                     }
 
                     // Add tenants from cache that don't have files (preserve zero usage)
+                    // but only if they still exist in the configuration
                     foreach (KeyValuePair<string, long> kvp in cachedUsage)
                     {
-                        if (!_usageCache.ContainsKey(kvp.Key))
+                        if (!_usageCache.ContainsKey(kvp.Key) && validTenantIds.Contains(kvp.Key))
                         {
                             _usageCache[kvp.Key] = kvp.Value;
                         }
@@ -470,12 +476,23 @@ namespace ByteShelf.Services
                     return usage;
                 }
 
+                // Get all valid tenant IDs from configuration
+                HashSet<string> validTenantIds = GetAllValidTenantIds();
+
                 // Get all tenant directories
                 string[] tenantDirectories = Directory.GetDirectories(_storagePath);
 
                 foreach (string tenantDir in tenantDirectories)
                 {
                     string tenantId = Path.GetFileName(tenantDir);
+                    
+                    // Skip tenants that are no longer in the configuration
+                    if (!validTenantIds.Contains(tenantId))
+                    {
+                        _logger.LogDebug("Skipping tenant {TenantId} as it no longer exists in configuration", tenantId);
+                        continue;
+                    }
+
                     string metadataPath = Path.Combine(tenantDir, "metadata");
 
                     if (!Directory.Exists(metadataPath))
@@ -520,6 +537,40 @@ namespace ByteShelf.Services
             }
 
             return usage;
+        }
+
+        /// <summary>
+        /// Gets all valid tenant IDs from the configuration, including subtenants.
+        /// </summary>
+        /// <returns>A set of all valid tenant IDs.</returns>
+        private HashSet<string> GetAllValidTenantIds()
+        {
+            HashSet<string> validTenantIds = new HashSet<string>();
+            TenantConfiguration config = _configService.GetConfiguration();
+
+            // Add all root tenants
+            foreach (string tenantId in config.Tenants.Keys)
+            {
+                validTenantIds.Add(tenantId);
+                AddSubTenantIds(tenantId, config.Tenants[tenantId], validTenantIds);
+            }
+
+            return validTenantIds;
+        }
+
+        /// <summary>
+        /// Recursively adds all subtenant IDs to the provided set.
+        /// </summary>
+        /// <param name="parentId">The parent tenant ID.</param>
+        /// <param name="tenant">The tenant information.</param>
+        /// <param name="validTenantIds">The set to add tenant IDs to.</param>
+        private void AddSubTenantIds(string parentId, TenantInfo tenant, HashSet<string> validTenantIds)
+        {
+            foreach (KeyValuePair<string, TenantInfo> subTenant in tenant.SubTenants)
+            {
+                validTenantIds.Add(subTenant.Key);
+                AddSubTenantIds(subTenant.Key, subTenant.Value, validTenantIds);
+            }
         }
 
         /// <summary>

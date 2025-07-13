@@ -104,5 +104,14 @@ namespace ByteShelf.Services
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
         /// <returns>The total number of files that were deleted across all tenants.</returns>
         Task<int> DeleteAllFilesRecursivelyAsync(string tenantId, IEnumerable<string> descendantTenantIds, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Cleans up empty directories for a tenant and all its descendant tenants.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
+        /// <param name="descendantTenantIds">The IDs of all descendant tenants to clean up directories for.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>The number of directories that were removed.</returns>
+        Task<int> CleanupEmptyDirectoriesAsync(string tenantId, IEnumerable<string> descendantTenantIds, CancellationToken cancellationToken = default);
     }
 }

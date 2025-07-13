@@ -458,6 +458,11 @@ namespace ByteShelf.Controllers
                 int deletedFiles = await _fileStorageService.DeleteAllFilesRecursivelyAsync(subTenantId, descendantTenantIds, cancellationToken);
                 _logger.LogInformation("Deleted {DeletedFiles} files for subtenant {SubTenantId} and its {DescendantCount} descendants", 
                     deletedFiles, subTenantId, descendantTenantIds.Count());
+
+                // Clean up empty directories
+                int removedDirectories = await _fileStorageService.CleanupEmptyDirectoriesAsync(subTenantId, descendantTenantIds, cancellationToken);
+                _logger.LogInformation("Cleaned up {RemovedDirectories} empty directories for subtenant {SubTenantId} and its {DescendantCount} descendants", 
+                    removedDirectories, subTenantId, descendantTenantIds.Count());
             }
             catch (Exception ex)
             {

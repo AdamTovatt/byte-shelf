@@ -339,6 +339,132 @@ namespace ByteShelf.Services
         }
 
         /// <inheritdoc/>
+        public async Task<int> CleanupEmptyDirectoriesAsync(string tenantId, IEnumerable<string> descendantTenantIds, CancellationToken cancellationToken = default)
+        {
+            ValidateTenantId(tenantId);
+
+            int totalRemovedCount = 0;
+
+            // Clean up directories for the main tenant
+            int mainTenantRemovedCount = await CleanupEmptyDirectoriesForTenantAsync(tenantId, cancellationToken);
+            totalRemovedCount += mainTenantRemovedCount;
+
+            _logger.LogInformation("Cleaned up {RemovedCount} empty directories for tenant {TenantId}", mainTenantRemovedCount, tenantId);
+
+            // Clean up directories for all descendant tenants
+            foreach (string descendantTenantId in descendantTenantIds)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                    break;
+
+                try
+                {
+                    ValidateTenantId(descendantTenantId);
+                    int descendantRemovedCount = await CleanupEmptyDirectoriesForTenantAsync(descendantTenantId, cancellationToken);
+                    totalRemovedCount += descendantRemovedCount;
+
+                    _logger.LogInformation("Cleaned up {RemovedCount} empty directories for descendant tenant {DescendantTenantId}", descendantRemovedCount, descendantTenantId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to clean up empty directories for descendant tenant {DescendantTenantId}", descendantTenantId);
+                    // Continue with other descendants even if one fails
+                }
+            }
+
+            _logger.LogInformation("Total cleaned up {TotalRemovedCount} empty directories across {TenantCount} tenants (including {DescendantCount} descendants)", 
+                totalRemovedCount, 1 + descendantTenantIds.Count(), descendantTenantIds.Count());
+
+            return totalRemovedCount;
+        }
+
+        /// <summary>
+        /// Cleans up empty directories for a specific tenant.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>The number of directories that were removed.</returns>
+        private async Task<int> CleanupEmptyDirectoriesForTenantAsync(string tenantId, CancellationToken cancellationToken = default)
+        {
+            await Task.CompletedTask; // No async operations needed
+
+            int removedCount = 0;
+            string tenantPath = Path.Combine(_storagePath, tenantId);
+
+            if (!Directory.Exists(tenantPath))
+            {
+                return removedCount;
+            }
+
+            // Clean up metadata directory
+            string metadataPath = GetTenantMetadataPath(tenantId);
+            if (Directory.Exists(metadataPath) && IsDirectoryEmpty(metadataPath))
+            {
+                try
+                {
+                    Directory.Delete(metadataPath);
+                    _logger.LogDebug("Removed empty metadata directory for tenant {TenantId}", tenantId);
+                    removedCount++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to remove empty metadata directory for tenant {TenantId}", tenantId);
+                }
+            }
+
+            // Clean up binary directory
+            string binPath = GetTenantBinPath(tenantId);
+            if (Directory.Exists(binPath) && IsDirectoryEmpty(binPath))
+            {
+                try
+                {
+                    Directory.Delete(binPath);
+                    _logger.LogDebug("Removed empty binary directory for tenant {TenantId}", tenantId);
+                    removedCount++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to remove empty binary directory for tenant {TenantId}", tenantId);
+                }
+            }
+
+            // If both subdirectories are gone and the tenant directory is empty, remove it too
+            if (Directory.Exists(tenantPath) && IsDirectoryEmpty(tenantPath))
+            {
+                try
+                {
+                    Directory.Delete(tenantPath);
+                    _logger.LogDebug("Removed empty tenant directory {TenantId}", tenantId);
+                    removedCount++;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to remove empty tenant directory {TenantId}", tenantId);
+                }
+            }
+
+            return removedCount;
+        }
+
+        /// <summary>
+        /// Checks if a directory is empty (contains no files or subdirectories).
+        /// </summary>
+        /// <param name="directoryPath">The path to the directory to check.</param>
+        /// <returns>True if the directory is empty; otherwise, false.</returns>
+        private static bool IsDirectoryEmpty(string directoryPath)
+        {
+            try
+            {
+                return !Directory.EnumerateFileSystemEntries(directoryPath).Any();
+            }
+            catch
+            {
+                // If we can't enumerate the directory, assume it's not empty
+                return false;
+            }
+        }
+
+        /// <inheritdoc/>
         public async Task<Stream> GetFileStreamAsync(string tenantId, Guid fileId, CancellationToken cancellationToken = default)
         {
             ValidateTenantId(tenantId);

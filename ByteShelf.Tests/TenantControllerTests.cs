@@ -1582,6 +1582,35 @@ namespace ByteShelf.Tests
         }
 
         [TestMethod]
+        public async Task DeleteSubTenant_CleansUpEmptyDirectories_WhenSubTenantExists()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "subtenant1";
+            string[] descendantIds = { "descendant1", "descendant2" };
+            TenantInfo subTenant = new TenantInfo { DisplayName = "Test Subtenant" };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.HasAccessToTenant(tenantId, subTenantId)).Returns(true);
+            _mockConfigService.Setup(c => c.GetTenant(subTenantId)).Returns(subTenant);
+            _mockConfigService.Setup(c => c.GetAllDescendantTenantIds(subTenantId)).Returns(descendantIds);
+            _mockConfigService.Setup(c => c.DeleteSubTenantAsync(tenantId, subTenantId)).ReturnsAsync(true);
+            _mockFileStorageService.Setup(f => f.DeleteAllFilesRecursivelyAsync(subTenantId, descendantIds, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(5);
+            _mockFileStorageService.Setup(f => f.CleanupEmptyDirectoriesAsync(subTenantId, descendantIds, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(3);
+
+            // Act
+            IActionResult result = await _controller.DeleteSubTenant(subTenantId, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkResult));
+            _mockFileStorageService.Verify(f => f.DeleteAllFilesRecursivelyAsync(subTenantId, descendantIds, It.IsAny<CancellationToken>()), Times.Once);
+            _mockFileStorageService.Verify(f => f.CleanupEmptyDirectoriesAsync(subTenantId, descendantIds, It.IsAny<CancellationToken>()), Times.Once);
+            _mockConfigService.Verify(c => c.DeleteSubTenantAsync(tenantId, subTenantId), Times.Once);
+        }
+
+        [TestMethod]
         public async Task GetTenantInfo_DoesNotReturnApiKey()
         {
             // Arrange
