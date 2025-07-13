@@ -71,6 +71,22 @@
     --slight-outline-alpha: 0.3;
 }
 
+/* Magic card colors */
+:root {
+    --clr-1: #052b2f;
+    --clr-2: #073438;
+    --clr-3: #0e4b50;
+    --clr-4: #2d8f85;
+    --clr-5: #637c54;
+}
+
+/* CSS Custom Property for gradient animation */
+@property --gradient-angle {
+    syntax: "<angle>";
+    initial-value: 0deg;
+    inherits: false;
+}
+
 /* Forced theme overrides */
 :root[data-theme="light"] {
     color-scheme: light;
@@ -171,11 +187,51 @@ body {
     text-align: center;
 }
 
+.auth-form-wrapper {
+    margin-top: 20px;
+    position: relative;
+    background: conic-gradient(
+        from var(--gradient-angle),
+        #667eea,
+        #764ba2,
+        #667eea,
+        #764ba2,
+        #667eea
+    );
+    border-radius: 8px;
+    padding: 0.1rem;
+    animation: rotation 20s linear infinite;
+    box-shadow: 0 0 20px rgba(102, 126, 234, 0.3);
+}
+
+.auth-form-wrapper::after {
+    content: "";
+    position: absolute;
+    inset: -0.5rem;
+    z-index: -1;
+    background: conic-gradient(
+        from var(--gradient-angle),
+        #667eea,
+        #764ba2,
+        #667eea,
+        #764ba2,
+        #667eea
+    );
+    border-radius: inherit;
+    animation: rotation 20s linear infinite;
+    filter: blur(3.5rem);
+}
+
 .auth-form {
     --elevation: 2;
     padding: 40px;
     max-width: 400px;
     width: 100%;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
 }
 
 .title-container {
@@ -190,6 +246,7 @@ body {
 .title-icon {
     width: 256px;
     height: 256px;
+    filter: drop-shadow(0 0 20px rgba(99, 44, 156, 0.4)) drop-shadow(0 0 40px rgba(99, 44, 156, 0.2));
 }
 
 .auth-form h1 {
@@ -209,6 +266,7 @@ body {
     display: block;
     text-align: left;
     margin-bottom: 8px;
+    padding-left: 4px;
     font-weight: 500;
     color: light-dark(var(--light-text-color), var(--dark-text-color));
 }
@@ -221,7 +279,7 @@ body {
     font-size: 16px;
     transition: border-color 0.3s ease;
     margin-bottom: 20px;
-    background-color: light-dark(var(--light-background-color), var(--dark-background-color));
+    background-color: light-dark(rgba(242, 246, 250, 0.75), rgba(13, 18, 25, 0.75));
     color: light-dark(var(--light-text-color), var(--dark-text-color));
 }
 
@@ -1133,5 +1191,14 @@ header h1 {
     .folder-item .file-actions {
         justify-content: flex-end;
         margin-left: auto;
+    }
+}
+
+@keyframes rotation {
+    0% {
+        --gradient-angle: 0deg;
+    }
+    100% {
+        --gradient-angle: 360deg;
     }
 } 

@@ -16,10 +16,12 @@
                     <img src="favicon.ico" alt="ByteShelf" class="title-icon">
                 </div>
                 
-                <div class="auth-form elevation-element soft-corner">
-                    <label for="api-key">API Key:</label>
-                    <input type="password" id="api-key" placeholder="Enter your API key">
-                    <button id="authenticate-btn" onclick="authenticate()">Authenticate</button>
+                <div class="auth-form-wrapper">
+                    <div class="auth-form elevation-element soft-corner">
+                        <label for="api-key">API Key:</label>
+                        <input type="password" id="api-key" placeholder="Enter your API key">
+                        <button id="authenticate-btn" onclick="authenticate()">Authenticate</button>
+                    </div>
                 </div>
                 
                 <div id="auth-error" class="error-message" style="display: none;"></div>
