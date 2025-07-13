@@ -783,11 +783,11 @@ namespace ByteShelfClient
 
             try
             {
-                // Parse the response to get the tenant ID
-                Dictionary<string, object>? result = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>(_jsonOptions, cancellationToken);
-                if (result != null && result.TryGetValue("tenantId", out object? tenantIdObj))
+                // Parse the response using the proper typed response class
+                CreateSubTenantResponse? result = await response.Content.ReadFromJsonAsync<CreateSubTenantResponse>(_jsonOptions, cancellationToken);
+                if (result != null)
                 {
-                    return tenantIdObj.ToString() ?? string.Empty;
+                    return result.TenantId;
                 }
             }
             catch (System.Text.Json.JsonException ex)
@@ -848,14 +848,14 @@ namespace ByteShelfClient
 
             try
             {
-                // Parse the response to get the tenant ID
-                Dictionary<string, object>? result = await response.Content.ReadFromJsonAsync<Dictionary<string, object>>(_jsonOptions, cancellationToken);
-                if (result != null && result.TryGetValue("tenantId", out object? tenantIdObj))
+                // Parse the response using the proper typed response class
+                CreateSubTenantResponse? result = await response.Content.ReadFromJsonAsync<CreateSubTenantResponse>(_jsonOptions, cancellationToken);
+                if (result != null)
                 {
-                    return tenantIdObj.ToString() ?? string.Empty;
+                    return result.TenantId;
                 }
             }
-            catch (System.Text.Json.JsonException ex)
+            catch (JsonException ex)
             {
                 throw new HttpRequestException("Failed to parse create subtenant response", ex);
             }

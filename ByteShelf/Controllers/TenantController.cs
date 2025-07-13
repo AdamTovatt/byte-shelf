@@ -223,7 +223,7 @@ namespace ByteShelf.Controllers
         /// The subtenant will have a unique ID and API key generated automatically.
         /// </remarks>
         [HttpPost("subtenants")]
-        [ProducesResponseType(typeof(object), 201)]
+        [ProducesResponseType(typeof(CreateSubTenantResponse), 201)]
         [ProducesResponseType(400)]
         [ProducesResponseType(401)]
         [ProducesResponseType(409)]
@@ -271,7 +271,7 @@ namespace ByteShelf.Controllers
         /// The authenticated tenant must have access to the parent subtenant.
         /// </remarks>
         [HttpPost("subtenants/{parentSubtenantId}/subtenants")]
-        [ProducesResponseType(typeof(object), 201)]
+        [ProducesResponseType(typeof(CreateSubTenantResponse), 201)]
         [ProducesResponseType(400)]
         [ProducesResponseType(401)]
         [ProducesResponseType(404)]
