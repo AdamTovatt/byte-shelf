@@ -250,6 +250,17 @@ foreach (KeyValuePair<string, TenantInfo> kvp in subTenants)
     Console.WriteLine($"  Storage Limit: {kvp.Value.StorageLimitBytes} bytes");
 }
 
+// List subtenants under a specific subtenant (hierarchical folder browsing)
+string parentSubTenantId = "parent-subtenant-id";
+Dictionary<string, TenantInfo> nestedSubTenants = await provider.GetSubTenantsUnderSubTenantAsync(parentSubTenantId);
+foreach (KeyValuePair<string, TenantInfo> kvp in nestedSubTenants)
+{
+    Console.WriteLine($"Nested Subtenant: {kvp.Value.DisplayName}");
+    Console.WriteLine($"  ID: {kvp.Key}");
+    Console.WriteLine($"  API Key: {kvp.Value.ApiKey}");
+    Console.WriteLine($"  Storage Limit: {kvp.Value.StorageLimitBytes} bytes");
+}
+
 // Get specific subtenant information
 TenantInfo subTenant = await provider.GetSubTenantAsync(subTenantId);
 Console.WriteLine($"Subtenant Details:");
@@ -327,6 +338,7 @@ else
 - `CreateSubTenantUnderSubTenantAsync(string parentSubtenantId, string displayName)` - Create a new subtenant under a specific subtenant (hierarchical folder creation)
 - `GetSubTenantsAsync()` - List all subtenants
 - `GetSubTenantAsync(string subTenantId)` - Get specific subtenant information
+- `GetSubTenantsUnderSubTenantAsync(string parentSubtenantId)` - List all subtenants under a specific subtenant (hierarchical folder browsing)
 - `UpdateSubTenantStorageLimitAsync(string subTenantId, long storageLimitBytes)` - Update subtenant storage limit
 - `DeleteSubTenantAsync(string subTenantId)` - Delete a subtenant
 

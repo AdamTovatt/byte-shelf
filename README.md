@@ -215,6 +215,7 @@ dotnet test ByteShelf.Integration.Tests
 - `POST /api/tenant/subtenants/{parentSubtenantId}/subtenants` - Create a new subtenant under a specific subtenant (hierarchical folder creation)
 - `GET /api/tenant/subtenants` - List all subtenants of the authenticated tenant
 - `GET /api/tenant/subtenants/{subTenantId}` - Get information about a specific subtenant
+- `GET /api/tenant/subtenants/{parentSubtenantId}/subtenants` - List all subtenants under a specific subtenant (hierarchical folder browsing)
 - `PUT /api/tenant/subtenants/{subTenantId}/storage-limit` - Update subtenant storage limit
 - `DELETE /api/tenant/subtenants/{subTenantId}` - Delete a subtenant
 

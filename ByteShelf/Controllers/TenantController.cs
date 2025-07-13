@@ -209,6 +209,42 @@ namespace ByteShelf.Controllers
         }
 
         /// <summary>
+        /// Gets all subtenants under a specific subtenant.
+        /// </summary>
+        /// <param name="parentSubtenantId">The parent subtenant ID.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>List of subtenants under the specified parent subtenant.</returns>
+        /// <response code="200">Returns the list of subtenants.</response>
+        /// <response code="401">If the API key is invalid or missing.</response>
+        /// <response code="404">If the parent subtenant is not found.</response>
+        /// <remarks>
+        /// This endpoint returns all subtenants that belong to a specific subtenant.
+        /// The authenticated tenant must have access to the parent subtenant.
+        /// </remarks>
+        [HttpGet("subtenants/{parentSubtenantId}/subtenants")]
+        [ProducesResponseType(typeof(Dictionary<string, TenantInfo>), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(404)]
+        public async Task<IActionResult> GetSubTenantsUnderSubTenant(string parentSubtenantId, CancellationToken cancellationToken)
+        {
+            await Task.CompletedTask; // No async operations needed
+
+            string tenantId = HttpContext.GetTenantId();
+            
+            // Verify the parent subtenant exists and the authenticated tenant has access to it
+            TenantInfo? parentSubtenant = _tenantConfigurationService.GetSubTenant(tenantId, parentSubtenantId);
+            if (parentSubtenant == null)
+            {
+                return NotFound("Parent subtenant not found");
+            }
+
+            // Get all subtenants under the parent subtenant
+            Dictionary<string, TenantInfo> subTenants = _tenantConfigurationService.GetSubTenants(parentSubtenantId);
+
+            return Ok(subTenants);
+        }
+
+        /// <summary>
         /// Creates a new subtenant under the authenticated tenant.
         /// </summary>
         /// <param name="request">The subtenant creation request.</param>

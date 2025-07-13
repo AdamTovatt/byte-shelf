@@ -354,6 +354,109 @@ namespace ByteShelfClient.Tests
         }
 
         [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_WithValidResponse_ReturnsSubTenants()
+        {
+            // Arrange
+            string parentSubtenantId = "parent-subtenant1";
+            Dictionary<string, TenantInfo> expectedSubTenants = new Dictionary<string, TenantInfo>
+            {
+                ["subtenant1"] = new TenantInfo
+                {
+                    ApiKey = "sub-key-1",
+                    DisplayName = "Sub Tenant 1",
+                    StorageLimitBytes = 1024 * 1024 * 50,
+                    IsAdmin = false
+                },
+                ["subtenant2"] = new TenantInfo
+                {
+                    ApiKey = "sub-key-2",
+                    DisplayName = "Sub Tenant 2",
+                    StorageLimitBytes = 1024 * 1024 * 100,
+                    IsAdmin = false
+                }
+            };
+
+            string jsonResponse = JsonSerializer.Serialize(expectedSubTenants);
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{parentSubtenantId}/subtenants", jsonResponse);
+
+            // Act
+            Dictionary<string, TenantInfo> result = await _provider.GetSubTenantsUnderSubTenantAsync(parentSubtenantId);
+
+            // Assert
+            Assert.IsNotNull(result);
+            Assert.AreEqual(2, result.Count);
+            Assert.IsTrue(result.ContainsKey("subtenant1"));
+            Assert.IsTrue(result.ContainsKey("subtenant2"));
+            Assert.AreEqual("Sub Tenant 1", result["subtenant1"].DisplayName);
+            Assert.AreEqual("Sub Tenant 2", result["subtenant2"].DisplayName);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_WithEmptyResponse_ReturnsEmptyDictionary()
+        {
+            // Arrange
+            string parentSubtenantId = "parent-subtenant1";
+            Dictionary<string, TenantInfo> emptySubTenants = new Dictionary<string, TenantInfo>();
+            string jsonResponse = JsonSerializer.Serialize(emptySubTenants);
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{parentSubtenantId}/subtenants", jsonResponse);
+
+            // Act
+            Dictionary<string, TenantInfo> result = await _provider.GetSubTenantsUnderSubTenantAsync(parentSubtenantId);
+
+            // Assert
+            Assert.IsNotNull(result);
+            Assert.AreEqual(0, result.Count);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_WithNullParentSubtenantId_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.GetSubTenantsUnderSubTenantAsync(null!));
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_WithEmptyParentSubtenantId_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.GetSubTenantsUnderSubTenantAsync(""));
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_WithWhitespaceParentSubtenantId_ThrowsArgumentException()
+        {
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<ArgumentException>(() =>
+                _provider.GetSubTenantsUnderSubTenantAsync("   "));
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_WithNotFoundResponse_ThrowsFileNotFoundException()
+        {
+            // Arrange
+            string parentSubtenantId = "nonexistent-parent";
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{parentSubtenantId}/subtenants", "Parent subtenant not found", HttpStatusCode.NotFound);
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<FileNotFoundException>(() =>
+                _provider.GetSubTenantsUnderSubTenantAsync(parentSubtenantId));
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_WithHttpError_ThrowsHttpRequestException()
+        {
+            // Arrange
+            string parentSubtenantId = "parent-subtenant1";
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{parentSubtenantId}/subtenants", "Server Error", HttpStatusCode.InternalServerError);
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<HttpRequestException>(() =>
+                _provider.GetSubTenantsUnderSubTenantAsync(parentSubtenantId));
+        }
+
+        [TestMethod]
         public async Task CreateSubTenant_WithValidResponse_ReturnsSubTenantId()
         {
             // Arrange
@@ -760,6 +863,27 @@ namespace ByteShelfClient.Tests
             Assert.AreEqual(1, _messageHandler.Requests.Count);
             Assert.AreEqual(
                 $"api/tenant/subtenants/{subTenantId}",
+                _messageHandler.Requests[0].RequestUri!.PathAndQuery.TrimStart('/'),
+                "Request path should match expected endpoint (ignoring leading slash)"
+            );
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_SendsCorrectRequest()
+        {
+            // Arrange
+            string parentSubtenantId = "parent-subtenant1";
+            Dictionary<string, TenantInfo> expectedSubTenants = new Dictionary<string, TenantInfo>();
+            string jsonResponse = JsonSerializer.Serialize(expectedSubTenants);
+            _messageHandler.SetupResponse($"api/tenant/subtenants/{parentSubtenantId}/subtenants", jsonResponse);
+
+            // Act
+            await _provider.GetSubTenantsUnderSubTenantAsync(parentSubtenantId);
+
+            // Assert
+            Assert.AreEqual(1, _messageHandler.Requests.Count);
+            Assert.AreEqual(
+                $"api/tenant/subtenants/{parentSubtenantId}/subtenants",
                 _messageHandler.Requests[0].RequestUri!.PathAndQuery.TrimStart('/'),
                 "Request path should match expected endpoint (ignoring leading slash)"
             );

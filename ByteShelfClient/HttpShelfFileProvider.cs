@@ -745,6 +745,44 @@ namespace ByteShelfClient
         }
 
         /// <summary>
+        /// Gets all subtenants under a specific subtenant.
+        /// </summary>
+        /// <param name="parentSubtenantId">The parent subtenant ID.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>A dictionary of subtenant information.</returns>
+        /// <exception cref="ArgumentException">Thrown when parent subtenant ID is null or empty.</exception>
+        /// <exception cref="FileNotFoundException">Thrown when the parent subtenant does not exist.</exception>
+        /// <exception cref="HttpRequestException">Thrown when the HTTP request fails or returns an error status code.</exception>
+        /// <remarks>
+        /// This method makes a GET request to the "/api/tenant/subtenants/{parentSubtenantId}/subtenants" endpoint.
+        /// The authenticated tenant must have access to the parent subtenant.
+        /// Returns an empty dictionary if the parent subtenant has no subtenants.
+        /// </remarks>
+        public async Task<Dictionary<string, TenantInfo>> GetSubTenantsUnderSubTenantAsync(string parentSubtenantId, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(parentSubtenantId))
+                throw new ArgumentException("Parent subtenant ID cannot be null or empty", nameof(parentSubtenantId));
+
+            try
+            {
+                Dictionary<string, TenantInfo>? response = await _httpClient.GetFromJsonAsync<Dictionary<string, TenantInfo>>(
+                    NormalizePath($"api/tenant/subtenants/{parentSubtenantId}/subtenants"),
+                    _jsonOptions,
+                    cancellationToken);
+
+                return response ?? new Dictionary<string, TenantInfo>();
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                throw new FileNotFoundException($"Parent subtenant with ID {parentSubtenantId} not found", ex);
+            }
+            catch(HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                throw new UnauthorizedAccessException($"The requested subtenant does not exist or you do not have access to it.");
+            }
+        }
+
+        /// <summary>
         /// Creates a new subtenant under the current tenant.
         /// </summary>
         /// <param name="displayName">The display name for the subtenant.</param>

@@ -59,6 +59,7 @@ public interface IShelfFileProvider
 - `CreateSubTenantAsync(string displayName)` - Create a new subtenant
 - `GetSubTenantsAsync()` - List all subtenants
 - `GetSubTenantAsync(string subTenantId)` - Get subtenant information
+- `GetSubTenantsUnderSubTenantAsync(string parentSubtenantId)` - List all subtenants under a specific subtenant (hierarchical folder browsing)
 - `UpdateSubTenantStorageLimitAsync(string subTenantId, long storageLimitBytes)` - Update subtenant storage limit
 - `DeleteSubTenantAsync(string subTenantId)` - Delete a subtenant
 

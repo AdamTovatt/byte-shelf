@@ -156,6 +156,7 @@ Tenants are managed through an external JSON file with hot-reload support. The c
 - `POST /api/tenant/subtenants` - Create a new subtenant
 - `POST /api/tenant/subtenants/{parentSubtenantId}/subtenants` - Create a new subtenant under a specific subtenant (hierarchical folder creation)
 - `GET /api/tenant/subtenants/{subtenantId}` - Get specific subtenant information
+- `GET /api/tenant/subtenants/{parentSubtenantId}/subtenants` - List all subtenants under a specific subtenant (hierarchical folder browsing)
 - `PUT /api/tenant/subtenants/{subtenantId}/storage-limit` - Update subtenant storage limit
 - `DELETE /api/tenant/subtenants/{subtenantId}` - Delete a subtenant
 

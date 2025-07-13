@@ -555,6 +555,197 @@ namespace ByteShelf.Tests
         }
 
         [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_ReturnsSubTenants_WhenParentSubTenantHasSubTenants()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string parentSubtenantId = "parent-subtenant1";
+            Dictionary<string, TenantInfo> subTenants = new Dictionary<string, TenantInfo>
+            {
+                ["subtenant1"] = new TenantInfo
+                {
+                    ApiKey = "sub-key-1",
+                    DisplayName = "Sub Tenant 1",
+                    StorageLimitBytes = 1024 * 1024 * 50,
+                    IsAdmin = false
+                },
+                ["subtenant2"] = new TenantInfo
+                {
+                    ApiKey = "sub-key-2",
+                    DisplayName = "Sub Tenant 2",
+                    StorageLimitBytes = 1024 * 1024 * 100,
+                    IsAdmin = false
+                }
+            };
+
+            TenantInfo parentSubtenant = new TenantInfo
+            {
+                ApiKey = "parent-key",
+                DisplayName = "Parent Subtenant",
+                StorageLimitBytes = 1024 * 1024 * 200,
+                IsAdmin = false
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.GetSubTenant(tenantId, parentSubtenantId)).Returns(parentSubtenant);
+            _mockConfigService.Setup(c => c.GetSubTenants(parentSubtenantId)).Returns(subTenants);
+
+            // Act
+            IActionResult result = await _controller.GetSubTenantsUnderSubTenant(parentSubtenantId, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+            OkObjectResult okResult = (OkObjectResult)result;
+            Assert.IsNotNull(okResult.Value);
+
+            Dictionary<string, TenantInfo> response = (Dictionary<string, TenantInfo>)okResult.Value;
+            Assert.AreEqual(2, response.Count);
+            Assert.IsTrue(response.ContainsKey("subtenant1"));
+            Assert.IsTrue(response.ContainsKey("subtenant2"));
+            Assert.AreEqual("Sub Tenant 1", response["subtenant1"].DisplayName);
+            Assert.AreEqual("Sub Tenant 2", response["subtenant2"].DisplayName);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_ReturnsEmptyDictionary_WhenParentSubTenantHasNoSubTenants()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string parentSubtenantId = "parent-subtenant1";
+            Dictionary<string, TenantInfo> emptySubTenants = new Dictionary<string, TenantInfo>();
+
+            TenantInfo parentSubtenant = new TenantInfo
+            {
+                ApiKey = "parent-key",
+                DisplayName = "Parent Subtenant",
+                StorageLimitBytes = 1024 * 1024 * 200,
+                IsAdmin = false
+            };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.GetSubTenant(tenantId, parentSubtenantId)).Returns(parentSubtenant);
+            _mockConfigService.Setup(c => c.GetSubTenants(parentSubtenantId)).Returns(emptySubTenants);
+
+            // Act
+            IActionResult result = await _controller.GetSubTenantsUnderSubTenant(parentSubtenantId, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+            OkObjectResult okResult = (OkObjectResult)result;
+            Assert.IsNotNull(okResult.Value);
+
+            Dictionary<string, TenantInfo> response = (Dictionary<string, TenantInfo>)okResult.Value;
+            Assert.AreEqual(0, response.Count);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_ReturnsNotFound_WhenParentSubTenantDoesNotExist()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string parentSubtenantId = "nonexistent-parent";
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.GetSubTenant(tenantId, parentSubtenantId)).Returns((TenantInfo?)null);
+
+            // Act
+            IActionResult result = await _controller.GetSubTenantsUnderSubTenant(parentSubtenantId, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(NotFoundObjectResult));
+            NotFoundObjectResult notFoundResult = (NotFoundObjectResult)result;
+            Assert.AreEqual("Parent subtenant not found", notFoundResult.Value);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_WithTenantIdNotInContext_ThrowsInvalidOperationException()
+        {
+            // Arrange - No tenant ID in context
+
+            // Act & Assert
+            await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
+                _controller.GetSubTenantsUnderSubTenant("parent-subtenant1", CancellationToken.None));
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_WhenParentSubTenantBelongsToDifferentTenant_ReturnsNotFound()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string parentSubtenantId = "parent1";
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+
+            // Setup the config service to return null when tenant1 tries to access parent1
+            // This simulates the case where parent1 belongs to a different tenant
+            _mockConfigService.Setup(c => c.GetSubTenant(tenantId, parentSubtenantId))
+                .Returns((TenantInfo?)null);
+
+            // Act
+            IActionResult result = await _controller.GetSubTenantsUnderSubTenant(parentSubtenantId, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(NotFoundObjectResult));
+            NotFoundObjectResult notFoundResult = (NotFoundObjectResult)result;
+            Assert.AreEqual("Parent subtenant not found", notFoundResult.Value);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_WhenParentSubTenantBelongsToSameTenant_ReturnsSubTenants()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string parentSubtenantId = "parent1";
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+
+            // Setup the config service to return a parent subtenant that belongs to the same tenant
+            _mockConfigService.Setup(c => c.GetSubTenant(tenantId, parentSubtenantId))
+                .Returns(new TenantInfo
+                {
+                    ApiKey = "parent-key",
+                    DisplayName = "Parent Subtenant",
+                    StorageLimitBytes = 1024 * 1024 * 50, // 50MB
+                    IsAdmin = false
+                });
+
+            // Setup subtenants under the parent
+            Dictionary<string, TenantInfo> subTenants = new Dictionary<string, TenantInfo>
+            {
+                ["child1"] = new TenantInfo
+                {
+                    ApiKey = "child1-key",
+                    DisplayName = "Child Subtenant 1",
+                    StorageLimitBytes = 1024 * 1024 * 20, // 20MB
+                    IsAdmin = false
+                },
+                ["child2"] = new TenantInfo
+                {
+                    ApiKey = "child2-key",
+                    DisplayName = "Child Subtenant 2",
+                    StorageLimitBytes = 1024 * 1024 * 30, // 30MB
+                    IsAdmin = false
+                }
+            };
+
+            _mockConfigService.Setup(c => c.GetSubTenants(parentSubtenantId))
+                .Returns(subTenants);
+
+            // Act
+            IActionResult result = await _controller.GetSubTenantsUnderSubTenant(parentSubtenantId, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkObjectResult));
+            OkObjectResult okResult = (OkObjectResult)result;
+            Assert.IsNotNull(okResult.Value);
+
+            Dictionary<string, TenantInfo> response = (Dictionary<string, TenantInfo>)okResult.Value;
+            Assert.AreEqual(2, response.Count);
+            Assert.IsTrue(response.ContainsKey("child1"));
+            Assert.IsTrue(response.ContainsKey("child2"));
+        }
+
+        [TestMethod]
         public async Task CreateSubTenant_CreatesSubTenant_WhenValidRequest()
         {
             // Arrange
@@ -893,6 +1084,28 @@ namespace ByteShelf.Tests
 
             // Assert
             _mockConfigService.Verify(c => c.GetSubTenant(tenantId, subTenantId), Times.Once);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_DelegatesToConfigService()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string parentSubtenantId = "parent-subtenant1";
+            Dictionary<string, TenantInfo> subTenants = new Dictionary<string, TenantInfo>();
+
+            TenantInfo parentSubtenant = new TenantInfo();
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.GetSubTenant(tenantId, parentSubtenantId)).Returns(parentSubtenant);
+            _mockConfigService.Setup(c => c.GetSubTenants(parentSubtenantId)).Returns(subTenants);
+
+            // Act
+            await _controller.GetSubTenantsUnderSubTenant(parentSubtenantId, CancellationToken.None);
+
+            // Assert
+            _mockConfigService.Verify(c => c.GetSubTenant(tenantId, parentSubtenantId), Times.Once);
+            _mockConfigService.Verify(c => c.GetSubTenants(parentSubtenantId), Times.Once);
         }
 
         [TestMethod]

@@ -4,6 +4,7 @@ let currentTenantInfo = null;
 let files = [];
 let subtenants = {};
 let currentPath = []; // Array of tenant IDs representing current navigation path
+let tenantCache = {}; // Cache for tenant information
 
 // Custom modal functions
 function showAlert(message, title = 'Alert', type = 'info') {
@@ -267,11 +268,8 @@ async function loadFiles() {
         // Load subtenants for current tenant
         await loadSubtenants();
         
-        if (files.length === 0 && Object.keys(subtenants).length === 0) {
-            filesList.innerHTML = '<div class="loading">No files or folders found</div>';
-        } else {
-            displayFilesAndFolders(files, subtenants);
-        }
+        // Always use displayFilesAndFolders to ensure breadcrumb is shown when in subtenants
+        displayFilesAndFolders(files, subtenants);
         
     } catch (error) {
         console.error('Failed to load files:', error);
@@ -281,17 +279,23 @@ async function loadFiles() {
 
 async function loadSubtenants() {
     try {
+        subtenants = {}; // Clear previous subtenants to avoid stale data
         const targetTenantId = currentPath.length > 0 ? currentPath[currentPath.length - 1] : null;
-        const endpoint = targetTenantId ? `/api/tenant/subtenants/${targetTenantId}` : '/api/tenant/subtenants';
-        
         if (targetTenantId) {
             // We're in a subtenant, so we need to get its subtenants
-            // For now, we'll just get the subtenant info and check if it has subtenants
-            const subtenantInfo = await makeApiRequest(`/api/tenant/subtenants/${targetTenantId}`);
-            subtenants = subtenantInfo.SubTenants || {};
+            const result = await makeApiRequest(`/api/tenant/subtenants/${targetTenantId}/subtenants`);
+            subtenants = result || {};
+            // Also fetch and cache the display name of the current subtenant for breadcrumb
+            if (!tenantCache[targetTenantId]) {
+                const info = await makeApiRequest(`/api/tenant/subtenants/${targetTenantId}`);
+                if (info && info.displayName) {
+                    tenantCache[targetTenantId] = info;
+                }
+            }
         } else {
             // We're at the root, get subtenants of current tenant
-            subtenants = await makeApiRequest('/api/tenant/subtenants');
+            const result = await makeApiRequest('/api/tenant/subtenants');
+            subtenants = result || {};
         }
     } catch (error) {
         console.error('Failed to load subtenants:', error);
@@ -338,7 +342,7 @@ function displayFilesAndFolders(filesToDisplay, subtenantsToDisplay) {
     filesList.innerHTML = breadcrumb + items.map(item => {
         if (item.type === 'folder') {
             return `
-                <div class="file-item folder-item" onclick="navigateToFolder('${item.id}')">
+                <div class="file-item folder-item" onclick="navigateToFolder('${item.id}').catch(console.error)">
                     <div class="file-info">
                         <div class="file-name">
                             <span class="folder-icon">📁</span>
@@ -376,50 +380,56 @@ function createBreadcrumb() {
     if (currentPath.length === 0) {
         return '';
     }
-    
     const breadcrumbItems = [
         { id: null, name: currentTenantInfo.displayName }
     ];
-    
-    // Build breadcrumb from current path
     for (let i = 0; i < currentPath.length; i++) {
         const tenantId = currentPath[i];
-        const tenantInfo = subtenants[tenantId] || { displayName: tenantId };
-        breadcrumbItems.push({ id: tenantId, name: tenantInfo.displayName });
+        let displayName = tenantId; // fallback to tenant ID
+        if (tenantCache[tenantId]) {
+            displayName = tenantCache[tenantId].displayName;
+        } else if (i === currentPath.length - 1 && subtenants[tenantId]) {
+            displayName = subtenants[tenantId].displayName;
+        }
+        breadcrumbItems.push({ id: tenantId, name: displayName });
     }
-    
     return `
         <div class="breadcrumb">
             ${breadcrumbItems.map((item, index) => {
                 if (index === breadcrumbItems.length - 1) {
                     return `<span class="breadcrumb-current">${item.name}</span>`;
                 } else {
-                    return `<span class="breadcrumb-item" onclick="navigateToPath(${index})">${item.name}</span>`;
+                    return `<span class="breadcrumb-item" onclick="navigateToPath(${index}).catch(console.error)">${item.name}</span>`;
                 }
             }).join(' › ')}
         </div>
     `;
 }
 
-function navigateToFolder(tenantId) {
+async function navigateToFolder(tenantId) {
+    // Cache the current tenant info before navigating
+    if (currentPath.length > 0) {
+        const currentTenantId = currentPath[currentPath.length - 1];
+        if (subtenants[currentTenantId]) {
+            tenantCache[currentTenantId] = subtenants[currentTenantId];
+        }
+    }
+    // Also cache the folder we're about to enter if we have its info
+    if (subtenants[tenantId]) {
+        tenantCache[tenantId] = subtenants[tenantId];
+    }
     currentPath.push(tenantId);
-    loadFiles();
+    await loadFiles();
 }
 
-function navigateToPath(index) {
+async function navigateToPath(index) {
     currentPath = currentPath.slice(0, index);
-    loadFiles();
+    await loadFiles();
 }
 
 async function createFolder(event) {
     if (event) {
         event.preventDefault();
-    }
-    
-    // Check if we're in a subtenant (not at root level)
-    if (currentPath.length > 0) {
-        await showAlert('Creating folders inside subfolders is not yet supported. Please create folders at the root level.', 'Not Supported', 'warning');
-        return;
     }
     
     // Prompt user for folder name
@@ -429,10 +439,21 @@ async function createFolder(event) {
     }
     
     try {
-        // Create the subtenant under the authenticated tenant (root level only)
-        const response = await makeApiRequestWithBody('/api/tenant/subtenants', 'POST', {
-            displayName: folderName.trim()
-        });
+        // Get the current tenant ID (where we're creating the subtenant)
+        const currentTenantId = currentPath.length > 0 ? currentPath[currentPath.length - 1] : null;
+        
+        let response;
+        if (currentTenantId) {
+            // We're inside a subtenant, create under the current subtenant
+            response = await makeApiRequestWithBody(`/api/tenant/subtenants/${currentTenantId}/subtenants`, 'POST', {
+                displayName: folderName.trim()
+            });
+        } else {
+            // We're at root level, create under the authenticated tenant
+            response = await makeApiRequestWithBody('/api/tenant/subtenants', 'POST', {
+                displayName: folderName.trim()
+            });
+        }
         
         // Refresh the file list to show the new folder
         await loadFiles();

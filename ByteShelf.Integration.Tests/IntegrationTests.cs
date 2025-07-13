@@ -1149,6 +1149,273 @@ namespace ByteShelf.Integration.Tests
             Assert.AreEqual(secondLevelContent, parentDownloadedSecondLevelContent);
         }
 
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_WithValidHierarchy_ReturnsCorrectSubTenants()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+
+            // Create hierarchical structure
+            string firstLevelSubtenantId = await parentProvider.CreateSubTenantAsync("First Level Department");
+            string secondLevelSubtenantId1 = await parentProvider.CreateSubTenantUnderSubTenantAsync(firstLevelSubtenantId, "Second Level Team 1");
+            string secondLevelSubtenantId2 = await parentProvider.CreateSubTenantUnderSubTenantAsync(firstLevelSubtenantId, "Second Level Team 2");
+
+            // Act - Get subtenants under the first-level subtenant
+            Dictionary<string, TenantInfo> subTenantsUnderFirstLevel = await parentProvider.GetSubTenantsUnderSubTenantAsync(firstLevelSubtenantId);
+
+            // Assert - Should return both second-level subtenants
+            Assert.AreEqual(2, subTenantsUnderFirstLevel.Count);
+            Assert.IsTrue(subTenantsUnderFirstLevel.ContainsKey(secondLevelSubtenantId1), "Second level subtenant 1 should be returned");
+            Assert.IsTrue(subTenantsUnderFirstLevel.ContainsKey(secondLevelSubtenantId2), "Second level subtenant 2 should be returned");
+            Assert.AreEqual("Second Level Team 1", subTenantsUnderFirstLevel[secondLevelSubtenantId1].DisplayName);
+            Assert.AreEqual("Second Level Team 2", subTenantsUnderFirstLevel[secondLevelSubtenantId2].DisplayName);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_WithEmptyHierarchy_ReturnsEmptyDictionary()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+
+            // Create a first-level subtenant with no children
+            string firstLevelSubtenantId = await parentProvider.CreateSubTenantAsync("First Level Department");
+
+            // Act - Get subtenants under the first-level subtenant
+            Dictionary<string, TenantInfo> subTenantsUnderFirstLevel = await parentProvider.GetSubTenantsUnderSubTenantAsync(firstLevelSubtenantId);
+
+            // Assert - Should return empty dictionary
+            Assert.AreEqual(0, subTenantsUnderFirstLevel.Count);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_WithNonExistentParent_ThrowsFileNotFoundException()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+
+            // Act & Assert - Try to get subtenants under a non-existent parent
+            string nonExistentParentId = "non-existent-parent-id";
+            
+            FileNotFoundException exception = await Assert.ThrowsExceptionAsync<FileNotFoundException>(
+                async () => await parentProvider.GetSubTenantsUnderSubTenantAsync(nonExistentParentId));
+            
+            Assert.IsTrue(exception.Message.Contains(nonExistentParentId), "Error message should contain the non-existent parent ID");
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_WithDeepHierarchy_ReturnsCorrectSubTenants()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+
+            // Create a deep hierarchical structure
+            string level1SubtenantId = await parentProvider.CreateSubTenantAsync("Level 1 Department");
+            string level2SubtenantId = await parentProvider.CreateSubTenantUnderSubTenantAsync(level1SubtenantId, "Level 2 Team");
+            string level3SubtenantId = await parentProvider.CreateSubTenantUnderSubTenantAsync(level2SubtenantId, "Level 3 Group");
+            string level4SubtenantId = await parentProvider.CreateSubTenantUnderSubTenantAsync(level3SubtenantId, "Level 4 Subgroup");
+
+            // Act - Get subtenants under each level
+            Dictionary<string, TenantInfo> level1SubTenants = await parentProvider.GetSubTenantsUnderSubTenantAsync(level1SubtenantId);
+            Dictionary<string, TenantInfo> level2SubTenants = await parentProvider.GetSubTenantsUnderSubTenantAsync(level2SubtenantId);
+            Dictionary<string, TenantInfo> level3SubTenants = await parentProvider.GetSubTenantsUnderSubTenantAsync(level3SubtenantId);
+
+            // Assert - Verify each level returns the correct subtenants
+            Assert.AreEqual(1, level1SubTenants.Count);
+            Assert.IsTrue(level1SubTenants.ContainsKey(level2SubtenantId));
+            Assert.AreEqual("Level 2 Team", level1SubTenants[level2SubtenantId].DisplayName);
+
+            Assert.AreEqual(1, level2SubTenants.Count);
+            Assert.IsTrue(level2SubTenants.ContainsKey(level3SubtenantId));
+            Assert.AreEqual("Level 3 Group", level2SubTenants[level3SubtenantId].DisplayName);
+
+            Assert.AreEqual(1, level3SubTenants.Count);
+            Assert.IsTrue(level3SubTenants.ContainsKey(level4SubtenantId));
+            Assert.AreEqual("Level 4 Subgroup", level3SubTenants[level4SubtenantId].DisplayName);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_WithMultipleSiblings_ReturnsAllSiblings()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+
+            // Create multiple siblings under the same parent
+            string parentSubtenantId = await parentProvider.CreateSubTenantAsync("Parent Department");
+            string sibling1Id = await parentProvider.CreateSubTenantUnderSubTenantAsync(parentSubtenantId, "Sibling 1");
+            string sibling2Id = await parentProvider.CreateSubTenantUnderSubTenantAsync(parentSubtenantId, "Sibling 2");
+            string sibling3Id = await parentProvider.CreateSubTenantUnderSubTenantAsync(parentSubtenantId, "Sibling 3");
+
+            // Act - Get all siblings under the parent
+            Dictionary<string, TenantInfo> siblings = await parentProvider.GetSubTenantsUnderSubTenantAsync(parentSubtenantId);
+
+            // Assert - Should return all three siblings
+            Assert.AreEqual(3, siblings.Count);
+            Assert.IsTrue(siblings.ContainsKey(sibling1Id));
+            Assert.IsTrue(siblings.ContainsKey(sibling2Id));
+            Assert.IsTrue(siblings.ContainsKey(sibling3Id));
+            Assert.AreEqual("Sibling 1", siblings[sibling1Id].DisplayName);
+            Assert.AreEqual("Sibling 2", siblings[sibling2Id].DisplayName);
+            Assert.AreEqual("Sibling 3", siblings[sibling3Id].DisplayName);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_WithFilesInSubTenants_DoesNotAffectFileOperations()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+
+            // Create hierarchical structure
+            string firstLevelSubtenantId = await parentProvider.CreateSubTenantAsync("First Level Department");
+            string secondLevelSubtenantId = await parentProvider.CreateSubTenantUnderSubTenantAsync(firstLevelSubtenantId, "Second Level Team");
+
+            // Get API key for the second-level subtenant
+            TenantInfo secondLevelSubtenant = await parentProvider.GetSubTenantAsync(secondLevelSubtenantId);
+
+            // Create client for the second-level subtenant
+            using HttpClient secondLevelClient = _factory.CreateClient();
+            HttpShelfFileProvider secondLevelProvider = new HttpShelfFileProvider(secondLevelClient, secondLevelSubtenant.ApiKey);
+
+            // Upload a file to the second-level subtenant
+            string content = "Test file content";
+            using MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(content));
+            Guid fileId = await secondLevelProvider.WriteFileAsync("test-file.txt", "text/plain", stream);
+
+            // Act - Get subtenants under the first-level subtenant (should not affect file operations)
+            Dictionary<string, TenantInfo> subTenantsUnderFirstLevel = await parentProvider.GetSubTenantsUnderSubTenantAsync(firstLevelSubtenantId);
+
+            // Assert - File operations should still work correctly
+            Assert.AreEqual(1, subTenantsUnderFirstLevel.Count);
+            Assert.IsTrue(subTenantsUnderFirstLevel.ContainsKey(secondLevelSubtenantId));
+
+            // Verify the file can still be read
+            ShelfFile file = await secondLevelProvider.ReadFileAsync(fileId);
+            using Stream contentStream = file.GetContentStream();
+            using StreamReader reader = new StreamReader(contentStream);
+            string downloadedContent = reader.ReadToEnd();
+            Assert.AreEqual(content, downloadedContent);
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_Security_SubtenantCannotAccessOtherSubTenants()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient subtenant1Client = _factory.CreateClient();
+            using HttpClient subtenant2Client = _factory.CreateClient();
+            HttpShelfFileProvider subtenant1Provider = new HttpShelfFileProvider(subtenant1Client, "subtenant-1-api-key");
+            HttpShelfFileProvider subtenant2Provider = new HttpShelfFileProvider(subtenant2Client, "subtenant-2-api-key");
+
+            // Create subtenants under subtenant 1
+            string subtenant1ChildId = await subtenant1Provider.CreateSubTenantAsync("Subtenant 1 Child");
+
+            // Act & Assert - Subtenant 2 should not be able to access subtenant 1's subtenants
+            await Assert.ThrowsExceptionAsync<FileNotFoundException>(
+                async () => await subtenant2Provider.GetSubTenantsUnderSubTenantAsync(subtenant1ChildId));
+
+            // Also test that subtenant 2 cannot access subtenant 1's subtenants through the parent
+            await Assert.ThrowsExceptionAsync<FileNotFoundException>(
+                async () => await subtenant2Provider.GetSubTenantsUnderSubTenantAsync("subtenant-1"));
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_Security_SubtenantCannotAccessParentSubTenants()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            using HttpClient subtenantClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+            HttpShelfFileProvider subtenantProvider = new HttpShelfFileProvider(subtenantClient, "subtenant-1-api-key");
+
+            // Create a subtenant under the parent
+            string parentSubtenantId = await parentProvider.CreateSubTenantAsync("Parent Subtenant");
+
+            // Act & Assert - Subtenant should not be able to access parent's subtenants
+            await Assert.ThrowsExceptionAsync<FileNotFoundException>(
+                async () => await subtenantProvider.GetSubTenantsUnderSubTenantAsync(parentSubtenantId));
+        }
+
+        [TestMethod]
+        public async Task GetSubTenantsUnderSubTenant_Security_UnauthorizedTenantCannotAccessAnySubTenants()
+        {
+            // Arrange - Create hierarchical tenant configuration
+            string tenantConfigPath = Path.Combine(_tempStoragePath, "tenant-config.json");
+            CreateHierarchicalTenantConfiguration(tenantConfigPath);
+            
+            // Wait for configuration to be reloaded
+            await Task.Delay(200);
+            
+            using HttpClient parentClient = _factory.CreateClient();
+            HttpShelfFileProvider parentProvider = new HttpShelfFileProvider(parentClient, "parent-api-key");
+
+            // Create a subtenant under the parent
+            string parentSubtenantId = await parentProvider.CreateSubTenantAsync("Parent Subtenant");
+
+            // Create an unauthorized client with a different API key
+            using HttpClient unauthorizedClient = _factory.CreateClient();
+            HttpShelfFileProvider unauthorizedProvider = new HttpShelfFileProvider(unauthorizedClient, "unauthorized-api-key");
+
+            // Act & Assert - Unauthorized tenant should not be able to access any subtenants
+            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+                async () => await unauthorizedProvider.GetSubTenantsUnderSubTenantAsync(parentSubtenantId));
+
+            // Also test with a non-existent tenant ID
+            await Assert.ThrowsExceptionAsync<UnauthorizedAccessException>(
+                async () => await unauthorizedProvider.GetSubTenantsUnderSubTenantAsync("non-existent-tenant"));
+        }
+
         public void Dispose()
         {
             Cleanup();
