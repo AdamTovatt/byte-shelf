@@ -71,6 +71,14 @@ namespace ByteShelf.Services
         Task<bool?> DeleteFileAsync(string tenantId, Guid fileId, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Deletes all files and their associated chunks for a specific tenant.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>The number of files that were deleted.</returns>
+        Task<int> DeleteAllFilesAsync(string tenantId, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Gets a complete file stream by reconstructing it from all its chunks.
         /// </summary>
         /// <param name="tenantId">The tenant ID.</param>
@@ -87,5 +95,14 @@ namespace ByteShelf.Services
         /// <param name="fileSizeBytes">The size of the file in bytes.</param>
         /// <returns><c>true</c> if the tenant can store the file; otherwise, <c>false</c>.</returns>
         bool CanStoreFile(string tenantId, long fileSizeBytes);
+
+        /// <summary>
+        /// Deletes all files and their associated chunks for a tenant and all its descendant tenants.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID.</param>
+        /// <param name="descendantTenantIds">The IDs of all descendant tenants to delete files for.</param>
+        /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+        /// <returns>The total number of files that were deleted across all tenants.</returns>
+        Task<int> DeleteAllFilesRecursivelyAsync(string tenantId, IEnumerable<string> descendantTenantIds, CancellationToken cancellationToken = default);
     }
 }

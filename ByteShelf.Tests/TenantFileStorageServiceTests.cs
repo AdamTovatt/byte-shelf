@@ -311,6 +311,101 @@ namespace ByteShelf.Tests
         }
 
         [TestMethod]
+        public async Task DeleteAllFilesAsync_WhenNoFilesExist_ReturnsZero()
+        {
+            // Act
+            int deletedCount = await _service.DeleteAllFilesAsync("tenant1");
+
+            // Assert
+            Assert.AreEqual(0, deletedCount);
+            _mockStorageService.Verify(s => s.RecordStorageFreed(It.IsAny<string>(), It.IsAny<long>()), Times.Never);
+        }
+
+        [TestMethod]
+        public async Task DeleteAllFilesAsync_WhenFilesExist_DeletesAllFilesAndChunks()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            Guid fileId1 = Guid.NewGuid();
+            Guid fileId2 = Guid.NewGuid();
+            Guid chunkId1 = Guid.NewGuid();
+            Guid chunkId2 = Guid.NewGuid();
+            Guid chunkId3 = Guid.NewGuid();
+
+            ShelfFileMetadata metadata1 = new ShelfFileMetadata(fileId1, "test1.txt", "text/plain", 1024, new List<Guid> { chunkId1, chunkId2 });
+            ShelfFileMetadata metadata2 = new ShelfFileMetadata(fileId2, "test2.txt", "text/plain", 2048, new List<Guid> { chunkId3 });
+
+            string tenantMetadataPath = Path.Combine(_tempStoragePath, tenantId, "metadata");
+            string tenantBinPath = Path.Combine(_tempStoragePath, tenantId, "bin");
+            Directory.CreateDirectory(tenantMetadataPath);
+            Directory.CreateDirectory(tenantBinPath);
+
+            // Create metadata files
+            await File.WriteAllTextAsync(Path.Combine(tenantMetadataPath, $"{fileId1}.json"), JsonSerializer.Serialize(metadata1, _jsonOptions));
+            await File.WriteAllTextAsync(Path.Combine(tenantMetadataPath, $"{fileId2}.json"), JsonSerializer.Serialize(metadata2, _jsonOptions));
+
+            // Create chunk files
+            await File.WriteAllTextAsync(Path.Combine(tenantBinPath, $"{chunkId1}.bin"), "chunk1");
+            await File.WriteAllTextAsync(Path.Combine(tenantBinPath, $"{chunkId2}.bin"), "chunk2");
+            await File.WriteAllTextAsync(Path.Combine(tenantBinPath, $"{chunkId3}.bin"), "chunk3");
+
+            // Act
+            int deletedCount = await _service.DeleteAllFilesAsync(tenantId);
+
+            // Assert
+            Assert.AreEqual(2, deletedCount);
+            Assert.IsFalse(File.Exists(Path.Combine(tenantMetadataPath, $"{fileId1}.json")));
+            Assert.IsFalse(File.Exists(Path.Combine(tenantMetadataPath, $"{fileId2}.json")));
+            Assert.IsFalse(File.Exists(Path.Combine(tenantBinPath, $"{chunkId1}.bin")));
+            Assert.IsFalse(File.Exists(Path.Combine(tenantBinPath, $"{chunkId2}.bin")));
+            Assert.IsFalse(File.Exists(Path.Combine(tenantBinPath, $"{chunkId3}.bin")));
+
+            _mockStorageService.Verify(s => s.RecordStorageFreed(tenantId, It.IsAny<long>()), Times.Once);
+        }
+
+        [TestMethod]
+        public async Task DeleteAllFilesAsync_WhenMetadataFileIsCorrupted_ContinuesWithOtherFiles()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            Guid fileId1 = Guid.NewGuid();
+            Guid fileId2 = Guid.NewGuid();
+            Guid chunkId1 = Guid.NewGuid();
+            Guid chunkId2 = Guid.NewGuid();
+
+            ShelfFileMetadata metadata1 = new ShelfFileMetadata(fileId1, "test1.txt", "text/plain", 1024, new List<Guid> { chunkId1 });
+            ShelfFileMetadata metadata2 = new ShelfFileMetadata(fileId2, "test2.txt", "text/plain", 2048, new List<Guid> { chunkId2 });
+
+            string tenantMetadataPath = Path.Combine(_tempStoragePath, tenantId, "metadata");
+            string tenantBinPath = Path.Combine(_tempStoragePath, tenantId, "bin");
+            Directory.CreateDirectory(tenantMetadataPath);
+            Directory.CreateDirectory(tenantBinPath);
+
+            // Create valid metadata file
+            await File.WriteAllTextAsync(Path.Combine(tenantMetadataPath, $"{fileId1}.json"), JsonSerializer.Serialize(metadata1, _jsonOptions));
+            
+            // Create corrupted metadata file
+            await File.WriteAllTextAsync(Path.Combine(tenantMetadataPath, $"{fileId2}.json"), "invalid json content");
+
+            // Create chunk files
+            await File.WriteAllTextAsync(Path.Combine(tenantBinPath, $"{chunkId1}.bin"), "chunk1");
+            await File.WriteAllTextAsync(Path.Combine(tenantBinPath, $"{chunkId2}.bin"), "chunk2");
+
+            // Act
+            int deletedCount = await _service.DeleteAllFilesAsync(tenantId);
+
+            // Assert
+            Assert.AreEqual(1, deletedCount); // Only the valid file should be deleted
+            Assert.IsFalse(File.Exists(Path.Combine(tenantMetadataPath, $"{fileId1}.json")));
+            Assert.IsFalse(File.Exists(Path.Combine(tenantBinPath, $"{chunkId1}.bin")));
+            // Corrupted file should still exist
+            Assert.IsTrue(File.Exists(Path.Combine(tenantMetadataPath, $"{fileId2}.json")));
+            Assert.IsTrue(File.Exists(Path.Combine(tenantBinPath, $"{chunkId2}.bin")));
+
+            _mockStorageService.Verify(s => s.RecordStorageFreed(tenantId, It.IsAny<long>()), Times.Once);
+        }
+
+        [TestMethod]
         public void CanStoreFile_DelegatesToTenantStorageService()
         {
             // Arrange

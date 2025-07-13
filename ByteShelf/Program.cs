@@ -49,7 +49,12 @@ namespace ByteShelf
             string storagePath = envStoragePath ?? builder.Configuration["StoragePath"] ?? "byte-shelf-storage";
 
             // Register storage service
-            builder.Services.AddSingleton<IStorageService, StorageService>();
+            builder.Services.AddSingleton<IStorageService>(serviceProvider =>
+            {
+                ITenantConfigurationService configService = serviceProvider.GetRequiredService<ITenantConfigurationService>();
+                ILogger<StorageService>? logger = serviceProvider.GetService<ILogger<StorageService>>();
+                return new StorageService(configService, logger ?? new NullLogger<StorageService>(), storagePath);
+            });
 
             // Register file storage service
             builder.Services.AddSingleton<IFileStorageService>(serviceProvider =>

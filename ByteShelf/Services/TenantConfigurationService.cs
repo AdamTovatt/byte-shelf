@@ -502,6 +502,39 @@ namespace ByteShelf.Services
         }
 
         /// <summary>
+        /// Gets all descendant tenant IDs for a given tenant.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID to get descendants for.</param>
+        /// <returns>A collection of descendant tenant IDs.</returns>
+        public IEnumerable<string> GetAllDescendantTenantIds(string tenantId)
+        {
+            if (string.IsNullOrWhiteSpace(tenantId))
+                return Enumerable.Empty<string>();
+
+            TenantInfo? tenant = GetTenant(tenantId);
+            if (tenant == null)
+                return Enumerable.Empty<string>();
+
+            List<string> descendantIds = new List<string>();
+            CollectDescendantIds(tenant, descendantIds);
+            return descendantIds;
+        }
+
+        /// <summary>
+        /// Recursively collects all descendant tenant IDs.
+        /// </summary>
+        /// <param name="tenant">The tenant to collect descendants for.</param>
+        /// <param name="descendantIds">The list to add descendant IDs to.</param>
+        private void CollectDescendantIds(TenantInfo tenant, List<string> descendantIds)
+        {
+            foreach (KeyValuePair<string, TenantInfo> subTenant in tenant.SubTenants)
+            {
+                descendantIds.Add(subTenant.Key);
+                CollectDescendantIds(subTenant.Value, descendantIds);
+            }
+        }
+
+        /// <summary>
         /// Checks if a tenant is a descendant of another tenant.
         /// </summary>
         /// <param name="potentialDescendant">The tenant to check if it's a descendant.</param>

@@ -22,19 +22,27 @@ namespace ByteShelf.Controllers
     {
         private readonly IStorageService _storageService;
         private readonly ITenantConfigurationService _tenantConfigurationService;
+        private readonly IFileStorageService _fileStorageService;
+        private readonly ILogger<TenantController> _logger;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="TenantController"/> class.
         /// </summary>
         /// <param name="storageService">The storage service for quota operations.</param>
         /// <param name="tenantConfigurationService">The tenant configuration service for tenant information.</param>
+        /// <param name="fileStorageService">The file storage service for file operations.</param>
+        /// <param name="logger">The logger for recording controller operations.</param>
         /// <exception cref="ArgumentNullException">Thrown when any parameter is null.</exception>
         public TenantController(
             IStorageService storageService,
-            ITenantConfigurationService tenantConfigurationService)
+            ITenantConfigurationService tenantConfigurationService,
+            IFileStorageService fileStorageService,
+            ILogger<TenantController> logger)
         {
             _storageService = storageService ?? throw new ArgumentNullException(nameof(storageService));
             _tenantConfigurationService = tenantConfigurationService ?? throw new ArgumentNullException(nameof(tenantConfigurationService));
+            _fileStorageService = fileStorageService ?? throw new ArgumentNullException(nameof(fileStorageService));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
         /// <summary>
@@ -236,7 +244,7 @@ namespace ByteShelf.Controllers
             await Task.CompletedTask; // No async operations needed
 
             string tenantId = HttpContext.GetTenantId();
-            
+
             // Verify the parent subtenant exists and the authenticated tenant has access to it
             TenantInfo? parentSubtenant = _tenantConfigurationService.GetSubTenant(tenantId, parentSubtenantId);
             if (parentSubtenant == null)
@@ -288,7 +296,7 @@ namespace ByteShelf.Controllers
             {
                 string tenantId = HttpContext.GetTenantId();
                 string subTenantId = await _tenantConfigurationService.CreateSubTenantAsync(tenantId, request.DisplayName);
-                
+
                 CreateSubTenantResponse response = new CreateSubTenantResponse(subTenantId, request.DisplayName, "Subtenant created successfully");
                 return CreatedAtAction(nameof(GetSubTenant), new { subTenantId = subTenantId }, response);
             }
@@ -341,7 +349,7 @@ namespace ByteShelf.Controllers
             try
             {
                 string tenantId = HttpContext.GetTenantId();
-                
+
                 // Verify the parent subtenant exists and the authenticated tenant has access to it
                 TenantInfo? parentSubtenant = _tenantConfigurationService.GetSubTenant(tenantId, parentSubtenantId);
                 if (parentSubtenant == null)
@@ -351,7 +359,7 @@ namespace ByteShelf.Controllers
 
                 // Create the subtenant under the parent subtenant
                 string subTenantId = await _tenantConfigurationService.CreateSubTenantAsync(parentSubtenantId, request.DisplayName);
-                
+
                 CreateSubTenantResponse response = new CreateSubTenantResponse(subTenantId, request.DisplayName, "Subtenant created successfully");
                 return CreatedAtAction(nameof(GetSubTenant), new { subTenantId = subTenantId }, response);
             }
@@ -410,20 +418,56 @@ namespace ByteShelf.Controllers
         /// <param name="subTenantId">The subtenant ID.</param>
         /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
         /// <returns>Success status.</returns>
-        /// <response code="204">Returns success status.</response>
-        /// <response code="401">If the API key is invalid or missing.</response>
+        /// <response code="200">Returns success status.</response>
+        /// <response code="401">If the API key is invalid or missing, or if the authenticated tenant does not have permission to delete the subtenant.</response>
         /// <response code="404">If the subtenant is not found.</response>
+        /// <response code="500">If file deletion fails.</response>
         /// <remarks>
         /// This endpoint deletes a subtenant and all its data.
+        /// The authenticated tenant must have access to the subtenant to delete it.
         /// This operation cannot be undone.
         /// </remarks>
         [HttpDelete("subtenants/{subTenantId}")]
-        [ProducesResponseType(204)]
+        [ProducesResponseType(200)]
         [ProducesResponseType(401)]
         [ProducesResponseType(404)]
+        [ProducesResponseType(500)]
         public async Task<IActionResult> DeleteSubTenant(string subTenantId, CancellationToken cancellationToken)
         {
             string tenantId = HttpContext.GetTenantId();
+
+            // Security check: Verify the authenticated tenant has access to the subtenant
+            if (!_tenantConfigurationService.HasAccessToTenant(tenantId, subTenantId))
+            {
+                return Unauthorized("You do not have permission to delete this subtenant");
+            }
+
+            // Verify the subtenant exists
+            TenantInfo? subTenant = _tenantConfigurationService.GetTenant(subTenantId);
+            if (subTenant == null)
+            {
+                return NotFound("Subtenant not found");
+            }
+
+            // Get all descendant tenant IDs for recursive deletion
+            IEnumerable<string> descendantTenantIds = _tenantConfigurationService.GetAllDescendantTenantIds(subTenantId);
+
+            // Delete all files for the subtenant and its descendants
+            try
+            {
+                int deletedFiles = await _fileStorageService.DeleteAllFilesRecursivelyAsync(subTenantId, descendantTenantIds, cancellationToken);
+                _logger.LogInformation("Deleted {DeletedFiles} files for subtenant {SubTenantId} and its {DescendantCount} descendants", 
+                    deletedFiles, subTenantId, descendantTenantIds.Count());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to delete files for subtenant {SubTenantId}", subTenantId);
+                // If file deletion fails, don't remove the subtenant from configuration
+                // This prevents orphaned files without an owner
+                return StatusCode(500, new { message = "Failed to delete subtenant files. Please try again." });
+            }
+
+            // Only remove the subtenant from configuration if file deletion succeeded
             bool success = await _tenantConfigurationService.DeleteSubTenantAsync(tenantId, subTenantId);
 
             if (!success)

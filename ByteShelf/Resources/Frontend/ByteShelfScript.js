@@ -349,7 +349,7 @@ function displayFilesAndFolders(filesToDisplay, subtenantsToDisplay) {
                             ${item.name}
                         </div>
                         <div class="file-meta">
-                            Folder • ${Object.keys(item.tenantInfo.subTenants || {}).length} subtenants
+                            ${formatBytes(item.tenantInfo.currentUsageBytes)} used
                         </div>
                     </div>
                     <div class="file-actions">

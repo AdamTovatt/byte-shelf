@@ -145,5 +145,12 @@ namespace ByteShelf.Services
         /// <param name="targetTenantId">The ID of the tenant being accessed.</param>
         /// <returns>True if the accessing tenant has access to the target tenant.</returns>
         bool HasAccessToTenant(string accessingTenantId, string targetTenantId);
+
+        /// <summary>
+        /// Gets all descendant tenant IDs for a given tenant.
+        /// </summary>
+        /// <param name="tenantId">The tenant ID to get descendants for.</param>
+        /// <returns>A collection of descendant tenant IDs.</returns>
+        IEnumerable<string> GetAllDescendantTenantIds(string tenantId);
     }
 }

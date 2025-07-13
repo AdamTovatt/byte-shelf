@@ -234,6 +234,111 @@ namespace ByteShelf.Services
         }
 
         /// <inheritdoc/>
+        public async Task<int> DeleteAllFilesAsync(string tenantId, CancellationToken cancellationToken = default)
+        {
+            ValidateTenantId(tenantId);
+
+            int deletedCount = 0;
+            long totalFreed = 0;
+            string tenantMetadataPath = GetTenantMetadataPath(tenantId);
+            string tenantBinPath = GetTenantBinPath(tenantId);
+
+            if (!Directory.Exists(tenantMetadataPath))
+            {
+                return deletedCount;
+            }
+
+            string[] metadataFiles = Directory.GetFiles(tenantMetadataPath, "*.json");
+            _logger.LogDebug("Found {Count} metadata files for tenant {TenantId} to delete", metadataFiles.Length, tenantId);
+
+            foreach (string metadataFile in metadataFiles)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                    break;
+
+                try
+                {
+                    string jsonContent = await File.ReadAllTextAsync(metadataFile, cancellationToken);
+                    ShelfFileMetadata? metadata = JsonSerializer.Deserialize<ShelfFileMetadata>(jsonContent, _jsonOptions);
+
+                    if (metadata != null)
+                    {
+                        // Delete all chunks for this file
+                        foreach (Guid chunkId in metadata.ChunkIds)
+                        {
+                            string chunkFile = Path.Combine(tenantBinPath, $"{chunkId}.bin");
+                            if (File.Exists(chunkFile))
+                            {
+                                FileInfo fileInfo = new FileInfo(chunkFile);
+                                totalFreed += fileInfo.Length;
+                                File.Delete(chunkFile);
+                                _logger.LogDebug("Deleted chunk {ChunkId} for tenant {TenantId}", chunkId, tenantId);
+                            }
+                        }
+
+                        // Delete metadata file
+                        File.Delete(metadataFile);
+                        _logger.LogDebug("Deleted metadata for file {FileId} for tenant {TenantId}", metadata.Id, tenantId);
+                        deletedCount++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to delete file metadata: {MetadataFile}", metadataFile);
+                }
+            }
+
+            // Record the freed storage
+            if (totalFreed > 0)
+            {
+                _storageService.RecordStorageFreed(tenantId, totalFreed);
+                _logger.LogInformation("Freed {FreedBytes} bytes for tenant {TenantId} by deleting {DeletedCount} files", totalFreed, tenantId, deletedCount);
+            }
+
+            return deletedCount;
+        }
+
+        /// <inheritdoc/>
+        public async Task<int> DeleteAllFilesRecursivelyAsync(string tenantId, IEnumerable<string> descendantTenantIds, CancellationToken cancellationToken = default)
+        {
+            ValidateTenantId(tenantId);
+
+            int totalDeletedCount = 0;
+
+            // Delete files for the main tenant
+            int mainTenantDeletedCount = await DeleteAllFilesAsync(tenantId, cancellationToken);
+            totalDeletedCount += mainTenantDeletedCount;
+
+            _logger.LogInformation("Deleted {DeletedCount} files for tenant {TenantId}", mainTenantDeletedCount, tenantId);
+
+            // Delete files for all descendant tenants
+            foreach (string descendantTenantId in descendantTenantIds)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                    break;
+
+                try
+                {
+                    ValidateTenantId(descendantTenantId);
+                    int descendantDeletedCount = await DeleteAllFilesAsync(descendantTenantId, cancellationToken);
+                    totalDeletedCount += descendantDeletedCount;
+
+                    _logger.LogInformation("Deleted {DeletedCount} files for descendant tenant {DescendantTenantId}", descendantDeletedCount, descendantTenantId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to delete files for descendant tenant {DescendantTenantId}", descendantTenantId);
+                    // Continue with other descendants even if one fails
+                }
+            }
+
+            _logger.LogInformation("Total deleted {TotalDeletedCount} files across {TenantCount} tenants (including {DescendantCount} descendants)", 
+                totalDeletedCount, 1 + descendantTenantIds.Count(), descendantTenantIds.Count());
+
+            return totalDeletedCount;
+        }
+
+        /// <inheritdoc/>
         public async Task<Stream> GetFileStreamAsync(string tenantId, Guid fileId, CancellationToken cancellationToken = default)
         {
             ValidateTenantId(tenantId);

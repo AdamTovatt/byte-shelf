@@ -29,21 +29,21 @@ namespace ByteShelf.Services
         /// </summary>
         /// <param name="configService">The tenant configuration service for accessing tenant information.</param>
         /// <param name="logger">The logger for recording service operations.</param>
-        /// <param name="configuration">The application configuration for accessing storage settings.</param>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configService"/>, <paramref name="logger"/>, or <paramref name="configuration"/> is null.</exception>
+        /// <param name="storagePath">The storage path for tenant data.</param>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configService"/>, <paramref name="logger"/>, or <paramref name="storagePath"/> is null.</exception>
         /// <remarks>
         /// This constructor initializes the service with the tenant configuration service,
-        /// sets up the storage path from configuration, and loads existing usage data from disk.
+        /// sets up the storage path, and loads existing usage data from disk.
         /// The service will automatically persist usage data periodically to maintain consistency.
         /// </remarks>
         public StorageService(
             ITenantConfigurationService configService,
             ILogger<StorageService> logger,
-            IConfiguration configuration)
+            string storagePath)
         {
             _configService = configService ?? throw new ArgumentNullException(nameof(configService));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _storagePath = (configuration ?? throw new ArgumentNullException(nameof(configuration)))["StoragePath"] ?? "byte-shelf-storage";
+            _storagePath = storagePath ?? throw new ArgumentNullException(nameof(storagePath));
             _usageFilePath = Path.Combine(_storagePath, "usage.json");
 
             LoadUsageData();

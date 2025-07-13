@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
+using Microsoft.Extensions.Logging;
 
 namespace ByteShelf.Tests
 {
@@ -15,6 +16,8 @@ namespace ByteShelf.Tests
         private TenantController _controller = null!;
         private Mock<IStorageService> _mockStorageService = null!;
         private Mock<ITenantConfigurationService> _mockConfigService = null!;
+        private Mock<IFileStorageService> _mockFileStorageService = null!;
+        private Mock<ILogger<TenantController>> _mockLogger = null!;
         private Mock<HttpContext> _mockHttpContext = null!;
         private TenantConfiguration _tenantConfig = null!;
 
@@ -23,6 +26,8 @@ namespace ByteShelf.Tests
         {
             _mockStorageService = new Mock<IStorageService>();
             _mockConfigService = new Mock<ITenantConfigurationService>();
+            _mockFileStorageService = new Mock<IFileStorageService>();
+            _mockLogger = new Mock<ILogger<TenantController>>();
             _mockHttpContext = new Mock<HttpContext>();
 
             // Setup the Items dictionary properly
@@ -53,7 +58,7 @@ namespace ByteShelf.Tests
 
             _mockConfigService.Setup(c => c.GetConfiguration()).Returns(_tenantConfig);
 
-            _controller = new TenantController(_mockStorageService.Object, _mockConfigService.Object);
+            _controller = new TenantController(_mockStorageService.Object, _mockConfigService.Object, _mockFileStorageService.Object, _mockLogger.Object);
             _controller.ControllerContext = new ControllerContext
             {
                 HttpContext = _mockHttpContext.Object
@@ -65,7 +70,7 @@ namespace ByteShelf.Tests
         {
             // Act & Assert
             Assert.ThrowsException<ArgumentNullException>(() =>
-                new TenantController(null!, _mockConfigService.Object));
+                new TenantController(null!, _mockConfigService.Object, _mockFileStorageService.Object, _mockLogger.Object));
         }
 
         [TestMethod]
@@ -73,7 +78,23 @@ namespace ByteShelf.Tests
         {
             // Act & Assert
             Assert.ThrowsException<ArgumentNullException>(() =>
-                new TenantController(_mockStorageService.Object, null!));
+                new TenantController(_mockStorageService.Object, null!, _mockFileStorageService.Object, _mockLogger.Object));
+        }
+
+        [TestMethod]
+        public void Constructor_WithNullFileStorageService_ThrowsArgumentNullException()
+        {
+            // Act & Assert
+            Assert.ThrowsException<ArgumentNullException>(() =>
+                new TenantController(_mockStorageService.Object, _mockConfigService.Object, null!, _mockLogger.Object));
+        }
+
+        [TestMethod]
+        public void Constructor_WithNullLogger_ThrowsArgumentNullException()
+        {
+            // Act & Assert
+            Assert.ThrowsException<ArgumentNullException>(() =>
+                new TenantController(_mockStorageService.Object, _mockConfigService.Object, _mockFileStorageService.Object, null!));
         }
 
         [TestMethod]
@@ -1009,16 +1030,40 @@ namespace ByteShelf.Tests
             // Arrange
             string tenantId = "tenant1";
             string subTenantId = "subtenant1";
+            TenantInfo subTenant = new TenantInfo { DisplayName = "Test Subtenant" };
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
-            _mockConfigService.Setup(c => c.DeleteSubTenantAsync(tenantId, subTenantId))
-                .ReturnsAsync(true);
+            _mockConfigService.Setup(c => c.HasAccessToTenant(tenantId, subTenantId)).Returns(true);
+            _mockConfigService.Setup(c => c.GetTenant(subTenantId)).Returns(subTenant);
+            _mockConfigService.Setup(c => c.GetAllDescendantTenantIds(subTenantId)).Returns(Enumerable.Empty<string>());
+            _mockConfigService.Setup(c => c.DeleteSubTenantAsync(tenantId, subTenantId)).ReturnsAsync(true);
+            _mockFileStorageService.Setup(f => f.DeleteAllFilesRecursivelyAsync(subTenantId, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(3);
 
             // Act
             IActionResult result = await _controller.DeleteSubTenant(subTenantId, CancellationToken.None);
 
             // Assert
             Assert.IsInstanceOfType(result, typeof(OkResult));
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenant_ReturnsUnauthorized_WhenNoAccessToSubTenant()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "subtenant1";
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.HasAccessToTenant(tenantId, subTenantId)).Returns(false);
+
+            // Act
+            IActionResult result = await _controller.DeleteSubTenant(subTenantId, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(UnauthorizedObjectResult));
+            UnauthorizedObjectResult unauthorizedResult = (UnauthorizedObjectResult)result;
+            Assert.AreEqual("You do not have permission to delete this subtenant", unauthorizedResult.Value);
         }
 
         [TestMethod]
@@ -1029,8 +1074,8 @@ namespace ByteShelf.Tests
             string subTenantId = "nonexistent";
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
-            _mockConfigService.Setup(c => c.DeleteSubTenantAsync(tenantId, subTenantId))
-                .ReturnsAsync(false);
+            _mockConfigService.Setup(c => c.HasAccessToTenant(tenantId, subTenantId)).Returns(true);
+            _mockConfigService.Setup(c => c.GetTenant(subTenantId)).Returns((TenantInfo?)null);
 
             // Act
             IActionResult result = await _controller.DeleteSubTenant(subTenantId, CancellationToken.None);
@@ -1050,6 +1095,82 @@ namespace ByteShelf.Tests
             // Act & Assert
             await Assert.ThrowsExceptionAsync<InvalidOperationException>(() =>
                 _controller.DeleteSubTenant(subTenantId, CancellationToken.None));
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenant_DeletesFilesRecursivelyAndSubTenant_WhenSubTenantExists()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "subtenant1";
+            string[] descendantIds = { "descendant1", "descendant2" };
+            TenantInfo subTenant = new TenantInfo { DisplayName = "Test Subtenant" };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.HasAccessToTenant(tenantId, subTenantId)).Returns(true);
+            _mockConfigService.Setup(c => c.GetTenant(subTenantId)).Returns(subTenant);
+            _mockConfigService.Setup(c => c.GetAllDescendantTenantIds(subTenantId)).Returns(descendantIds);
+            _mockConfigService.Setup(c => c.DeleteSubTenantAsync(tenantId, subTenantId)).ReturnsAsync(true);
+            _mockFileStorageService.Setup(f => f.DeleteAllFilesRecursivelyAsync(subTenantId, descendantIds, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(5);
+
+            // Act
+            IActionResult result = await _controller.DeleteSubTenant(subTenantId, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkResult));
+            _mockFileStorageService.Verify(f => f.DeleteAllFilesRecursivelyAsync(subTenantId, descendantIds, It.IsAny<CancellationToken>()), Times.Once);
+            _mockConfigService.Verify(c => c.DeleteSubTenantAsync(tenantId, subTenantId), Times.Once);
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenant_Returns500_WhenFileDeletionFails()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "subtenant1";
+            TenantInfo subTenant = new TenantInfo { DisplayName = "Test Subtenant" };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.HasAccessToTenant(tenantId, subTenantId)).Returns(true);
+            _mockConfigService.Setup(c => c.GetTenant(subTenantId)).Returns(subTenant);
+            _mockConfigService.Setup(c => c.GetAllDescendantTenantIds(subTenantId)).Returns(Enumerable.Empty<string>());
+            _mockFileStorageService.Setup(f => f.DeleteAllFilesRecursivelyAsync(subTenantId, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new Exception("File deletion failed"));
+
+            // Act
+            IActionResult result = await _controller.DeleteSubTenant(subTenantId, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(ObjectResult));
+            ObjectResult objectResult = (ObjectResult)result;
+            Assert.AreEqual(500, objectResult.StatusCode);
+            _mockConfigService.Verify(c => c.DeleteSubTenantAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenant_RemovesSubTenantFromConfig_WhenFileDeletionSucceeds()
+        {
+            // Arrange
+            string tenantId = "tenant1";
+            string subTenantId = "subtenant1";
+            TenantInfo subTenant = new TenantInfo { DisplayName = "Test Subtenant" };
+
+            _mockHttpContext.Object.Items["TenantId"] = tenantId;
+            _mockConfigService.Setup(c => c.HasAccessToTenant(tenantId, subTenantId)).Returns(true);
+            _mockConfigService.Setup(c => c.GetTenant(subTenantId)).Returns(subTenant);
+            _mockConfigService.Setup(c => c.GetAllDescendantTenantIds(subTenantId)).Returns(Enumerable.Empty<string>());
+            _mockConfigService.Setup(c => c.DeleteSubTenantAsync(tenantId, subTenantId)).ReturnsAsync(true);
+            _mockFileStorageService.Setup(f => f.DeleteAllFilesRecursivelyAsync(subTenantId, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(3);
+
+            // Act
+            IActionResult result = await _controller.DeleteSubTenant(subTenantId, CancellationToken.None);
+
+            // Assert
+            Assert.IsInstanceOfType(result, typeof(OkResult));
+            _mockFileStorageService.Verify(f => f.DeleteAllFilesRecursivelyAsync(subTenantId, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()), Times.Once);
+            _mockConfigService.Verify(c => c.DeleteSubTenantAsync(tenantId, subTenantId), Times.Once);
         }
 
         [TestMethod]
@@ -1434,20 +1555,29 @@ namespace ByteShelf.Tests
         }
 
         [TestMethod]
-        public async Task DeleteSubTenant_DelegatesToConfigService()
+        public async Task DeleteSubTenant_DelegatesToServices()
         {
             // Arrange
             string tenantId = "tenant1";
             string subTenantId = "subtenant1";
+            TenantInfo subTenant = new TenantInfo { DisplayName = "Test Subtenant" };
 
             _mockHttpContext.Object.Items["TenantId"] = tenantId;
-            _mockConfigService.Setup(c => c.DeleteSubTenantAsync(tenantId, subTenantId))
-                .ReturnsAsync(true);
+            _mockConfigService.Setup(c => c.HasAccessToTenant(tenantId, subTenantId)).Returns(true);
+            _mockConfigService.Setup(c => c.GetTenant(subTenantId)).Returns(subTenant);
+            _mockConfigService.Setup(c => c.GetAllDescendantTenantIds(subTenantId)).Returns(Enumerable.Empty<string>());
+            _mockConfigService.Setup(c => c.DeleteSubTenantAsync(tenantId, subTenantId)).ReturnsAsync(true);
+            _mockFileStorageService.Setup(f => f.DeleteAllFilesRecursivelyAsync(subTenantId, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(3);
 
             // Act
             await _controller.DeleteSubTenant(subTenantId, CancellationToken.None);
 
             // Assert
+            _mockConfigService.Verify(c => c.HasAccessToTenant(tenantId, subTenantId), Times.Once);
+            _mockConfigService.Verify(c => c.GetTenant(subTenantId), Times.Once);
+            _mockConfigService.Verify(c => c.GetAllDescendantTenantIds(subTenantId), Times.Once);
+            _mockFileStorageService.Verify(f => f.DeleteAllFilesRecursivelyAsync(subTenantId, It.IsAny<IEnumerable<string>>(), It.IsAny<CancellationToken>()), Times.Once);
             _mockConfigService.Verify(c => c.DeleteSubTenantAsync(tenantId, subTenantId), Times.Once);
         }
 

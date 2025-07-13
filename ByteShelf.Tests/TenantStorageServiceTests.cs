@@ -14,7 +14,6 @@ namespace ByteShelf.Tests
     {
         private string _tempStoragePath = null!;
         private Mock<ITenantConfigurationService> _mockConfigService = null!;
-        private Mock<IConfiguration> _mockConfiguration = null!;
         private TestLogger<StorageService> _logger = null!;
         private StorageService _service = null!;
         private TenantConfiguration _tenantConfig = null!;
@@ -24,11 +23,7 @@ namespace ByteShelf.Tests
         {
             _tempStoragePath = Path.Combine(Path.GetTempPath(), $"ByteShelf-TenantStorage-Test-{Guid.NewGuid()}");
             _mockConfigService = new Mock<ITenantConfigurationService>();
-            _mockConfiguration = new Mock<IConfiguration>();
             _logger = new TestLogger<StorageService>();
-
-            // Setup configuration
-            _mockConfiguration.Setup(c => c["StoragePath"]).Returns(_tempStoragePath);
 
             // Setup tenant configuration
             _tenantConfig = new TenantConfiguration
@@ -55,7 +50,7 @@ namespace ByteShelf.Tests
 
             _mockConfigService.Setup(c => c.GetConfiguration()).Returns(_tenantConfig);
 
-            _service = new StorageService(_mockConfigService.Object, _logger, _mockConfiguration.Object);
+            _service = new StorageService(_mockConfigService.Object, _logger, _tempStoragePath);
         }
 
         [TestCleanup]
@@ -80,7 +75,7 @@ namespace ByteShelf.Tests
         {
             // Act & Assert
             Assert.ThrowsException<ArgumentNullException>(() =>
-                new StorageService(null!, _logger, _mockConfiguration.Object));
+                new StorageService(null!, _logger, _tempStoragePath));
         }
 
         [TestMethod]
@@ -88,11 +83,11 @@ namespace ByteShelf.Tests
         {
             // Act & Assert
             Assert.ThrowsException<ArgumentNullException>(() =>
-                new StorageService(_mockConfigService.Object, null!, _mockConfiguration.Object));
+                new StorageService(_mockConfigService.Object, null!, _tempStoragePath));
         }
 
         [TestMethod]
-        public void Constructor_ThrowsArgumentNullException_WhenConfigurationIsNull()
+        public void Constructor_ThrowsArgumentNullException_WhenStoragePathIsNull()
         {
             // Act & Assert
             Assert.ThrowsException<ArgumentNullException>(() =>
@@ -639,7 +634,7 @@ namespace ByteShelf.Tests
 
             // Act - Create a new service instance to trigger startup rebuild
             StorageService newService = new StorageService(
-                _mockConfigService.Object, _logger, _mockConfiguration.Object);
+                _mockConfigService.Object, _logger, _tempStoragePath);
 
             // Assert
             long usage = newService.GetCurrentUsage(tenantId);
@@ -665,7 +660,7 @@ namespace ByteShelf.Tests
 
             // Act - Create a new service instance to test persistence
             StorageService newService = new StorageService(
-                _mockConfigService.Object, _logger, _mockConfiguration.Object);
+                _mockConfigService.Object, _logger, _tempStoragePath);
 
             // Assert
             long usage = newService.GetCurrentUsage(tenantId);
