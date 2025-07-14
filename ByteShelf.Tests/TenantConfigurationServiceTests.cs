@@ -959,6 +959,57 @@ namespace ByteShelf.Tests
         }
 
         [TestMethod]
+        public async Task DeleteSubTenantAsync_DeletesDeepSubTenant_WhenUsingHigherLevelParent()
+        {
+            // Arrange - Create a hierarchy: tenant1 -> subtenant1 -> grandchild1
+            string parentTenantId = "tenant1";
+            string subTenantId = await _service.CreateSubTenantAsync(parentTenantId, "Sub Tenant");
+            string grandchildId = await _service.CreateSubTenantAsync(subTenantId, "Grandchild Tenant");
+
+            // Verify the hierarchy exists
+            TenantConfiguration config = _service.GetConfiguration();
+            Assert.IsTrue(config.Tenants[parentTenantId].SubTenants.ContainsKey(subTenantId));
+            Assert.IsTrue(config.Tenants[parentTenantId].SubTenants[subTenantId].SubTenants.ContainsKey(grandchildId));
+
+            // Act - Try to delete the grandchild using the root parent (tenant1)
+            bool result = await _service.DeleteSubTenantAsync(parentTenantId, grandchildId);
+
+            // Assert
+            Assert.IsTrue(result);
+            
+            // Verify the grandchild was removed from its immediate parent (subTenantId)
+            Assert.IsFalse(config.Tenants[parentTenantId].SubTenants[subTenantId].SubTenants.ContainsKey(grandchildId));
+            
+            // Verify the subtenant still exists
+            Assert.IsTrue(config.Tenants[parentTenantId].SubTenants.ContainsKey(subTenantId));
+        }
+
+        [TestMethod]
+        public async Task DeleteSubTenantAsync_ReturnsFalse_WhenSubTenantIsNotDescendantOfSpecifiedParent()
+        {
+            // Arrange - Create two separate hierarchies
+            string parent1Id = "tenant1";
+            string parent2Id = "admin";
+            
+            string subTenant1Id = await _service.CreateSubTenantAsync(parent1Id, "Sub Tenant 1");
+            string subTenant2Id = await _service.CreateSubTenantAsync(parent2Id, "Sub Tenant 2");
+
+            // Verify both hierarchies exist
+            TenantConfiguration config = _service.GetConfiguration();
+            Assert.IsTrue(config.Tenants[parent1Id].SubTenants.ContainsKey(subTenant1Id));
+            Assert.IsTrue(config.Tenants[parent2Id].SubTenants.ContainsKey(subTenant2Id));
+
+            // Act - Try to delete subTenant2 using parent1 (which should fail)
+            bool result = await _service.DeleteSubTenantAsync(parent1Id, subTenant2Id);
+
+            // Assert
+            Assert.IsFalse(result);
+            
+            // Verify subTenant2 still exists under parent2
+            Assert.IsTrue(config.Tenants[parent2Id].SubTenants.ContainsKey(subTenant2Id));
+        }
+
+        [TestMethod]
         public async Task CanCreateSubTenantAsync_ReturnsTrue_WhenTenantExistsAndDepthNotExceeded()
         {
             // Arrange

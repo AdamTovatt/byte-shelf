@@ -396,6 +396,7 @@ namespace ByteShelf.Services
             if (string.IsNullOrWhiteSpace(subTenantId))
                 throw new ArgumentException("Subtenant ID cannot be null or empty", nameof(subTenantId));
 
+            // First, verify the parent tenant exists
             TenantInfo? parentTenant = GetTenant(parentTenantId);
             if (parentTenant == null)
             {
@@ -403,9 +404,33 @@ namespace ByteShelf.Services
                 return false;
             }
 
-            if (!parentTenant.SubTenants.Remove(subTenantId))
+            // Find the subtenant to be deleted
+            TenantInfo? subTenantToDelete = GetTenant(subTenantId);
+            if (subTenantToDelete == null)
             {
-                _logger.LogWarning("Subtenant not found: {SubTenantId} under parent {ParentTenantId}", subTenantId, parentTenantId);
+                _logger.LogWarning("Subtenant not found: {SubTenantId}", subTenantId);
+                return false;
+            }
+
+            // Verify the subtenant is actually a descendant of the specified parent
+            if (!IsDescendantOf(subTenantToDelete, parentTenant))
+            {
+                _logger.LogWarning("Subtenant {SubTenantId} is not a descendant of parent {ParentTenantId}", subTenantId, parentTenantId);
+                return false;
+            }
+
+            // Get the immediate parent of the subtenant to be deleted
+            TenantInfo? immediateParent = subTenantToDelete.Parent;
+            if (immediateParent == null)
+            {
+                _logger.LogWarning("Subtenant {SubTenantId} has no parent (should not happen)", subTenantId);
+                return false;
+            }
+
+            // Remove the subtenant from its immediate parent
+            if (!immediateParent.SubTenants.Remove(subTenantId))
+            {
+                _logger.LogWarning("Failed to remove subtenant {SubTenantId} from its parent", subTenantId);
                 return false;
             }
 
