@@ -36,32 +36,70 @@ The main interface for file storage operations, implemented by both client and s
 ```csharp
 public interface IShelfFileProvider
 {
-    // File operations
+    // Core file operations
     Task<Guid> WriteFileAsync(string filename, string contentType, Stream content);
     Task<ShelfFile> ReadFileAsync(Guid fileId);
+    Task<ShelfFile> ReadFileAsync(Guid fileId, bool useChunked);
     Task DeleteFileAsync(Guid fileId);
     Task<IEnumerable<ShelfFileMetadata>> GetFilesAsync();
+    
+    // Enhanced file operations with quota checking
+    Task<Guid> WriteFileWithQuotaCheckAsync(string filename, string contentType, Stream content, bool checkQuotaFirst = true);
     
     // Tenant-specific file operations (parent access required)
     Task<Guid> WriteFileForTenantAsync(string targetTenantId, string filename, string contentType, Stream content);
     Task<ShelfFile> ReadFileForTenantAsync(string targetTenantId, Guid fileId);
     Task DeleteFileForTenantAsync(string targetTenantId, Guid fileId);
     Task<IEnumerable<ShelfFileMetadata>> GetFilesForTenantAsync(string targetTenantId);
+    
+    // Storage management
+    Task<TenantStorageInfo> GetStorageInfoAsync();
+    Task<QuotaCheckResult> CanStoreFileAsync(long fileSizeBytes);
+    
+    // Tenant information and management
+    Task<TenantInfoResponse> GetTenantInfoAsync();
+    Task<Dictionary<string, TenantInfoResponse>> GetSubTenantsAsync();
+    Task<TenantInfoResponse> GetSubTenantAsync(string subTenantId);
+    Task<Dictionary<string, TenantInfoResponse>> GetSubTenantsUnderSubTenantAsync(string parentSubtenantId);
+    
+    // Subtenant management
+    Task<string> CreateSubTenantAsync(string displayName);
+    Task<string> CreateSubTenantUnderSubTenantAsync(string parentSubtenantId, string displayName);
+    Task UpdateSubTenantStorageLimitAsync(string subTenantId, long storageLimitBytes);
+    Task DeleteSubTenantAsync(string subTenantId);
 }
 ```
 
-**Note**: The `HttpShelfFileProvider` implementation provides additional methods beyond the core `IShelfFileProvider` interface, including tenant-specific operations like `GetTenantInfoAsync()`, `GetStorageInfoAsync()`, `CanStoreFileAsync()`, and subtenant management methods. These are specific to the HTTP API implementation and not part of the core interface.
+**Core File Operations:**
+- `WriteFileAsync()` - Write a file to storage with automatic chunking
+- `ReadFileAsync()` - Read a file with configurable retrieval method (chunked vs single endpoint)
+- `DeleteFileAsync()` - Delete a file and all its chunks
+- `GetFilesAsync()` - Get metadata for all stored files
 
-**Additional HTTP API Methods:**
-- `GetTenantInfoAsync()` - Get tenant information including admin status
-- `GetStorageInfoAsync()` - Get storage usage information
-- `CanStoreFileAsync(long fileSize)` - Check if a file can be stored
-- `CreateSubTenantAsync(string displayName)` - Create a new subtenant
-- `GetSubTenantsAsync()` - List all subtenants
-- `GetSubTenantAsync(string subTenantId)` - Get subtenant information
-- `GetSubTenantsUnderSubTenantAsync(string parentSubtenantId)` - List all subtenants under a specific subtenant (hierarchical folder browsing)
-- `UpdateSubTenantStorageLimitAsync(string subTenantId, long storageLimitBytes)` - Update subtenant storage limit
-- `DeleteSubTenantAsync(string subTenantId)` - Delete a subtenant
+**Enhanced File Operations:**
+- `WriteFileWithQuotaCheckAsync()` - Write file with optional quota checking before upload
+
+**Tenant-Specific Operations:**
+- `WriteFileForTenantAsync()` - Write file to a specific tenant
+- `ReadFileForTenantAsync()` - Read file from a specific tenant
+- `DeleteFileForTenantAsync()` - Delete file from a specific tenant
+- `GetFilesForTenantAsync()` - Get files from a specific tenant
+
+**Storage Management:**
+- `GetStorageInfoAsync()` - Get current storage usage and limits
+- `CanStoreFileAsync()` - Check if a file can be stored within quota
+
+**Tenant Information:**
+- `GetTenantInfoAsync()` - Get current tenant information including admin status
+- `GetSubTenantsAsync()` - Get all subtenants of the current tenant
+- `GetSubTenantAsync()` - Get information about a specific subtenant
+- `GetSubTenantsUnderSubTenantAsync()` - Get subtenants under a specific subtenant
+
+**Subtenant Management:**
+- `CreateSubTenantAsync()` - Create a new subtenant under the current tenant
+- `CreateSubTenantUnderSubTenantAsync()` - Create a subtenant under another subtenant
+- `UpdateSubTenantStorageLimitAsync()` - Update a subtenant's storage limit
+- `DeleteSubTenantAsync()` - Delete a subtenant
 
 ### IContentProvider
 
@@ -73,8 +111,6 @@ public interface IContentProvider
     Stream GetContentStream();
 }
 ```
-
-**Note**: The `HttpShelfFileProvider` implementation provides additional methods beyond the core `IShelfFileProvider` interface, including tenant-specific operations like `GetTenantInfoAsync()`, `GetStorageInfoAsync()`, and `CanStoreFileAsync()`. These are specific to the HTTP API implementation and not part of the core interface.
 
 ## 📊 Data Models
 

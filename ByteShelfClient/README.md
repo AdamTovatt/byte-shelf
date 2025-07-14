@@ -323,24 +323,40 @@ else
 ```
 ```
 
-#### Additional Methods (Beyond IShelfFileProvider)
+#### Complete Interface Implementation
 
-##### Storage Operations
-- `GetStorageInfoAsync()` - Get tenant storage information
-- `CanStoreFileAsync(long fileSize)` - Check if file can be stored
-- `WriteFileWithQuotaCheckAsync(string filename, string contentType, Stream content, bool checkQuotaFirst = true)` - Upload with optional quota checking
+The `HttpShelfFileProvider` implements the full `IShelfFileProvider` interface, providing all the methods needed for comprehensive file system management:
 
-##### Tenant Operations
-- `GetTenantInfoAsync()` - Get tenant information including admin status
+##### Core File Operations
+- `WriteFileAsync()` - Write a file to storage with automatic chunking
+- `ReadFileAsync()` - Read a file with configurable retrieval method (chunked vs single endpoint)
+- `DeleteFileAsync()` - Delete a file and all its chunks
+- `GetFilesAsync()` - Get metadata for all stored files
+
+##### Enhanced File Operations
+- `WriteFileWithQuotaCheckAsync()` - Write file with optional quota checking before upload
+
+##### Tenant-Specific Operations
+- `WriteFileForTenantAsync()` - Write file to a specific tenant
+- `ReadFileForTenantAsync()` - Read file from a specific tenant
+- `DeleteFileForTenantAsync()` - Delete file from a specific tenant
+- `GetFilesForTenantAsync()` - Get files from a specific tenant
+
+##### Storage Management
+- `GetStorageInfoAsync()` - Get current storage usage and limits
+- `CanStoreFileAsync()` - Check if a file can be stored within quota
+
+##### Tenant Information
+- `GetTenantInfoAsync()` - Get current tenant information including admin status
+- `GetSubTenantsAsync()` - Get all subtenants of the current tenant
+- `GetSubTenantAsync()` - Get information about a specific subtenant
+- `GetSubTenantsUnderSubTenantAsync()` - Get subtenants under a specific subtenant
 
 ##### Subtenant Management
-- `CreateSubTenantAsync(string displayName)` - Create a new subtenant
-- `CreateSubTenantUnderSubTenantAsync(string parentSubtenantId, string displayName)` - Create a new subtenant under a specific subtenant (hierarchical folder creation)
-- `GetSubTenantsAsync()` - List all subtenants
-- `GetSubTenantAsync(string subTenantId)` - Get specific subtenant information
-- `GetSubTenantsUnderSubTenantAsync(string parentSubtenantId)` - List all subtenants under a specific subtenant (hierarchical folder browsing)
-- `UpdateSubTenantStorageLimitAsync(string subTenantId, long storageLimitBytes)` - Update subtenant storage limit
-- `DeleteSubTenantAsync(string subTenantId)` - Delete a subtenant
+- `CreateSubTenantAsync()` - Create a new subtenant under the current tenant
+- `CreateSubTenantUnderSubTenantAsync()` - Create a subtenant under another subtenant
+- `UpdateSubTenantStorageLimitAsync()` - Update a subtenant's storage limit
+- `DeleteSubTenantAsync()` - Delete a subtenant
 
 #### Network Issues
 ```
