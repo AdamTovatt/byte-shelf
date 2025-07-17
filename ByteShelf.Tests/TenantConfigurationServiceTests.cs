@@ -23,6 +23,7 @@ namespace ByteShelf.Tests
             // Set environment variable for test
             Environment.SetEnvironmentVariable("BYTESHELF_TENANT_CONFIG_PATH", _testConfigPath);
 
+            TenantConfigurationService.CreateDefaultConfigurationFile(_testConfigPath);
             _service = new TenantConfigurationService(_logger);
         }
 
@@ -42,16 +43,47 @@ namespace ByteShelf.Tests
         [TestMethod]
         public void Constructor_CreatesDefaultConfiguration_WhenFileDoesNotExist()
         {
-            // Arrange & Act
-            TenantConfiguration config = _service.GetConfiguration();
+            try
+            {
+                File.Delete(_testConfigPath);
 
-            // Assert
-            Assert.IsNotNull(config);
-            Assert.IsTrue(config.RequireAuthentication);
-            Assert.IsTrue(config.Tenants.ContainsKey("admin"));
-            Assert.IsTrue(config.Tenants.ContainsKey("tenant1"));
-            Assert.IsTrue(config.Tenants["admin"].IsAdmin);
-            Assert.IsFalse(config.Tenants["tenant1"].IsAdmin);
+                // Arrange & Act
+                TenantConfigurationService tenantConfigurationService = new TenantConfigurationService(_logger);
+                TenantConfiguration config = tenantConfigurationService.GetConfiguration();
+
+                // Assert
+                Assert.IsNotNull(config);
+                Assert.IsTrue(config.RequireAuthentication);
+                Assert.IsTrue(config.Tenants.ContainsKey("admin"));
+                Assert.IsTrue(config.Tenants.ContainsKey("tenant1"));
+                Assert.IsTrue(config.Tenants["admin"].IsAdmin);
+                Assert.IsFalse(config.Tenants["tenant1"].IsAdmin);
+            }
+            catch { throw; }
+            finally
+            {
+                TenantConfigurationService.CreateDefaultConfigurationFile(_testConfigPath);
+            }
+        }
+
+        [TestMethod]
+        public void Constructor_ThrowsException_WhenJsonErrorInConfig()
+        {
+            try
+            {
+                string configContent = File.ReadAllText(_testConfigPath);
+
+                File.WriteAllText(_testConfigPath, $"invalid json {configContent}");
+
+                // Arrange & Act
+                Assert.ThrowsException<Exception>(() => new TenantConfigurationService(_logger));
+            }
+            catch { throw; }
+            finally
+            {
+                File.Delete(_testConfigPath);
+                TenantConfigurationService.CreateDefaultConfigurationFile(_testConfigPath);
+            }
         }
 
         [TestMethod]
@@ -976,10 +1008,10 @@ namespace ByteShelf.Tests
 
             // Assert
             Assert.IsTrue(result);
-            
+
             // Verify the grandchild was removed from its immediate parent (subTenantId)
             Assert.IsFalse(config.Tenants[parentTenantId].SubTenants[subTenantId].SubTenants.ContainsKey(grandchildId));
-            
+
             // Verify the subtenant still exists
             Assert.IsTrue(config.Tenants[parentTenantId].SubTenants.ContainsKey(subTenantId));
         }
@@ -990,7 +1022,7 @@ namespace ByteShelf.Tests
             // Arrange - Create two separate hierarchies
             string parent1Id = "tenant1";
             string parent2Id = "admin";
-            
+
             string subTenant1Id = await _service.CreateSubTenantAsync(parent1Id, "Sub Tenant 1");
             string subTenant2Id = await _service.CreateSubTenantAsync(parent2Id, "Sub Tenant 2");
 
@@ -1004,7 +1036,7 @@ namespace ByteShelf.Tests
 
             // Assert
             Assert.IsFalse(result);
-            
+
             // Verify subTenant2 still exists under parent2
             Assert.IsTrue(config.Tenants[parent2Id].SubTenants.ContainsKey(subTenant2Id));
         }

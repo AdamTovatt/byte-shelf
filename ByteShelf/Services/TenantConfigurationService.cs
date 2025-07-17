@@ -15,11 +15,16 @@ namespace ByteShelf.Services
     /// </remarks>
     public class TenantConfigurationService : ITenantConfigurationService, IDisposable
     {
+        private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNameCaseInsensitive = true,
+        };
+
         private readonly string _configFilePath;
         private readonly ILogger<TenantConfigurationService> _logger;
         private readonly object _configLock = new object();
         private readonly FileSystemWatcher? _fileWatcher;
-        private readonly JsonSerializerOptions _jsonOptions;
 
         private TenantConfiguration _currentConfiguration;
         private bool _disposed = false;
@@ -42,12 +47,6 @@ namespace ByteShelf.Services
             // Determine configuration file path from environment variable or use default
             string? envPath = Environment.GetEnvironmentVariable("BYTESHELF_TENANT_CONFIG_PATH");
             _configFilePath = string.IsNullOrWhiteSpace(envPath) ? "./tenant-config.json" : envPath;
-
-            _jsonOptions = new JsonSerializerOptions
-            {
-                WriteIndented = true,
-                PropertyNameCaseInsensitive = true,
-            };
 
             // Initialize with default configuration
             _currentConfiguration = CreateDefaultConfiguration();
@@ -771,39 +770,42 @@ namespace ByteShelf.Services
                         _logger.LogWarning("Failed to deserialize configuration from file, using default: {ConfigPath}", _configFilePath);
                     }
                 }
-
-                // Create default configuration file
-                CreateDefaultConfigurationFile();
+                else // File doesn't exist
+                {
+                    // Create default configuration file
+                    CreateDefaultConfigurationFile(_configFilePath);
+                }
+            }
+            catch (JsonException ex)
+            {
+                throw new Exception($"Failed to load configuration from file at path \"{_configFilePath}\" because of a json error: {ex.Message}");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to load configuration from file, using default: {ConfigPath}", _configFilePath);
-                CreateDefaultConfigurationFile();
+                throw new Exception($"Failed to load configuration from file at path \"{_configFilePath}\" with loading exception: {ex.Message}");
             }
         }
 
         /// <summary>
         /// Creates a default configuration file with sample tenants.
         /// </summary>
-        private void CreateDefaultConfigurationFile()
+        public static void CreateDefaultConfigurationFile(string path)
         {
             try
             {
                 // Ensure directory exists
-                string? directory = Path.GetDirectoryName(_configFilePath);
+                string? directory = Path.GetDirectoryName(path);
                 if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
                 {
                     Directory.CreateDirectory(directory);
                 }
 
-                string jsonContent = JsonSerializer.Serialize(_currentConfiguration, _jsonOptions);
-                File.WriteAllText(_configFilePath, jsonContent);
-
-                _logger.LogInformation("Created default configuration file: {ConfigPath}", _configFilePath);
+                string jsonContent = JsonSerializer.Serialize(CreateDefaultConfiguration(), _jsonOptions);
+                File.WriteAllText(path, jsonContent);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to create default configuration file: {ConfigPath}", _configFilePath);
+                throw new Exception($"Failed to create default configuration file with exception: {ex.Message}");
             }
         }
 
