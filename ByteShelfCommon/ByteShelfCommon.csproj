@@ -4,6 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <DocumentationFile></DocumentationFile>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
@@ -17,7 +18,7 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>Common part of ByteShelf which is a three-part C# file storage system: server, client and common</Description>
     <Copyright>MIT</Copyright>
-    <Version>1.2.2</Version>
+    <Version>1.3.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

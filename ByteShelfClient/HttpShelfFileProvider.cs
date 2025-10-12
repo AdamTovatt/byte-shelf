@@ -77,6 +77,7 @@ namespace ByteShelfClient
             _jsonOptions = new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true,
+                TypeInfoResolver = ByteShelfClientJsonSerializerContext.Default,
             };
 
             // Set default API key header

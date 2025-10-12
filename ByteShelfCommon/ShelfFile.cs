@@ -62,6 +62,7 @@ namespace ByteShelfCommon
             {
                 disposable.Dispose();
             }
+
             GC.SuppressFinalize(this);
         }
     }
