@@ -16,7 +16,6 @@ namespace ByteShelfClient
     public class HttpShelfFileProvider : IShelfFileProvider
     {
         private readonly HttpClient _httpClient;
-        private readonly JsonSerializerOptions _jsonOptions;
         private readonly string _apiKey;
         private int? _chunkSize;
 
@@ -74,11 +73,6 @@ namespace ByteShelfClient
                 throw new ArgumentException("API key cannot be empty or whitespace", nameof(apiKey));
 
             _apiKey = apiKey;
-            _jsonOptions = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true,
-                TypeInfoResolver = ByteShelfClientJsonSerializerContext.Default,
-            };
 
             // Set default API key header
             _httpClient.DefaultRequestHeaders.Add("X-API-Key", _apiKey);
@@ -120,9 +114,9 @@ namespace ByteShelfClient
         public async Task<IEnumerable<ShelfFileMetadata>> GetFilesAsync(
             CancellationToken cancellationToken = default)
         {
-            List<ShelfFileMetadata>? response = await _httpClient.GetFromJsonAsync<List<ShelfFileMetadata>>(
+            List<ShelfFileMetadata>? response = await _httpClient.GetFromJsonAsync(
                 NormalizePath("api/files"),
-                _jsonOptions,
+                ByteShelfClientJsonSerializerContext.Default.ListShelfFileMetadata,
                 cancellationToken);
 
             return response ?? new List<ShelfFileMetadata>();
@@ -150,9 +144,9 @@ namespace ByteShelfClient
 
             try
             {
-                List<ShelfFileMetadata>? response = await _httpClient.GetFromJsonAsync<List<ShelfFileMetadata>>(
+                List<ShelfFileMetadata>? response = await _httpClient.GetFromJsonAsync(
                     NormalizePath($"api/files/{targetTenantId}"),
-                    _jsonOptions,
+                    ByteShelfClientJsonSerializerContext.Default.ListShelfFileMetadata,
                     cancellationToken);
 
                 return response ?? new List<ShelfFileMetadata>();
@@ -237,9 +231,9 @@ namespace ByteShelfClient
             try
             {
                 // First get the metadata
-                ShelfFileMetadata? metadata = await _httpClient.GetFromJsonAsync<ShelfFileMetadata>(
+                ShelfFileMetadata? metadata = await _httpClient.GetFromJsonAsync(
                     NormalizePath($"api/files/{targetTenantId}/{fileId}/metadata"),
-                    _jsonOptions,
+                    ByteShelfClientJsonSerializerContext.Default.ShelfFileMetadata,
                     cancellationToken);
 
                 if (metadata == null)
@@ -345,7 +339,7 @@ namespace ByteShelfClient
             HttpResponseMessage metadataResponse = await _httpClient.PostAsJsonAsync(
                 NormalizePath("api/files/metadata"),
                 metadata,
-                _jsonOptions,
+                ByteShelfClientJsonSerializerContext.Default.ShelfFileMetadata,
                 cancellationToken);
 
             if (!metadataResponse.IsSuccessStatusCode)
@@ -439,7 +433,7 @@ namespace ByteShelfClient
                 HttpResponseMessage metadataResponse = await _httpClient.PostAsJsonAsync(
                     NormalizePath($"api/files/{targetTenantId}/metadata"),
                     metadata,
-                    _jsonOptions,
+                    ByteShelfClientJsonSerializerContext.Default.ShelfFileMetadata,
                     cancellationToken);
 
                 if (!metadataResponse.IsSuccessStatusCode)
@@ -545,9 +539,9 @@ namespace ByteShelfClient
         /// </remarks>
         public async Task<TenantStorageInfo> GetStorageInfoAsync(CancellationToken cancellationToken = default)
         {
-            TenantStorageInfo? response = await _httpClient.GetFromJsonAsync<TenantStorageInfo>(
+            TenantStorageInfo? response = await _httpClient.GetFromJsonAsync(
                 NormalizePath("api/tenant/storage"),
-                _jsonOptions,
+                ByteShelfClientJsonSerializerContext.Default.TenantStorageInfo,
                 cancellationToken);
 
             if (response == null)
@@ -571,9 +565,9 @@ namespace ByteShelfClient
         /// </remarks>
         public async Task<QuotaCheckResult> CanStoreFileAsync(long fileSizeBytes, CancellationToken cancellationToken = default)
         {
-            QuotaCheckResult? response = await _httpClient.GetFromJsonAsync<QuotaCheckResult>(
+            QuotaCheckResult? response = await _httpClient.GetFromJsonAsync(
                 NormalizePath($"api/tenant/storage/can-store?fileSizeBytes={fileSizeBytes}"),
-                _jsonOptions,
+                ByteShelfClientJsonSerializerContext.Default.QuotaCheckResult,
                 cancellationToken);
 
             if (response == null)
@@ -653,9 +647,9 @@ namespace ByteShelfClient
             if (_chunkSize.HasValue)
                 return _chunkSize.Value;
 
-            ChunkConfiguration? config = await _httpClient.GetFromJsonAsync<ChunkConfiguration>(
+            ChunkConfiguration? config = await _httpClient.GetFromJsonAsync(
                 NormalizePath("api/config/chunk-size"),
-                _jsonOptions,
+                ByteShelfClientJsonSerializerContext.Default.ChunkConfiguration,
                 cancellationToken);
 
             if (config == null)
@@ -680,9 +674,9 @@ namespace ByteShelfClient
         /// </remarks>
         public async Task<TenantInfoResponse> GetTenantInfoAsync(CancellationToken cancellationToken = default)
         {
-            TenantInfoResponse? response = await _httpClient.GetFromJsonAsync<TenantInfoResponse>(
+            TenantInfoResponse? response = await _httpClient.GetFromJsonAsync(
                 NormalizePath("api/tenant/info"),
-                _jsonOptions,
+                ByteShelfClientJsonSerializerContext.Default.TenantInfoResponse,
                 cancellationToken);
 
             if (response == null)
@@ -703,9 +697,9 @@ namespace ByteShelfClient
         /// </remarks>
         public async Task<Dictionary<string, TenantInfoResponse>> GetSubTenantsAsync(CancellationToken cancellationToken = default)
         {
-            Dictionary<string, TenantInfoResponse>? response = await _httpClient.GetFromJsonAsync<Dictionary<string, TenantInfoResponse>>(
+            Dictionary<string, TenantInfoResponse>? response = await _httpClient.GetFromJsonAsync(
                 NormalizePath("api/tenant/subtenants"),
-                _jsonOptions,
+                ByteShelfClientJsonSerializerContext.Default.DictionaryStringTenantInfoResponse,
                 cancellationToken);
 
             return response ?? new Dictionary<string, TenantInfoResponse>();
@@ -729,9 +723,9 @@ namespace ByteShelfClient
 
             try
             {
-                TenantInfoResponse? response = await _httpClient.GetFromJsonAsync<TenantInfoResponse>(
+                TenantInfoResponse? response = await _httpClient.GetFromJsonAsync(
                     NormalizePath($"api/tenant/subtenants/{subTenantId}"),
-                    _jsonOptions,
+                    ByteShelfClientJsonSerializerContext.Default.TenantInfoResponse,
                     cancellationToken);
 
                 if (response == null)
@@ -766,9 +760,9 @@ namespace ByteShelfClient
 
             try
             {
-                Dictionary<string, TenantInfoResponse>? response = await _httpClient.GetFromJsonAsync<Dictionary<string, TenantInfoResponse>>(
+                Dictionary<string, TenantInfoResponse>? response = await _httpClient.GetFromJsonAsync(
                     NormalizePath($"api/tenant/subtenants/{parentSubtenantId}/subtenants"),
-                    _jsonOptions,
+                    ByteShelfClientJsonSerializerContext.Default.DictionaryStringTenantInfoResponse,
                     cancellationToken);
 
                 return response ?? new Dictionary<string, TenantInfoResponse>();
@@ -811,7 +805,7 @@ namespace ByteShelfClient
             HttpResponseMessage response = await _httpClient.PostAsJsonAsync(
                 NormalizePath("api/tenant/subtenants"),
                 request,
-                _jsonOptions,
+                ByteShelfClientJsonSerializerContext.Default.CreateSubTenantRequest,
                 cancellationToken);
 
             if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
@@ -825,7 +819,9 @@ namespace ByteShelfClient
             try
             {
                 // Parse the response using the proper typed response class
-                CreateSubTenantResponse? result = await response.Content.ReadFromJsonAsync<CreateSubTenantResponse>(_jsonOptions, cancellationToken);
+                CreateSubTenantResponse? result = await response.Content.ReadFromJsonAsync(
+                    ByteShelfClientJsonSerializerContext.Default.CreateSubTenantResponse, 
+                    cancellationToken);
                 if (result != null)
                 {
                     return result.TenantId;
@@ -871,7 +867,7 @@ namespace ByteShelfClient
             HttpResponseMessage response = await _httpClient.PostAsJsonAsync(
                 NormalizePath($"api/tenant/subtenants/{parentSubtenantId}/subtenants"),
                 request,
-                _jsonOptions,
+                ByteShelfClientJsonSerializerContext.Default.CreateSubTenantRequest,
                 cancellationToken);
 
             if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
@@ -890,7 +886,9 @@ namespace ByteShelfClient
             try
             {
                 // Parse the response using the proper typed response class
-                CreateSubTenantResponse? result = await response.Content.ReadFromJsonAsync<CreateSubTenantResponse>(_jsonOptions, cancellationToken);
+                CreateSubTenantResponse? result = await response.Content.ReadFromJsonAsync(
+                    ByteShelfClientJsonSerializerContext.Default.CreateSubTenantResponse,
+                    cancellationToken);
                 if (result != null)
                 {
                     return result.TenantId;
@@ -933,7 +931,7 @@ namespace ByteShelfClient
             HttpResponseMessage response = await _httpClient.PutAsJsonAsync(
                 NormalizePath($"api/tenant/subtenants/{subTenantId}/storage-limit"),
                 request,
-                _jsonOptions,
+                ByteShelfClientJsonSerializerContext.Default.UpdateStorageLimitRequest,
                 cancellationToken);
 
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -987,9 +985,9 @@ namespace ByteShelfClient
             ShelfFileMetadata? metadata;
             try
             {
-                metadata = await _httpClient.GetFromJsonAsync<ShelfFileMetadata>(
+                metadata = await _httpClient.GetFromJsonAsync(
                     NormalizePath($"api/files/{fileId}/metadata"),
-                    _jsonOptions,
+                    ByteShelfClientJsonSerializerContext.Default.ShelfFileMetadata,
                     cancellationToken);
             }
             catch (HttpRequestException ex) when (ex.Message.Contains("404"))
@@ -1032,9 +1030,9 @@ namespace ByteShelfClient
             ShelfFileMetadata? metadata;
             try
             {
-                metadata = await _httpClient.GetFromJsonAsync<ShelfFileMetadata>(
+                metadata = await _httpClient.GetFromJsonAsync(
                     NormalizePath($"api/files/{fileId}/metadata"),
-                    _jsonOptions,
+                    ByteShelfClientJsonSerializerContext.Default.ShelfFileMetadata,
                     cancellationToken);
             }
             catch (HttpRequestException ex) when (ex.Message.Contains("404"))
