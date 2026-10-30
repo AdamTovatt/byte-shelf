@@ -1,0 +1,25 @@
+namespace ByteShelf.Server.Storage.Models
+{
+    /// <summary>An upload in progress; its bytes are in <c>staging/&lt;id&gt;</c>.</summary>
+    public class UploadRecord
+    {
+        public required Guid Id { get; init; }
+        public required Guid ShelfId { get; init; }
+
+        /// <summary>The normalized path the file will be stored at.</summary>
+        public required string Path { get; init; }
+
+        public required string ContentType { get; init; }
+        public required long SizeBytes { get; init; }
+        public required long ReceivedBytes { get; init; }
+        public required bool Overwrite { get; init; }
+
+        /// <summary>False for a single PUT, whose upload cannot outlive the request that made it.</summary>
+        public required bool IsResumable { get; init; }
+
+        public required DateTimeOffset CreatedAt { get; init; }
+        public required DateTimeOffset LastActivityAt { get; init; }
+
+        public bool IsComplete => ReceivedBytes == SizeBytes;
+    }
+}

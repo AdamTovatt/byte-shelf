@@ -1,0 +1,18 @@
+namespace ByteShelfCommon
+{
+    /// <summary>Starts a resumable upload. The whole size is reserved against the shelf's quota at once.</summary>
+    public sealed class StartUploadRequest
+    {
+        /// <summary>Where the file will be stored. Missing parent directories are created when it finishes.</summary>
+        public required string Path { get; init; }
+
+        /// <summary>The exact size of the contents in bytes.</summary>
+        public required long SizeBytes { get; init; }
+
+        /// <summary>The MIME type to store; <c>application/octet-stream</c> when left out.</summary>
+        public string? ContentType { get; init; }
+
+        /// <summary>Whether a file already at <see cref="Path"/> is replaced (it goes to the trash). Refused otherwise.</summary>
+        public bool Overwrite { get; init; }
+    }
+}

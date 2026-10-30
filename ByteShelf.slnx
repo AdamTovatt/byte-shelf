@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="ByteShelfCommon/ByteShelfCommon.csproj" />
+  <Project Path="ByteShelfCommon.Tests/ByteShelfCommon.Tests.csproj" />
+  <Project Path="ByteShelf.Server/ByteShelf.Server.csproj" />
+  <Project Path="ByteShelf.Server.Tests/ByteShelf.Server.Tests.csproj" />
+</Solution>
