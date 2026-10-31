@@ -148,6 +148,27 @@ namespace ByteShelf.Server.Storage.Services
             }
         }
 
+        /// <summary>
+        /// Readies <paramref name="normalizedPath"/> to receive a moved entry: creates the missing
+        /// directories above it and checks that nothing has its name. Answers the directory it goes in
+        /// and the name it gets. Run inside the caller's write transaction.
+        /// </summary>
+        /// <exception cref="ArgumentException">The path is the root.</exception>
+        /// <exception cref="ConflictException">The name is taken, or a file is in the way.</exception>
+        public async Task<(DirectoryRecord Parent, string Name)> PrepareDestinationAsync(Guid shelfId, string normalizedPath, DateTimeOffset at, IDbSession session)
+        {
+            if (normalizedPath == ShelfPath.Root)
+            {
+                throw new ArgumentException("Nothing can be moved to the root itself; give it a name.");
+            }
+
+            DirectoryRecord parent = await EnsureDirectoryAsync(shelfId, ShelfPath.GetParent(normalizedPath), at, session);
+            string name = ShelfPath.GetName(normalizedPath);
+            await EnsureNameAvailableAsync(parent.Id, name, normalizedPath, mayReplaceFile: false, session);
+
+            return (parent, name);
+        }
+
         /// <summary>The full path of a directory, live or not.</summary>
         public async Task<string> GetDirectoryPathAsync(Guid directoryId, IDbSession? session = null)
         {

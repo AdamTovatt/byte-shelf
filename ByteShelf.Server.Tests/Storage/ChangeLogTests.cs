@@ -1,18 +1,14 @@
 using ByteShelf.Server.ChangeLog.Models;
-using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace ByteShelf.Server.Tests.Storage
 {
     /// <summary>The change log records every storage change, in commit order, with the entity's state afterwards.</summary>
     public class ChangeLogTests : ServiceTestBase
     {
-        private IChangeLogRepository ChangeLog => Services.GetRequiredService<IChangeLogRepository>();
-
         [Fact]
         public async Task StoreAsync_NewDirectory_LogsDirectoryThenFile()
         {
@@ -91,6 +87,110 @@ namespace ByteShelf.Server.Tests.Storage
             Assert.Equal(file.Id, restored.Id);
             Assert.Null(restored.DeletedAt);
             Assert.Null(restored.DeletionId);
+        }
+
+        [Fact]
+        public async Task MoveFileAsync_LogsTheFileMovedWithItsNewPlace()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            ShelfFile moved = await FileService.MoveFileAsync(shelf, EntryReference.ForId(file.Id), "/renamed.txt");
+
+            ChangeLogEntry entry = Assert.Single(await ChangeLog.GetAfterAsync(before, 100));
+            Assert.Equal((ChangeEntityType.File, ChangeAction.Moved), (entry.EntityType, entry.Action));
+            Assert.Equal("renamed.txt", ChangePayload.Deserialize<FileRecord>(entry.Payload!).Name);
+            Assert.Equal(moved.DirectoryId, ChangePayload.Deserialize<FileRecord>(entry.Payload!).DirectoryId);
+        }
+
+        [Fact]
+        public async Task MoveDirectoryAsync_LogsOnlyTheDirectoryMovedWithItsNewPlace()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await StoreTextAsync(shelf, "/drafts/a.txt", "a");
+            ShelfDirectory archive = await DirectoryService.CreateAsync(shelf, "/archive");
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            ShelfDirectory moved = await DirectoryService.MoveAsync(shelf, EntryReference.ForPath("/drafts"), "/archive/old");
+
+            ChangeLogEntry entry = Assert.Single(await ChangeLog.GetAfterAsync(before, 100));
+            Assert.Equal((ChangeEntityType.Directory, ChangeAction.Moved, moved.Id), (entry.EntityType, entry.Action, entry.EntityId));
+            DirectoryRecord logged = ChangePayload.Deserialize<DirectoryRecord>(entry.Payload!);
+            Assert.Equal(("old", archive.Id), (logged.Name, logged.ParentId));
+        }
+
+        [Fact]
+        public async Task DeleteDirectoryAsync_LogsEveryDirectoryThenEveryFileDeleted()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await StoreTextAsync(shelf, "/photos/2026/a.jpg", "a");
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            await DirectoryService.DeleteAsync(shelf, EntryReference.ForPath("/photos"));
+
+            IReadOnlyList<ChangeLogEntry> entries = await ChangeLog.GetAfterAsync(before, 100);
+            Assert.Equal(
+                new[] { ChangeEntityType.Directory, ChangeEntityType.Directory, ChangeEntityType.File },
+                entries.Select(entry => entry.EntityType));
+            Assert.All(entries, entry => Assert.Equal(ChangeAction.Deleted, entry.Action));
+        }
+
+        [Fact]
+        public async Task DeleteAsync_Shelf_LogsItsRootThenItselfGone()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            await ShelfService.DeleteAsync(shelf);
+
+            IReadOnlyList<ChangeLogEntry> entries = await ChangeLog.GetAfterAsync(before, 100);
+            Assert.Equal(
+                new[] { (ChangeEntityType.Directory, ChangeAction.Purged), (ChangeEntityType.Shelf, ChangeAction.Purged) },
+                entries.Select(entry => (entry.EntityType, entry.Action)));
+            Assert.All(entries, entry => Assert.Null(entry.Payload));
+        }
+
+        [Fact]
+        public async Task UpdateAsync_Shelf_LogsItUpdatedWithItsNewSettings()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            await ShelfService.UpdateAsync(shelf, "renamed", 4096);
+
+            ChangeLogEntry entry = Assert.Single(await ChangeLog.GetAfterAsync(before, 100));
+            Assert.Equal((ChangeEntityType.Shelf, ChangeAction.Updated, shelf.Id), (entry.EntityType, entry.Action, entry.EntityId));
+            Shelf logged = ChangePayload.Deserialize<Shelf>(entry.Payload!);
+            Assert.Equal(("renamed", 4096L), (logged.Name, logged.QuotaBytes));
+        }
+
+        [Fact]
+        public async Task UpdateAsync_ShelfDeletedMeanwhile_ThrowsNotFoundAndLogsNothing()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await ShelfService.DeleteAsync(shelf);
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            await Assert.ThrowsAsync<NotFoundException>(() => ShelfService.UpdateAsync(shelf, "renamed", null));
+
+            Assert.Empty(await ChangeLog.GetAfterAsync(before, 100));
+        }
+
+        [Fact]
+        public async Task EmptyAsync_LogsEveryTrashedRowPurged()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await StoreTextAsync(shelf, "/photos/a.jpg", "a");
+            await DirectoryService.DeleteAsync(shelf, EntryReference.ForPath("/photos"));
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            await TrashService.EmptyAsync(shelf, CancellationToken.None);
+
+            IReadOnlyList<ChangeLogEntry> entries = await ChangeLog.GetAfterAsync(before, 100);
+            Assert.Equal(
+                new[] { (ChangeEntityType.File, ChangeAction.Purged), (ChangeEntityType.Directory, ChangeAction.Purged) },
+                entries.Select(entry => (entry.EntityType, entry.Action)));
         }
 
         [Fact]

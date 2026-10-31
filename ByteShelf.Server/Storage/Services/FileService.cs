@@ -1,3 +1,4 @@
+using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
 using ByteShelfCommon;
@@ -9,7 +10,6 @@ namespace ByteShelf.Server.Storage.Services
     public class FileService : IFileService
     {
         private readonly IDbSessionFactory _sessionFactory;
-        private readonly IDirectoryRepository _directoryRepository;
         private readonly IFileRepository _fileRepository;
         private readonly ShelfTree _shelfTree;
         private readonly ObjectStore _objectStore;
@@ -18,7 +18,6 @@ namespace ByteShelf.Server.Storage.Services
 
         public FileService(
             IDbSessionFactory sessionFactory,
-            IDirectoryRepository directoryRepository,
             IFileRepository fileRepository,
             ShelfTree shelfTree,
             ObjectStore objectStore,
@@ -26,7 +25,6 @@ namespace ByteShelf.Server.Storage.Services
             TimeProvider timeProvider)
         {
             _sessionFactory = sessionFactory;
-            _directoryRepository = directoryRepository;
             _fileRepository = fileRepository;
             _shelfTree = shelfTree;
             _objectStore = objectStore;
@@ -54,26 +52,6 @@ namespace ByteShelf.Server.Storage.Services
         }
 
         /// <inheritdoc />
-        public async Task<DirectoryListing> ListDirectoryAsync(Shelf shelf, EntryReference reference)
-        {
-            await using (IDbSession session = await _sessionFactory.CreateSessionAsync())
-            {
-                DirectoryRecord directory = await _shelfTree.GetDirectoryAsync(shelf.Id, reference, session);
-                string path = await _shelfTree.GetDirectoryPathAsync(directory.Id, session);
-
-                IReadOnlyList<DirectoryRecord> directories = await _directoryRepository.GetLiveChildrenAsync(directory.Id, session);
-                IReadOnlyList<FileRecord> files = await _fileRepository.GetLiveInDirectoryAsync(directory.Id, session);
-
-                return new DirectoryListing
-                {
-                    Directory = StorageContracts.ToShelfDirectory(directory, path),
-                    Directories = directories.Select(child => StorageContracts.ToShelfDirectory(child, ShelfPath.Combine(path, child.Name))).ToList(),
-                    Files = files.Select(file => StorageContracts.ToShelfFile(file, path)).ToList(),
-                };
-            }
-        }
-
-        /// <inheritdoc />
         public async Task<TrashEntry> DeleteFileAsync(Shelf shelf, EntryReference reference)
         {
             Guid deletionId;
@@ -86,6 +64,30 @@ namespace ByteShelf.Server.Storage.Services
             }
 
             return await _trashService.GetEntryAsync(shelf, deletionId);
+        }
+
+        /// <inheritdoc />
+        public async Task<ShelfFile> MoveFileAsync(Shelf shelf, EntryReference reference, string toPath)
+        {
+            string normalizedPath = ShelfPath.Normalize(toPath);
+
+            await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+            {
+                FileRecord file = await _shelfTree.GetFileAsync(shelf.Id, reference, session);
+                ShelfFile current = await _shelfTree.ToShelfFileAsync(file, session);
+                if (current.Path == normalizedPath)
+                {
+                    return current;
+                }
+
+                DateTimeOffset now = _timeProvider.GetUtcNow();
+                (DirectoryRecord parent, string name) = await _shelfTree.PrepareDestinationAsync(shelf.Id, normalizedPath, now, session);
+                FileRecord moved = await _fileRepository.MoveAsync(file.Id, parent.Id, name, now, session)
+                    ?? throw new NotFoundException($"There is no file '{reference}' on this shelf.");
+                await session.CommitAsync();
+
+                return StorageContracts.ToShelfFile(moved, ShelfPath.GetParent(normalizedPath));
+            }
         }
     }
 }

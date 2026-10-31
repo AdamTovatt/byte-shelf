@@ -59,11 +59,7 @@ namespace ByteShelf.Server.Storage.Services
         /// <inheritdoc />
         public async Task<Shelf> CreateAsync(string name, long? quotaBytes)
         {
-            ShelfName.Validate(name);
-            if (quotaBytes < 0)
-            {
-                throw new ArgumentException("A quota cannot be negative.");
-            }
+            ValidateSettings(name, quotaBytes);
 
             DateTimeOffset now = _timeProvider.GetUtcNow();
             Shelf shelf = new Shelf
@@ -96,6 +92,75 @@ namespace ByteShelf.Server.Storage.Services
 
                 await session.CommitAsync();
                 return shelf;
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task<Shelf> UpdateAsync(Shelf shelf, string name, long? quotaBytes)
+        {
+            ValidateSettings(name, quotaBytes);
+
+            await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+            {
+                Shelf current = await GetForWriteAsync(shelf, session);
+                Shelf updated = new Shelf
+                {
+                    Id = current.Id,
+                    Name = name,
+                    QuotaBytes = quotaBytes,
+                    CreatedAt = current.CreatedAt,
+                    UpdatedAt = _timeProvider.GetUtcNow(),
+                };
+
+                if (!await _shelfRepository.TryUpdateAsync(updated, session))
+                {
+                    throw new ConflictException($"A shelf called '{name}' already exists.");
+                }
+
+                await session.CommitAsync();
+                return updated;
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task DeleteAsync(Shelf shelf)
+        {
+            await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+            {
+                await GetForWriteAsync(shelf, session);
+
+                // Checked inside the write transaction, so nothing can be stored between the check and
+                // the delete.
+                if (!await _shelfRepository.IsEmptyAsync(shelf.Id, session))
+                {
+                    throw new ConflictException(
+                        $"The shelf '{shelf.Name}' still holds files, directories, uploads or trash; a shelf is deleted only once it is empty. Empty its trash to remove what is in it right away.");
+                }
+
+                DateTimeOffset now = _timeProvider.GetUtcNow();
+                await _directoryRepository.DeleteRootAsync(shelf.Id, now, session);
+                await _shelfRepository.DeleteAsync(shelf.Id, now, session);
+                await session.CommitAsync();
+            }
+        }
+
+        /// <summary>
+        /// The shelf as it is inside the caller's write transaction. It was looked up before the
+        /// transaction began, and a delete may have committed since; writing on would log a change to a
+        /// shelf that is gone.
+        /// </summary>
+        private async Task<Shelf> GetForWriteAsync(Shelf shelf, IDbSession session)
+        {
+            return await _shelfRepository.GetByIdAsync(shelf.Id, session)
+                ?? throw new NotFoundException($"There is no shelf '{shelf.Name}'.");
+        }
+
+        private static void ValidateSettings(string name, long? quotaBytes)
+        {
+            ShelfName.Validate(name);
+            if (quotaBytes < 0)
+            {
+                throw new ArgumentException("A quota cannot be negative.");
             }
         }
     }

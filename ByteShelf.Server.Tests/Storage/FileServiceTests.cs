@@ -8,43 +8,6 @@ namespace ByteShelf.Server.Tests.Storage
     public class FileServiceTests : ServiceTestBase
     {
         [Fact]
-        public async Task ListDirectoryAsync_Root_ListsDirectoriesAndFilesByName()
-        {
-            Shelf shelf = await CreateShelfAsync();
-            await StoreTextAsync(shelf, "/b.txt", "b");
-            await StoreTextAsync(shelf, "/a.txt", "a");
-            await StoreTextAsync(shelf, "/sub/c.txt", "c");
-
-            DirectoryListing listing = await FileService.ListDirectoryAsync(shelf, EntryReference.ForPath("/"));
-
-            Assert.Equal("/", listing.Directory.Path);
-            Assert.Null(listing.Directory.ParentId);
-            Assert.Equal(new[] { "/sub" }, listing.Directories.Select(directory => directory.Path));
-            Assert.Equal(new[] { "/a.txt", "/b.txt" }, listing.Files.Select(file => file.Path));
-        }
-
-        [Fact]
-        public async Task ListDirectoryAsync_ById_ListsThatDirectory()
-        {
-            Shelf shelf = await CreateShelfAsync();
-            await StoreTextAsync(shelf, "/sub/c.txt", "c");
-            DirectoryListing root = await FileService.ListDirectoryAsync(shelf, EntryReference.ForPath("/"));
-
-            DirectoryListing listing = await FileService.ListDirectoryAsync(shelf, EntryReference.ForId(root.Directories[0].Id));
-
-            Assert.Equal("/sub", listing.Directory.Path);
-            Assert.Equal("/sub/c.txt", Assert.Single(listing.Files).Path);
-        }
-
-        [Fact]
-        public async Task ListDirectoryAsync_MissingPath_ThrowsNotFound()
-        {
-            Shelf shelf = await CreateShelfAsync();
-
-            await Assert.ThrowsAsync<NotFoundException>(() => FileService.ListDirectoryAsync(shelf, EntryReference.ForPath("/nope")));
-        }
-
-        [Fact]
         public async Task GetFileAsync_ByIdFromAnotherShelf_ThrowsNotFound()
         {
             Shelf mine = await CreateShelfAsync("mine");
@@ -52,6 +15,68 @@ namespace ByteShelf.Server.Tests.Storage
             ShelfFile file = await StoreTextAsync(other, "/secret.txt", "x");
 
             await Assert.ThrowsAsync<NotFoundException>(() => FileService.GetFileAsync(mine, EntryReference.ForId(file.Id)));
+        }
+
+        [Fact]
+        public async Task MoveFileAsync_Rename_KeepsTheIdAndTheObject()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "contents");
+
+            ShelfFile renamed = await FileService.MoveFileAsync(shelf, EntryReference.ForId(file.Id), "/b.txt");
+
+            Assert.Equal(file.Id, renamed.Id);
+            Assert.Equal("/b.txt", renamed.Path);
+            Assert.Equal(file.Sha256, renamed.Sha256);
+            Assert.True(ObjectStore.Exists(file.Sha256));
+            await Assert.ThrowsAsync<NotFoundException>(() => FileService.GetFileAsync(shelf, EntryReference.ForPath("/a.txt")));
+        }
+
+        [Fact]
+        public async Task MoveFileAsync_IntoMissingDirectory_CreatesIt()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await StoreTextAsync(shelf, "/a.txt", "contents");
+
+            ShelfFile moved = await FileService.MoveFileAsync(shelf, EntryReference.ForPath("/a.txt"), "/archive/2026/a.txt");
+
+            Assert.Equal("/archive/2026/a.txt", moved.Path);
+        }
+
+        [Theory]
+        [InlineData("/taken.txt")]
+        [InlineData("/dir")]
+        public async Task MoveFileAsync_DestinationTaken_ThrowsConflict(string toPath)
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await StoreTextAsync(shelf, "/a.txt", "a");
+            await StoreTextAsync(shelf, "/taken.txt", "t");
+            await StoreTextAsync(shelf, "/dir/inner.txt", "i");
+
+            await Assert.ThrowsAsync<ConflictException>(() => FileService.MoveFileAsync(shelf, EntryReference.ForPath("/a.txt"), toPath));
+        }
+
+        [Fact]
+        public async Task MoveFileAsync_ToItsOwnPath_ChangesNothing()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
+            Clock.Advance(TimeSpan.FromMinutes(1));
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            ShelfFile same = await FileService.MoveFileAsync(shelf, EntryReference.ForPath("/a.txt"), "a.txt");
+
+            Assert.Equal(file.UpdatedAt, same.UpdatedAt);
+            Assert.Empty(await ChangeLog.GetAfterAsync(before, 100));
+        }
+
+        [Fact]
+        public async Task MoveFileAsync_ToTheRoot_ThrowsArgumentException()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await StoreTextAsync(shelf, "/a.txt", "a");
+
+            await Assert.ThrowsAsync<ArgumentException>(() => FileService.MoveFileAsync(shelf, EntryReference.ForPath("/a.txt"), "/"));
         }
 
         [Fact]

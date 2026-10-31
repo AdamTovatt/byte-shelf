@@ -55,6 +55,21 @@ namespace ByteShelf.Server.Storage.Services
         }
 
         /// <inheritdoc />
+        public async Task<Guid> TrashDirectoryAsync(Guid directoryId, DateTimeOffset at, IDbSession session)
+        {
+            Guid deletionId = Guid.NewGuid();
+
+            IReadOnlyList<Guid> directoryIds = await _directoryRepository.SoftDeleteSubtreeAsync(directoryId, deletionId, at, session);
+            if (directoryIds.Count == 0)
+            {
+                throw new NotFoundException($"There is no directory {directoryId} to delete.");
+            }
+
+            await _fileRepository.SoftDeleteInDirectoriesAsync(directoryIds, deletionId, at, session);
+            return deletionId;
+        }
+
+        /// <inheritdoc />
         public async Task<IReadOnlyList<TrashEntry>> GetTrashAsync(Shelf shelf)
         {
             await using (IDbSession session = await _sessionFactory.CreateSessionAsync())
@@ -110,14 +125,29 @@ namespace ByteShelf.Server.Storage.Services
         /// <inheritdoc />
         public async Task<int> PurgeExpiredAsync(CancellationToken cancellationToken)
         {
-            DateTimeOffset cutoff = RestorableSince();
+            return await PurgeDeletedBeforeAsync(RestorableSince(), shelfId: null, cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public async Task<int> EmptyAsync(Shelf shelf, CancellationToken cancellationToken)
+        {
+            return await PurgeDeletedBeforeAsync(DateTimeOffset.MaxValue, shelf.Id, cancellationToken);
+        }
+
+        /// <summary>
+        /// Removes every row deleted before <paramref name="cutoff"/>, on one shelf or all of them, in
+        /// short transactions, files before the directories they were in. Then removes the objects only
+        /// those files pointed at.
+        /// </summary>
+        private async Task<int> PurgeDeletedBeforeAsync(DateTimeOffset cutoff, Guid? shelfId, CancellationToken cancellationToken)
+        {
             int purgedFiles = 0;
 
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                IReadOnlyList<FileRecord> files = await _fileRepository.GetTrashedBeforeAsync(cutoff, PurgeBatchSize);
+                IReadOnlyList<FileRecord> files = await _fileRepository.GetTrashedBeforeAsync(cutoff, shelfId, PurgeBatchSize);
                 if (files.Count == 0)
                 {
                     break;
@@ -147,7 +177,7 @@ namespace ByteShelf.Server.Storage.Services
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                IReadOnlyList<DirectoryRecord> directories = await _directoryRepository.GetPurgeableBeforeAsync(cutoff, PurgeBatchSize);
+                IReadOnlyList<DirectoryRecord> directories = await _directoryRepository.GetPurgeableBeforeAsync(cutoff, shelfId, PurgeBatchSize);
                 if (directories.Count == 0)
                 {
                     break;

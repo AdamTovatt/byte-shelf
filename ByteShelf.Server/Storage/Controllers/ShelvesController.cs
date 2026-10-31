@@ -47,5 +47,28 @@ namespace ByteShelf.Server.Storage.Controllers
             Shelf shelf = await _shelfService.CreateAsync(request.Name, request.QuotaBytes);
             return Ok(await _shelfService.GetInfoAsync(shelf));
         }
+
+        /// <summary>Replaces a shelf's name and quota. A new name changes the shelf's URLs.</summary>
+        [HttpPut("{shelf}")]
+        [ProducesResponseType(typeof(ShelfInfo), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 409)]
+        public async Task<IActionResult> Update(string shelf, [FromBody] UpdateShelfRequest request)
+        {
+            Shelf updated = await _shelfService.UpdateAsync(await _shelfService.GetByNameAsync(shelf), request.Name, request.QuotaBytes);
+            return Ok(await _shelfService.GetInfoAsync(updated));
+        }
+
+        /// <summary>Deletes a shelf; refused while it holds anything, the trash included.</summary>
+        [HttpDelete("{shelf}")]
+        [ProducesResponseType(204)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 409)]
+        public async Task<IActionResult> Delete(string shelf)
+        {
+            await _shelfService.DeleteAsync(await _shelfService.GetByNameAsync(shelf));
+            return NoContent();
+        }
     }
 }

@@ -25,14 +25,37 @@ namespace ByteShelf.Server.Storage.Repositories
 
         Task InsertAsync(DirectoryRecord directory, IDbSession session);
 
+        /// <summary>
+        /// The paths of every directory and file under <paramref name="id"/>, live or in the trash and
+        /// the directory itself included (as the empty path), relative to it (<c>/a/b.txt</c>), whose UTF-8
+        /// form is longer than <paramref name="utf8Bytes"/> bytes. A path never has more UTF-16 characters
+        /// than UTF-8 bytes, so every path longer than that many characters is among them; measure each.
+        /// </summary>
+        Task<IReadOnlyList<string>> GetRelativePathsLongerThanAsync(Guid id, int utf8Bytes, IDbSession? session = null);
+
+        /// <summary>Puts a live directory under <paramref name="parentId"/> as <paramref name="name"/>; null when it is not live.</summary>
+        Task<DirectoryRecord?> MoveAsync(Guid id, Guid parentId, string name, DateTimeOffset movedAt, IDbSession session);
+
+        /// <summary>
+        /// Moves a live directory and every live directory under it to the trash under one
+        /// <paramref name="deletionId"/>; answers the ids it marked, empty when the directory is not
+        /// live. Hand them to <see cref="IFileRepository.SoftDeleteInDirectoriesAsync"/> to trash the
+        /// files in them with the same deletion.
+        /// </summary>
+        Task<IReadOnlyList<Guid>> SoftDeleteSubtreeAsync(Guid id, Guid deletionId, DateTimeOffset deletedAt, IDbSession session);
+
+        /// <summary>Removes a shelf's root directory row, for deleting an empty shelf.</summary>
+        Task DeleteRootAsync(Guid shelfId, DateTimeOffset deletedAt, IDbSession session);
+
         /// <summary>Brings back every directory of a deletion; answers how many.</summary>
         Task<int> RestoreDeletionAsync(Guid deletionId, DateTimeOffset restoredAt, IDbSession session);
 
         /// <summary>
-        /// Directories deleted before <paramref name="deletedBefore"/> that no row, live or trashed, still
-        /// sits in, so they can be purged without leaving anything orphaned.
+        /// Directories deleted before <paramref name="deletedBefore"/>, on the shelf <paramref name="shelfId"/>
+        /// or any shelf when it is null, that no row, live or trashed, still sits in, so they can be purged
+        /// without leaving anything orphaned.
         /// </summary>
-        Task<IReadOnlyList<DirectoryRecord>> GetPurgeableBeforeAsync(DateTimeOffset deletedBefore, int limit, IDbSession? session = null);
+        Task<IReadOnlyList<DirectoryRecord>> GetPurgeableBeforeAsync(DateTimeOffset deletedBefore, Guid? shelfId, int limit, IDbSession? session = null);
 
         /// <summary>Removes a trashed directory's row for good. False when it is not in the trash.</summary>
         Task<bool> PurgeAsync(Guid id, DateTimeOffset purgedAt, IDbSession session);

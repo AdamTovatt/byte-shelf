@@ -18,5 +18,18 @@ namespace ByteShelf.Server.Storage.Services
         /// <summary>Creates a shelf with its root directory.</summary>
         /// <exception cref="Shared.Errors.ConflictException">The name is taken.</exception>
         Task<Shelf> CreateAsync(string name, long? quotaBytes);
+
+        /// <summary>
+        /// Replaces a shelf's name and quota. A null <paramref name="quotaBytes"/> removes the quota, so
+        /// send the current one to keep it.
+        /// </summary>
+        /// <exception cref="Shared.Errors.NotFoundException">The shelf has been deleted meanwhile.</exception>
+        /// <exception cref="Shared.Errors.ConflictException">The new name is taken.</exception>
+        Task<Shelf> UpdateAsync(Shelf shelf, string name, long? quotaBytes);
+
+        /// <summary>Deletes a shelf that holds nothing, the trash included.</summary>
+        /// <exception cref="Shared.Errors.NotFoundException">The shelf has been deleted meanwhile.</exception>
+        /// <exception cref="Shared.Errors.ConflictException">The shelf still holds something.</exception>
+        Task DeleteAsync(Shelf shelf);
     }
 }

@@ -94,6 +94,78 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
+        public async Task PostDirectories_NewPath_ReturnsTheDirectory()
+        {
+            HttpResponseMessage response = await _host.AdminClient.PostAsJsonAsync("/api/shelves/docs/directories", new CreateDirectoryRequest { Path = "/archive/2026" });
+
+            Assert.Equal("/archive/2026", (await response.Content.ReadFromJsonAsync<ShelfDirectory>())?.Path);
+        }
+
+        [Fact]
+        public async Task PostFilesMove_ById_ReturnsTheFileAtItsNewPath()
+        {
+            ShelfFile file = await PutAsync("/inbox/a.txt", "a");
+
+            HttpResponseMessage response = await _host.AdminClient.PostAsJsonAsync($"/api/shelves/docs/files/move?id={file.Id}", new MoveRequest { ToPath = "/archive/a.txt" });
+
+            Assert.Equal("/archive/a.txt", (await response.Content.ReadFromJsonAsync<ShelfFile>())?.Path);
+        }
+
+        [Fact]
+        public async Task PostDirectoriesMove_ByPath_ReturnsTheDirectoryAtItsNewPath()
+        {
+            await PutAsync("/inbox/a.txt", "a");
+
+            HttpResponseMessage response = await _host.AdminClient.PostAsJsonAsync("/api/shelves/docs/directories/move?path=/inbox", new MoveRequest { ToPath = "/archive/inbox" });
+
+            Assert.Equal("/archive/inbox", (await response.Content.ReadFromJsonAsync<ShelfDirectory>())?.Path);
+        }
+
+        [Fact]
+        public async Task DeleteDirectories_ByPath_ReturnsTheDeletion()
+        {
+            await PutAsync("/inbox/a.txt", "a");
+
+            HttpResponseMessage response = await _host.AdminClient.DeleteAsync("/api/shelves/docs/directories?path=/inbox");
+
+            TrashEntry? deletion = await response.Content.ReadFromJsonAsync<TrashEntry>();
+            Assert.Equal((TrashEntryKind.Directory, "/inbox"), (deletion?.Kind, deletion?.Path));
+        }
+
+        [Fact]
+        public async Task PutShelf_NewName_ServesTheShelfUnderIt()
+        {
+            HttpResponseMessage response = await _host.AdminClient.PutAsJsonAsync("/api/shelves/docs", new UpdateShelfRequest { Name = "papers", QuotaBytes = 2000 });
+
+            Assert.Equal(2000, (await response.Content.ReadFromJsonAsync<ShelfInfo>())?.QuotaBytes);
+            Assert.Equal(HttpStatusCode.OK, (await _host.AdminClient.GetAsync("/api/shelves/papers/entries")).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await _host.AdminClient.GetAsync("/api/shelves/docs/entries")).StatusCode);
+        }
+
+        [Fact]
+        public async Task DeleteShelf_OnlyTrashLeft_Returns409()
+        {
+            await PutAsync("/a.txt", "a");
+            await _host.AdminClient.DeleteAsync("/api/shelves/docs/files?path=/a.txt");
+
+            HttpResponseMessage response = await _host.AdminClient.DeleteAsync("/api/shelves/docs");
+
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        }
+
+        [Fact]
+        public async Task DeleteTrash_ThenDeleteShelf_RemovesTheShelf()
+        {
+            await PutAsync("/a.txt", "a");
+            await _host.AdminClient.DeleteAsync("/api/shelves/docs/files?path=/a.txt");
+
+            HttpResponseMessage emptied = await _host.AdminClient.DeleteAsync("/api/shelves/docs/trash");
+            HttpResponseMessage deleted = await _host.AdminClient.DeleteAsync("/api/shelves/docs");
+
+            Assert.Equal((HttpStatusCode.NoContent, HttpStatusCode.NoContent), (emptied.StatusCode, deleted.StatusCode));
+        }
+
+        [Fact]
         public async Task Put_OverQuota_Returns507WithCode()
         {
             HttpResponseMessage response = await SendPutAsync("/big.bin", new string('x', 1001));

@@ -77,39 +77,12 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
-        public async Task GetTrashAsync_DirectoryDeletion_ListsTheDirectoryWithTotalsOfEverythingInIt()
-        {
-            Shelf shelf = await CreateShelfAsync();
-            Guid deletionId = await InsertDeletedDirectoryAsync(shelf, "photos", fileSizes: new long[] { 10, 20 });
-
-            TrashEntry entry = Assert.Single(await TrashService.GetTrashAsync(shelf));
-
-            Assert.Equal(deletionId, entry.DeletionId);
-            Assert.Equal(TrashEntryKind.Directory, entry.Kind);
-            Assert.Equal("/photos", entry.Path);
-            Assert.Equal(2, entry.FileCount);
-            Assert.Equal(30, entry.SizeBytes);
-        }
-
-        [Fact]
-        public async Task RestoreAsync_DirectoryDeletion_BringsBackTheDirectoryAndItsFiles()
-        {
-            Shelf shelf = await CreateShelfAsync();
-            Guid deletionId = await InsertDeletedDirectoryAsync(shelf, "photos", fileSizes: new long[] { 10 });
-
-            await TrashService.RestoreAsync(shelf, deletionId);
-
-            DirectoryListing listing = await FileService.ListDirectoryAsync(shelf, EntryReference.ForPath("/photos"));
-            Assert.Single(listing.Files);
-        }
-
-        [Fact]
         public async Task RestoreAsync_FileWhoseDirectoryIsInTheTrash_ThrowsConflict()
         {
             Shelf shelf = await CreateShelfAsync();
             await StoreTextAsync(shelf, "/photos/a.jpg", "a");
             TrashEntry fileDeletion = await FileService.DeleteFileAsync(shelf, EntryReference.ForPath("/photos/a.jpg"));
-            await TrashDirectoryAsync(shelf, "/photos");
+            await DirectoryService.DeleteAsync(shelf, EntryReference.ForPath("/photos"));
 
             await Assert.ThrowsAsync<ConflictException>(() => TrashService.RestoreAsync(shelf, fileDeletion.DeletionId));
         }
@@ -162,16 +135,17 @@ namespace ByteShelf.Server.Tests.Storage
         public async Task PurgeExpiredAsync_DirectoryDeletion_RemovesFilesThenTheDirectory()
         {
             Shelf shelf = await CreateShelfAsync();
-            Guid deletionId = await InsertDeletedDirectoryAsync(shelf, "photos", fileSizes: new long[] { 10 });
+            ShelfFile file = await StoreTextAsync(shelf, "/photos/2026/a.jpg", "a");
+            TrashEntry deletion = await DirectoryService.DeleteAsync(shelf, EntryReference.ForPath("/photos"));
             Clock.Advance(Options.RestoreWindow + TimeSpan.FromSeconds(1));
 
             int purged = await TrashService.PurgeExpiredAsync(CancellationToken.None);
 
             Assert.Equal(1, purged);
-            DirectoryRecord root = await Services.GetRequiredService<IDirectoryRepository>().GetRootAsync(shelf.Id);
-            Assert.Empty(await Services.GetRequiredService<IDirectoryRepository>().GetPurgeableBeforeAsync(Clock.GetUtcNow(), 10));
-            Assert.Null(await Services.GetRequiredService<IDirectoryRepository>().GetLiveChildAsync(root.Id, "photos"));
-            await Assert.ThrowsAsync<NotFoundException>(() => TrashService.GetEntryAsync(shelf, deletionId));
+            Assert.False(ObjectStore.Exists(file.Sha256));
+            IDirectoryRepository directories = Services.GetRequiredService<IDirectoryRepository>();
+            Assert.Null(await directories.GetByIdAsync(deletion.EntryId));
+            Assert.True(await Services.GetRequiredService<IShelfRepository>().IsEmptyAsync(shelf.Id));
         }
 
         [Fact]
@@ -187,9 +161,31 @@ namespace ByteShelf.Server.Tests.Storage
             Assert.Equal(fileCount, purged);
         }
 
+        [Fact]
+        public async Task EmptyAsync_NestedDeletions_PurgesThisShelfsWholeTrashWithinItsWindow()
+        {
+            Shelf mine = await CreateShelfAsync("mine");
+            Shelf other = await CreateShelfAsync("other");
+            ShelfFile old = await StoreTextAsync(mine, "/photos/2025/old.jpg", "old");
+            await StoreTextAsync(mine, "/photos/new.jpg", "new");
+            ShelfFile kept = await StoreTextAsync(mine, "/kept.txt", "kept");
+            await StoreTextAsync(other, "/theirs.txt", "theirs");
+            await DirectoryService.DeleteAsync(mine, EntryReference.ForPath("/photos/2025"));
+            await DirectoryService.DeleteAsync(mine, EntryReference.ForPath("/photos"));
+            await FileService.DeleteFileAsync(other, EntryReference.ForPath("/theirs.txt"));
+
+            int purged = await TrashService.EmptyAsync(mine, CancellationToken.None);
+
+            Assert.Equal(2, purged);
+            Assert.Empty(await TrashService.GetTrashAsync(mine));
+            Assert.False(ObjectStore.Exists(old.Sha256));
+            Assert.Equal(kept.Id, Assert.Single((await DirectoryService.ListAsync(mine, EntryReference.ForPath("/"))).Files).Id);
+            Assert.Single(await TrashService.GetTrashAsync(other));
+        }
+
         /// <summary>
         /// Inserts a directory under the root, deleted as one deletion with a file of each size in it,
-        /// the way a directory delete leaves the rows.
+        /// the way a directory delete leaves the rows; faster than storing hundreds of files.
         /// </summary>
         private async Task<Guid> InsertDeletedDirectoryAsync(Shelf shelf, string name, long[] fileSizes)
         {
@@ -236,28 +232,6 @@ namespace ByteShelf.Server.Tests.Storage
 
             await session.CommitAsync();
             return deletionId;
-        }
-
-        /// <summary>Marks a live directory deleted, as a directory delete does to its row.</summary>
-        private async Task TrashDirectoryAsync(Shelf shelf, string path)
-        {
-            DirectoryRecord directory = (await Services.GetRequiredService<ShelfTree>().FindDirectoryAsync(shelf.Id, path))!;
-
-            await using IDbSession session = await TestRoot.SessionFactory.CreateSessionAsync();
-            using System.Data.Common.DbCommand command = session.Connection.CreateCommand();
-            command.CommandText = "UPDATE directory SET deleted_at = $at, deletion_id = $deletion WHERE id = $id";
-            AddParameter(command, "$at", ByteShelf.Server.Shared.Database.StoredInstant.ToText(Clock.GetUtcNow()));
-            AddParameter(command, "$deletion", Guid.NewGuid().ToString("D"));
-            AddParameter(command, "$id", directory.Id.ToString("D"));
-            await command.ExecuteNonQueryAsync();
-        }
-
-        private static void AddParameter(System.Data.Common.DbCommand command, string name, object value)
-        {
-            System.Data.Common.DbParameter parameter = command.CreateParameter();
-            parameter.ParameterName = name;
-            parameter.Value = value;
-            command.Parameters.Add(parameter);
         }
     }
 }

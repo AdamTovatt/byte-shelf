@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using ByteShelf.Server.ChangeLog;
+using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Email;
 using ByteShelf.Server.Jobs;
 using ByteShelf.Server.Shared.Database;
@@ -34,10 +35,12 @@ namespace ByteShelf.Server.Tests.TestUtilities
         protected IShelfService ShelfService => Services.GetRequiredService<IShelfService>();
         protected IUploadService UploadService => Services.GetRequiredService<IUploadService>();
         protected IFileService FileService => Services.GetRequiredService<IFileService>();
+        protected IDirectoryService DirectoryService => Services.GetRequiredService<IDirectoryService>();
         protected ITrashService TrashService => Services.GetRequiredService<ITrashService>();
         protected ObjectStore ObjectStore => Services.GetRequiredService<ObjectStore>();
         protected StagingArea StagingArea => Services.GetRequiredService<StagingArea>();
         protected StorageOptions Options => Services.GetRequiredService<StorageOptions>();
+        protected IChangeLogRepository ChangeLog => Services.GetRequiredService<IChangeLogRepository>();
 
         public virtual Task InitializeAsync()
         {

@@ -42,7 +42,7 @@ namespace ByteShelf.Server.Tests.Storage
 
             await StoreTextAsync(shelf, "/a/b/c.txt", "x");
 
-            DirectoryListing listing = await FileService.ListDirectoryAsync(shelf, EntryReference.ForPath("/a/b"));
+            DirectoryListing listing = await DirectoryService.ListAsync(shelf, EntryReference.ForPath("/a/b"));
             Assert.Equal("/a/b", listing.Directory.Path);
             Assert.Equal("c.txt", Assert.Single(listing.Files).Name);
         }

@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Text.Json;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Storage.Models;
@@ -129,6 +130,52 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<int> SoftDeleteInDirectoriesAsync(IReadOnlyList<Guid> directoryIds, Guid deletionId, DateTimeOffset deletedAt, IDbSession session)
+        {
+            // One JSON array rather than a parameter per id, which a large subtree would run out of. The
+            // ids are written as the Guid type handler stores them.
+            string directoryIdsJson = JsonSerializer.Serialize(directoryIds.Select(id => id.ToString("D")));
+
+            string query = $@"
+                UPDATE file
+                SET deleted_at = @{nameof(deletedAt)}, deletion_id = @{nameof(deletionId)}, updated_at = @{nameof(deletedAt)}
+                WHERE deleted_at IS NULL AND directory_id IN (SELECT value FROM json_each(@{nameof(directoryIdsJson)}))
+                RETURNING {SelectColumns}";
+
+            List<FileEntity> deleted = (await session.Connection.QueryAsync<FileEntity>(
+                query, new { directoryIdsJson, deletionId, deletedAt }, transaction: session.Transaction)).ToList();
+
+            foreach (FileEntity file in deleted)
+            {
+                await _changeLog.AppendAsync(ChangeEntityType.File, file.Id, ChangeAction.Deleted, file.ToDomain(), deletedAt, session);
+            }
+
+            return deleted.Count;
+        }
+
+        /// <inheritdoc />
+        public async Task<FileRecord?> MoveAsync(Guid id, Guid directoryId, string name, DateTimeOffset movedAt, IDbSession session)
+        {
+            string query = $@"
+                UPDATE file
+                SET directory_id = @{nameof(directoryId)}, name = @{nameof(name)}, updated_at = @{nameof(movedAt)}
+                WHERE id = @{nameof(id)} AND deleted_at IS NULL
+                RETURNING {SelectColumns}";
+
+            FileEntity? moved = await session.Connection.QuerySingleOrDefaultAsync<FileEntity>(
+                query, new { id, directoryId, name, movedAt }, transaction: session.Transaction);
+
+            if (moved == null)
+            {
+                return null;
+            }
+
+            FileRecord record = moved.ToDomain();
+            await _changeLog.AppendAsync(ChangeEntityType.File, id, ChangeAction.Moved, record, movedAt, session);
+            return record;
+        }
+
+        /// <inheritdoc />
         public async Task<int> RestoreDeletionAsync(Guid deletionId, DateTimeOffset restoredAt, IDbSession session)
         {
             string query = $@"
@@ -149,7 +196,7 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<IReadOnlyList<FileRecord>> GetTrashedBeforeAsync(DateTimeOffset deletedBefore, int limit, IDbSession? session = null)
+        public async Task<IReadOnlyList<FileRecord>> GetTrashedBeforeAsync(DateTimeOffset deletedBefore, Guid? shelfId, int limit, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>
             {
@@ -157,11 +204,12 @@ namespace ByteShelf.Server.Storage.Repositories
                     SELECT {SelectColumns}
                     FROM file
                     WHERE deleted_at IS NOT NULL AND deleted_at < @{nameof(deletedBefore)}
+                      AND (@{nameof(shelfId)} IS NULL OR shelf_id = @{nameof(shelfId)})
                     ORDER BY deleted_at
                     LIMIT @{nameof(limit)}";
 
                 IEnumerable<FileEntity> entities = await dbSession.Connection.QueryAsync<FileEntity>(
-                    query, new { deletedBefore, limit }, transaction: dbSession.Transaction);
+                    query, new { deletedBefore, shelfId, limit }, transaction: dbSession.Transaction);
 
                 return (IReadOnlyList<FileRecord>)entities.Select(entity => entity.ToDomain()).ToList();
             }, session);

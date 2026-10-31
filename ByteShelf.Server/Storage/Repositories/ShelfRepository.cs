@@ -91,6 +91,56 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<bool> TryUpdateAsync(Shelf shelf, IDbSession session)
+        {
+            string query = @"
+                UPDATE shelf
+                SET name = @Name, quota_bytes = @QuotaBytes, updated_at = @UpdatedAt
+                WHERE id = @Id";
+
+            try
+            {
+                await session.Connection.ExecuteAsync(
+                    query,
+                    new { shelf.Id, shelf.Name, shelf.QuotaBytes, shelf.UpdatedAt },
+                    transaction: session.Transaction);
+            }
+            catch (DbException exception) when (SqliteUniqueViolation.Is(exception))
+            {
+                return false;
+            }
+
+            await _changeLog.AppendAsync(ChangeEntityType.Shelf, shelf.Id, ChangeAction.Updated, shelf, shelf.UpdatedAt, session);
+            return true;
+        }
+
+        /// <inheritdoc />
+        public async Task<bool> IsEmptyAsync(Guid shelfId, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string query = $@"
+                    SELECT NOT EXISTS (SELECT 1 FROM file WHERE shelf_id = @{nameof(shelfId)})
+                       AND NOT EXISTS (SELECT 1 FROM directory WHERE shelf_id = @{nameof(shelfId)} AND parent_id IS NOT NULL)
+                       AND NOT EXISTS (SELECT 1 FROM upload WHERE shelf_id = @{nameof(shelfId)})";
+
+                long empty = await dbSession.Connection.QuerySingleAsync<long>(
+                    query, new { shelfId }, transaction: dbSession.Transaction);
+
+                return empty != 0;
+            }, session);
+        }
+
+        /// <inheritdoc />
+        public async Task DeleteAsync(Guid shelfId, DateTimeOffset deletedAt, IDbSession session)
+        {
+            await session.Connection.ExecuteAsync(
+                $"DELETE FROM shelf WHERE id = @{nameof(shelfId)}", new { shelfId }, transaction: session.Transaction);
+
+            await _changeLog.AppendAsync<Shelf>(ChangeEntityType.Shelf, shelfId, ChangeAction.Purged, null, deletedAt, session);
+        }
+
+        /// <inheritdoc />
         public async Task<ShelfUsage> GetUsageAsync(Guid shelfId, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>

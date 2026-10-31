@@ -20,11 +20,24 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <summary>Moves a live file to the trash under <paramref name="deletionId"/>. False when it is not live.</summary>
         Task<bool> SoftDeleteAsync(Guid id, Guid deletionId, DateTimeOffset deletedAt, IDbSession session);
 
+        /// <summary>
+        /// Moves every live file directly in one of <paramref name="directoryIds"/> to the trash under
+        /// <paramref name="deletionId"/>; answers how many. The ids come from
+        /// <see cref="IDirectoryRepository.SoftDeleteSubtreeAsync"/>.
+        /// </summary>
+        Task<int> SoftDeleteInDirectoriesAsync(IReadOnlyList<Guid> directoryIds, Guid deletionId, DateTimeOffset deletedAt, IDbSession session);
+
+        /// <summary>Puts a live file in <paramref name="directoryId"/> as <paramref name="name"/>; null when it is not live.</summary>
+        Task<FileRecord?> MoveAsync(Guid id, Guid directoryId, string name, DateTimeOffset movedAt, IDbSession session);
+
         /// <summary>Brings back every file of a deletion; answers how many.</summary>
         Task<int> RestoreDeletionAsync(Guid deletionId, DateTimeOffset restoredAt, IDbSession session);
 
-        /// <summary>Files deleted before <paramref name="deletedBefore"/>, oldest first, at most <paramref name="limit"/>.</summary>
-        Task<IReadOnlyList<FileRecord>> GetTrashedBeforeAsync(DateTimeOffset deletedBefore, int limit, IDbSession? session = null);
+        /// <summary>
+        /// Files deleted before <paramref name="deletedBefore"/>, on the shelf <paramref name="shelfId"/> or
+        /// any shelf when it is null, oldest first, at most <paramref name="limit"/>.
+        /// </summary>
+        Task<IReadOnlyList<FileRecord>> GetTrashedBeforeAsync(DateTimeOffset deletedBefore, Guid? shelfId, int limit, IDbSession? session = null);
 
         /// <summary>Removes a trashed file's row for good. False when it is not in the trash.</summary>
         Task<bool> PurgeAsync(Guid id, DateTimeOffset purgedAt, IDbSession session);

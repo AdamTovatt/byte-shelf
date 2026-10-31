@@ -13,6 +13,12 @@ namespace ByteShelf.Server.Storage.Services
         /// <summary>Moves a live file to the trash as a deletion of its own, inside the caller's transaction.</summary>
         Task<Guid> TrashFileAsync(Guid fileId, DateTimeOffset at, IDbSession session);
 
+        /// <summary>
+        /// Moves a live directory and everything live under it to the trash as one deletion, inside the
+        /// caller's transaction.
+        /// </summary>
+        Task<Guid> TrashDirectoryAsync(Guid directoryId, DateTimeOffset at, IDbSession session);
+
         /// <summary>Every deletion on the shelf still inside the restore window, newest first.</summary>
         Task<IReadOnlyList<TrashEntry>> GetTrashAsync(Shelf shelf);
 
@@ -27,5 +33,12 @@ namespace ByteShelf.Server.Storage.Services
         /// pointed at that nothing else does. Answers how many files were purged.
         /// </summary>
         Task<int> PurgeExpiredAsync(CancellationToken cancellationToken);
+
+        /// <summary>
+        /// Removes everything in the shelf's trash for good, whatever is left of its window, and every
+        /// object only it pointed at. A deletion made while it runs is taken too. Answers how many files
+        /// were purged.
+        /// </summary>
+        Task<int> EmptyAsync(Shelf shelf, CancellationToken cancellationToken);
     }
 }

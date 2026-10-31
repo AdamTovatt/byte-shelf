@@ -89,10 +89,24 @@ namespace ByteShelfCommon
                     return false;
                 }
 
+                // Form C lengthens a few characters (U+0958 becomes two), so the limits are checked on
+                // what is stored as well: a longer stored name could not be named again.
                 names[i] = names[i].Normalize(NormalizationForm.FormC);
+                if (names[i].Length > MaxNameLength)
+                {
+                    error = $"The path '{path}' is not allowed: a name can be at most {MaxNameLength} characters long.";
+                    return false;
+                }
             }
 
-            normalized = Root + string.Join(Separator, names);
+            string result = Root + string.Join(Separator, names);
+            if (result.Length > MaxPathLength)
+            {
+                error = $"A path can be at most {MaxPathLength} characters long.";
+                return false;
+            }
+
+            normalized = result;
             error = null;
             return true;
         }

@@ -10,8 +10,9 @@ using Microsoft.Net.Http.Headers;
 namespace ByteShelf.Server.Storage.Controllers
 {
     /// <summary>
-    /// Files and directories on a shelf. Every endpoint names its entry with exactly one of the
-    /// <c>path</c> and <c>id</c> query parameters.
+    /// Listing a shelf's directories, and its files with their contents. Every endpoint names its entry
+    /// with exactly one of the <c>path</c> and <c>id</c> query parameters; a listing without either is
+    /// of the root.
     /// </summary>
     [ApiController]
     [Route("api/shelves/{shelf}")]
@@ -19,11 +20,13 @@ namespace ByteShelf.Server.Storage.Controllers
     [ShelfRoute]
     public class EntriesController : ControllerBase
     {
+        private readonly IDirectoryService _directoryService;
         private readonly IFileService _fileService;
         private readonly IUploadService _uploadService;
 
-        public EntriesController(IFileService fileService, IUploadService uploadService)
+        public EntriesController(IDirectoryService directoryService, IFileService fileService, IUploadService uploadService)
         {
+            _directoryService = directoryService;
             _fileService = fileService;
             _uploadService = uploadService;
         }
@@ -37,7 +40,7 @@ namespace ByteShelf.Server.Storage.Controllers
         public async Task<IActionResult> List([FromQuery] string? path, [FromQuery] Guid? id)
         {
             EntryReference reference = path == null && id == null ? EntryReference.ForPath(ShelfPath.Root) : EntryReference.From(path, id);
-            return Ok(await _fileService.ListDirectoryAsync(Shelf, reference));
+            return Ok(await _directoryService.ListAsync(Shelf, reference));
         }
 
         /// <summary>A file's record.</summary>
@@ -56,6 +59,19 @@ namespace ByteShelf.Server.Storage.Controllers
         public async Task<IActionResult> DeleteFile([FromQuery] string? path, [FromQuery] Guid? id)
         {
             return Ok(await _fileService.DeleteFileAsync(Shelf, EntryReference.From(path, id)));
+        }
+
+        /// <summary>
+        /// Moves or renames a file to the body's <c>toPath</c>; the stored contents stay where they are.
+        /// </summary>
+        [HttpPost("files/move")]
+        [ProducesResponseType(typeof(ShelfFile), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 409)]
+        public async Task<IActionResult> MoveFile([FromQuery] string? path, [FromQuery] Guid? id, [FromBody] MoveRequest request)
+        {
+            return Ok(await _fileService.MoveFileAsync(Shelf, EntryReference.From(path, id), request.ToPath));
         }
 
         /// <summary>

@@ -9,9 +9,10 @@ AOT-compatible.
 | Type | What it is |
 |---|---|
 | `ShelfInfo` | A shelf with its quota and usage. |
-| `CreateShelfRequest` | Creates a shelf. |
+| `CreateShelfRequest`, `UpdateShelfRequest` | Creates a shelf, and replaces its name and quota. |
 | `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps. |
 | `ShelfDirectory`, `DirectoryListing` | A directory, and what one holds. |
+| `CreateDirectoryRequest`, `MoveRequest` | Creates a directory; moves or renames a file or directory. |
 | `StartUploadRequest`, `UploadSession` | Starting and following a resumable upload. |
 | `TrashEntry`, `TrashEntryKind` | A deletion that can still be restored. |
 | `ErrorResponse`, `ErrorCodes` | Every error body, with a machine-readable code. |

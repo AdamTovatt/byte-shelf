@@ -70,6 +70,26 @@ namespace ByteShelfCommon.Tests
         }
 
         [Fact]
+        public void TryNormalize_NameLongerOnceComposed_IsRefused()
+        {
+            // U+0958 is excluded from composition, so form C writes it as two characters.
+            string name = new string('\x0958', ShelfPath.MaxNameLength);
+
+            Assert.True(ShelfPath.TryValidateName(name, out _));
+            Assert.False(ShelfPath.TryNormalize("/" + name, out _, out _));
+        }
+
+        [Fact]
+        public void TryNormalize_LongestPathWithoutLeadingSeparator_IsRefusedOnceTheSeparatorIsAdded()
+        {
+            string longest = string.Join(ShelfPath.Separator, Enumerable.Repeat(new string('a', 250), 16)) + "/" + new string('a', 80);
+
+            Assert.Equal(ShelfPath.MaxPathLength, longest.Length);
+            Assert.True(ShelfPath.TryNormalize("/" + longest[1..], out _, out _));
+            Assert.False(ShelfPath.TryNormalize(longest, out _, out _));
+        }
+
+        [Fact]
         public void TryValidateName_SurrogatePair_IsAccepted()
         {
             Assert.True(ShelfPath.TryValidateName("photo-\xd83d\xdcf7.jpg", out _));

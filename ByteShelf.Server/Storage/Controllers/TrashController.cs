@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ByteShelf.Server.Storage.Controllers
 {
-    /// <summary>What has been deleted from a shelf and can still be restored.</summary>
+    /// <summary>What has been deleted from a shelf and can still be restored, and emptying it.</summary>
     [ApiController]
     [Route("api/shelves/{shelf}/trash")]
     [Authorize(Roles = UserRole.Admin)]
@@ -39,6 +39,18 @@ namespace ByteShelf.Server.Storage.Controllers
         public async Task<IActionResult> Restore(Guid deletionId)
         {
             await _trashService.RestoreAsync(Shelf, deletionId);
+            return NoContent();
+        }
+
+        /// <summary>
+        /// Empties the trash: everything in it is removed for good now rather than when its window
+        /// ends, and can no longer be restored.
+        /// </summary>
+        [HttpDelete]
+        [ProducesResponseType(204)]
+        public async Task<IActionResult> EmptyTrash(CancellationToken cancellationToken)
+        {
+            await _trashService.EmptyAsync(Shelf, cancellationToken);
             return NoContent();
         }
     }

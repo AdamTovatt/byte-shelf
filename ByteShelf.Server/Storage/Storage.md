@@ -16,15 +16,20 @@ cleanup. Shelves themselves are described in [Shelves.md](Shelves.md).
 
 ## Endpoints
 
-All under `/api/shelves/{shelf}`, admin only. A file or directory is named by exactly one of the
-`path` and `id` query parameters. Errors answer an `ErrorResponse` with a `code` from
-`ByteShelfCommon.ErrorCodes`.
+All under `/api/shelves/{shelf}`, admin only. An existing file or directory is named by exactly one
+of the `path` and `id` query parameters; a new path (`POST directories`, the `toPath` of a move) is in
+the JSON body. Errors answer an `ErrorResponse` with a `code` from `ByteShelfCommon.ErrorCodes`; a
+path that is not allowed is a 400.
 
 | Method and route | What it does |
 |---|---|
 | `GET entries?path=` | Lists a directory (the root without `path` or `id`). |
 | `GET files?path=` | A file's record. |
 | `DELETE files?path=` | Moves a file to the trash; answers the deletion. |
+| `POST files/move?path=` | Moves or renames a file to the body's `toPath`; missing directories above it are created. 400 for `/`, 409 when the path is taken. |
+| `POST directories` | Creates the directory at the body's `path` and any missing one above it; an existing one is answered as it is. |
+| `POST directories/move?path=` | Moves or renames a directory with everything in it to the body's `toPath`. 400 for the root, a destination of `/` or inside itself, or one that would make a path under it longer than `ShelfPath.MaxPathLength`; 409 when the path is taken. |
+| `DELETE directories?path=` | Moves a directory and everything live under it to the trash as one deletion; 400 for the root. |
 | `GET content?path=` | Streams the contents; `Range`, `If-None-Match` and `If-Range` work, the ETag is the SHA-256. Served with `X-Content-Type-Options: nosniff` and a sandboxing `Content-Security-Policy`. `download=true` adds a file name. |
 | `PUT content?path=&overwrite=` | Stores the body in one request. Needs `Content-Length` (411 without); the `Content-Type` is stored. 409 when the path is taken and `overwrite` is not set, 507 over quota. |
 | `POST uploads` | Starts a resumable upload with its size; reserves it against the quota. |
@@ -34,6 +39,7 @@ All under `/api/shelves/{shelf}`, admin only. A file or directory is named by ex
 | `DELETE uploads/{id}` | Drops the upload and releases its reservation. |
 | `GET trash` | Deletions still inside the restore window, newest first. |
 | `POST trash/{deletionId}/restore` | Puts a deletion back where it was. |
+| `DELETE trash` | Empties the trash: everything in it is purged now, its objects too, and can no longer be restored. |
 
 ## Uploads (`UploadService`)
 
@@ -51,11 +57,20 @@ The client never supplies a hash the server trusts.
 ## Deletes, restores and the purge (`TrashService`)
 
 A delete marks rows with a `deletion_id` and `deleted_at`; a deletion of a directory marks its
-whole subtree with one id, which is what a restore brings back. A restore is refused when the name
-has been taken since or the containing directory is itself in the trash. Deletions stay listed and
-restorable for the restore window (`BYTESHELF_RESTORE_WINDOW_DAYS`, 30 by default) and count against
-the quota until the purge removes them; one past its window is neither listed nor restorable, even
-if the purge has not reached all of it yet.
+whole live subtree with one id, which is what a restore brings back. Anything under it already in
+the trash keeps its own deletion. A restore is refused when the name has been taken since or the
+containing directory is itself in the trash. Deletions stay listed and restorable for the restore
+window (`BYTESHELF_RESTORE_WINDOW_DAYS`, 30 by default) and count against the quota until the purge
+removes them; one past its window is neither listed nor restorable, even if the purge has not
+reached all of it yet. Emptying a shelf's trash purges all of it at once, whatever is left of each
+window.
+
+## Moves (`FileService`, `DirectoryService`)
+
+A move or rename changes only the moved row: everything under a moved directory follows it, and no
+object is touched. Missing directories above the destination are created, and nothing is ever
+overwritten. A directory move is refused when any path under it, the trash included, would grow
+longer than `ShelfPath.MaxPathLength`, since such a path could no longer be named.
 
 ## Removing objects safely (`ObjectCollector`)
 

@@ -7,6 +7,11 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ByteShelf.Server.Tests.Jobs
 {
+    /// <remarks>
+    /// The fake clock is advanced until a pass has begun, and the worker may get one more pass in before
+    /// it stops, so the tests check the first recorded runs and their spacing rather than how many there
+    /// are.
+    /// </remarks>
     public class PeriodicJobWorkerTests : ServiceTestBase
     {
         [Fact]
@@ -19,7 +24,10 @@ namespace ByteShelf.Server.Tests.Jobs
             await Clock.AdvanceUntilAsync(worker.WaitForPassAsync(2), CountingWorker.TestInterval);
             await worker.StopAsync(CancellationToken.None);
 
-            Assert.Equal(2, await CountRecordedRunsAsync(succeeded: true));
+            IReadOnlyList<RecordedRun> runs = await GetRecordedRunsAsync();
+            Assert.Equal((TestInstants.Now, true), (runs[0].StartedAt, runs[0].Success));
+            Assert.True(runs[1].Success);
+            Assert.True(runs[1].StartedAt >= runs[0].StartedAt + CountingWorker.TestInterval);
         }
 
         [Fact]
@@ -32,16 +40,26 @@ namespace ByteShelf.Server.Tests.Jobs
             await Clock.AdvanceUntilAsync(worker.WaitForPassAsync(2), CountingWorker.TestInterval);
             await worker.StopAsync(CancellationToken.None);
 
-            Assert.Equal(1, await CountRecordedRunsAsync(succeeded: false));
-            Assert.Equal(1, await CountRecordedRunsAsync(succeeded: true));
+            IReadOnlyList<RecordedRun> runs = await GetRecordedRunsAsync();
+            Assert.Equal((false, true), (runs[0].Success, runs[1].Success));
+            Assert.True(runs[1].StartedAt >= runs[0].StartedAt + CountingWorker.TestInterval);
         }
 
-        private async Task<int> CountRecordedRunsAsync(bool succeeded)
+        /// <summary>The worker's recorded runs, first started first.</summary>
+        private async Task<IReadOnlyList<RecordedRun>> GetRecordedRunsAsync()
         {
             await using IDbSession session = await TestRoot.SessionFactory.CreateSessionAsync();
-            return await session.Connection.QuerySingleAsync<int>(
-                "SELECT COUNT(*) FROM job_run WHERE job_name = @jobName AND success = @succeeded",
-                new { jobName = CountingWorker.TestJobName, succeeded });
+            IEnumerable<RecordedRun> runs = await session.Connection.QueryAsync<RecordedRun>(
+                $@"SELECT started_at AS {nameof(RecordedRun.StartedAt)}, success AS {nameof(RecordedRun.Success)}
+                   FROM job_run WHERE job_name = @jobName ORDER BY started_at",
+                new { jobName = CountingWorker.TestJobName });
+            return runs.ToList();
+        }
+
+        private sealed class RecordedRun
+        {
+            public DateTimeOffset StartedAt { get; set; }
+            public bool Success { get; set; }
         }
 
         private sealed class CountingWorker : PeriodicJobWorker<int>

@@ -32,7 +32,8 @@ named by its SHA-256, so `sha256sum` verifies it, and identical contents are sto
 - A **shelf** holds files: one storage place with its own directories and quota, made per purpose.
 - A **user** signs in with email and password. Admins create shelves and users.
 - Files live in real **directories** and are addressed by path (`/invoices/2026/march.pdf`) or id.
-- A delete moves things to the **trash**, restorable for 30 days by default, then purged.
+- A delete moves things to the **trash**, restorable for 30 days by default, then purged; an admin
+  can empty a shelf's trash sooner.
 
 ## Running it
 

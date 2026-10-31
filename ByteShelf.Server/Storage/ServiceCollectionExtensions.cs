@@ -28,6 +28,7 @@ namespace ByteShelf.Server.Storage
             services.AddScoped<IShelfService, ShelfService>();
             services.AddScoped<ITrashService, TrashService>();
             services.AddScoped<IFileService, FileService>();
+            services.AddScoped<IDirectoryService, DirectoryService>();
             services.AddScoped<IUploadService, UploadService>();
             services.AddScoped<IStorageMaintenance, StorageMaintenance>();
 
