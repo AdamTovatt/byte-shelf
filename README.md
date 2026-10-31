@@ -10,7 +10,8 @@ in the web UI.
 |---|---|
 | `ByteShelf.Server` | The ASP.NET Core server (net10.0). |
 | `ByteShelfCommon` | The shared contract (net8.0, AOT-compatible): request and response types, path and shelf-name rules, source-generated JSON. Published as the `ByteShelfCommon` NuGet package. |
-| `ByteShelf.Server.Tests`, `ByteShelfCommon.Tests` | xUnit tests. |
+| `ByteShelfClient` | The client library (net8.0, AOT-compatible): `IByteShelfClient` over HTTP, and in memory for an app's tests. Published as the `ByteShelfClient` NuGet package. |
+| `ByteShelf.Server.Tests`, `ByteShelfCommon.Tests`, `ByteShelfClient.Tests` | xUnit tests; the server's include the client contract, run against both clients. |
 
 ## The root folder
 
@@ -57,7 +58,7 @@ The tests need nothing installed: each makes a root folder of its own under the 
   [Users](ByteShelf.Server/Users/Users.md),
   [Jobs](ByteShelf.Server/Jobs/Jobs.md), [Email](ByteShelf.Server/Email/Email.md),
   [Invalidation](ByteShelf.Server/Invalidation/Invalidation.md), [Version](ByteShelf.Server/Version/Version.md).
-- [ByteShelfCommon](ByteShelfCommon/README.md).
+- [ByteShelfCommon](ByteShelfCommon/README.md), [ByteShelfClient](ByteShelfClient/README.md).
 
 ## License
 

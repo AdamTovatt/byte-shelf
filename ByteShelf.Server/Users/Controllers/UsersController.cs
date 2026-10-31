@@ -24,7 +24,7 @@ namespace ByteShelf.Server.Users.Controllers
         /// <summary>The signed-in user.</summary>
         [HttpGet("me")]
         [Authorize]
-        [ProducesResponseType(typeof(User), 200)]
+        [ProducesResponseType(typeof(UserInfo), 200)]
         public async Task<IActionResult> GetMe()
         {
             Guid userId = HttpContext.GetUserGuid();
@@ -32,7 +32,7 @@ namespace ByteShelf.Server.Users.Controllers
             User user = await _userService.GetUserByIdAsync(userId)
                 ?? throw new NotFoundException("The signed-in user no longer exists.");
 
-            return Ok(user);
+            return Ok(UserContracts.ToUserInfo(user));
         }
 
         /// <summary>
@@ -59,17 +59,17 @@ namespace ByteShelf.Server.Users.Controllers
 
         /// <summary>Every user. Admin only.</summary>
         [HttpGet]
-        [Authorize(Roles = UserRole.Admin)]
-        [ProducesResponseType(typeof(IReadOnlyList<User>), 200)]
+        [Authorize(Roles = UserRoles.Admin)]
+        [ProducesResponseType(typeof(IReadOnlyList<UserInfo>), 200)]
         public async Task<IActionResult> GetAll()
         {
-            return Ok(await _userService.GetAllUsersAsync());
+            return Ok((await _userService.GetAllUsersAsync()).Select(UserContracts.ToUserInfo).ToList());
         }
 
         /// <summary>Creates a user. Admin only.</summary>
         [HttpPost]
-        [Authorize(Roles = UserRole.Admin)]
-        [ProducesResponseType(typeof(User), 200)]
+        [Authorize(Roles = UserRoles.Admin)]
+        [ProducesResponseType(typeof(UserInfo), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 409)]
         public async Task<IActionResult> Create([FromBody] CreateUserRequest request)
@@ -80,7 +80,7 @@ namespace ByteShelf.Server.Users.Controllers
                 password: request.Password,
                 roles: request.Roles);
 
-            return Ok(user);
+            return Ok(UserContracts.ToUserInfo(user));
         }
 
         /// <summary>
@@ -88,7 +88,7 @@ namespace ByteShelf.Server.Users.Controllers
         /// admin cannot lose the role.
         /// </summary>
         [HttpPut("{userId:guid}/roles")]
-        [Authorize(Roles = UserRole.Admin)]
+        [Authorize(Roles = UserRoles.Admin)]
         [ProducesResponseType(204)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 409)]
@@ -103,7 +103,7 @@ namespace ByteShelf.Server.Users.Controllers
         /// cannot be deleted.
         /// </summary>
         [HttpDelete("{userId:guid}")]
-        [Authorize(Roles = UserRole.Admin)]
+        [Authorize(Roles = UserRoles.Admin)]
         [ProducesResponseType(204)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 409)]

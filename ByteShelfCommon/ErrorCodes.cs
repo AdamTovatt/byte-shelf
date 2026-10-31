@@ -21,6 +21,12 @@ namespace ByteShelfCommon
         /// <summary>The request body is larger than the endpoint accepts.</summary>
         public const string TooLarge = "too_large";
 
+        /// <summary>
+        /// The request carries no valid credentials: no token or key, an expired token, or a key that
+        /// does not check out. Answered with status 401, often without a body.
+        /// </summary>
+        public const string Unauthenticated = "unauthenticated";
+
         /// <summary>The caller can see the shelf but its permission does not allow the operation.</summary>
         public const string PermissionDenied = "permission_denied";
 

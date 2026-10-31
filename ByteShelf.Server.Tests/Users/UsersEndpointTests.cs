@@ -85,7 +85,7 @@ namespace ByteShelf.Server.Tests.Users
             IReadOnlyList<User>? users = await _host.AdminClient.GetFromJsonAsync<IReadOnlyList<User>>("/api/users");
 
             Assert.Equal(new[] { ServerTestHost.AdminEmail, ServerTestHost.MemberEmail }, users!.Select(user => user.Email).Order());
-            Assert.Contains(users!, user => user.Roles.Contains(UserRole.Admin));
+            Assert.Contains(users!, user => user.Roles.Contains(UserRoles.Admin));
         }
     }
 }

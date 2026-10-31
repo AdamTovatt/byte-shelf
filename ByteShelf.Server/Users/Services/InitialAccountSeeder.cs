@@ -1,5 +1,6 @@
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Users.Models;
+using ByteShelfCommon;
 
 namespace ByteShelf.Server.Users.Services
 {
@@ -44,7 +45,7 @@ namespace ByteShelf.Server.Users.Services
                 ? _settings.Email.Split('@')[0]
                 : _settings.DisplayName;
 
-            await userService.CreateUserAsync(_settings.Email, displayName, _settings.Password, new[] { UserRole.Admin });
+            await userService.CreateUserAsync(_settings.Email, displayName, _settings.Password, new[] { UserRoles.Admin });
             _logger.LogInformation("Initial admin account created for {Email}.", _settings.Email);
         }
 

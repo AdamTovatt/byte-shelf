@@ -91,7 +91,7 @@ namespace ByteShelf.Server.Tests.Users
         [Fact]
         public async Task CreateUserAsync_OverlongInput_Throws()
         {
-            string longEmail = new string('a', ByteShelf.Server.Users.Services.UserService.MaxEmailLength) + "@example.com";
+            string longEmail = new string('a', UserFields.MaxEmailLength) + "@example.com";
             string longPassword = new string('p', PasswordPolicy.MaximumLength + 1);
 
             await Assert.ThrowsAsync<ArgumentException>(() => UserService.CreateUserAsync(longEmail, "Name", "password123"));
@@ -132,8 +132,8 @@ namespace ByteShelf.Server.Tests.Users
         [Fact]
         public async Task UpdateRolesAsync_SecondAdminDemoted_RemovesTheRole()
         {
-            await UserService.CreateUserAsync("first@example.com", "First", "password123", new[] { UserRole.Admin });
-            User second = await UserService.CreateUserAsync("second@example.com", "Second", "password123", new[] { UserRole.Admin });
+            await UserService.CreateUserAsync("first@example.com", "First", "password123", new[] { UserRoles.Admin });
+            User second = await UserService.CreateUserAsync("second@example.com", "Second", "password123", new[] { UserRoles.Admin });
 
             await UserService.UpdateRolesAsync(second.Id, Array.Empty<string>());
 
@@ -143,11 +143,11 @@ namespace ByteShelf.Server.Tests.Users
         [Fact]
         public async Task UpdateRolesAsync_LastAdminDemoted_ThrowsConflictAndKeepsTheRole()
         {
-            User admin = await UserService.CreateUserAsync("admin@example.com", "Admin", "password123", new[] { UserRole.Admin });
+            User admin = await UserService.CreateUserAsync("admin@example.com", "Admin", "password123", new[] { UserRoles.Admin });
 
             await Assert.ThrowsAsync<ConflictException>(() => UserService.UpdateRolesAsync(admin.Id, Array.Empty<string>()));
 
-            Assert.Equal(new[] { UserRole.Admin }, (await UserService.GetUserByIdAsync(admin.Id))!.Roles);
+            Assert.Equal(new[] { UserRoles.Admin }, (await UserService.GetUserByIdAsync(admin.Id))!.Roles);
         }
 
         [Fact]
@@ -180,7 +180,7 @@ namespace ByteShelf.Server.Tests.Users
         [Fact]
         public async Task DeleteUserAsync_LastAdmin_ThrowsConflictAndKeepsThem()
         {
-            User admin = await UserService.CreateUserAsync("admin@example.com", "Admin", "correct-password", new[] { UserRole.Admin });
+            User admin = await UserService.CreateUserAsync("admin@example.com", "Admin", "correct-password", new[] { UserRoles.Admin });
 
             await Assert.ThrowsAsync<ConflictException>(() => UserService.DeleteUserAsync(admin.Id));
 
@@ -190,8 +190,8 @@ namespace ByteShelf.Server.Tests.Users
         [Fact]
         public async Task DeleteUserAsync_OneOfTwoAdmins_RemovesThem()
         {
-            User first = await UserService.CreateUserAsync("first@example.com", "First", "correct-password", new[] { UserRole.Admin });
-            await UserService.CreateUserAsync("second@example.com", "Second", "correct-password", new[] { UserRole.Admin });
+            User first = await UserService.CreateUserAsync("first@example.com", "First", "correct-password", new[] { UserRoles.Admin });
+            await UserService.CreateUserAsync("second@example.com", "Second", "correct-password", new[] { UserRoles.Admin });
 
             await UserService.DeleteUserAsync(first.Id);
 

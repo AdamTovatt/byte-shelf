@@ -3,10 +3,10 @@ using ByteShelf.Server.Access.Repositories;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Errors;
-using ByteShelf.Server.Shared.Validation;
 using ByteShelf.Server.Users.Exceptions;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Repositories;
+using ByteShelfCommon;
 using EasyReasy.Auth;
 using EasyReasy.Database;
 
@@ -18,9 +18,6 @@ namespace ByteShelf.Server.Users.Services
     /// </summary>
     public class UserService : IUserService
     {
-        public const int MaxEmailLength = 254;
-        public const int MaxDisplayNameLength = 100;
-
         private readonly IUserRepository _userRepository;
         private readonly IUserLoginRepository _userLoginRepository;
         private readonly IShelfGrantRepository _grantRepository;
@@ -74,15 +71,11 @@ namespace ByteShelf.Server.Users.Services
         /// <inheritdoc />
         public async Task<User> CreateUserAsync(string email, string displayName, string password, IEnumerable<string>? roles = null)
         {
-            ValidateEmail(email);
-            displayName = DisplayText.Validate(displayName, MaxDisplayNameLength, "A display name");
+            UserFields.ValidateEmail(email);
+            displayName = UserFields.NormalizeDisplayName(displayName);
             PasswordPolicy.Validate(password);
 
-            List<string> rolesList = (roles ?? Enumerable.Empty<string>()).Distinct().ToList();
-            foreach (string role in rolesList)
-            {
-                UserRole.Validate(role);
-            }
+            IReadOnlyList<string> rolesList = UserRoles.Normalize(roles);
 
             string passwordHash = _passwordHasher.HashPassword(password);
             DateTimeOffset now = _timeProvider.GetUtcNow();
@@ -151,11 +144,7 @@ namespace ByteShelf.Server.Users.Services
         /// <inheritdoc />
         public async Task UpdateRolesAsync(Guid userId, IEnumerable<string> roles)
         {
-            List<string> rolesList = roles.Distinct().ToList();
-            foreach (string role in rolesList)
-            {
-                UserRole.Validate(role);
-            }
+            IReadOnlyList<string> rolesList = UserRoles.Normalize(roles);
 
             await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
             {
@@ -163,8 +152,8 @@ namespace ByteShelf.Server.Users.Services
                     ?? throw new NotFoundException($"There is no user {userId}.");
 
                 // One write transaction at a time, so two admins demoting each other cannot both pass.
-                bool removesAdmin = user.Roles.Contains(UserRole.Admin) && !rolesList.Contains(UserRole.Admin);
-                if (removesAdmin && await _userRepository.CountWithRoleAsync(UserRole.Admin, session) <= 1)
+                bool removesAdmin = user.Roles.Contains(UserRoles.Admin) && !rolesList.Contains(UserRoles.Admin);
+                if (removesAdmin && await _userRepository.CountWithRoleAsync(UserRoles.Admin, session) <= 1)
                 {
                     throw new ConflictException("This is the only admin; make someone else an admin first.");
                 }
@@ -182,7 +171,7 @@ namespace ByteShelf.Server.Users.Services
                 User user = await _userRepository.GetByIdAsync(userId, session)
                     ?? throw new NotFoundException($"There is no user {userId}.");
 
-                if (user.Roles.Contains(UserRole.Admin) && await _userRepository.CountWithRoleAsync(UserRole.Admin, session) <= 1)
+                if (user.Roles.Contains(UserRoles.Admin) && await _userRepository.CountWithRoleAsync(UserRoles.Admin, session) <= 1)
                 {
                     throw new ConflictException("This is the only admin; make someone else an admin first.");
                 }
@@ -204,14 +193,5 @@ namespace ByteShelf.Server.Users.Services
         {
             return await _userRepository.GetCountAsync();
         }
-
-        private static void ValidateEmail(string email)
-        {
-            if (string.IsNullOrWhiteSpace(email) || !email.Contains('@') || email.Length > MaxEmailLength)
-            {
-                throw new ArgumentException($"A valid email address of at most {MaxEmailLength} characters is required.");
-            }
-        }
-
     }
 }

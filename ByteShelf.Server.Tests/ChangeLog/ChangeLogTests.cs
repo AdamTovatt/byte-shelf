@@ -237,11 +237,11 @@ namespace ByteShelf.Server.Tests.ChangeLog
             User user = await CreateUserAsync("user@example.com");
             long before = await ChangeLog.GetLatestSequenceAsync();
 
-            await Services.GetRequiredService<IUserService>().UpdateRolesAsync(user.Id, new[] { UserRole.Admin });
+            await Services.GetRequiredService<IUserService>().UpdateRolesAsync(user.Id, new[] { UserRoles.Admin });
 
             ChangeLogEntry entry = Assert.Single(await ChangeLog.GetAfterAsync(before, 100));
             Assert.Equal((ChangeEntityType.User, ChangeAction.Updated), (entry.EntityType, entry.Action));
-            Assert.Equal(new[] { UserRole.Admin }, ChangePayload.Deserialize<User>(entry.Payload!).Roles);
+            Assert.Equal(new[] { UserRoles.Admin }, ChangePayload.Deserialize<User>(entry.Payload!).Roles);
         }
 
         [Fact]

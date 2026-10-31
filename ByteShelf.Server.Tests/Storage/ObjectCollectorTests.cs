@@ -2,6 +2,7 @@ using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
 using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
+using ByteShelfCommon;
 using EasyReasy.Database;
 using Microsoft.Extensions.DependencyInjection;
 

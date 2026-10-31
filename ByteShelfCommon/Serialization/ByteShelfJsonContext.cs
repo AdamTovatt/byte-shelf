@@ -31,6 +31,16 @@ namespace ByteShelfCommon.Serialization
     [JsonSerializable(typeof(IReadOnlyList<ShelfKeyInfo>))]
     [JsonSerializable(typeof(CreateShelfKeyRequest))]
     [JsonSerializable(typeof(CreatedShelfKey))]
+    [JsonSerializable(typeof(UserInfo))]
+    [JsonSerializable(typeof(IReadOnlyList<UserInfo>))]
+    [JsonSerializable(typeof(CreateUserRequest))]
+    [JsonSerializable(typeof(UpdateRolesRequest))]
+    [JsonSerializable(typeof(UpdatePasswordRequest))]
+    [JsonSerializable(typeof(RequestPasswordResetRequest))]
+    [JsonSerializable(typeof(CompletePasswordResetRequest))]
+    [JsonSerializable(typeof(SignInRequest))]
+    [JsonSerializable(typeof(SessionTokens))]
+    [JsonSerializable(typeof(RefreshTokenRequest))]
     public sealed partial class ByteShelfJsonContext : JsonSerializerContext
     {
     }

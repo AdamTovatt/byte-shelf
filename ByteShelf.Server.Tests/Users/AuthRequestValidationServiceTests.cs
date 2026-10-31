@@ -4,6 +4,7 @@ using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Services;
+using ByteShelfCommon;
 using EasyReasy.Auth;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -50,12 +51,12 @@ namespace ByteShelf.Server.Tests.Users
         [Fact]
         public async Task CurrentRolesRefreshResolver_RolesChangedSinceSignIn_GivesTheCurrentRoles()
         {
-            await UserService.CreateUserAsync("first@example.com", "First", "password123", new[] { UserRole.Admin });
-            User user = await UserService.CreateUserAsync("user@example.com", "User", "password123", new[] { UserRole.Admin });
+            await UserService.CreateUserAsync("first@example.com", "First", "password123", new[] { UserRoles.Admin });
+            User user = await UserService.CreateUserAsync("user@example.com", "User", "password123", new[] { UserRoles.Admin });
             await UserService.UpdateRolesAsync(user.Id, Array.Empty<string>());
 
             RefreshClaimsDecision decision = await Services.GetRequiredService<IRefreshClaimsResolver>().ResolveAsync(
-                new RefreshClaimsContext(user.Id.ToString("D"), AuthRequestValidationService.AuthType, Array.Empty<Claim>(), new[] { UserRole.Admin }, null),
+                new RefreshClaimsContext(user.Id.ToString("D"), AuthRequestValidationService.AuthType, Array.Empty<Claim>(), new[] { UserRoles.Admin }, null),
                 CancellationToken.None);
 
             Assert.False(decision.IsDenied);
@@ -66,7 +67,7 @@ namespace ByteShelf.Server.Tests.Users
         public async Task CurrentRolesRefreshResolver_UserGone_DeniesTheRefresh()
         {
             RefreshClaimsDecision decision = await Services.GetRequiredService<IRefreshClaimsResolver>().ResolveAsync(
-                new RefreshClaimsContext(Guid.NewGuid().ToString("D"), AuthRequestValidationService.AuthType, Array.Empty<Claim>(), new[] { UserRole.Admin }, null),
+                new RefreshClaimsContext(Guid.NewGuid().ToString("D"), AuthRequestValidationService.AuthType, Array.Empty<Claim>(), new[] { UserRoles.Admin }, null),
                 CancellationToken.None);
 
             Assert.True(decision.IsDenied);

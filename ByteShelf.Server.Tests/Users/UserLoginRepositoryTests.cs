@@ -3,6 +3,7 @@ using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Repositories;
+using ByteShelfCommon;
 
 namespace ByteShelf.Server.Tests.Users
 {
@@ -21,7 +22,7 @@ namespace ByteShelf.Server.Tests.Users
         [Fact]
         public async Task GetCredentialsByEmailAsync_LocalLogin_ReturnsTheUserWithTheHash()
         {
-            User user = await CreateUserWithLoginAsync("creds@example.com", "hashed-password", UserRole.Admin);
+            User user = await CreateUserWithLoginAsync("creds@example.com", "hashed-password", UserRoles.Admin);
 
             UserCredentials? credentials = await _loginRepository.GetCredentialsByEmailAsync("creds@example.com", Session);
 
@@ -29,7 +30,7 @@ namespace ByteShelf.Server.Tests.Users
             Assert.Equal(user.Id, credentials.User.Id);
             Assert.Equal("creds@example.com", credentials.User.Email);
             Assert.Equal("Name", credentials.User.DisplayName);
-            Assert.Equal(new[] { UserRole.Admin }, credentials.User.Roles);
+            Assert.Equal(new[] { UserRoles.Admin }, credentials.User.Roles);
             Assert.Equal("hashed-password", credentials.PasswordHash);
         }
 

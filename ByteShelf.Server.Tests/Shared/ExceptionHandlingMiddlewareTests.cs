@@ -15,7 +15,7 @@ namespace ByteShelf.Server.Tests.Shared
     {
         public static TheoryData<Exception, int, string?> MappedExceptions => new TheoryData<Exception, int, string?>
         {
-            { new AuthenticatedUserException("no user"), StatusCodes.Status401Unauthorized, null },
+            { new AuthenticatedUserException("no user"), StatusCodes.Status401Unauthorized, ErrorCodes.Unauthenticated },
             { new NotFoundException("gone"), StatusCodes.Status404NotFound, ErrorCodes.NotFound },
             { new PermissionDeniedException("read only"), StatusCodes.Status403Forbidden, ErrorCodes.PermissionDenied },
             { new ConflictException("taken"), StatusCodes.Status409Conflict, ErrorCodes.Conflict },

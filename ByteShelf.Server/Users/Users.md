@@ -27,12 +27,17 @@ no refresh extends that hour.
 
 ## Endpoints
 
+Requests and answers are ByteShelfCommon types (`UserInfo`, `CreateUserRequest`, `SignInRequest`,
+`SessionTokens` and the rest), and the rules for an email, display name, password and roles live
+there too (`UserFields`, `PasswordPolicy`, `UserRoles`), so the in-memory client refuses what the
+server refuses. The HTTP client sends them unchecked and reports the server's answer.
+
 | Method and route | Who | What it does |
 |---|---|---|
 | `POST /api/auth/login` | anyone | Signs in with `username` (the email) and `password`; answers a 1-hour JWT and a refresh token. |
 | `POST /api/auth/refresh`, `/api/auth/logout` | anyone | Rotates a refresh token; ends a session. |
 | `GET /api/users/me` | signed in | The signed-in user. |
-| `PUT /api/users/me/password` | signed in | Changes the password; 401 when the current one is wrong. |
+| `PUT /api/users/me/password` | signed in | Changes the password. A wrong current one is 401 `invalid_credentials` without a `WWW-Authenticate` challenge, which tells a client its token is fine and must not be renewed and resent. |
 | `GET /api/users` | admin | Every user. |
 | `POST /api/users` | admin | Creates a user. |
 | `PUT /api/users/{id}/roles` | admin | Replaces a user's roles; 409 for the last admin. |

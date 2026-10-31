@@ -74,7 +74,7 @@ namespace ByteShelf.Server.Shared.Middleware
         {
             return exception switch
             {
-                AuthenticatedUserException => (HttpStatusCode.Unauthorized, exception.Message, null),
+                AuthenticatedUserException => (HttpStatusCode.Unauthorized, exception.Message, ErrorCodes.Unauthenticated),
                 NotFoundException => (HttpStatusCode.NotFound, exception.Message, ErrorCodes.NotFound),
                 PermissionDeniedException => (HttpStatusCode.Forbidden, exception.Message, ErrorCodes.PermissionDenied),
                 ConflictException => (HttpStatusCode.Conflict, exception.Message, ErrorCodes.Conflict),

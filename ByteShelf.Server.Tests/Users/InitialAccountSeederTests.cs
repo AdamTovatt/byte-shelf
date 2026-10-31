@@ -2,6 +2,7 @@ using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Services;
+using ByteShelfCommon;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -18,7 +19,7 @@ namespace ByteShelf.Server.Tests.Users
 
             User admin = Assert.Single(await UserService.GetAllUsersAsync());
             Assert.Equal("first", admin.DisplayName);
-            Assert.Equal(new[] { UserRole.Admin }, admin.Roles);
+            Assert.Equal(new[] { UserRoles.Admin }, admin.Roles);
             Assert.NotNull(await UserService.ValidateCredentialsAsync("first@example.com", "admin-password"));
         }
 

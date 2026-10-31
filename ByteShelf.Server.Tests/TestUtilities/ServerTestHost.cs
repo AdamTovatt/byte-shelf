@@ -46,6 +46,12 @@ namespace ByteShelf.Server.Tests.TestUtilities
 
         public Guid MemberId { get; private set; }
 
+        /// <summary>A client of the in-memory server without credentials of its own, for ByteShelfClient to drive.</summary>
+        public HttpClient CreateClient()
+        {
+            return _app.GetTestClient();
+        }
+
         /// <summary>A client sending <paramref name="secret"/> as its shelf key on every request.</summary>
         public HttpClient CreateKeyClient(string secret)
         {
@@ -74,7 +80,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
             using (IServiceScope scope = app.Services.CreateScope())
             {
                 IUserService users = scope.ServiceProvider.GetRequiredService<IUserService>();
-                await users.CreateUserAsync(AdminEmail, "Admin", Password, new[] { UserRole.Admin });
+                await users.CreateUserAsync(AdminEmail, "Admin", Password, new[] { UserRoles.Admin });
                 host.MemberId = (await users.CreateUserAsync(MemberEmail, "Member", Password)).Id;
             }
 

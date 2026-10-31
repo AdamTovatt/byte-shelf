@@ -1,6 +1,7 @@
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Repositories;
+using ByteShelfCommon;
 using EasyReasy.Auth;
 using EasyReasy.Database;
 

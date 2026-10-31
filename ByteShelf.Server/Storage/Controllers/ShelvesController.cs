@@ -51,7 +51,7 @@ namespace ByteShelf.Server.Storage.Controllers
 
         /// <summary>Creates a shelf. Admin only.</summary>
         [HttpPost]
-        [Authorize(Roles = UserRole.Admin)]
+        [Authorize(Roles = UserRoles.Admin)]
         [ProducesResponseType(typeof(ShelfInfo), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 409)]

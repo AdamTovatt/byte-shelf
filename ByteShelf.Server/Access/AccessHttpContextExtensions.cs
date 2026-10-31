@@ -27,7 +27,7 @@ namespace ByteShelf.Server.Access
                 return ShelfCaller.ForKey(key);
             }
 
-            return ShelfCaller.ForUser(httpContext.GetUserGuid(), httpContext.User.IsInRole(UserRole.Admin));
+            return ShelfCaller.ForUser(httpContext.GetUserGuid(), httpContext.User.IsInRole(UserRoles.Admin));
         }
 
         /// <summary>The caller's access to the shelf in the route, as <see cref="ShelfAccessAttribute"/> resolved it.</summary>

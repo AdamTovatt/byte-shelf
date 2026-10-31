@@ -64,7 +64,7 @@ namespace ByteShelf.Server.Storage.Services
         /// <inheritdoc />
         public async Task<Shelf> CreateAsync(string name, long? quotaBytes)
         {
-            ValidateSettings(name, quotaBytes);
+            ShelfSettings.Validate(name, quotaBytes);
 
             DateTimeOffset now = _timeProvider.GetUtcNow();
             Shelf shelf = new Shelf
@@ -103,7 +103,7 @@ namespace ByteShelf.Server.Storage.Services
         /// <inheritdoc />
         public async Task<Shelf> UpdateAsync(Shelf shelf, string name, long? quotaBytes)
         {
-            ValidateSettings(name, quotaBytes);
+            ShelfSettings.Validate(name, quotaBytes);
 
             await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
             {
@@ -160,15 +160,6 @@ namespace ByteShelf.Server.Storage.Services
         {
             return await _shelfRepository.GetByIdAsync(shelf.Id, session)
                 ?? throw new NotFoundException($"There is no shelf '{shelf.Name}'.");
-        }
-
-        private static void ValidateSettings(string name, long? quotaBytes)
-        {
-            ShelfName.Validate(name);
-            if (quotaBytes < 0)
-            {
-                throw new ArgumentException("A quota cannot be negative.");
-            }
         }
     }
 }

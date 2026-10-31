@@ -14,7 +14,7 @@ namespace ByteShelf.Server.Tests.Access
         public async Task ResolveAsync_Admin_AllowsEverything()
         {
             Shelf shelf = await CreateShelfAsync();
-            User admin = await CreateUserAsync("admin@example.com", UserRole.Admin);
+            User admin = await CreateUserAsync("admin@example.com", UserRoles.Admin);
 
             ShelfAccess access = await AccessResolver.ResolveAsync(ShelfCaller.ForUser(admin.Id, isAdmin: true), shelf);
 
@@ -99,7 +99,7 @@ namespace ByteShelf.Server.Tests.Access
         {
             await CreateShelfAsync("b");
             await CreateShelfAsync("a");
-            User admin = await CreateUserAsync("admin@example.com", UserRole.Admin);
+            User admin = await CreateUserAsync("admin@example.com", UserRoles.Admin);
 
             IReadOnlyList<Shelf> visible = await AccessResolver.GetVisibleShelvesAsync(ShelfCaller.ForUser(admin.Id, isAdmin: true));
 

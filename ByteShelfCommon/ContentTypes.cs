@@ -1,10 +1,11 @@
 using System.Net.Http.Headers;
 
-namespace ByteShelf.Server.Storage.Services
+namespace ByteShelfCommon
 {
-    /// <summary>The MIME type stored with a file.</summary>
+    /// <summary>The media type stored with a file.</summary>
     public static class ContentTypes
     {
+        /// <summary>The type of a file stored without one.</summary>
         public const string Default = "application/octet-stream";
 
         private const int MaxLength = 255;

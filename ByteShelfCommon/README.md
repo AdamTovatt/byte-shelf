@@ -18,6 +18,10 @@ AOT-compatible.
 | `ShelfAccessGrant`, `SetShelfAccessRequest`, `ShelfAccessPermission` | A user's access to a shelf, and giving it. |
 | `ShelfKeyInfo`, `CreateShelfKeyRequest`, `CreatedShelfKey`, `ShelfKeyPermission` | A program's key to one shelf, and creating one. |
 | `ShelfKeys` | The `X-Api-Key` header a key is sent in, and the secret's prefix. |
+| `EntryReference` | Names a file or directory by path or by id; a path or an id converts to one. |
+| `UserInfo`, `CreateUserRequest`, `UpdateRolesRequest`, `UpdatePasswordRequest`, `UserRoles` | Users and changing them. |
+| `RequestPasswordResetRequest`, `CompletePasswordResetRequest` | Asking for a reset link, and using it. |
+| `SignInRequest`, `SessionTokens`, `RefreshTokenRequest` | Signing in, refreshing and signing out at `/api/auth`. |
 | `ErrorResponse`, `ErrorCodes` | Every error body, with a machine-readable code. |
 | `UploadLimits` | The server's limits, such as the largest chunk. |
 
@@ -29,7 +33,13 @@ AOT-compatible.
   names on every operating system (Windows refuses `CON` and a trailing dot), so a client that
   writes files to disk maps them itself.
 - `ShelfName` validates shelf names: 1 to 63 lowercase letters, digits, `-`, `_` and `.`, starting
-  with a letter or digit.
+  with a letter or digit. `ShelfSettings` adds that a quota cannot be negative.
+- `ContentTypes` checks the media type stored with a file, `PasswordPolicy` a password,
+  `UserFields` an email and display name, `DisplayText` short names such as a key's, and
+  `UserRoles` a user's roles.
+- The server applies every rule, and so does the in-memory client in ByteShelfClient. The HTTP
+  client applies `ShelfPath` and `ContentTypes` before sending, since they shape the request, and
+  leaves the rest to the server.
 
 ## JSON
 
