@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Button, ButtonGroup, CardList, CardListItem, CopyableSecret, Dialog, IconButton, Input } from '../components/ui';
+import { Button, ButtonGroup, CardList, CardListItem, CopyableSecret, Dialog, IconButton, Input, SectionTitle } from '../components/ui';
 import { Icon } from '../components/ui/Icon';
 import { ShelfHeader } from '../components/ShelfHeader';
 import { useCreateKey, useDeleteKey, useGrants, useKeys, useRemoveGrant, useSetGrant } from '../hooks/useAccessQueries';
@@ -41,10 +41,6 @@ export function ShelfSettingsPage() {
       </div>
     </div>
   );
-}
-
-function SectionTitle({ children }: { children: string }) {
-  return <h2 className="text-body-lg font-medium text-text-3-light dark:text-text-3-dark">{children}</h2>;
 }
 
 function SettingsSection({ shelf }: { shelf: string }) {

@@ -41,9 +41,9 @@ follows no redirects); nothing needs to reach the replica but its own admins and
    a copy of the primary's root: that would be the same instance, and pairing would be refused.
 2. On the primary, as an admin, under Settings, Replication, make a pairing code. It works once, for
    15 minutes.
-3. On the replica, as its admin, under Settings, Replication, choose Follow a primary, paste it and
-   give the replica a name, which the primary lists it by. The replica copies the primary, its users included: from then on its admins sign in with their
-   accounts on the primary.
+3. On the replica, as its admin, under Settings, Replication, choose Follow a primary, paste the code
+   and give the replica a name, which the primary lists it by. The replica copies the primary, its
+   users included: from then on its admins sign in with their accounts on the primary.
 
 The same section shows on the primary each replica and how far behind it is, and on a replica the
 primary it follows and the last error (`GET /api/replication` answers the same). A replica only reads.
@@ -71,7 +71,7 @@ and wrote nothing, such as for a damaged object; 2 that the zip's path after `--
 `BYTESHELF_ROOT` is missing.
 
 A zip of a stopped server's root is a complete copy too. Restoring either onto a primary makes its
-replicas take a whole copy.
+replicas take a whole copy once they notice, which [Backup](ByteShelf.Server/Backup/Backup.md) explains.
 
 ## Background work
 

@@ -21,3 +21,4 @@ export { FileButton, type FileButtonProps } from './FileButton';
 export { ProgressBar, type ProgressBarProps } from './ProgressBar';
 export { ListRow, type ListRowProps } from './ListRow';
 export { CopyableSecret, type CopyableSecretProps } from './CopyableSecret';
+export { SectionTitle, type SectionTitleProps } from './SectionTitle';

@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Runtime.Versioning;
 using ByteShelf.Server.Backup.Models;
 using ByteShelf.Server.Backup.Services;
 using ByteShelf.Server.ChangeLog.Models;
@@ -29,7 +30,7 @@ namespace ByteShelf.Server.Tests.Backup
         public override async Task DisposeAsync()
         {
             SqliteConnection.ClearAllPools();
-            foreach (string file in Directory.GetFiles(Path.GetDirectoryName(_zipPath)!, Path.GetFileName(_zipPath) + "*"))
+            foreach (string file in BackupFiles())
             {
                 File.Delete(file);
             }
@@ -53,7 +54,7 @@ namespace ByteShelf.Server.Tests.Backup
             BackupSummary summary = await RootBackup.WriteAsync(TestRoot.Root, _zipPath, CancellationToken.None);
 
             RootFolder restored = Restore();
-            Assert.Equal((2, 11L), (summary.ObjectCount, summary.ObjectBytes));
+            Assert.Equal((2, (long)("first".Length + "second".Length)), (summary.ObjectCount, summary.ObjectBytes));
             StoredObjects objects = new StoredObjects(restored);
             Assert.Equal("first", await File.ReadAllTextAsync(objects.GetPath(a.Sha256)));
             Assert.Equal("second", await File.ReadAllTextAsync(objects.GetPath(b.Sha256)));
@@ -111,8 +112,9 @@ namespace ByteShelf.Server.Tests.Backup
             BackupSummary summary = await RootBackup.WriteAsync(TestRoot.Root, _zipPath, async () =>
             {
                 await FileService.DeleteFileAsync(shelf, EntryReference.ForPath("/purged.txt"));
+                // Emptying the trash removes the rows, then the object through the ObjectCollector.
                 await TrashService.EmptyAsync(shelf, CancellationToken.None);
-                ObjectStore.Delete(purged.Sha256);
+                Assert.False(ObjectStore.Exists(purged.Sha256));
             }, CancellationToken.None);
 
             RootFolder restored = Restore();
@@ -144,7 +146,7 @@ namespace ByteShelf.Server.Tests.Backup
             await Assert.ThrowsAsync<InvalidDataException>(() => RootBackup.WriteAsync(TestRoot.Root, _zipPath, CancellationToken.None));
 
             Assert.Equal("the backup before", await File.ReadAllTextAsync(_zipPath));
-            Assert.Equal(new[] { _zipPath }, Directory.GetFiles(Path.GetDirectoryName(_zipPath)!, Path.GetFileName(_zipPath) + "*"));
+            Assert.Equal(new[] { _zipPath }, BackupFiles());
         }
 
         [Fact]
@@ -159,29 +161,47 @@ namespace ByteShelf.Server.Tests.Backup
             Assert.Equal(1, await CountAsync(Restore(), "SELECT COUNT(*) FROM file"));
         }
 
-        [Fact]
-        public async Task WriteAsync_ZipSnapshotDatabaseAndKeys_AreOwnerOnly()
+        [UnixFact]
+        [UnsupportedOSPlatform("windows")]
+        public async Task WriteAsync_ZipFilesBesideItAndTheDatabaseAndKeysInIt_AreOwnerOnly()
         {
-            if (OperatingSystem.IsWindows())
-            {
-                return;
-            }
-
             await File.WriteAllTextAsync(Path.Combine(TestRoot.Root.KeysPath, "jwt-secret"), "secret");
-            UnixFileMode? snapshotMode = null;
+            Dictionary<string, UnixFileMode> besideTheZip = new Dictionary<string, UnixFileMode>();
 
-            string snapshotPath = _zipPath + ".db.partial";
             await RootBackup.WriteAsync(TestRoot.Root, _zipPath, () =>
             {
-                snapshotMode = OperatingSystem.IsWindows() ? null : File.GetUnixFileMode(snapshotPath);
+                // The snapshot among them: it holds password hashes.
+                foreach (string file in BackupFiles())
+                {
+                    besideTheZip[Path.GetFileName(file)] = File.GetUnixFileMode(file);
+                }
+
                 return Task.CompletedTask;
             }, CancellationToken.None);
 
-            Assert.Equal(OwnerOnly.File, snapshotMode);
-            Assert.Equal(OwnerOnly.File, File.GetUnixFileMode(_zipPath));
+            Assert.NotEmpty(besideTheZip);
+            Assert.All(besideTheZip.Values, mode => Assert.Equal(OwnerOnly.FilePermissions, mode));
+            Assert.Equal(OwnerOnly.FilePermissions, File.GetUnixFileMode(_zipPath));
             using ZipArchive zip = ZipFile.OpenRead(_zipPath);
-            Assert.Equal((int)OwnerOnly.File, zip.GetEntry(RootFolder.DatabaseFileName)!.ExternalAttributes >> 16);
-            Assert.Equal((int)OwnerOnly.File, zip.GetEntry($"{RootFolder.KeysFolderName}/jwt-secret")!.ExternalAttributes >> 16);
+            Assert.Equal((int)OwnerOnly.FilePermissions, zip.GetEntry(RootFolder.DatabaseFileName)!.ExternalAttributes >> 16);
+            Assert.Equal((int)OwnerOnly.FilePermissions, zip.GetEntry($"{RootFolder.KeysFolderName}/jwt-secret")!.ExternalAttributes >> 16);
+        }
+
+        [Fact]
+        public async Task WriteAsync_WhileAnotherBackupToThePathRuns_FailsAndLeavesThatOneWhole()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await StoreTextAsync(shelf, "/a.txt", "first");
+            Exception? second = null;
+
+            await RootBackup.WriteAsync(TestRoot.Root, _zipPath, async () =>
+            {
+                second = await Record.ExceptionAsync(() => RootBackup.WriteAsync(TestRoot.Root, _zipPath, CancellationToken.None));
+            }, CancellationToken.None);
+
+            Assert.IsType<IOException>(second);
+            Assert.Equal(1, await CountAsync(Restore(), "SELECT COUNT(*) FROM file"));
+            Assert.Equal(new[] { _zipPath }, BackupFiles());
         }
 
         [Fact]
@@ -190,12 +210,14 @@ namespace ByteShelf.Server.Tests.Backup
             await Assert.ThrowsAsync<ArgumentException>(() => RootBackup.WriteAsync(TestRoot.Root, Path.Combine(TestRoot.Root.Path, "backup.zip"), CancellationToken.None));
         }
 
-        [Fact]
-        public void Run_WithoutAZipPathOrRoot_IsUsage()
+        [Theory]
+        [InlineData("root", null)]
+        [InlineData("root", "--other")]
+        [InlineData(null, "backup.zip")]
+        public void Run_WithoutAZipPathOrRoot_IsUsage(string? root, string? zipPath)
         {
-            Assert.Equal(BackupCommand.Usage, BackupCommand.Run(TestRoot.Root.Path, null, NullLogger.Instance));
-            Assert.Equal(BackupCommand.Usage, BackupCommand.Run(TestRoot.Root.Path, "--other", NullLogger.Instance));
-            Assert.Equal(BackupCommand.Usage, BackupCommand.Run(null, _zipPath, NullLogger.Instance));
+            // Usage is answered before either path is touched.
+            Assert.Equal(BackupCommand.Usage, BackupCommand.Run(root, zipPath, NullLogger.Instance));
         }
 
         [Fact]
@@ -225,6 +247,12 @@ namespace ByteShelf.Server.Tests.Backup
             Assert.Equal(BackupCommand.Written, BackupCommand.Run(TestRoot.Root.Path, _zipPath, NullLogger.Instance));
 
             Assert.True(File.Exists(_zipPath));
+        }
+
+        /// <summary>The zip and every file the backup keeps beside it while it runs.</summary>
+        private string[] BackupFiles()
+        {
+            return Directory.GetFiles(Path.GetDirectoryName(_zipPath)!, Path.GetFileName(_zipPath) + "*");
         }
 
         private RootFolder Restore()

@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import toast from 'react-hot-toast';
 import { iconMap } from '../lib/iconMap';
 import { Icon } from '../components/ui/Icon';
-import { PasswordInput, Button, ButtonGroup } from '../components/ui';
+import { PasswordInput, Button, ButtonGroup, SectionTitle } from '../components/ui';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useChangeOwnPassword, useCurrentUser, useIsAdmin } from '../hooks/useUserQueries';
@@ -20,9 +20,7 @@ export function SettingsPage() {
         <h1 className="text-heading-md text-text-1-light dark:text-text-1-dark">Settings</h1>
 
         <section className="flex items-center justify-between">
-          <div className="text-body-lg font-medium text-text-3-light dark:text-text-3-dark">
-            Theme
-          </div>
+          <SectionTitle>Theme</SectionTitle>
           <ButtonGroup
             options={[
               { value: 'system', icon: <Icon icon={iconMap.themeSystem} size={18} />, tooltip: 'System' },
@@ -82,9 +80,7 @@ function ChangePasswordSection() {
 
   return (
     <section className="space-y-3">
-      <div className="text-body-lg font-medium text-text-3-light dark:text-text-3-dark">
-        Change password
-      </div>
+      <SectionTitle>Change password</SectionTitle>
       <form onSubmit={handleSubmit} className="space-y-3">
         <PasswordInput
           label="Current password"
@@ -134,9 +130,7 @@ function AccountSection() {
 
   return (
     <section className="space-y-3">
-      <div className="text-body-lg font-medium text-text-3-light dark:text-text-3-dark">
-        Account
-      </div>
+      <SectionTitle>Account</SectionTitle>
       <div className="flex items-center justify-between gap-4">
         <div className="text-body-lg text-text-2-light dark:text-text-2-dark">
           Signed in as <span className="font-medium">{user?.displayName ?? '—'}</span>

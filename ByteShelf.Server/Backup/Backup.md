@@ -16,11 +16,14 @@ it never migrates the database or creates folders there, and it refuses a zip pa
    `byteshelf.db`, then every file in `keys/`.
 
 The zip is written as `<zip>.partial` and renamed into place only when whole, so a failed backup leaves
-nothing behind and never replaces a good one. It is created readable by its owner only, and the database
+nothing behind and never replaces a good one. `<zip>.lock` is held exclusively for the whole run, so a
+second backup to the same path fails rather than sharing those files. It is created readable by its owner only, and the database
 and keys inside it unzip that way.
 
 `BackupCommand` answers the exit code: 0 written, 1 failed with nothing written, 2 when the zip's path or
 `BYTESHELF_ROOT` is missing.
 
 A backup restored onto a primary gives its log numbers it may already have given other changes after the
-backup; its replicas notice and take a whole copy ([Replication](../Replication/Replication.md)).
+backup; its replicas notice and take a whole copy ([Replication](../Replication/Replication.md)). One
+that has applied no entry since its last copy has nothing to compare, so it notices only if it is ahead
+of the restored log; until then it may hold changes the restore undid.

@@ -9,7 +9,6 @@ using ByteShelf.Server.Storage.Repositories;
 using ByteShelf.Server.Storage.Services;
 using EasyReasy.Database;
 using EasyReasy.Database.Mapping;
-using EasyReasy.Database.Sqlite;
 using Microsoft.Data.Sqlite;
 
 namespace ByteShelf.Server.Backup.Services
@@ -48,9 +47,11 @@ namespace ByteShelf.Server.Backup.Services
                 throw new ArgumentException($"Write the backup outside the root ({root.Path}).", nameof(zipPath));
             }
 
-            DatabaseTypeHandlers.RegisterAll();
             string partialZip = target + ".partial";
             string snapshotPath = target + ".db.partial";
+
+            // Held for the whole run, so a second backup to the same path fails instead of sharing its files.
+            await using FileStream backupLock = LockBackupPath(target);
             DeleteIfPresent(partialZip);
             DeleteIfPresent(snapshotPath);
 
@@ -120,6 +121,7 @@ namespace ByteShelf.Server.Backup.Services
                 if (source == null && await live.Files.IsObjectReferencedAsync(sha256))
                 {
                     // Opened again: a new upload of the same contents may have stored it after the first try.
+                    // Untested: no test reaches that moment without a seam kept only for it.
                     source = TryOpenRead(objects, sha256)
                         ?? throw new InvalidDataException($"The object {entryName} is missing while a file points at it, so no backup was written. Restore it from a replica or an earlier backup.");
                 }
@@ -197,10 +199,29 @@ namespace ByteShelf.Server.Backup.Services
             ZipArchiveEntry entry = zip.CreateEntry(entryName, CompressionLevel.Optimal);
 
             // Readable by the owner only once unzipped: the database holds password hashes, keys/ the secrets.
-            entry.ExternalAttributes = (int)OwnerOnly.File << 16;
+            entry.ExternalAttributes = (int)OwnerOnly.FilePermissions << 16;
             await using FileStream source = File.OpenRead(path);
             await using Stream destination = await entry.OpenAsync(cancellationToken);
             await source.CopyToAsync(destination, cancellationToken);
+        }
+
+        /// <summary>
+        /// Takes <c>&lt;zip&gt;.lock</c> exclusively (on Linux an exclusive <c>flock</c>), removed when released.
+        /// </summary>
+        /// <exception cref="IOException">Another backup to <paramref name="target"/> is running.</exception>
+        private static FileStream LockBackupPath(string target)
+        {
+            FileStreamOptions options = OwnerOnly.Write(FileMode.OpenOrCreate);
+            options.Share = FileShare.None;
+            options.Options = FileOptions.DeleteOnClose;
+            try
+            {
+                return new FileStream(target + ".lock", options);
+            }
+            catch (IOException exception) when (exception is not FileNotFoundException and not DirectoryNotFoundException)
+            {
+                throw new IOException($"Another backup to {target} is running.", exception);
+            }
         }
 
         private static FileStream? TryOpenRead(ObjectStore objects, string sha256)
@@ -231,14 +252,17 @@ namespace ByteShelf.Server.Backup.Services
 
         private sealed record CopiedObjects(int Count, long Bytes, IReadOnlyList<string> Purged);
 
-        /// <summary>The storage repositories over one database file, outside the server's container.</summary>
+        /// <summary>
+        /// The storage repositories over one database file, outside the server's container. Private to the
+        /// backup, its one user, as the repository tests build theirs by hand too.
+        /// </summary>
         private sealed class StorageDatabase : IAsyncDisposable
         {
             private readonly DbDataSource _dataSource;
 
             public StorageDatabase(string connectionString)
             {
-                _dataSource = new SqliteDataSourceFactory().CreateDataSource(connectionString);
+                _dataSource = DataSources.Create(connectionString);
                 Sessions = new DbSessionFactory(_dataSource);
                 Files = new FileRepository(_dataSource, Sessions, new ChangeLogRepository(_dataSource, Sessions));
                 Uploads = new UploadRepository(_dataSource, Sessions);

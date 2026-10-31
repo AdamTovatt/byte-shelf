@@ -2,7 +2,6 @@ using System.Data.Common;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Root;
 using EasyReasy.Database;
-using EasyReasy.Database.Sqlite;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -22,7 +21,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
         private TestRoot(RootFolder root)
         {
             Root = root;
-            DataSource = new SqliteDataSourceFactory().CreateDataSource(root.ConnectionString);
+            DataSource = DataSources.Create(root.ConnectionString);
             SessionFactory = new DbSessionFactory(DataSource);
         }
 

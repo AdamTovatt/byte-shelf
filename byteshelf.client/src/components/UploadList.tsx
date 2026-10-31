@@ -1,4 +1,4 @@
-import { Button, CardList, CardListItem, ProgressBar } from './ui';
+import { Button, CardList, CardListItem, ProgressBar, SectionTitle } from './ui';
 import { formatBytes } from '../lib/format';
 import type { UploadItem } from '../hooks/useUploads';
 
@@ -16,7 +16,7 @@ export function UploadList({ items, onReplace, onDismiss, onClearFinished }: Upl
   return (
     <section aria-label="Uploads" className="space-y-2">
       <div className="flex items-center justify-between">
-        <h2 className="text-body-lg font-medium text-text-3-light dark:text-text-3-dark">Uploads</h2>
+        <SectionTitle>Uploads</SectionTitle>
         {items.some((item) => item.status === 'done') && (
           <Button variant="text" size="sm" onClick={onClearFinished}>Clear finished</Button>
         )}

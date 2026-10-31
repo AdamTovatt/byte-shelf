@@ -6,7 +6,10 @@ export interface CopyableSecretProps {
   value: string;
 }
 
-/** A secret shown once, such as a shelf key or a pairing code, with a button that copies it. */
+/**
+ * A secret shown once, such as a shelf key or a pairing code, with a button that copies it. Not unit
+ * tested, like the other components: the client's unit tests run without a DOM and cover lib/.
+ */
 export function CopyableSecret({ value }: CopyableSecretProps) {
   const codeRef = useRef<HTMLElement>(null);
 

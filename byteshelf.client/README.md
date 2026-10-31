@@ -4,7 +4,7 @@ The ByteShelf web UI: React, TypeScript, Vite, Tailwind and TanStack Query, buil
 template. Everyone browses the shelves they reach, uploads (dropping files on a directory works too),
 opens and downloads files, moves, renames and deletes them, and restores them from the trash. Admins
 also create shelves and users, set quotas, give access and make keys, and in Settings pair replicas,
-see how far behind each is, and promote a replica.
+see how far behind each is, remove one, and promote a replica.
 
 ## Working on it
 

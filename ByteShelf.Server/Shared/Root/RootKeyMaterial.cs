@@ -18,10 +18,7 @@ namespace ByteShelf.Server.Shared.Root
         /// </summary>
         public static string GetOrCreate(RootFolder root, string fileName, int byteCount = 64)
         {
-            if (!OperatingSystem.IsWindows())
-            {
-                File.SetUnixFileMode(root.KeysPath, OwnerOnly.Directory);
-            }
+            OwnerOnly.RestrictDirectory(root.KeysPath);
 
             string path = Path.Combine(root.KeysPath, fileName);
             if (File.Exists(path))

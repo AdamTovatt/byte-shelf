@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
-import { Button, CardList, CardListItem, CopyableSecret, Dialog, Dropdown, DropdownItem, IconButton, Input, Spinner } from './ui';
+import { Button, CardList, CardListItem, CopyableSecret, Dialog, Dropdown, DropdownItem, IconButton, Input, SectionTitle, Spinner } from './ui';
 import { Icon } from './ui/Icon';
 import { useAuth } from '../contexts/AuthContext';
 import { useCreatePairingCode, usePairWithPrimary, usePromote, useRemoveReplica, useReplicationStatus } from '../hooks/useReplicationQueries';
@@ -22,7 +22,7 @@ export function ReplicationSection() {
 
   return (
     <section className="space-y-3">
-      <div className="text-body-lg font-medium text-text-3-light dark:text-text-3-dark">Replication</div>
+      <SectionTitle>Replication</SectionTitle>
       {isLoading && <Spinner />}
       {error && !status && <p className="text-body-sm text-danger-light dark:text-danger-dark">{getErrorMessage(error, 'Could not load the replication status')}</p>}
       {status && (status.source ? <ReplicaView source={status.source} /> : <PrimaryView replicas={status.replicas} />)}
