@@ -6,6 +6,9 @@ namespace ByteShelf.Server.Storage.Models
         public required Guid Id { get; init; }
         public required Guid ShelfId { get; init; }
 
+        /// <summary>Who started the upload, as the caller's id (<c>user:&lt;id&gt;</c> or <c>key:&lt;id&gt;</c>).</summary>
+        public required string StartedBy { get; init; }
+
         /// <summary>The normalized path the file will be stored at.</summary>
         public required string Path { get; init; }
 

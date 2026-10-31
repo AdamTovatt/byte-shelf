@@ -15,6 +15,9 @@ AOT-compatible.
 | `CreateDirectoryRequest`, `MoveRequest` | Creates a directory; moves or renames a file or directory. |
 | `StartUploadRequest`, `UploadSession` | Starting and following a resumable upload. |
 | `TrashEntry`, `TrashEntryKind` | A deletion that can still be restored. |
+| `ShelfAccessGrant`, `SetShelfAccessRequest`, `ShelfAccessPermission` | A user's access to a shelf, and giving it. |
+| `ShelfKeyInfo`, `CreateShelfKeyRequest`, `CreatedShelfKey`, `ShelfKeyPermission` | A program's key to one shelf, and creating one. |
+| `ShelfKeys` | The `X-Api-Key` header a key is sent in, and the secret's prefix. |
 | `ErrorResponse`, `ErrorCodes` | Every error body, with a machine-readable code. |
 | `UploadLimits` | The server's limits, such as the largest chunk. |
 

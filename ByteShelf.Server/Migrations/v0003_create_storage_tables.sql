@@ -54,10 +54,13 @@ CREATE INDEX idx_file_sha256 ON file (sha256);
 CREATE INDEX idx_file_deletion_id ON file (deletion_id) WHERE deletion_id IS NOT NULL;
 
 -- An upload holds its declared size against the shelf's quota from the moment it starts until it
--- finishes or is removed. Its bytes are in staging/<id>.
+-- finishes or is removed. Its bytes are in staging/<id>. started_by names who started it ('user:<id>'
+-- or 'key:<id>'), the only caller besides read-write ones who may continue or abort it; it has no
+-- foreign key, since an upload may outlive its user or key until it expires.
 CREATE TABLE upload (
     id TEXT PRIMARY KEY,
     shelf_id TEXT NOT NULL REFERENCES shelf(id),
+    started_by TEXT NOT NULL,
     path TEXT NOT NULL,
     content_type TEXT NOT NULL,
     size_bytes INTEGER NOT NULL CHECK (size_bytes >= 0),

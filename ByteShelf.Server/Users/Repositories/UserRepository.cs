@@ -1,11 +1,16 @@
 using System.Data.Common;
+using ByteShelf.Server.ChangeLog.Models;
+using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Users.Models;
 using EasyReasy.Database;
 using EasyReasy.Database.Mapping;
 
 namespace ByteShelf.Server.Users.Repositories
 {
-    /// <summary>SQLite implementation of <see cref="IUserRepository"/> for the <c>user_account</c> table.</summary>
+    /// <summary>
+    /// SQLite implementation of <see cref="IUserRepository"/> for the <c>user_account</c> table. Every
+    /// write logs the user as it is afterwards, never their credentials, in the caller's transaction.
+    /// </summary>
     public class UserRepository : RepositoryBase, IUserRepository
     {
         private const string SelectColumns = $@"
@@ -14,9 +19,12 @@ namespace ByteShelf.Server.Users.Repositories
             display_name AS {nameof(UserEntity.DisplayName)},
             roles AS {nameof(UserEntity.RolesJson)}";
 
-        public UserRepository(DbDataSource dataSource, IDbSessionFactory sessionFactory)
+        private readonly IChangeLogRepository _changeLog;
+
+        public UserRepository(DbDataSource dataSource, IDbSessionFactory sessionFactory, IChangeLogRepository changeLog)
             : base(dataSource, sessionFactory)
         {
+            _changeLog = changeLog;
         }
 
         /// <inheritdoc />
@@ -60,6 +68,8 @@ namespace ByteShelf.Server.Users.Repositories
                 query,
                 new { user.Id, user.Email, user.DisplayName, rolesJson, createdAt },
                 transaction: session.Transaction);
+
+            await _changeLog.AppendAsync(ChangeEntityType.User, user.Id, ChangeAction.Added, user, createdAt, session);
         }
 
         /// <inheritdoc />
@@ -70,12 +80,26 @@ namespace ByteShelf.Server.Users.Repositories
             string query = $@"
                 UPDATE user_account
                 SET roles = @{nameof(rolesJson)}, updated_at = @{nameof(updatedAt)}
-                WHERE id = @{nameof(userId)}";
+                WHERE id = @{nameof(userId)}
+                RETURNING {SelectColumns}";
 
-            int rowsAffected = await session.Connection.ExecuteAsync(
+            UserEntity? updated = await session.Connection.QuerySingleOrDefaultAsync<UserEntity>(
                 query, new { userId, rolesJson, updatedAt }, transaction: session.Transaction);
 
-            return rowsAffected > 0;
+            if (updated == null)
+            {
+                return false;
+            }
+
+            await _changeLog.AppendAsync(ChangeEntityType.User, userId, ChangeAction.Updated, updated.ToDomain(), updatedAt, session);
+            return true;
+        }
+
+        /// <inheritdoc />
+        public async Task<bool> DeleteAsync(Guid userId, DateTimeOffset deletedAt, IDbSession session)
+        {
+            string query = $"DELETE FROM user_account WHERE id = @{nameof(userId)} RETURNING id";
+            return await _changeLog.DeleteAndLogAsync(ChangeEntityType.User, query, new { userId }, deletedAt, session) > 0;
         }
 
         /// <inheritdoc />

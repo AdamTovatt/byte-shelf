@@ -9,8 +9,8 @@ namespace ByteShelf.Server.Tests.Storage
 {
     /// <summary>
     /// The HTTP behaviour only the pipeline shows: routing, streaming PUT, Range and ETag handling,
-    /// the headers on downloaded content, sign-in and roles, and the status codes and bodies the
-    /// middleware writes.
+    /// the headers on downloaded content, sign-in, and the status codes and bodies the middleware
+    /// writes. Who may do what is in <c>AccessEndpointTests</c>.
     /// </summary>
     public class ContentEndpointTests : IAsyncLifetime
     {
@@ -216,11 +216,11 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
-        public async Task Get_SignedInWithoutAdmin_Returns403()
+        public async Task Get_SignedInWithoutAccess_Returns404()
         {
             HttpResponseMessage response = await _host.MemberClient.GetAsync("/api/shelves/docs/entries");
 
-            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         }
 
         [Fact]

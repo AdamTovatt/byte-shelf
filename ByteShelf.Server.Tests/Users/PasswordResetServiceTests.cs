@@ -1,5 +1,7 @@
+using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Users.Models;
+using ByteShelf.Server.Users.Repositories;
 using ByteShelf.Server.Users.Services;
 using EasyReasy.Auth;
 using Microsoft.Extensions.DependencyInjection;
@@ -115,6 +117,22 @@ namespace ByteShelf.Server.Tests.Users
 
             StoredRefreshToken? stored = await Services.GetRequiredService<IRefreshTokenStore>().GetByTokenHashAsync(HashToken(session.RawToken));
             Assert.True(stored?.IsInvalidated);
+        }
+
+        [Fact]
+        public async Task CompleteResetAsync_ValidToken_LogsTheLoginWithTheNewHash()
+        {
+            await UserService.CreateUserAsync(Email, "Known", "old-password");
+            await ResetService.RequestResetAsync(Email);
+            ResetLink link = (await TryTakeLinkAsync())!;
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            await ResetService.CompleteResetAsync(link.Token, "new-password");
+
+            ChangeLogEntry entry = Assert.Single(await ChangeLog.GetAfterAsync(before, 100));
+            Assert.Equal((ChangeEntityType.UserLogin, ChangeAction.Updated), (entry.EntityType, entry.Action));
+            UserCredentials stored = (await Services.GetRequiredService<IUserLoginRepository>().GetCredentialsByEmailAsync(Email))!;
+            Assert.Equal(stored.PasswordHash, ChangePayload.Deserialize<UserLogin>(entry.Payload!).Credential);
         }
 
         /// <summary>The next queued link, or null when none arrives promptly.</summary>

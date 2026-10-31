@@ -97,5 +97,20 @@ namespace ByteShelf.Server.Users.Controllers
             await _userService.UpdateRolesAsync(userId, request.Roles);
             return NoContent();
         }
+
+        /// <summary>
+        /// Deletes a user with their access to shelves and their sessions. Admin only; the last admin
+        /// cannot be deleted.
+        /// </summary>
+        [HttpDelete("{userId:guid}")]
+        [Authorize(Roles = UserRole.Admin)]
+        [ProducesResponseType(204)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 409)]
+        public async Task<IActionResult> Delete(Guid userId)
+        {
+            await _userService.DeleteUserAsync(userId);
+            return NoContent();
+        }
     }
 }

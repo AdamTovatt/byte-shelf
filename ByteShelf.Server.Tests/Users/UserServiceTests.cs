@@ -1,10 +1,13 @@
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Errors;
+using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Users.Exceptions;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Repositories;
 using ByteShelf.Server.Users.Services;
+using ByteShelfCommon;
+using EasyReasy.Auth;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ByteShelf.Server.Tests.Users
@@ -67,12 +70,22 @@ namespace ByteShelf.Server.Tests.Users
         [Theory]
         [InlineData("not-an-email", "Name", "password123")]
         [InlineData("new@example.com", "", "password123")]
+        [InlineData("new@example.com", "  ", "password123")]
+        [InlineData("new@example.com", "Na\tme", "password123")]
         [InlineData("new@example.com", "Name", "short")]
         public async Task CreateUserAsync_InvalidInput_ThrowsWithoutCreating(string email, string displayName, string password)
         {
             await Assert.ThrowsAsync<ArgumentException>(() => UserService.CreateUserAsync(email, displayName, password));
 
             Assert.Equal(0, await UserService.GetUserCountAsync());
+        }
+
+        [Fact]
+        public async Task CreateUserAsync_DisplayNameWithSurroundingSpace_StoresItTrimmed()
+        {
+            User user = await UserService.CreateUserAsync("new@example.com", "  Name  ", "password123");
+
+            Assert.Equal("Name", (await UserService.GetUserByIdAsync(user.Id))!.DisplayName);
         }
 
         [Fact]
@@ -135,6 +148,60 @@ namespace ByteShelf.Server.Tests.Users
             await Assert.ThrowsAsync<ConflictException>(() => UserService.UpdateRolesAsync(admin.Id, Array.Empty<string>()));
 
             Assert.Equal(new[] { UserRole.Admin }, (await UserService.GetUserByIdAsync(admin.Id))!.Roles);
+        }
+
+        [Fact]
+        public async Task DeleteUserAsync_Member_RemovesThemAndTheirAccess()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            User member = await UserService.CreateUserAsync("member@example.com", "Member", "correct-password");
+            await GrantService.SetAsync(shelf, member.Id, ShelfAccessPermission.Read);
+
+            await UserService.DeleteUserAsync(member.Id);
+
+            Assert.Null(await UserService.GetUserByIdAsync(member.Id));
+            Assert.Null(await UserService.ValidateCredentialsAsync("member@example.com", "correct-password"));
+            Assert.Empty(await GrantService.GetForShelfAsync(shelf));
+        }
+
+        [Fact]
+        public async Task DeleteUserAsync_Member_EndsEverySession()
+        {
+            User member = await UserService.CreateUserAsync("member@example.com", "Member", "correct-password");
+            RefreshTokenCreationResult session = await Services.GetRequiredService<IRefreshTokenService>().CreateRefreshTokenWithFamilyAsync(
+                member.Id.ToString("D"), AuthRequestValidationService.AuthType, null, RefreshTokenClaims.SerializeRoles(Array.Empty<string>()));
+
+            await UserService.DeleteUserAsync(member.Id);
+
+            StoredRefreshToken? stored = await Services.GetRequiredService<IRefreshTokenStore>().GetByTokenHashAsync(SecretHash.Sha256Hex(session.RawToken));
+            Assert.True(stored?.IsInvalidated);
+        }
+
+        [Fact]
+        public async Task DeleteUserAsync_LastAdmin_ThrowsConflictAndKeepsThem()
+        {
+            User admin = await UserService.CreateUserAsync("admin@example.com", "Admin", "correct-password", new[] { UserRole.Admin });
+
+            await Assert.ThrowsAsync<ConflictException>(() => UserService.DeleteUserAsync(admin.Id));
+
+            Assert.NotNull(await UserService.GetUserByIdAsync(admin.Id));
+        }
+
+        [Fact]
+        public async Task DeleteUserAsync_OneOfTwoAdmins_RemovesThem()
+        {
+            User first = await UserService.CreateUserAsync("first@example.com", "First", "correct-password", new[] { UserRole.Admin });
+            await UserService.CreateUserAsync("second@example.com", "Second", "correct-password", new[] { UserRole.Admin });
+
+            await UserService.DeleteUserAsync(first.Id);
+
+            Assert.Null(await UserService.GetUserByIdAsync(first.Id));
+        }
+
+        [Fact]
+        public async Task DeleteUserAsync_UnknownUser_ThrowsNotFound()
+        {
+            await Assert.ThrowsAsync<NotFoundException>(() => UserService.DeleteUserAsync(Guid.NewGuid()));
         }
 
         [Fact]

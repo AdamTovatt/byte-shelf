@@ -20,7 +20,7 @@ namespace ByteShelf.Server.Tests.Storage
         public async Task RunAsync_ResumableUploadIdleTooLong_RemovesIt()
         {
             Shelf shelf = await CreateShelfAsync();
-            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/a", SizeBytes = 5 });
+            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/a", SizeBytes = 5 }, Uploader);
             Clock.Advance(Options.AbandonedUploadAge + TimeSpan.FromSeconds(1));
 
             StorageMaintenanceSummary summary = await Maintenance.RunAsync(LongAgo, CancellationToken.None);
@@ -34,7 +34,7 @@ namespace ByteShelf.Server.Tests.Storage
         public async Task RunAsync_ResumableUploadRecentlyActive_KeepsItAcrossARestart()
         {
             Shelf shelf = await CreateShelfAsync();
-            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/a", SizeBytes = 5 });
+            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/a", SizeBytes = 5 }, Uploader);
             Clock.Advance(Options.AbandonedUploadAge - TimeSpan.FromMinutes(1));
             await UploadService.AppendAsync(shelf, upload.Id, 0, new MemoryStream(new byte[2]), CancellationToken.None);
             Clock.Advance(TimeSpan.FromMinutes(2));
@@ -71,7 +71,7 @@ namespace ByteShelf.Server.Tests.Storage
         public async Task RunAsync_ChunkArrivesWhileWaitingForTheUploadLock_KeepsTheUpload()
         {
             Shelf shelf = await CreateShelfAsync();
-            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/a", SizeBytes = 5 });
+            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/a", SizeBytes = 5 }, Uploader);
             Clock.Advance(Options.AbandonedUploadAge + TimeSpan.FromSeconds(1));
             UploadLocks locks = Services.GetRequiredService<UploadLocks>();
 
@@ -141,6 +141,7 @@ namespace ByteShelf.Server.Tests.Storage
             {
                 Id = Guid.NewGuid(),
                 ShelfId = shelf.Id,
+                StartedBy = Uploader,
                 Path = "/interrupted",
                 ContentType = ContentTypes.Default,
                 SizeBytes = 100,

@@ -1,3 +1,4 @@
+using ByteShelf.Server.Access.Repositories;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
@@ -12,17 +13,23 @@ namespace ByteShelf.Server.Storage.Services
         private readonly IDbSessionFactory _sessionFactory;
         private readonly IShelfRepository _shelfRepository;
         private readonly IDirectoryRepository _directoryRepository;
+        private readonly IShelfGrantRepository _grantRepository;
+        private readonly IShelfKeyRepository _keyRepository;
         private readonly TimeProvider _timeProvider;
 
         public ShelfService(
             IDbSessionFactory sessionFactory,
             IShelfRepository shelfRepository,
             IDirectoryRepository directoryRepository,
+            IShelfGrantRepository grantRepository,
+            IShelfKeyRepository keyRepository,
             TimeProvider timeProvider)
         {
             _sessionFactory = sessionFactory;
             _shelfRepository = shelfRepository;
             _directoryRepository = directoryRepository;
+            _grantRepository = grantRepository;
+            _keyRepository = keyRepository;
             _timeProvider = timeProvider;
         }
 
@@ -34,13 +41,11 @@ namespace ByteShelf.Server.Storage.Services
         }
 
         /// <inheritdoc />
-        public async Task<IReadOnlyList<ShelfInfo>> GetAllAsync()
+        public async Task<IReadOnlyList<ShelfInfo>> GetInfosAsync(IReadOnlyList<Shelf> shelves)
         {
             await using (IDbSession session = await _sessionFactory.CreateSessionAsync())
             {
-                IReadOnlyList<Shelf> shelves = await _shelfRepository.GetAllAsync(session);
                 List<ShelfInfo> result = new List<ShelfInfo>(shelves.Count);
-
                 foreach (Shelf shelf in shelves)
                 {
                     result.Add(StorageContracts.ToShelfInfo(shelf, await _shelfRepository.GetUsageAsync(shelf.Id, session)));
@@ -138,6 +143,8 @@ namespace ByteShelf.Server.Storage.Services
                 }
 
                 DateTimeOffset now = _timeProvider.GetUtcNow();
+                await _grantRepository.DeleteForShelfAsync(shelf.Id, now, session);
+                await _keyRepository.DeleteForShelfAsync(shelf.Id, now, session);
                 await _directoryRepository.DeleteRootAsync(shelf.Id, now, session);
                 await _shelfRepository.DeleteAsync(shelf.Id, now, session);
                 await session.CommitAsync();

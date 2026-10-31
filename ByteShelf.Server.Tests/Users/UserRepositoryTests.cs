@@ -1,3 +1,4 @@
+using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Tests.TestUtilities;
@@ -15,7 +16,7 @@ namespace ByteShelf.Server.Tests.Users
         public override async Task InitializeAsync()
         {
             await base.InitializeAsync();
-            _repository = new UserRepository(DataSource, SessionFactory);
+            _repository = new UserRepository(DataSource, SessionFactory, new ChangeLogRepository(DataSource, SessionFactory));
         }
 
         [Fact]

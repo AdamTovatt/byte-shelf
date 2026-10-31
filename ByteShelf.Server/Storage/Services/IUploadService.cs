@@ -11,11 +11,17 @@ namespace ByteShelf.Server.Storage.Services
     public interface IUploadService
     {
         /// <summary>Stores <paramref name="content"/> at <paramref name="path"/> in one go: a single streamed PUT.</summary>
-        Task<ShelfFile> StoreAsync(Shelf shelf, string path, string? contentType, long sizeBytes, bool overwrite, Stream content, CancellationToken cancellationToken);
+        /// <param name="startedBy">Who stores it, recorded on the upload as <see cref="UploadRecord.StartedBy"/>.</param>
+        Task<ShelfFile> StoreAsync(Shelf shelf, string path, string? contentType, long sizeBytes, bool overwrite, string startedBy, Stream content, CancellationToken cancellationToken);
 
-        Task<UploadSession> StartAsync(Shelf shelf, StartUploadRequest request);
+        /// <param name="startedBy">Who starts it, recorded as <see cref="UploadRecord.StartedBy"/>.</param>
+        Task<UploadSession> StartAsync(Shelf shelf, StartUploadRequest request, string startedBy);
 
-        Task<UploadSession> GetAsync(Shelf shelf, Guid uploadId);
+        /// <exception cref="Shared.Errors.NotFoundException">The shelf has no such upload.</exception>
+        Task<UploadRecord> GetAsync(Shelf shelf, Guid uploadId);
+
+        /// <summary>An upload as the API answers it.</summary>
+        UploadSession ToSession(UploadRecord upload);
 
         /// <summary>Appends a chunk, which must start where the bytes received so far end.</summary>
         Task<UploadSession> AppendAsync(Shelf shelf, Guid uploadId, long offset, Stream content, CancellationToken cancellationToken);

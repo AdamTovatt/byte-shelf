@@ -1,0 +1,61 @@
+# Access
+
+Who may use a shelf, and how: admins, users granted access to a shelf, and keys programs present.
+Shelves themselves are in [Shelves.md](../Storage/Shelves.md), users in [Users.md](../Users/Users.md).
+
+## Callers
+
+- An **admin** (a user with the `admin` role) may do everything on every shelf.
+- A **user** may use the shelves they hold a grant on (`shelf_grant`): `read`, or `readWrite`. A
+  user without a grant on a shelf is told it does not exist.
+- A **key** works on exactly one shelf, with `read`, `addOnly` or `readWrite`. A program sends its
+  secret in the `X-Api-Key` header (`ByteShelfCommon.ShelfKeys.HeaderName`) on every request; the key
+  is looked up each time, so deleting it stops it at once. Only the SHA-256 of the secret is stored.
+  Keys are accepted on the shelf endpoints only, never on the user endpoints.
+
+A request carrying a key acts as the key, even with a user's token beside it. A key that does not
+check out answers 401 rather than falling back to the token, and so does an empty `X-Api-Key` header
+or one sent more than once.
+
+## What each endpoint needs
+
+Every action on `api/shelves/{shelf}/...` carries `[ShelfAccess(operation)]`, which requires a
+signed-in user or a key, resolves the shelf, and asks `ShelfAccessResolver` (the one place the rule
+lives) whether the caller may do the operation there. No access answers 404, too little 403.
+`ShelfAccessCoverageTests` holds the same table per action.
+
+| Operation | Endpoints | Who may |
+|---|---|---|
+| `Read` | list, file records, content, the shelf's info, the trash list | every caller with access |
+| `Add` | store a new file, create directories, every upload endpoint | `addOnly` and `readWrite` keys, `readWrite` users |
+| `Write` | overwrite, move, delete, restore, empty the trash | `readWrite` keys and users |
+| `Administer` | rename, quota and delete the shelf; its grants and keys | admins |
+
+Storing with `overwrite`, as a single `PUT` or an upload, needs `Write` (`ShelfAccess.RequireStore`).
+An upload records who started it; only that caller, or one with `Write`, may look at, continue,
+complete or abort it (`ShelfAccess.RequireUpload`), so an add-only key cannot touch another caller's
+upload. `GET /api/shelves` lists the shelves the caller can see; creating a shelf is admin only.
+
+## Endpoints
+
+Admin only, under `/api/shelves/{shelf}`:
+
+| Method and route | What it does |
+|---|---|
+| `GET access` | Every user granted access to the shelf, with their email and display name. |
+| `PUT access/{userId}` | Grants a user `read` or `readWrite` access, or changes it. 404 for an unknown user. Setting the permission they already have changes and logs nothing. |
+| `DELETE access/{userId}` | Takes a user's grant away; 404 when they have none. |
+| `GET keys` | The shelf's keys, never their secrets. |
+| `POST keys` | Creates a key with a name and permission; answers its secret, the one time it is shown. |
+| `DELETE keys/{keyId}` | Deletes a key; 404 when the shelf has no such key. |
+
+A key's name is trimmed and must then be 1 to 100 characters (`ShelfKeys.MaxNameLength`) without
+control characters, the rule user display names follow too. A bad name, or a permission that is
+not one of the listed values, answers 400.
+
+Deleting a shelf removes its grants and keys; deleting a user removes their grants.
+
+## Change log
+
+Grants (`shelf_grant`) and keys (`shelf_key`, with the hash of the secret) are logged like every other
+change, in the same transaction.

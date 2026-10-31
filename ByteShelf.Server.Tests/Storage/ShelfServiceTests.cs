@@ -1,6 +1,7 @@
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
+using ByteShelf.Server.Users.Models;
 using ByteShelfCommon;
 
 namespace ByteShelf.Server.Tests.Storage
@@ -112,7 +113,7 @@ namespace ByteShelf.Server.Tests.Storage
         public async Task DeleteAsync_UploadInProgress_ThrowsConflict()
         {
             Shelf shelf = await ShelfService.CreateAsync("backups", null);
-            await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/a.bin", SizeBytes = 10 });
+            await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/a.bin", SizeBytes = 10 }, Uploader);
 
             await Assert.ThrowsAsync<ConflictException>(() => ShelfService.DeleteAsync(shelf));
         }
@@ -134,6 +135,20 @@ namespace ByteShelf.Server.Tests.Storage
             await DirectoryService.CreateAsync(shelf, "/empty");
 
             await Assert.ThrowsAsync<ConflictException>(() => ShelfService.DeleteAsync(shelf));
+        }
+
+        [Fact]
+        public async Task DeleteAsync_ShelfWithGrantsAndKeys_RemovesThem()
+        {
+            Shelf shelf = await ShelfService.CreateAsync("backups", null);
+            User user = await CreateUserAsync("user@example.com");
+            await GrantService.SetAsync(shelf, user.Id, ShelfAccessPermission.Read);
+            CreatedShelfKey key = await KeyService.CreateAsync(shelf, "app", ShelfKeyPermission.Read);
+
+            await ShelfService.DeleteAsync(shelf);
+
+            Assert.Null(await KeyService.FindBySecretAsync(key.Secret));
+            Assert.Empty(await GrantService.GetForShelfAsync(shelf));
         }
 
         [Fact]

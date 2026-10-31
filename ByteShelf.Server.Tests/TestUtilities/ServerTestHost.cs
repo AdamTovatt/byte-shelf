@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Users.Services;
+using ByteShelfCommon;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
@@ -14,7 +15,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
     /// <summary>
     /// The whole server, built by <see cref="Program.BuildApplication"/> on a root of the test's own and
     /// served in memory, with an admin signed in on <see cref="AdminClient"/> and a user without roles
-    /// on <see cref="MemberClient"/>.
+    /// or shelf access on <see cref="MemberClient"/>.
     /// </summary>
     public sealed class ServerTestHost : IAsyncDisposable
     {
@@ -43,6 +44,16 @@ namespace ByteShelf.Server.Tests.TestUtilities
 
         public HttpClient MemberClient { get; }
 
+        public Guid MemberId { get; private set; }
+
+        /// <summary>A client sending <paramref name="secret"/> as its shelf key on every request.</summary>
+        public HttpClient CreateKeyClient(string secret)
+        {
+            HttpClient client = _app.GetTestClient();
+            client.DefaultRequestHeaders.Add(ShelfKeys.HeaderName, secret);
+            return client;
+        }
+
         public static async Task<ServerTestHost> StartAsync()
         {
             TestRoot root = TestRoot.Create();
@@ -64,7 +75,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
             {
                 IUserService users = scope.ServiceProvider.GetRequiredService<IUserService>();
                 await users.CreateUserAsync(AdminEmail, "Admin", Password, new[] { UserRole.Admin });
-                await users.CreateUserAsync(MemberEmail, "Member", Password);
+                host.MemberId = (await users.CreateUserAsync(MemberEmail, "Member", Password)).Id;
             }
 
             await host.SignInAsync(host.AdminClient, AdminEmail);

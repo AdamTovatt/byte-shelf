@@ -24,6 +24,13 @@ namespace ByteShelfCommon.Serialization
     [JsonSerializable(typeof(UploadSession))]
     [JsonSerializable(typeof(TrashEntry))]
     [JsonSerializable(typeof(IReadOnlyList<TrashEntry>))]
+    [JsonSerializable(typeof(ShelfAccessGrant))]
+    [JsonSerializable(typeof(IReadOnlyList<ShelfAccessGrant>))]
+    [JsonSerializable(typeof(SetShelfAccessRequest))]
+    [JsonSerializable(typeof(ShelfKeyInfo))]
+    [JsonSerializable(typeof(IReadOnlyList<ShelfKeyInfo>))]
+    [JsonSerializable(typeof(CreateShelfKeyRequest))]
+    [JsonSerializable(typeof(CreatedShelfKey))]
     public sealed partial class ByteShelfJsonContext : JsonSerializerContext
     {
     }

@@ -9,8 +9,8 @@ namespace ByteShelf.Server.Storage.Services
         /// <exception cref="Shared.Errors.NotFoundException">There is none.</exception>
         Task<Shelf> GetByNameAsync(string name);
 
-        /// <summary>Every shelf with its usage, by name.</summary>
-        Task<IReadOnlyList<ShelfInfo>> GetAllAsync();
+        /// <summary>Each of <paramref name="shelves"/> with its usage, in the order given.</summary>
+        Task<IReadOnlyList<ShelfInfo>> GetInfosAsync(IReadOnlyList<Shelf> shelves);
 
         /// <summary>A shelf with its usage.</summary>
         Task<ShelfInfo> GetInfoAsync(Shelf shelf);
@@ -27,7 +27,7 @@ namespace ByteShelf.Server.Storage.Services
         /// <exception cref="Shared.Errors.ConflictException">The new name is taken.</exception>
         Task<Shelf> UpdateAsync(Shelf shelf, string name, long? quotaBytes);
 
-        /// <summary>Deletes a shelf that holds nothing, the trash included.</summary>
+        /// <summary>Deletes a shelf that holds nothing, the trash included, with its access grants and keys.</summary>
         /// <exception cref="Shared.Errors.NotFoundException">The shelf has been deleted meanwhile.</exception>
         /// <exception cref="Shared.Errors.ConflictException">The shelf still holds something.</exception>
         Task DeleteAsync(Shelf shelf);

@@ -1,7 +1,8 @@
 # Users
 
 People who sign in: email and password, refresh tokens, roles, the first admin, password change,
-and password reset.
+and password reset. Every change to a user and to their logins, password hash included, is in the
+change log (see [ChangeLog.md](../ChangeLog/ChangeLog.md)).
 
 ## Identity (two tables)
 
@@ -12,10 +13,17 @@ and password reset.
 
 ## Roles
 
-`admin` is the only role. An admin creates shelves and users and reaches every shelf; the storage
-endpoints answer 403 to anyone else. The last admin cannot lose the role.
+`admin` is the only role. An admin creates shelves and users and reaches every shelf; anyone else
+uses the shelves they have been given access to (see [Access.md](../Access/Access.md)). The last
+admin cannot lose the role or be deleted.
 A role change reaches a signed-in user at their next token refresh (`CurrentRolesRefreshResolver`
 puts the current roles on every refreshed token), so within one access-token lifetime.
+
+An access token is not checked against the database, so it keeps its roles until it expires, up to
+an hour, even after the user is demoted or deleted. A deleted user's shelf access ends at once,
+since grants are looked up on every request, but a deleted or demoted admin keeps full admin power
+until then, including creating keys that outlive them. Deleting an admin ends their sessions, so
+no refresh extends that hour.
 
 ## Endpoints
 
@@ -28,6 +36,7 @@ puts the current roles on every refreshed token), so within one access-token lif
 | `GET /api/users` | admin | Every user. |
 | `POST /api/users` | admin | Creates a user. |
 | `PUT /api/users/{id}/roles` | admin | Replaces a user's roles; 409 for the last admin. |
+| `DELETE /api/users/{id}` | admin | Deletes a user with their logins, reset tokens, shelf access and sessions; 409 for the last admin. See below for the access token they still hold. |
 | `POST /api/password-reset/request` | anyone | Queues a reset link; 204 whether or not the email has an account. |
 | `POST /api/password-reset/complete` | anyone | Sets a new password with a link's token and ends every session; 400 for a bad token. |
 

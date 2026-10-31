@@ -1,9 +1,9 @@
-using ByteShelf.Server.Shared.Auth;
+using ByteShelf.Server.Access.Controllers;
+using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
 using ByteShelfCommon;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
 
@@ -16,9 +16,7 @@ namespace ByteShelf.Server.Storage.Controllers
     /// </summary>
     [ApiController]
     [Route("api/shelves/{shelf}")]
-    [Authorize(Roles = UserRole.Admin)]
-    [ShelfRoute]
-    public class EntriesController : ControllerBase
+    public class EntriesController : ShelfControllerBase
     {
         private readonly IDirectoryService _directoryService;
         private readonly IFileService _fileService;
@@ -31,10 +29,9 @@ namespace ByteShelf.Server.Storage.Controllers
             _uploadService = uploadService;
         }
 
-        private Shelf Shelf => ShelfRouteAttribute.GetShelf(HttpContext);
-
         /// <summary>Lists a directory: the root when neither path nor id is given.</summary>
         [HttpGet("entries")]
+        [ShelfAccess(ShelfOperation.Read)]
         [ProducesResponseType(typeof(DirectoryListing), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         public async Task<IActionResult> List([FromQuery] string? path, [FromQuery] Guid? id)
@@ -45,6 +42,7 @@ namespace ByteShelf.Server.Storage.Controllers
 
         /// <summary>A file's record.</summary>
         [HttpGet("files")]
+        [ShelfAccess(ShelfOperation.Read)]
         [ProducesResponseType(typeof(ShelfFile), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         public async Task<IActionResult> GetFile([FromQuery] string? path, [FromQuery] Guid? id)
@@ -54,6 +52,7 @@ namespace ByteShelf.Server.Storage.Controllers
 
         /// <summary>Moves a file to the trash.</summary>
         [HttpDelete("files")]
+        [ShelfAccess(ShelfOperation.Write)]
         [ProducesResponseType(typeof(TrashEntry), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         public async Task<IActionResult> DeleteFile([FromQuery] string? path, [FromQuery] Guid? id)
@@ -65,6 +64,7 @@ namespace ByteShelf.Server.Storage.Controllers
         /// Moves or renames a file to the body's <c>toPath</c>; the stored contents stay where they are.
         /// </summary>
         [HttpPost("files/move")]
+        [ShelfAccess(ShelfOperation.Write)]
         [ProducesResponseType(typeof(ShelfFile), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
@@ -82,6 +82,7 @@ namespace ByteShelf.Server.Storage.Controllers
         /// </summary>
         [HttpGet("content")]
         [HttpHead("content")]
+        [ShelfAccess(ShelfOperation.Read)]
         [ProducesResponseType(typeof(FileStreamResult), 200)]
         [ProducesResponseType(206)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
@@ -104,20 +105,25 @@ namespace ByteShelf.Server.Storage.Controllers
         /// <summary>
         /// Stores the request body as the file at <c>path</c> in one streamed request. Needs
         /// <c>Content-Length</c>, which is reserved against the quota before the body is read; the
-        /// <c>Content-Type</c> is stored with the file.
+        /// <c>Content-Type</c> is stored with the file. Replacing a file with <c>overwrite</c> needs
+        /// write access.
         /// </summary>
         [HttpPut("content")]
+        [ShelfAccess(ShelfOperation.Add)]
         [DisableRequestSizeLimit]
         [ProducesResponseType(typeof(ShelfFile), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 403)]
         [ProducesResponseType(typeof(ErrorResponse), 409)]
         [ProducesResponseType(typeof(ErrorResponse), 411)]
         [ProducesResponseType(typeof(ErrorResponse), 507)]
         public async Task<IActionResult> PutContent([FromQuery] string path, [FromQuery] bool overwrite = false, CancellationToken cancellationToken = default)
         {
+            Access.RequireStore(overwrite);
+
             long length = Request.ContentLength
                 ?? throw new LengthRequiredException("A single upload needs Content-Length. Send content of unknown length as a resumable upload.");
 
-            return Ok(await _uploadService.StoreAsync(Shelf, path, Request.ContentType, length, overwrite, Request.Body, cancellationToken));
+            return Ok(await _uploadService.StoreAsync(Shelf, path, Request.ContentType, length, overwrite, Access.Caller.Id, Request.Body, cancellationToken));
         }
     }
 }

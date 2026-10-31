@@ -115,7 +115,7 @@ namespace ByteShelf.Server.Tests.Storage
             Shelf shelf = await CreateShelfAsync(quotaBytes: 10);
 
             await Assert.ThrowsAsync<QuotaExceededException>(() => UploadService.StoreAsync(
-                shelf, "/big", null, 11, false, new UnreadableStream(), CancellationToken.None));
+                shelf, "/big", null, 11, false, Uploader, new UnreadableStream(), CancellationToken.None));
         }
 
         [Fact]
@@ -135,7 +135,7 @@ namespace ByteShelf.Server.Tests.Storage
             byte[] body = Encoding.UTF8.GetBytes("eleven char");
 
             await Assert.ThrowsAsync<UploadOverflowException>(() => UploadService.StoreAsync(
-                shelf, "/file", null, 5, false, new MemoryStream(body), CancellationToken.None));
+                shelf, "/file", null, 5, false, Uploader, new MemoryStream(body), CancellationToken.None));
 
             Assert.Equal(0, (await GetUsageAsync(shelf)).TotalBytes);
             Assert.Empty(StagingArea.List());
@@ -148,7 +148,7 @@ namespace ByteShelf.Server.Tests.Storage
             Shelf shelf = await CreateShelfAsync();
 
             await Assert.ThrowsAsync<ArgumentException>(() => UploadService.StoreAsync(
-                shelf, "/file", null, 50, false, new MemoryStream(new byte[10]), CancellationToken.None));
+                shelf, "/file", null, 50, false, Uploader, new MemoryStream(new byte[10]), CancellationToken.None));
 
             Assert.Equal(0, (await GetUsageAsync(shelf)).TotalBytes);
         }
@@ -189,7 +189,7 @@ namespace ByteShelf.Server.Tests.Storage
             Shelf shelf = await CreateShelfAsync();
 
             await Assert.ThrowsAsync<ArgumentException>(() => UploadService.StoreAsync(
-                shelf, "/a", "not a media type", 1, false, new MemoryStream(new byte[1]), CancellationToken.None));
+                shelf, "/a", "not a media type", 1, false, Uploader, new MemoryStream(new byte[1]), CancellationToken.None));
         }
 
         [Fact]
@@ -212,18 +212,18 @@ namespace ByteShelf.Server.Tests.Storage
         {
             Shelf shelf = await CreateShelfAsync(quotaBytes: 100);
 
-            await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/a", SizeBytes = 60 });
+            await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/a", SizeBytes = 60 }, Uploader);
 
             Assert.Equal(60, (await GetUsageAsync(shelf)).ReservedBytes);
             await Assert.ThrowsAsync<QuotaExceededException>(() =>
-                UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/b", SizeBytes = 41 }));
+                UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/b", SizeBytes = 41 }, Uploader));
         }
 
         [Fact]
         public async Task CompleteAsync_ChunksSentInOrder_StoresWholeFile()
         {
             Shelf shelf = await CreateShelfAsync();
-            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/big.bin", SizeBytes = 10, ContentType = "application/x-test" });
+            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/big.bin", SizeBytes = 10, ContentType = "application/x-test" }, Uploader);
 
             await UploadService.AppendAsync(shelf, upload.Id, 0, new MemoryStream(Encoding.UTF8.GetBytes("01234")), CancellationToken.None);
             UploadSession progress = await UploadService.AppendAsync(shelf, upload.Id, 5, new MemoryStream(Encoding.UTF8.GetBytes("56789")), CancellationToken.None);
@@ -240,7 +240,7 @@ namespace ByteShelf.Server.Tests.Storage
         public async Task CompleteAsync_PathTakenSinceStart_ThrowsConflictAndKeepsTheUpload()
         {
             Shelf shelf = await CreateShelfAsync();
-            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/a.txt", SizeBytes = 3 });
+            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/a.txt", SizeBytes = 3 }, Uploader);
             await UploadService.AppendAsync(shelf, upload.Id, 0, new MemoryStream(Encoding.UTF8.GetBytes("abc")), CancellationToken.None);
             await StoreTextAsync(shelf, "/a.txt", "taken");
 
@@ -254,7 +254,7 @@ namespace ByteShelf.Server.Tests.Storage
         public async Task AppendAsync_WrongOffset_ThrowsConflictAndKeepsProgress()
         {
             Shelf shelf = await CreateShelfAsync();
-            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/f", SizeBytes = 10 });
+            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/f", SizeBytes = 10 }, Uploader);
             await UploadService.AppendAsync(shelf, upload.Id, 0, new MemoryStream(new byte[4]), CancellationToken.None);
 
             await Assert.ThrowsAsync<ConflictException>(() =>
@@ -267,7 +267,7 @@ namespace ByteShelf.Server.Tests.Storage
         public async Task AppendAsync_PastDeclaredSize_RefusesTheChunkAndKeepsEarlierBytes()
         {
             Shelf shelf = await CreateShelfAsync();
-            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/f", SizeBytes = 6 });
+            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/f", SizeBytes = 6 }, Uploader);
             await UploadService.AppendAsync(shelf, upload.Id, 0, new MemoryStream(Encoding.UTF8.GetBytes("abc")), CancellationToken.None);
 
             await Assert.ThrowsAsync<UploadOverflowException>(() =>
@@ -282,7 +282,7 @@ namespace ByteShelf.Server.Tests.Storage
         public async Task CompleteAsync_BytesMissing_ThrowsConflict()
         {
             Shelf shelf = await CreateShelfAsync();
-            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/f", SizeBytes = 10 });
+            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/f", SizeBytes = 10 }, Uploader);
             await UploadService.AppendAsync(shelf, upload.Id, 0, new MemoryStream(new byte[9]), CancellationToken.None);
 
             await Assert.ThrowsAsync<ConflictException>(() => UploadService.CompleteAsync(shelf, upload.Id, CancellationToken.None));
@@ -292,7 +292,7 @@ namespace ByteShelf.Server.Tests.Storage
         public async Task AbortAsync_ReleasesReservationAndStagedBytes()
         {
             Shelf shelf = await CreateShelfAsync();
-            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/f", SizeBytes = 10 });
+            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/f", SizeBytes = 10 }, Uploader);
             await UploadService.AppendAsync(shelf, upload.Id, 0, new MemoryStream(new byte[5]), CancellationToken.None);
 
             await UploadService.AbortAsync(shelf, upload.Id);
@@ -307,7 +307,7 @@ namespace ByteShelf.Server.Tests.Storage
         {
             Shelf mine = await CreateShelfAsync("mine");
             Shelf other = await CreateShelfAsync("other");
-            UploadSession upload = await UploadService.StartAsync(other, new StartUploadRequest { Path = "/f", SizeBytes = 1 });
+            UploadSession upload = await UploadService.StartAsync(other, new StartUploadRequest { Path = "/f", SizeBytes = 1 }, Uploader);
 
             await Assert.ThrowsAsync<NotFoundException>(() => UploadService.GetAsync(mine, upload.Id));
         }

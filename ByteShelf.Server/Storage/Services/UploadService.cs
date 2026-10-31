@@ -48,9 +48,9 @@ namespace ByteShelf.Server.Storage.Services
         }
 
         /// <inheritdoc />
-        public async Task<ShelfFile> StoreAsync(Shelf shelf, string path, string? contentType, long sizeBytes, bool overwrite, Stream content, CancellationToken cancellationToken)
+        public async Task<ShelfFile> StoreAsync(Shelf shelf, string path, string? contentType, long sizeBytes, bool overwrite, string startedBy, Stream content, CancellationToken cancellationToken)
         {
-            UploadRecord upload = await BeginAsync(shelf, path, contentType, sizeBytes, overwrite, isResumable: false);
+            UploadRecord upload = await BeginAsync(shelf, path, contentType, sizeBytes, overwrite, startedBy, isResumable: false);
 
             using (await _uploadLocks.AcquireAsync(upload.Id, CancellationToken.None))
             {
@@ -78,16 +78,22 @@ namespace ByteShelf.Server.Storage.Services
         }
 
         /// <inheritdoc />
-        public async Task<UploadSession> StartAsync(Shelf shelf, StartUploadRequest request)
+        public async Task<UploadSession> StartAsync(Shelf shelf, StartUploadRequest request, string startedBy)
         {
-            UploadRecord upload = await BeginAsync(shelf, request.Path, request.ContentType, request.SizeBytes, request.Overwrite, isResumable: true);
+            UploadRecord upload = await BeginAsync(shelf, request.Path, request.ContentType, request.SizeBytes, request.Overwrite, startedBy, isResumable: true);
             return StorageContracts.ToUploadSession(upload, _options);
         }
 
         /// <inheritdoc />
-        public async Task<UploadSession> GetAsync(Shelf shelf, Guid uploadId)
+        public async Task<UploadRecord> GetAsync(Shelf shelf, Guid uploadId)
         {
-            return StorageContracts.ToUploadSession(await GetUploadAsync(shelf, uploadId), _options);
+            return await GetUploadAsync(shelf, uploadId);
+        }
+
+        /// <inheritdoc />
+        public UploadSession ToSession(UploadRecord upload)
+        {
+            return StorageContracts.ToUploadSession(upload, _options);
         }
 
         /// <inheritdoc />
@@ -143,7 +149,7 @@ namespace ByteShelf.Server.Storage.Services
         /// Validates the request and records the upload, reserving its size, in one write transaction:
         /// SQLite runs one writer at a time, so two uploads can never both fit into the same free space.
         /// </summary>
-        private async Task<UploadRecord> BeginAsync(Shelf shelf, string path, string? contentType, long sizeBytes, bool overwrite, bool isResumable)
+        private async Task<UploadRecord> BeginAsync(Shelf shelf, string path, string? contentType, long sizeBytes, bool overwrite, string startedBy, bool isResumable)
         {
             string normalizedPath = ShelfPath.Normalize(path);
             if (normalizedPath == ShelfPath.Root)
@@ -161,6 +167,7 @@ namespace ByteShelf.Server.Storage.Services
             {
                 Id = Guid.NewGuid(),
                 ShelfId = shelf.Id,
+                StartedBy = startedBy,
                 Path = normalizedPath,
                 ContentType = ContentTypes.Normalize(contentType),
                 SizeBytes = sizeBytes,

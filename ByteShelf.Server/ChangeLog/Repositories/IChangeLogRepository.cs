@@ -13,6 +13,12 @@ namespace ByteShelf.Server.ChangeLog.Repositories
         Task AppendAsync<TState>(string entityType, Guid entityId, string action, TState? state, DateTimeOffset at, IDbSession session)
             where TState : class;
 
+        /// <summary>
+        /// Runs <paramref name="deleteReturningIds"/>, a <c>DELETE</c> ending in <c>RETURNING id</c>, and
+        /// logs every row it removed as purged, in the same transaction. Answers how many it removed.
+        /// </summary>
+        Task<int> DeleteAndLogAsync(string entityType, string deleteReturningIds, object parameters, DateTimeOffset at, IDbSession session);
+
         /// <summary>The entries after <paramref name="afterSequence"/>, oldest first, at most <paramref name="limit"/>.</summary>
         Task<IReadOnlyList<ChangeLogEntry>> GetAfterAsync(long afterSequence, int limit, IDbSession? session = null);
 

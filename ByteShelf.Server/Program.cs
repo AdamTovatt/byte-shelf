@@ -1,4 +1,5 @@
 using System.Net;
+using ByteShelf.Server.Access;
 using ByteShelf.Server.ChangeLog;
 using ByteShelf.Server.Email;
 using ByteShelf.Server.Invalidation;
@@ -120,6 +121,7 @@ namespace ByteShelf.Server
             builder.Services.AddVersionServices();
             builder.Services.AddChangeLogServices();
             builder.Services.AddStorageServices();
+            builder.Services.AddAccessServices();
             builder.Services.AddRateLimitingServices();
 
             WebApplication app = builder.Build();

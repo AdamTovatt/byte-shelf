@@ -1,18 +1,19 @@
-using ByteShelf.Server.Shared.Auth;
+using ByteShelf.Server.Access.Controllers;
+using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
 using ByteShelfCommon;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ByteShelf.Server.Storage.Controllers
 {
-    /// <summary>Resumable uploads: start with the size, send chunks in order, then complete.</summary>
+    /// <summary>
+    /// Resumable uploads: start with the size, send chunks in order, then complete. Only the caller that
+    /// started an upload, or one with write access, may use it afterwards.
+    /// </summary>
     [ApiController]
     [Route("api/shelves/{shelf}/uploads")]
-    [Authorize(Roles = UserRole.Admin)]
-    [ShelfRoute]
-    public class UploadsController : ControllerBase
+    public class UploadsController : ShelfControllerBase
     {
         private readonly IUploadService _uploadService;
 
@@ -21,25 +22,31 @@ namespace ByteShelf.Server.Storage.Controllers
             _uploadService = uploadService;
         }
 
-        private Shelf Shelf => ShelfRouteAttribute.GetShelf(HttpContext);
-
-        /// <summary>Starts an upload, reserving its whole size against the shelf's quota.</summary>
+        /// <summary>
+        /// Starts an upload, reserving its whole size against the shelf's quota. One that may overwrite a
+        /// file needs write access.
+        /// </summary>
         [HttpPost]
+        [ShelfAccess(ShelfOperation.Add)]
         [ProducesResponseType(typeof(UploadSession), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 403)]
         [ProducesResponseType(typeof(ErrorResponse), 409)]
         [ProducesResponseType(typeof(ErrorResponse), 507)]
         public async Task<IActionResult> Start([FromBody] StartUploadRequest request)
         {
-            return Ok(await _uploadService.StartAsync(Shelf, request));
+            Access.RequireStore(request.Overwrite);
+            return Ok(await _uploadService.StartAsync(Shelf, request, Access.Caller.Id));
         }
 
         /// <summary>An upload's progress: <c>receivedBytes</c> is where the next chunk starts.</summary>
         [HttpGet("{uploadId:guid}")]
+        [ShelfAccess(ShelfOperation.Add)]
         [ProducesResponseType(typeof(UploadSession), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 403)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         public async Task<IActionResult> Get(Guid uploadId)
         {
-            return Ok(await _uploadService.GetAsync(Shelf, uploadId));
+            return Ok(_uploadService.ToSession(await GetPermittedAsync(uploadId)));
         }
 
         /// <summary>
@@ -47,12 +54,15 @@ namespace ByteShelf.Server.Storage.Controllers
         /// over <see cref="UploadLimits.MaxChunkBytes"/> answers 413.
         /// </summary>
         [HttpPut("{uploadId:guid}")]
+        [ShelfAccess(ShelfOperation.Add)]
         [RequestSizeLimit(UploadLimits.MaxChunkBytes)]
         [ProducesResponseType(typeof(UploadSession), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 403)]
         [ProducesResponseType(typeof(ErrorResponse), 409)]
         [ProducesResponseType(typeof(ErrorResponse), 413)]
         public async Task<IActionResult> Append(Guid uploadId, [FromQuery] long offset, CancellationToken cancellationToken)
         {
+            await GetPermittedAsync(uploadId);
             return Ok(await _uploadService.AppendAsync(Shelf, uploadId, offset, Request.Body, cancellationToken));
         }
 
@@ -61,21 +71,38 @@ namespace ByteShelf.Server.Storage.Controllers
         /// answers 409 and keeps the upload, which can then be aborted.
         /// </summary>
         [HttpPost("{uploadId:guid}/complete")]
+        [ShelfAccess(ShelfOperation.Add)]
         [ProducesResponseType(typeof(ShelfFile), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 403)]
         [ProducesResponseType(typeof(ErrorResponse), 409)]
         public async Task<IActionResult> Complete(Guid uploadId, CancellationToken cancellationToken)
         {
+            await GetPermittedAsync(uploadId);
             return Ok(await _uploadService.CompleteAsync(Shelf, uploadId, cancellationToken));
         }
 
         /// <summary>Drops an upload and its bytes, releasing its reservation.</summary>
         [HttpDelete("{uploadId:guid}")]
+        [ShelfAccess(ShelfOperation.Add)]
         [ProducesResponseType(204)]
+        [ProducesResponseType(typeof(ErrorResponse), 403)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         public async Task<IActionResult> Abort(Guid uploadId)
         {
+            await GetPermittedAsync(uploadId);
             await _uploadService.AbortAsync(Shelf, uploadId);
             return NoContent();
+        }
+
+        /// <summary>
+        /// The upload, if the caller may use it. Who started an upload and whether it may overwrite never
+        /// change, so the check holds for the rest of the request.
+        /// </summary>
+        private async Task<UploadRecord> GetPermittedAsync(Guid uploadId)
+        {
+            UploadRecord upload = await _uploadService.GetAsync(Shelf, uploadId);
+            Access.RequireUpload(upload);
+            return upload;
         }
     }
 }

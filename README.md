@@ -30,10 +30,13 @@ named by its SHA-256, so `sha256sum` verifies it, and identical contents are sto
 ## Concepts
 
 - A **shelf** holds files: one storage place with its own directories and quota, made per purpose.
-- A **user** signs in with email and password. Admins create shelves and users.
+- A **user** signs in with email and password and is given read or read-write access to shelves.
+  Admins create shelves and users and reach every shelf.
+- A **key** lets a program use one shelf: read, add-only (store new files, never overwrite or
+  delete) or read-write. It is sent in the `X-Api-Key` header.
 - Files live in real **directories** and are addressed by path (`/invoices/2026/march.pdf`) or id.
-- A delete moves things to the **trash**, restorable for 30 days by default, then purged; an admin
-  can empty a shelf's trash sooner.
+- A delete moves things to the **trash**, restorable for 30 days by default, then purged; anyone
+  with write access can empty a shelf's trash sooner.
 
 ## Running it
 
@@ -50,7 +53,8 @@ The tests need nothing installed: each makes a root folder of its own under the 
 
 - [DEPLOYMENT.md](DEPLOYMENT.md): environment variables, reverse proxy, backups.
 - Server domains: [Storage](ByteShelf.Server/Storage/Storage.md), [Shelves](ByteShelf.Server/Storage/Shelves.md),
-  [Change log](ByteShelf.Server/ChangeLog/ChangeLog.md), [Users](ByteShelf.Server/Users/Users.md),
+  [Access](ByteShelf.Server/Access/Access.md), [Change log](ByteShelf.Server/ChangeLog/ChangeLog.md),
+  [Users](ByteShelf.Server/Users/Users.md),
   [Jobs](ByteShelf.Server/Jobs/Jobs.md), [Email](ByteShelf.Server/Email/Email.md),
   [Invalidation](ByteShelf.Server/Invalidation/Invalidation.md), [Version](ByteShelf.Server/Version/Version.md).
 - [ByteShelfCommon](ByteShelfCommon/README.md).

@@ -1,8 +1,7 @@
-using ByteShelf.Server.Shared.Auth;
-using ByteShelf.Server.Storage.Models;
+using ByteShelf.Server.Access.Controllers;
+using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Storage.Services;
 using ByteShelfCommon;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ByteShelf.Server.Storage.Controllers
@@ -10,9 +9,7 @@ namespace ByteShelf.Server.Storage.Controllers
     /// <summary>What has been deleted from a shelf and can still be restored, and emptying it.</summary>
     [ApiController]
     [Route("api/shelves/{shelf}/trash")]
-    [Authorize(Roles = UserRole.Admin)]
-    [ShelfRoute]
-    public class TrashController : ControllerBase
+    public class TrashController : ShelfControllerBase
     {
         private readonly ITrashService _trashService;
 
@@ -21,10 +18,9 @@ namespace ByteShelf.Server.Storage.Controllers
             _trashService = trashService;
         }
 
-        private Shelf Shelf => ShelfRouteAttribute.GetShelf(HttpContext);
-
         /// <summary>Every deletion still inside the restore window, newest first.</summary>
         [HttpGet]
+        [ShelfAccess(ShelfOperation.Read)]
         [ProducesResponseType(typeof(IReadOnlyList<TrashEntry>), 200)]
         public async Task<IActionResult> List()
         {
@@ -33,6 +29,7 @@ namespace ByteShelf.Server.Storage.Controllers
 
         /// <summary>Puts back what one deletion removed, where it was.</summary>
         [HttpPost("{deletionId:guid}/restore")]
+        [ShelfAccess(ShelfOperation.Write)]
         [ProducesResponseType(204)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 409)]
@@ -47,6 +44,7 @@ namespace ByteShelf.Server.Storage.Controllers
         /// ends, and can no longer be restored.
         /// </summary>
         [HttpDelete]
+        [ShelfAccess(ShelfOperation.Write)]
         [ProducesResponseType(204)]
         public async Task<IActionResult> EmptyTrash(CancellationToken cancellationToken)
         {

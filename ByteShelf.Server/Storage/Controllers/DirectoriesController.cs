@@ -1,8 +1,8 @@
-using ByteShelf.Server.Shared.Auth;
+using ByteShelf.Server.Access.Controllers;
+using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
 using ByteShelfCommon;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ByteShelf.Server.Storage.Controllers
@@ -13,9 +13,7 @@ namespace ByteShelf.Server.Storage.Controllers
     /// </summary>
     [ApiController]
     [Route("api/shelves/{shelf}/directories")]
-    [Authorize(Roles = UserRole.Admin)]
-    [ShelfRoute]
-    public class DirectoriesController : ControllerBase
+    public class DirectoriesController : ShelfControllerBase
     {
         private readonly IDirectoryService _directoryService;
 
@@ -24,10 +22,9 @@ namespace ByteShelf.Server.Storage.Controllers
             _directoryService = directoryService;
         }
 
-        private Shelf Shelf => ShelfRouteAttribute.GetShelf(HttpContext);
-
         /// <summary>Creates a directory and any missing directory above it; an existing one is answered as it is.</summary>
         [HttpPost]
+        [ShelfAccess(ShelfOperation.Add)]
         [ProducesResponseType(typeof(ShelfDirectory), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 409)]
@@ -38,6 +35,7 @@ namespace ByteShelf.Server.Storage.Controllers
 
         /// <summary>Moves or renames a directory with everything in it to the body's <c>toPath</c>.</summary>
         [HttpPost("move")]
+        [ShelfAccess(ShelfOperation.Write)]
         [ProducesResponseType(typeof(ShelfDirectory), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
@@ -49,6 +47,7 @@ namespace ByteShelf.Server.Storage.Controllers
 
         /// <summary>Moves a directory and everything in it to the trash as one deletion.</summary>
         [HttpDelete]
+        [ShelfAccess(ShelfOperation.Write)]
         [ProducesResponseType(typeof(TrashEntry), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]

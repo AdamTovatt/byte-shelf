@@ -1,3 +1,4 @@
+using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Users.Models;
@@ -13,8 +14,8 @@ namespace ByteShelf.Server.Tests.Users
         public override async Task InitializeAsync()
         {
             await base.InitializeAsync();
-            _userRepository = new UserRepository(DataSource, SessionFactory);
-            _loginRepository = new UserLoginRepository(DataSource, SessionFactory);
+            _userRepository = new UserRepository(DataSource, SessionFactory, new ChangeLogRepository(DataSource, SessionFactory));
+            _loginRepository = new UserLoginRepository(DataSource, SessionFactory, new ChangeLogRepository(DataSource, SessionFactory));
         }
 
         [Fact]
@@ -53,7 +54,7 @@ namespace ByteShelf.Server.Tests.Users
         {
             User user = await CreateUserWithLoginAsync("rotate@example.com", "old-hash");
 
-            bool updated = await _loginRepository.UpdateCredentialAsync(user.Id, UserLoginRepository.LocalProvider, "new-hash", Session);
+            bool updated = await _loginRepository.UpdateCredentialAsync(user.Id, UserLoginRepository.LocalProvider, "new-hash", TestInstants.Now, Session);
 
             Assert.True(updated);
             Assert.Equal("new-hash", (await _loginRepository.GetCredentialsByEmailAsync("rotate@example.com", Session))?.PasswordHash);

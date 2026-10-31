@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
+using ByteShelf.Server.Access;
+using ByteShelf.Server.Access.Services;
 using ByteShelf.Server.ChangeLog;
 using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Email;
@@ -9,6 +11,8 @@ using ByteShelf.Server.Storage;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Users;
+using ByteShelf.Server.Users.Models;
+using ByteShelf.Server.Users.Services;
 using ByteShelfCommon;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -24,6 +28,9 @@ namespace ByteShelf.Server.Tests.TestUtilities
     public abstract class ServiceTestBase : IAsyncLifetime
     {
         public const string AppBaseUrl = "https://shelf.test";
+
+        /// <summary>The caller the service tests start uploads as; who starts one matters only at the API.</summary>
+        protected const string Uploader = "user:00000000-0000-0000-0000-00000000000a";
 
         private ServiceProvider _provider = null!;
         private AsyncServiceScope _scope;
@@ -41,6 +48,9 @@ namespace ByteShelf.Server.Tests.TestUtilities
         protected StagingArea StagingArea => Services.GetRequiredService<StagingArea>();
         protected StorageOptions Options => Services.GetRequiredService<StorageOptions>();
         protected IChangeLogRepository ChangeLog => Services.GetRequiredService<IChangeLogRepository>();
+        protected IShelfGrantService GrantService => Services.GetRequiredService<IShelfGrantService>();
+        protected IShelfKeyService KeyService => Services.GetRequiredService<IShelfKeyService>();
+        protected IShelfAccessResolver AccessResolver => Services.GetRequiredService<IShelfAccessResolver>();
 
         public virtual Task InitializeAsync()
         {
@@ -53,6 +63,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
             services.AddJobServices();
             services.AddChangeLogServices();
             services.AddStorageServices();
+            services.AddAccessServices();
             services.AddEmailServices();
             services.AddUserServices(TestRoot.Root, AppBaseUrl);
             ConfigureServices(services);
@@ -76,6 +87,12 @@ namespace ByteShelf.Server.Tests.TestUtilities
         {
         }
 
+        /// <summary>A user with the given roles, made through the real service.</summary>
+        protected Task<User> CreateUserAsync(string email, params string[] roles)
+        {
+            return Services.GetRequiredService<IUserService>().CreateUserAsync(email, "Test user", "password-for-tests", roles);
+        }
+
         protected Task<Shelf> CreateShelfAsync(string name = "test", long? quotaBytes = null)
         {
             return ShelfService.CreateAsync(name, quotaBytes);
@@ -85,7 +102,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
         protected Task<ShelfFile> StoreTextAsync(Shelf shelf, string path, string text, bool overwrite = false)
         {
             byte[] bytes = Encoding.UTF8.GetBytes(text);
-            return UploadService.StoreAsync(shelf, path, "text/plain", bytes.Length, overwrite, new MemoryStream(bytes), CancellationToken.None);
+            return UploadService.StoreAsync(shelf, path, "text/plain", bytes.Length, overwrite, Uploader, new MemoryStream(bytes), CancellationToken.None);
         }
 
         protected async Task<string> ReadObjectTextAsync(string sha256)

@@ -1,12 +1,20 @@
 using ByteShelf.Server.ChangeLog.Models;
+using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
+using ByteShelf.Server.Users.Models;
+using ByteShelf.Server.Users.Repositories;
+using ByteShelf.Server.Users.Services;
 using ByteShelfCommon;
+using Microsoft.Extensions.DependencyInjection;
 
-namespace ByteShelf.Server.Tests.Storage
+namespace ByteShelf.Server.Tests.ChangeLog
 {
-    /// <summary>The change log records every storage change, in commit order, with the entity's state afterwards.</summary>
+    /// <summary>
+    /// The change log records every change to storage, users and access, in commit order, with the
+    /// entity's state afterwards.
+    /// </summary>
     public class ChangeLogTests : ServiceTestBase
     {
         [Fact]
@@ -194,6 +202,84 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
+        public async Task CreateUserAsync_LogsTheUserThenTheirLoginWithItsPasswordHash()
+        {
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            User user = await CreateUserAsync("user@example.com");
+
+            IReadOnlyList<ChangeLogEntry> entries = await ChangeLog.GetAfterAsync(before, 100);
+            Assert.Equal(
+                new[] { (ChangeEntityType.User, ChangeAction.Added), (ChangeEntityType.UserLogin, ChangeAction.Added) },
+                entries.Select(entry => (entry.EntityType, entry.Action)));
+            Assert.Equal("user@example.com", ChangePayload.Deserialize<User>(entries[0].Payload!).Email);
+            UserLogin login = ChangePayload.Deserialize<UserLogin>(entries[1].Payload!);
+            Assert.Equal(user.Id, login.UserId);
+            Assert.Equal(await StoredPasswordHashAsync("user@example.com"), login.Credential);
+        }
+
+        [Fact]
+        public async Task UpdatePasswordAsync_LogsTheLoginWithTheNewHash()
+        {
+            User user = await CreateUserAsync("user@example.com");
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            await Services.GetRequiredService<IUserService>().UpdatePasswordAsync(user.Id, "password-for-tests", "a-new-password");
+
+            ChangeLogEntry entry = Assert.Single(await ChangeLog.GetAfterAsync(before, 100));
+            Assert.Equal((ChangeEntityType.UserLogin, ChangeAction.Updated), (entry.EntityType, entry.Action));
+            Assert.Equal(await StoredPasswordHashAsync("user@example.com"), ChangePayload.Deserialize<UserLogin>(entry.Payload!).Credential);
+        }
+
+        [Fact]
+        public async Task UpdateRolesAsync_LogsTheUserWithTheNewRoles()
+        {
+            User user = await CreateUserAsync("user@example.com");
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            await Services.GetRequiredService<IUserService>().UpdateRolesAsync(user.Id, new[] { UserRole.Admin });
+
+            ChangeLogEntry entry = Assert.Single(await ChangeLog.GetAfterAsync(before, 100));
+            Assert.Equal((ChangeEntityType.User, ChangeAction.Updated), (entry.EntityType, entry.Action));
+            Assert.Equal(new[] { UserRole.Admin }, ChangePayload.Deserialize<User>(entry.Payload!).Roles);
+        }
+
+        [Fact]
+        public async Task DeleteUserAsync_LogsTheirAccessAndLoginGoneBeforeThem()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            User user = await CreateUserAsync("user@example.com");
+            await GrantService.SetAsync(shelf, user.Id, ShelfAccessPermission.Read);
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            await Services.GetRequiredService<IUserService>().DeleteUserAsync(user.Id);
+
+            IReadOnlyList<ChangeLogEntry> entries = await ChangeLog.GetAfterAsync(before, 100);
+            Assert.Equal(
+                new[] { ChangeEntityType.ShelfGrant, ChangeEntityType.UserLogin, ChangeEntityType.User },
+                entries.Select(entry => entry.EntityType));
+            Assert.All(entries, entry => Assert.Equal(ChangeAction.Purged, entry.Action));
+        }
+
+        [Fact]
+        public async Task DeleteAsync_ShelfWithAGrantAndAKey_LogsThemGoneBeforeTheShelf()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            User user = await CreateUserAsync("user@example.com");
+            await GrantService.SetAsync(shelf, user.Id, ShelfAccessPermission.Read);
+            await KeyService.CreateAsync(shelf, "app", ShelfKeyPermission.Read);
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            await ShelfService.DeleteAsync(shelf);
+
+            IReadOnlyList<ChangeLogEntry> entries = await ChangeLog.GetAfterAsync(before, 100);
+            Assert.Equal(
+                new[] { ChangeEntityType.ShelfGrant, ChangeEntityType.ShelfKey, ChangeEntityType.Directory, ChangeEntityType.Shelf },
+                entries.Select(entry => entry.EntityType));
+            Assert.All(entries, entry => Assert.Equal(ChangeAction.Purged, entry.Action));
+        }
+
+        [Fact]
         public async Task CreateAsync_Shelf_LogsTheShelfThenItsRoot()
         {
             long before = await ChangeLog.GetLatestSequenceAsync();
@@ -205,6 +291,11 @@ namespace ByteShelf.Server.Tests.Storage
                 new[] { (ChangeEntityType.Shelf, shelf.Id), (ChangeEntityType.Directory, entries[1].EntityId) },
                 entries.Select(entry => (entry.EntityType, entry.EntityId)));
             Assert.Equal(TestInstants.Now, entries[0].CreatedAt);
+        }
+
+        private async Task<string?> StoredPasswordHashAsync(string email)
+        {
+            return (await Services.GetRequiredService<IUserLoginRepository>().GetCredentialsByEmailAsync(email))?.PasswordHash;
         }
     }
 }

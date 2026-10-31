@@ -1,7 +1,9 @@
 using System.Data.Common;
+using ByteShelf.Server.Access.Repositories;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Errors;
+using ByteShelf.Server.Shared.Validation;
 using ByteShelf.Server.Users.Exceptions;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Repositories;
@@ -21,6 +23,8 @@ namespace ByteShelf.Server.Users.Services
 
         private readonly IUserRepository _userRepository;
         private readonly IUserLoginRepository _userLoginRepository;
+        private readonly IShelfGrantRepository _grantRepository;
+        private readonly IRefreshTokenStore _refreshTokenStore;
         private readonly IPasswordHasher _passwordHasher;
         private readonly IDbSessionFactory _sessionFactory;
         private readonly TimeProvider _timeProvider;
@@ -29,12 +33,16 @@ namespace ByteShelf.Server.Users.Services
         public UserService(
             IUserRepository userRepository,
             IUserLoginRepository userLoginRepository,
+            IShelfGrantRepository grantRepository,
+            IRefreshTokenStore refreshTokenStore,
             IPasswordHasher passwordHasher,
             IDbSessionFactory sessionFactory,
             TimeProvider timeProvider)
         {
             _userRepository = userRepository;
             _userLoginRepository = userLoginRepository;
+            _grantRepository = grantRepository;
+            _refreshTokenStore = refreshTokenStore;
             _passwordHasher = passwordHasher;
             _sessionFactory = sessionFactory;
             _timeProvider = timeProvider;
@@ -67,7 +75,7 @@ namespace ByteShelf.Server.Users.Services
         public async Task<User> CreateUserAsync(string email, string displayName, string password, IEnumerable<string>? roles = null)
         {
             ValidateEmail(email);
-            ValidateDisplayName(displayName);
+            displayName = DisplayText.Validate(displayName, MaxDisplayNameLength, "A display name");
             PasswordPolicy.Validate(password);
 
             List<string> rolesList = (roles ?? Enumerable.Empty<string>()).Distinct().ToList();
@@ -120,10 +128,18 @@ namespace ByteShelf.Server.Users.Services
                 return false;
             }
 
-            return await _userLoginRepository.UpdateCredentialAsync(
-                userId: userId,
-                provider: UserLoginRepository.LocalProvider,
-                newCredential: _passwordHasher.HashPassword(newPassword));
+            string passwordHash = _passwordHasher.HashPassword(newPassword);
+
+            await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+            {
+                if (!await _userLoginRepository.UpdateCredentialAsync(userId, UserLoginRepository.LocalProvider, passwordHash, _timeProvider.GetUtcNow(), session))
+                {
+                    return false;
+                }
+
+                await session.CommitAsync();
+                return true;
+            }
         }
 
         /// <inheritdoc />
@@ -159,6 +175,31 @@ namespace ByteShelf.Server.Users.Services
         }
 
         /// <inheritdoc />
+        public async Task DeleteUserAsync(Guid userId)
+        {
+            await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+            {
+                User user = await _userRepository.GetByIdAsync(userId, session)
+                    ?? throw new NotFoundException($"There is no user {userId}.");
+
+                if (user.Roles.Contains(UserRole.Admin) && await _userRepository.CountWithRoleAsync(UserRole.Admin, session) <= 1)
+                {
+                    throw new ConflictException("This is the only admin; make someone else an admin first.");
+                }
+
+                DateTimeOffset now = _timeProvider.GetUtcNow();
+                await _grantRepository.DeleteForUserAsync(userId, now, session);
+                await _userLoginRepository.DeleteForUserAsync(userId, now, session);
+                await _userRepository.DeleteAsync(userId, now, session);
+                await session.CommitAsync();
+            }
+
+            // After the commit, as a password reset does. A refresh would be refused anyway, since the
+            // user is gone; this also drops the stored tokens.
+            await _refreshTokenStore.InvalidateAllFamiliesForUserAsync(userId.ToString("D"));
+        }
+
+        /// <inheritdoc />
         public async Task<int> GetUserCountAsync()
         {
             return await _userRepository.GetCountAsync();
@@ -172,12 +213,5 @@ namespace ByteShelf.Server.Users.Services
             }
         }
 
-        private static void ValidateDisplayName(string displayName)
-        {
-            if (string.IsNullOrWhiteSpace(displayName) || displayName.Length > MaxDisplayNameLength)
-            {
-                throw new ArgumentException($"A display name of 1 to {MaxDisplayNameLength} characters is required.");
-            }
-        }
     }
 }

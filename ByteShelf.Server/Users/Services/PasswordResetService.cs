@@ -1,3 +1,4 @@
+using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Repositories;
 using EasyReasy.Auth;
@@ -79,7 +80,11 @@ namespace ByteShelf.Server.Users.Services
         {
             PasswordPolicy.Validate(newPassword);
 
-            PasswordResetTokenRecord? record = await _tokenRepository.GetByTokenHashAsync(ComputeTokenHash(token));
+            // Must be the hash SecurePasswordResetTokenHandler stores (lowercase-hex SHA-256 of the UTF-8
+            // token): the library does not expose its hashing, and the hash is the only lookup key. Drift
+            // fails closed: the lookup misses and every reset breaks loudly; ValidateResetToken still
+            // guards acceptance after the lookup.
+            PasswordResetTokenRecord? record = await _tokenRepository.GetByTokenHashAsync(SecretHash.Sha256Hex(token));
             if (record == null || !_tokenHandler.ValidateResetToken(token, record.TokenHash))
             {
                 return false;
@@ -100,7 +105,7 @@ namespace ByteShelf.Server.Users.Services
                     return false;
                 }
 
-                if (!await _userLoginRepository.UpdateCredentialAsync(record.UserId, UserLoginRepository.LocalProvider, passwordHash, session))
+                if (!await _userLoginRepository.UpdateCredentialAsync(record.UserId, UserLoginRepository.LocalProvider, passwordHash, now, session))
                 {
                     return false;
                 }
@@ -119,20 +124,6 @@ namespace ByteShelf.Server.Users.Services
             }
 
             return true;
-        }
-
-        /// <summary>
-        /// Must produce exactly the hash <see cref="SecurePasswordResetTokenHandler"/> stores
-        /// (lowercase-hex SHA-256 of the UTF-8 token): the library doesn't expose its hashing
-        /// publicly, and the stored hash is our only lookup key. Drift here fails closed — the
-        /// lookup misses and every reset breaks loudly; <see cref="IPasswordResetTokenHandler.ValidateResetToken"/>
-        /// still guards acceptance after the lookup.
-        /// </summary>
-        private static string ComputeTokenHash(string token)
-        {
-            byte[] tokenBytes = System.Text.Encoding.UTF8.GetBytes(token);
-            byte[] hashBytes = System.Security.Cryptography.SHA256.HashData(tokenBytes);
-            return Convert.ToHexStringLower(hashBytes);
         }
     }
 }

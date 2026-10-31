@@ -16,9 +16,10 @@ cleanup. Shelves themselves are described in [Shelves.md](Shelves.md).
 
 ## Endpoints
 
-All under `/api/shelves/{shelf}`, admin only. An existing file or directory is named by exactly one
-of the `path` and `id` query parameters; a new path (`POST directories`, the `toPath` of a move) is in
-the JSON body. Errors answer an `ErrorResponse` with a `code` from `ByteShelfCommon.ErrorCodes`; a
+All under `/api/shelves/{shelf}`, open to whoever may do the operation there; what each endpoint
+needs is in the table in [Access.md](../Access/Access.md). An existing file or directory is named by
+exactly one of the `path` and `id` query parameters; a new path (`POST directories`, the `toPath` of
+a move) is in the JSON body. Errors answer an `ErrorResponse` with a `code` from `ByteShelfCommon.ErrorCodes`; a
 path that is not allowed is a 400.
 
 | Method and route | What it does |
@@ -45,7 +46,9 @@ path that is not allowed is a 400.
 
 1. Start: the path and content type are checked and the whole declared size is reserved against
    the shelf's quota, in one write transaction (SQLite has one writer at a time, so two uploads can
-   never both take the same free space). A single `PUT` uses `Content-Length` as the size.
+   never both take the same free space). A single `PUT` uses `Content-Length` as the size. The
+   upload records who started it (`started_by`), the only caller besides read-write ones who may use
+   it afterwards (see [Access.md](../Access/Access.md)).
 2. Bytes go to staging at the offset the upload has reached; anything past the declared size is
    refused as it arrives.
 3. Finish: the server hashes the staged bytes itself, then in one transaction creates missing

@@ -26,6 +26,14 @@ namespace ByteShelf.Server.Users.Services
         /// <exception cref="Shared.Errors.ConflictException">It would leave no admin.</exception>
         Task UpdateRolesAsync(Guid userId, IEnumerable<string> roles);
 
+        /// <summary>
+        /// Deletes a user with their logins, reset tokens, shelf access and sessions. An access token they
+        /// already hold works until it expires, within the hour.
+        /// </summary>
+        /// <exception cref="Shared.Errors.NotFoundException">There is no such user.</exception>
+        /// <exception cref="Shared.Errors.ConflictException">The user is the only admin.</exception>
+        Task DeleteUserAsync(Guid userId);
+
         Task<int> GetUserCountAsync();
     }
 }

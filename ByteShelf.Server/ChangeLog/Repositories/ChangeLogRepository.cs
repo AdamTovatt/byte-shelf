@@ -36,6 +36,20 @@ namespace ByteShelf.Server.ChangeLog.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<int> DeleteAndLogAsync(string entityType, string deleteReturningIds, object parameters, DateTimeOffset at, IDbSession session)
+        {
+            List<Guid> deleted = (await session.Connection.QueryAsync<Guid>(
+                deleteReturningIds, parameters, transaction: session.Transaction)).ToList();
+
+            foreach (Guid id in deleted)
+            {
+                await AppendAsync<object>(entityType, id, ChangeAction.Purged, null, at, session);
+            }
+
+            return deleted.Count;
+        }
+
+        /// <inheritdoc />
         public async Task<IReadOnlyList<ChangeLogEntry>> GetAfterAsync(long afterSequence, int limit, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>

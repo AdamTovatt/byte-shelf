@@ -1,3 +1,4 @@
+using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Repositories;
@@ -12,7 +13,7 @@ namespace ByteShelf.Server.Tests.Users
         public override async Task InitializeAsync()
         {
             await base.InitializeAsync();
-            _userRepository = new UserRepository(DataSource, SessionFactory);
+            _userRepository = new UserRepository(DataSource, SessionFactory, new ChangeLogRepository(DataSource, SessionFactory));
             _tokenRepository = new PasswordResetTokenRepository(DataSource, SessionFactory);
         }
 

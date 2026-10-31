@@ -10,6 +10,7 @@ namespace ByteShelf.Server.Storage.Repositories
         private const string SelectColumns = $@"
             id,
             shelf_id AS {nameof(UploadEntity.ShelfId)},
+            started_by AS {nameof(UploadEntity.StartedBy)},
             path,
             content_type AS {nameof(UploadEntity.ContentType)},
             size_bytes AS {nameof(UploadEntity.SizeBytes)},
@@ -42,8 +43,8 @@ namespace ByteShelf.Server.Storage.Repositories
         public async Task InsertAsync(UploadRecord upload, IDbSession session)
         {
             string query = @"
-                INSERT INTO upload (id, shelf_id, path, content_type, size_bytes, received_bytes, overwrite, is_resumable, created_at, last_activity_at)
-                VALUES (@Id, @ShelfId, @Path, @ContentType, @SizeBytes, @ReceivedBytes, @Overwrite, @IsResumable, @CreatedAt, @LastActivityAt)";
+                INSERT INTO upload (id, shelf_id, started_by, path, content_type, size_bytes, received_bytes, overwrite, is_resumable, created_at, last_activity_at)
+                VALUES (@Id, @ShelfId, @StartedBy, @Path, @ContentType, @SizeBytes, @ReceivedBytes, @Overwrite, @IsResumable, @CreatedAt, @LastActivityAt)";
 
             await session.Connection.ExecuteAsync(
                 query,
@@ -51,6 +52,7 @@ namespace ByteShelf.Server.Storage.Repositories
                 {
                     upload.Id,
                     upload.ShelfId,
+                    upload.StartedBy,
                     upload.Path,
                     upload.ContentType,
                     upload.SizeBytes,
@@ -133,6 +135,7 @@ namespace ByteShelf.Server.Storage.Repositories
         {
             public Guid Id { get; set; }
             public Guid ShelfId { get; set; }
+            public string StartedBy { get; set; } = string.Empty;
             public string Path { get; set; } = string.Empty;
             public string ContentType { get; set; } = string.Empty;
             public long SizeBytes { get; set; }
@@ -148,6 +151,7 @@ namespace ByteShelf.Server.Storage.Repositories
                 {
                     Id = Id,
                     ShelfId = ShelfId,
+                    StartedBy = StartedBy,
                     Path = Path,
                     ContentType = ContentType,
                     SizeBytes = SizeBytes,
