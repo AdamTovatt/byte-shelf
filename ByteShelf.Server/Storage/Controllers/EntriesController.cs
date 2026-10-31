@@ -21,12 +21,14 @@ namespace ByteShelf.Server.Storage.Controllers
         private readonly IDirectoryService _directoryService;
         private readonly IFileService _fileService;
         private readonly IUploadService _uploadService;
+        private readonly DownloadLinks _downloadLinks;
 
-        public EntriesController(IDirectoryService directoryService, IFileService fileService, IUploadService uploadService)
+        public EntriesController(IDirectoryService directoryService, IFileService fileService, IUploadService uploadService, DownloadLinks downloadLinks)
         {
             _directoryService = directoryService;
             _fileService = fileService;
             _uploadService = uploadService;
+            _downloadLinks = downloadLinks;
         }
 
         /// <summary>Lists a directory: the root when neither path nor id is given.</summary>
@@ -74,12 +76,7 @@ namespace ByteShelf.Server.Storage.Controllers
             return Ok(await _fileService.MoveFileAsync(Shelf, EntryReference.From(path, id), request.ToPath));
         }
 
-        /// <summary>
-        /// Streams a file's contents. Supports <c>Range</c>; the ETag is the contents' SHA-256, so
-        /// <c>If-None-Match</c> and <c>If-Range</c> work as well. Whatever the stored type, the
-        /// browser is told not to sniff it and to run nothing in it, so an uploaded page or image
-        /// cannot act with this server's origin.
-        /// </summary>
+        /// <summary>Streams a file's contents, as <see cref="FileContentResponse"/> describes.</summary>
         [HttpGet("content")]
         [HttpHead("content")]
         [ShelfAccess(ShelfOperation.Read)]
@@ -89,17 +86,21 @@ namespace ByteShelf.Server.Storage.Controllers
         public async Task<IActionResult> GetContent([FromQuery] string? path, [FromQuery] Guid? id, [FromQuery] bool download = false)
         {
             FileContent content = await _fileService.GetContentAsync(Shelf, EntryReference.From(path, id));
+            return FileContentResponse.Send(this, content, download);
+        }
 
-            Response.Headers[HeaderNames.XContentTypeOptions] = "nosniff";
-            Response.Headers[HeaderNames.ContentSecurityPolicy] = "sandbox; default-src 'none'";
-
-            return PhysicalFile(
-                content.ObjectPath,
-                content.File.ContentType,
-                download ? content.File.Name : null,
-                content.File.UpdatedAt,
-                new EntityTagHeaderValue($"\"{content.File.Sha256}\""),
-                enableRangeProcessing: true);
+        /// <summary>
+        /// A link to a file's contents that needs no token for <see cref="DownloadLinks.Lifetime"/>, for a
+        /// browser to open or save, which a plain link cannot send a token with.
+        /// </summary>
+        [HttpPost("download-link")]
+        [ShelfAccess(ShelfOperation.Read)]
+        [ProducesResponseType(typeof(DownloadLink), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        public async Task<IActionResult> CreateDownloadLink([FromQuery] string? path, [FromQuery] Guid? id)
+        {
+            ShelfFile file = await _fileService.GetFileAsync(Shelf, EntryReference.From(path, id));
+            return Ok(_downloadLinks.Create(Shelf.Id, file.Id));
         }
 
         /// <summary>

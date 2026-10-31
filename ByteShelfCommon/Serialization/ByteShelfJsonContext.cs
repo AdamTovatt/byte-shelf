@@ -12,6 +12,7 @@ namespace ByteShelfCommon.Serialization
         DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
     [JsonSerializable(typeof(ErrorResponse))]
     [JsonSerializable(typeof(ShelfFile))]
+    [JsonSerializable(typeof(DownloadLink))]
     [JsonSerializable(typeof(ShelfDirectory))]
     [JsonSerializable(typeof(DirectoryListing))]
     [JsonSerializable(typeof(ShelfInfo))]

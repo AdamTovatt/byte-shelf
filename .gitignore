@@ -1,6 +1,8 @@
 ## .NET
 bin/
 obj/
+# The JavaScript SDK names its intermediate folder obj\Debug, backslash included, off Windows.
+obj\\*
 publish/
 *.user
 *.suo
@@ -10,6 +12,9 @@ launchSettings.json
 ## Node
 node_modules/
 dist/
+test-results/
+playwright-report/
+e2e-root/
 *.tsbuildinfo
 
 ## IDE

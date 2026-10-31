@@ -9,6 +9,10 @@ namespace ByteShelf.Server.Storage.Services
         /// <exception cref="Shared.Errors.NotFoundException">There is none.</exception>
         Task<Shelf> GetByNameAsync(string name);
 
+        /// <summary>The shelf with the id <paramref name="id"/>.</summary>
+        /// <exception cref="Shared.Errors.NotFoundException">There is none.</exception>
+        Task<Shelf> GetByIdAsync(Guid id);
+
         /// <summary>Each of <paramref name="shelves"/> with its usage, in the order given.</summary>
         Task<IReadOnlyList<ShelfInfo>> GetInfosAsync(IReadOnlyList<Shelf> shelves);
 

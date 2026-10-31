@@ -3,6 +3,9 @@
   <PropertyGroup>
     <AssemblyName>ByteShelf.Server</AssemblyName>
     <Version>2.0.0</Version>
+    <SpaRoot>..\byteshelf.client</SpaRoot>
+    <SpaProxyLaunchCommand>npm run dev</SpaProxyLaunchCommand>
+    <SpaProxyServerUrl>http://localhost:44911</SpaProxyServerUrl>
   </PropertyGroup>
 
   <ItemGroup>
@@ -28,12 +31,16 @@
     <PackageReference Include="EasyReasy.Database.Sqlite" Version="1.0.1" />
     <PackageReference Include="EasyReasy.EnvironmentVariables" Version="1.5.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
+    <PackageReference Include="Microsoft.AspNetCore.SpaProxy" Version="10.0.14" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.19.1" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ByteShelfCommon\ByteShelfCommon.csproj" />
+    <ProjectReference Include="..\byteshelf.client\byteshelf.client.esproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
   </ItemGroup>
 
   <ItemGroup>

@@ -16,6 +16,7 @@ namespace ByteShelf.Server.Storage
             services.AddSingleton<ObjectStore>();
             services.AddSingleton<StagingArea>();
             services.AddSingleton<UploadLocks>();
+            services.AddSingleton<DownloadLinks>();
 
             services.AddScoped<IShelfRepository, ShelfRepository>();
             services.AddScoped<IDirectoryRepository, DirectoryRepository>();

@@ -7,6 +7,7 @@ namespace ByteShelf.Server.Invalidation
         public static IServiceCollection AddInvalidationServices(this IServiceCollection services)
         {
             services.AddSingleton<IInvalidationBroadcaster, InMemoryInvalidationBroadcaster>();
+            services.AddHostedService<ChangeLogInvalidationPublisher>();
             return services;
         }
     }

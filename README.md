@@ -11,6 +11,7 @@ in the web UI.
 | `ByteShelf.Server` | The ASP.NET Core server (net10.0). |
 | `ByteShelfCommon` | The shared contract (net8.0, AOT-compatible): request and response types, path and shelf-name rules, source-generated JSON. Published as the `ByteShelfCommon` NuGet package. |
 | `ByteShelfClient` | The client library (net8.0, AOT-compatible): `IByteShelfClient` over HTTP, and in memory for an app's tests. Published as the `ByteShelfClient` NuGet package. |
+| `byteshelf.client` | The web UI (React, TypeScript, Vite): browse and upload to the shelves you reach; for admins, shelves, users, access and keys. The server serves its build. |
 | `ByteShelf.Cli` | The `byteshelf` dotnet tool (net10.0): the command line, and with `--mcp` an MCP server for agents. |
 | `ByteShelf.Server.Tests`, `ByteShelfCommon.Tests`, `ByteShelfClient.Tests`, `ByteShelf.Cli.Tests` | xUnit tests; the server's include the client contract, run against both clients, and the CLI's login against the server. |
 
@@ -23,7 +24,7 @@ One folder, named by `BYTESHELF_ROOT`, holds the whole instance:
   byteshelf.db              the SQLite database: shelves, directories, files, users, the change log
   objects/ab/cd/<sha256>    file contents, stored whole and never modified
   staging/                  uploads in progress
-  keys/                     key material the server generates for itself (the JWT secret)
+  keys/                     secrets the server generates for itself (the JWT and download-link keys)
 ```
 
 Nothing lives outside it, so a zip of a stopped server's root is a complete copy. Every object is
@@ -49,7 +50,13 @@ BYTESHELF_ROOT=./dev-root INITIAL_ADMIN_EMAIL=admin@example.com INITIAL_ADMIN_PA
   ASPNETCORE_ENVIRONMENT=Development dotnet run --project ByteShelf.Server
 ```
 
-The tests need nothing installed: each makes a root folder of its own under the test output.
+Building the server restores the web UI's packages, so it needs Node.js and npm as well as the
+.NET SDK. The .NET tests need nothing more: each makes a root folder of its own under the test
+output. The web UI's own tests are in [byteshelf.client](byteshelf.client/README.md).
+
+For the web UI while developing, copy `ByteShelf.Server/Properties/launchSettings_git.json` to
+`launchSettings.json` beside it and `dotnet run --project ByteShelf.Server`: the server starts the
+Vite dev server and forwards to it. A published server serves the UI's production build itself.
 
 The CLI runs from source the same way, against a running server:
 
@@ -67,7 +74,7 @@ dotnet run --project ByteShelf.Cli -- shelves
   [Jobs](ByteShelf.Server/Jobs/Jobs.md), [Email](ByteShelf.Server/Email/Email.md),
   [Invalidation](ByteShelf.Server/Invalidation/Invalidation.md), [Version](ByteShelf.Server/Version/Version.md).
 - [ByteShelfCommon](ByteShelfCommon/README.md), [ByteShelfClient](ByteShelfClient/README.md),
-  [the CLI and MCP server](ByteShelf.Cli/README.md).
+  [the CLI and MCP server](ByteShelf.Cli/README.md), [the web UI](byteshelf.client/README.md).
 
 ## License
 

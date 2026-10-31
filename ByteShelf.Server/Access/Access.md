@@ -26,7 +26,7 @@ lives) whether the caller may do the operation there. No access answers 404, too
 
 | Operation | Endpoints | Who may |
 |---|---|---|
-| `Read` | list, file records, content, the shelf's info, the trash list | every caller with access |
+| `Read` | list, file records, content, a download link, the shelf's info, the trash list | every caller with access |
 | `Add` | store a new file, create directories, every upload endpoint | `addOnly` and `readWrite` keys, `readWrite` users |
 | `Write` | overwrite, move, delete, restore, empty the trash | `readWrite` keys and users |
 | `Administer` | rename, quota and delete the shelf; its grants and keys | admins |
@@ -35,6 +35,11 @@ Storing with `overwrite`, as a single `PUT` or an upload, needs `Write` (`ShelfA
 An upload records who started it; only that caller, or one with `Write`, may look at, continue,
 complete or abort it (`ShelfAccess.RequireUpload`), so an add-only key cannot touch another caller's
 upload. `GET /api/shelves` lists the shelves the caller can see; creating a shelf is admin only.
+
+The one route that serves file contents without a caller is `GET /api/downloads/{token}`: the token
+is a signed link from `download-link`, which needs `Read`, and it names one file for five minutes.
+Whoever holds the link may read that file until it runs out, even if the access it was made with is
+taken away meanwhile ([Storage](../Storage/Storage.md#download-links-downloadlinks)).
 
 ## Endpoints
 

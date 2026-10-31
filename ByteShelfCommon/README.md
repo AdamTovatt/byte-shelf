@@ -11,6 +11,7 @@ AOT-compatible.
 | `ShelfInfo` | A shelf with its quota and usage. |
 | `CreateShelfRequest`, `UpdateShelfRequest` | Creates a shelf, and replaces its name and quota. |
 | `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps. |
+| `DownloadLink` | A link to a file's contents that works without a token for a few minutes. |
 | `ShelfDirectory`, `DirectoryListing` | A directory, and what one holds. |
 | `CreateDirectoryRequest`, `MoveRequest` | Creates a directory; moves or renames a file or directory. |
 | `StartUploadRequest`, `UploadSession` | Starting and following a resumable upload. |

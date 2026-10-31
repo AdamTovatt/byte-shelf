@@ -41,6 +41,13 @@ namespace ByteShelf.Server.Storage.Services
         }
 
         /// <inheritdoc />
+        public async Task<Shelf> GetByIdAsync(Guid id)
+        {
+            return await _shelfRepository.GetByIdAsync(id)
+                ?? throw new NotFoundException($"There is no shelf {id}.");
+        }
+
+        /// <inheritdoc />
         public async Task<IReadOnlyList<ShelfInfo>> GetInfosAsync(IReadOnlyList<Shelf> shelves)
         {
             await using (IDbSession session = await _sessionFactory.CreateSessionAsync())

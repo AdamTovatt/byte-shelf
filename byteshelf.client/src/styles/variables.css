@@ -1,0 +1,38 @@
+/* CSS Custom Properties */
+@property --angle {
+    syntax: "<angle>";
+    initial-value: 53deg;
+    inherits: false;
+}
+
+:root {
+    /*
+     * Brand palette tokens — must stay in sync with src/lib/colors.ts.
+     * Exposed as CSS custom properties so raw CSS (gradients, keyframes,
+     * pseudo-elements) can reference the design system palette.
+     */
+    --brand: #a485d0;              /* gradient/decorative */
+    --brand-light: #b495d9;        /* colors.brand.tint */
+    --brand-dark: #7b5aab;         /* gradient/decorative */
+    --brand-extra-light: #d1bae8;  /* gradient/decorative */
+    --brand-rgb: 164, 133, 208;    /* RGB of --brand for rgba() usage */
+    --brand-light-rgb: 180, 149, 217; /* RGB of --brand-light for rgba() usage */
+
+    /* Theme-aware focus glow (used by Tailwind shadow-focus-glow token) */
+    --focus-glow-color: rgba(0, 0, 0, 0.08);
+
+    /* Brand gradient - used in inline styles */
+    --brand-gradient: linear-gradient(135deg, var(--brand) 0%, var(--brand-light) 100%);
+
+
+    /* Border colors (values from colors.ts) */
+    --border-light: #E3E3E5;
+    --border-dark: #313344;
+
+}
+
+.dark {
+    /* Theme-aware focus glow */
+    --focus-glow-color: rgba(255, 255, 255, 0.08);
+
+}

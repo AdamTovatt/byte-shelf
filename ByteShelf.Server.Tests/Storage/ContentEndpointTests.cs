@@ -64,6 +64,24 @@ namespace ByteShelf.Server.Tests.Storage
             Assert.StartsWith("sandbox", Assert.Single(response.Headers.GetValues("Content-Security-Policy")), StringComparison.Ordinal);
         }
 
+        /// <summary>
+        /// Chrome's PDF viewer does not run under the sandbox, so a PDF goes without it; nosniff is
+        /// what keeps a page labelled PDF from running as a page.
+        /// </summary>
+        [Theory]
+        [InlineData("application/pdf")]
+        [InlineData("Application/PDF")]
+        public async Task Get_Pdf_IsServedUnsandboxedButUnsniffed(string contentType)
+        {
+            await PutAsync("/page.pdf", "<script>alert(1)</script>", contentType);
+
+            HttpResponseMessage response = await _host.AdminClient.GetAsync("/api/shelves/docs/content?path=/page.pdf");
+
+            Assert.Equal("application/pdf", response.Content.Headers.ContentType?.MediaType, ignoreCase: true);
+            Assert.Equal("nosniff", Assert.Single(response.Headers.GetValues("X-Content-Type-Options")));
+            Assert.False(response.Headers.Contains("Content-Security-Policy"));
+        }
+
         [Fact]
         public async Task Get_IfNoneMatchCurrentHash_ReturnsNotModified()
         {

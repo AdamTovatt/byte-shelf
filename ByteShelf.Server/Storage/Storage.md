@@ -31,7 +31,8 @@ path that is not allowed is a 400.
 | `POST directories` | Creates the directory at the body's `path` and any missing one above it; an existing one is answered as it is. |
 | `POST directories/move?path=` | Moves or renames a directory with everything in it to the body's `toPath`. 400 for the root, a destination of `/` or inside itself, or one that would make a path under it longer than `ShelfPath.MaxPathLength`; 409 when the path is taken. |
 | `DELETE directories?path=` | Moves a directory and everything live under it to the trash as one deletion; 400 for the root. |
-| `GET content?path=` | Streams the contents; `Range`, `If-None-Match` and `If-Range` work, the ETag is the SHA-256. Served with `X-Content-Type-Options: nosniff` and a sandboxing `Content-Security-Policy`. `download=true` adds a file name. |
+| `GET content?path=` | Streams the contents; `Range`, `If-None-Match` and `If-Range` work, the ETag is the SHA-256. Served with `X-Content-Type-Options: nosniff` and, except for a PDF (Chrome's viewer does not run sandboxed), a sandboxing `Content-Security-Policy`. `download=true` adds a file name. |
+| `POST download-link?path=` | A link to the contents that works without a token for 5 minutes, for a browser to open or save (see below). |
 | `PUT content?path=&overwrite=` | Stores the body in one request. Needs `Content-Length` (411 without); the `Content-Type` is stored. 409 when the path is taken and `overwrite` is not set, 507 over quota. |
 | `POST uploads` | Starts a resumable upload with its size; reserves it against the quota. |
 | `GET uploads/{id}` | Progress: `receivedBytes` is where the next chunk starts. |
@@ -41,6 +42,15 @@ path that is not allowed is a 400.
 | `GET trash` | Deletions still inside the restore window, newest first. |
 | `POST trash/{deletionId}/restore` | Puts a deletion back where it was. |
 | `DELETE trash` | Empties the trash: everything in it is purged now, its objects too, and can no longer be restored. |
+
+## Download links (`DownloadLinks`)
+
+A plain link or an image's source cannot carry a token, so the web UI asks for a link first.
+`/api/downloads/{token}` serves the contents as `GET content` does, `download=true` included, to
+anyone holding the token until it runs out. The token names the shelf and the file by id and when it
+runs out, signed with HMAC-SHA256 by `keys/download-link-secret`; an altered or expired one, or one
+whose file has since gone to the trash, answers 404. A link keeps working until it runs out even if
+the access it was made with is taken away meanwhile.
 
 ## Uploads (`UploadService`)
 

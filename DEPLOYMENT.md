@@ -1,7 +1,8 @@
 # Deploying ByteShelf
 
 ByteShelf is installed and updated with updaemon: `dotnet publish ByteShelf.Server` produces the
-executable with its `updaemon.json`, which names it. The server needs one writable folder, the
+executable with its `updaemon.json`, which names it, and the web UI's build in `wwwroot/`. Publishing
+builds the web UI, so it needs Node.js and npm. The running server needs one writable folder, the
 root, and nothing else on disk.
 
 ## Environment variables
@@ -16,8 +17,9 @@ root, and nothing else on disk.
 | `BYTESHELF_TRUSTED_PROXIES` | behind a proxy | Comma-separated IPs or CIDR ranges of the reverse proxies in front of the server. Their `X-Forwarded-For` and `X-Forwarded-Proto` are believed, so rate limits and the sign-in delay count each client rather than the proxy. Loopback is always trusted. |
 | `ASPNETCORE_URLS` | no | Where Kestrel listens. |
 
-The JWT signing secret is generated into `keys/jwt-secret` on first start, readable by the owner
-only. It travels with the root, so a copied or restored root keeps its sign-ins.
+Two secrets are generated into `keys/` on first start, readable by the owner only: `jwt-secret`
+signs sign-ins, `download-link-secret` signs the web UI's short-lived download links. They travel
+with the root, so a copied or restored root keeps its sign-ins and links.
 
 ## Behind a reverse proxy
 
