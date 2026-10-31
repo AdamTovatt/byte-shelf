@@ -11,5 +11,8 @@ namespace ByteShelf.Server.Jobs.Models
 
         /// <summary>Deletes expired refresh and password-reset tokens.</summary>
         public const string ExpiredTokenCleanup = "users.expired_token_cleanup";
+
+        /// <summary>Drops old change-log entries a newer one supersedes, and old removals.</summary>
+        public const string ChangeLogCompaction = "change_log.compaction";
     }
 }

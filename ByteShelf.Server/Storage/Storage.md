@@ -8,8 +8,9 @@ cleanup. Shelves themselves are described in [Shelves.md](Shelves.md).
 - **Objects** (`ObjectStore`): every distinct content is one plain file at
   `objects/ab/cd/<sha256>`, written once and never modified. `sha256sum` verifies any of them,
   and identical contents are stored once however many files point at them.
-- **Staging** (`StagingArea`): the bytes of an upload in progress, at `staging/<upload id>`. It is
-  in the root next to `objects/`, so finishing an upload is a rename.
+- **Staging** (`StagingArea`): the bytes of an upload in progress, at `staging/<upload id>`, and on
+  a replica the bytes of a file being fetched from the primary until their hash is checked. It is in
+  the root next to `objects/`, so placing an object is a rename.
 - **Rows**: `directory`, `file` and `upload` in the database. A file row points at its object by
   hash. Files and directories share one namespace per directory. Names are stored in Unicode
   normalization form C.
@@ -89,13 +90,18 @@ longer than `ShelfPath.MaxPathLength`, since such a path could no longer be name
 
 An object is removed only when no row, live or trashed, points at it. Both sides of that question
 hold the object's lock (`ObjectStore.LockAsync`): a finishing upload from placing the object until
-its row commits, a removal from checking for rows until the file is gone.
+its row commits, a removal from checking for rows until the file is gone. A replica's sync places
+objects for rows it commits later, after a whole page has arrived; it holds `MaintenanceGate` for the
+whole step instead, which keeps maintenance, and so every removal, away until those rows commit
+([Replication](../Replication/Replication.md)).
 
 ## Maintenance (`StorageMaintenanceWorker`)
 
 At startup and then hourly, recorded in `job_run` as `storage.maintenance`: removes uploads idle for
 24 hours, single-`PUT` uploads started before the process (their request did not survive the
 restart), staging entries with no upload, the trash past its window, and objects no row points at.
+A pass holds `MaintenanceGate` throughout, so on a replica it waits for a sync step (a whole copy
+included) to finish, and the next step waits for it.
 
 ## Change log
 

@@ -74,3 +74,11 @@ users, and does nothing once there are, so both can be removed after the first s
 
 `ExpiredTokenCleanupWorker` deletes expired refresh and reset tokens at startup and then daily,
 recorded as `users.expired_token_cleanup`.
+
+## On a replica
+
+A replica's users are its primary's, taken whole when it pairs (the ones it had are removed, and their
+sessions end), so people sign in there with their accounts on the primary. Signing in, renewing and
+signing out work as anywhere; every change to accounts, passwords and roles is refused with 409
+`read_only_replica` ([Replication](../Replication/Replication.md)). Sessions are the replica's own: a
+session on the primary does not carry over.

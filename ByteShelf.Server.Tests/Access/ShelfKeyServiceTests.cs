@@ -1,6 +1,7 @@
 using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Access.Services;
 using ByteShelf.Server.ChangeLog.Models;
+using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
@@ -56,7 +57,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task FindBySecretAsync_SecretOfNoKey_ReturnsNull()
         {
-            Assert.Null(await KeyService.FindBySecretAsync(ShelfKeySecrets.Generate()));
+            Assert.Null(await KeyService.FindBySecretAsync(RandomSecret.Generate(ShelfKeys.SecretPrefix)));
         }
 
         [Fact]

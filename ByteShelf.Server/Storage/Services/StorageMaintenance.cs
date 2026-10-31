@@ -13,6 +13,7 @@ namespace ByteShelf.Server.Storage.Services
         private readonly ObjectStore _objectStore;
         private readonly UploadLocks _uploadLocks;
         private readonly StorageOptions _options;
+        private readonly MaintenanceGate _maintenanceGate;
         private readonly TimeProvider _timeProvider;
 
         public StorageMaintenance(
@@ -23,6 +24,7 @@ namespace ByteShelf.Server.Storage.Services
             ObjectStore objectStore,
             UploadLocks uploadLocks,
             StorageOptions options,
+            MaintenanceGate maintenanceGate,
             TimeProvider timeProvider)
         {
             _uploadRepository = uploadRepository;
@@ -32,12 +34,15 @@ namespace ByteShelf.Server.Storage.Services
             _objectStore = objectStore;
             _uploadLocks = uploadLocks;
             _options = options;
+            _maintenanceGate = maintenanceGate;
             _timeProvider = timeProvider;
         }
 
         /// <inheritdoc />
         public async Task<StorageMaintenanceSummary> RunAsync(DateTimeOffset processStartedAt, CancellationToken cancellationToken)
         {
+            using IDisposable gate = await _maintenanceGate.EnterAsync(cancellationToken);
+
             int abandonedUploads = await RemoveAbandonedUploadsAsync(processStartedAt, cancellationToken);
             int strayStagingEntries = await RemoveStrayStagingEntriesAsync();
             int purgedFiles = await _trashService.PurgeExpiredAsync(cancellationToken);

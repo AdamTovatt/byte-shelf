@@ -7,8 +7,8 @@ Run history for background work, so the `job_run` table tells what ran, when, an
 Derive from `PeriodicJobWorker<TSummary>`: give it a name from `JobNames` (`domain.job`), an
 interval, and the work for one pass. It runs at startup and then after every interval, each pass in
 a scope of its own and recorded through `IJobRunRecorder`; a failed pass is recorded and logged, and
-the next one runs on schedule. The jobs are `storage.maintenance` (hourly) and
-`users.expired_token_cleanup` (daily).
+the next one runs on schedule. The jobs are `storage.maintenance` (hourly),
+`users.expired_token_cleanup` (daily) and `change_log.compaction` (daily).
 
 ## Recording
 

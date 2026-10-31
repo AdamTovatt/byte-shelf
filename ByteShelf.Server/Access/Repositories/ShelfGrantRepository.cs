@@ -2,6 +2,7 @@ using System.Data.Common;
 using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
+using ByteShelf.Server.Shared.Database;
 using EasyReasy.Database;
 using EasyReasy.Database.Mapping;
 
@@ -16,6 +17,12 @@ namespace ByteShelf.Server.Access.Repositories
             g.permission,
             g.created_at AS {nameof(ShelfGrantEntity.CreatedAt)},
             g.updated_at AS {nameof(ShelfGrantEntity.UpdatedAt)}";
+
+        private const string InsertSql = @"
+            INSERT INTO shelf_grant (id, shelf_id, user_id, permission, created_at, updated_at)
+            VALUES (@Id, @ShelfId, @UserId, @Permission, @CreatedAt, @UpdatedAt)";
+
+        private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict(InsertSql);
 
         private readonly IChangeLogRepository _changeLog;
 
@@ -78,17 +85,7 @@ namespace ByteShelf.Server.Access.Repositories
         /// <inheritdoc />
         public async Task InsertAsync(ShelfGrant grant, IDbSession session)
         {
-            string permission = PermissionColumns.ToColumn(grant.Permission);
-
-            string query = $@"
-                INSERT INTO shelf_grant (id, shelf_id, user_id, permission, created_at, updated_at)
-                VALUES (@Id, @ShelfId, @UserId, @{nameof(permission)}, @CreatedAt, @UpdatedAt)";
-
-            await session.Connection.ExecuteAsync(
-                query,
-                new { grant.Id, grant.ShelfId, grant.UserId, permission, grant.CreatedAt, grant.UpdatedAt },
-                transaction: session.Transaction);
-
+            await session.Connection.ExecuteAsync(InsertSql, Parameters(grant), transaction: session.Transaction);
             await _changeLog.AppendAsync(ChangeEntityType.ShelfGrant, grant.Id, ChangeAction.Added, grant, grant.CreatedAt, session);
         }
 
@@ -127,6 +124,36 @@ namespace ByteShelf.Server.Access.Repositories
         {
             string query = $"DELETE FROM shelf_grant WHERE user_id = @{nameof(userId)} RETURNING id";
             await _changeLog.DeleteAndLogAsync(ChangeEntityType.ShelfGrant, query, new { userId }, deletedAt, session);
+        }
+
+        /// <inheritdoc />
+        public async Task UpsertReplicatedAsync(ShelfGrant grant, string action, DateTimeOffset at, IDbSession session)
+        {
+            string asideQuery = "DELETE FROM shelf_grant WHERE shelf_id = @ShelfId AND user_id = @UserId AND id <> @Id RETURNING id";
+            await _changeLog.DeleteAndLogAsync(ChangeEntityType.ShelfGrant, asideQuery, new { grant.ShelfId, grant.UserId, grant.Id }, at, session);
+
+            await session.Connection.ExecuteAsync(UpsertReplicatedSql, Parameters(grant), transaction: session.Transaction);
+            await _changeLog.AppendAsync(ChangeEntityType.ShelfGrant, grant.Id, action, grant, at, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<bool> DeleteByIdAsync(Guid id, DateTimeOffset deletedAt, IDbSession session)
+        {
+            string query = $"DELETE FROM shelf_grant WHERE id = @{nameof(id)} RETURNING id";
+            return await _changeLog.DeleteAndLogAsync(ChangeEntityType.ShelfGrant, query, new { id }, deletedAt, session) > 0;
+        }
+
+        private static object Parameters(ShelfGrant grant)
+        {
+            return new
+            {
+                grant.Id,
+                grant.ShelfId,
+                grant.UserId,
+                Permission = PermissionColumns.ToColumn(grant.Permission),
+                grant.CreatedAt,
+                grant.UpdatedAt,
+            };
         }
 
         internal class ShelfGrantEntity

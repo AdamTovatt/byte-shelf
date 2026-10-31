@@ -64,3 +64,9 @@ Deleting a shelf removes its grants and keys; deleting a user removes their gran
 
 Grants (`shelf_grant`) and keys (`shelf_key`, with the hash of the secret) are logged like every other
 change, in the same transaction.
+
+## On a replica
+
+A replica holds its primary's grants and keys, so a key made on the primary works on the replica too,
+but only to read: every write there is refused with 409 `read_only_replica`, and so is changing grants
+or keys ([Replication](../Replication/Replication.md)).

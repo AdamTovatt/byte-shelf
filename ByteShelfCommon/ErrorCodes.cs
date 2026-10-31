@@ -32,5 +32,8 @@ namespace ByteShelfCommon
 
         /// <summary>The server is a replica and refuses writes.</summary>
         public const string ReadOnlyReplica = "read_only_replica";
+
+        /// <summary>A replica's primary could not be reached, or what it answered could not be used.</summary>
+        public const string PrimaryFailed = "primary_failed";
     }
 }

@@ -67,12 +67,13 @@ dotnet run --project ByteShelf.Cli -- shelves
 
 ## Documentation
 
-- [DEPLOYMENT.md](DEPLOYMENT.md): environment variables, reverse proxy, backups.
+- [DEPLOYMENT.md](DEPLOYMENT.md): environment variables, reverse proxy, replicas, backups.
 - Server domains: [Storage](ByteShelf.Server/Storage/Storage.md), [Shelves](ByteShelf.Server/Storage/Shelves.md),
   [Access](ByteShelf.Server/Access/Access.md), [Change log](ByteShelf.Server/ChangeLog/ChangeLog.md),
   [Users](ByteShelf.Server/Users/Users.md),
   [Jobs](ByteShelf.Server/Jobs/Jobs.md), [Email](ByteShelf.Server/Email/Email.md),
-  [Invalidation](ByteShelf.Server/Invalidation/Invalidation.md), [Version](ByteShelf.Server/Version/Version.md).
+  [Invalidation](ByteShelf.Server/Invalidation/Invalidation.md), [Version](ByteShelf.Server/Version/Version.md),
+  [Replication](ByteShelf.Server/Replication/Replication.md).
 - [ByteShelfCommon](ByteShelfCommon/README.md), [ByteShelfClient](ByteShelfClient/README.md),
   [the CLI and MCP server](ByteShelf.Cli/README.md), [the web UI](byteshelf.client/README.md).
 

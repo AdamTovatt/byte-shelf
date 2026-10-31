@@ -25,7 +25,7 @@ namespace ByteShelf.Server.Tests.Users
         {
             User user = NewUser("roundtrip@example.com", UserRoles.Admin);
 
-            await _repository.InsertAsync(user, TestInstants.Now, Session);
+            await _repository.InsertAsync(user, Session);
             User? fetched = await _repository.GetByIdAsync(user.Id, Session);
 
             Assert.NotNull(fetched);
@@ -37,10 +37,10 @@ namespace ByteShelf.Server.Tests.Users
         [Fact]
         public async Task InsertAsync_DuplicateEmailDifferentCase_ThrowsUniqueViolation()
         {
-            await _repository.InsertAsync(NewUser("casetest@example.com"), TestInstants.Now, Session);
+            await _repository.InsertAsync(NewUser("casetest@example.com"), Session);
 
             SqliteException exception = await Assert.ThrowsAsync<SqliteException>(
-                () => _repository.InsertAsync(NewUser("CaseTest@Example.com"), TestInstants.Now, Session));
+                () => _repository.InsertAsync(NewUser("CaseTest@Example.com"), Session));
 
             Assert.True(SqliteUniqueViolation.Is(exception));
         }
@@ -49,7 +49,7 @@ namespace ByteShelf.Server.Tests.Users
         public async Task UpdateRolesAsync_ExistingUser_ReplacesRoles()
         {
             User user = NewUser("roles@example.com");
-            await _repository.InsertAsync(user, TestInstants.Now, Session);
+            await _repository.InsertAsync(user, Session);
 
             bool updated = await _repository.UpdateRolesAsync(user.Id, new[] { UserRoles.Admin }, TestInstants.Now, Session);
 
@@ -60,8 +60,8 @@ namespace ByteShelf.Server.Tests.Users
         [Fact]
         public async Task CountWithRoleAsync_CountsOnlyHoldersOfTheRole()
         {
-            await _repository.InsertAsync(NewUser("admin@example.com", UserRoles.Admin), TestInstants.Now, Session);
-            await _repository.InsertAsync(NewUser("plain@example.com"), TestInstants.Now, Session);
+            await _repository.InsertAsync(NewUser("admin@example.com", UserRoles.Admin), Session);
+            await _repository.InsertAsync(NewUser("plain@example.com"), Session);
 
             Assert.Equal(1, await _repository.CountWithRoleAsync(UserRoles.Admin, Session));
             Assert.Equal(2, await _repository.GetCountAsync(Session));
@@ -71,7 +71,7 @@ namespace ByteShelf.Server.Tests.Users
         public async Task GetByIdAsync_RolesColumnDamaged_Throws()
         {
             User user = NewUser("damaged@example.com");
-            await _repository.InsertAsync(user, TestInstants.Now, Session);
+            await _repository.InsertAsync(user, Session);
             await ExecuteAsync(Session, "UPDATE user_account SET roles = 'not json'");
 
             await Assert.ThrowsAsync<InvalidOperationException>(() => _repository.GetByIdAsync(user.Id, Session));
@@ -79,7 +79,7 @@ namespace ByteShelf.Server.Tests.Users
 
         private static User NewUser(string email, params string[] roles)
         {
-            return new User { Id = Guid.NewGuid(), Email = email, DisplayName = "Name", Roles = roles };
+            return new User { Id = Guid.NewGuid(), Email = email, DisplayName = "Name", Roles = roles, CreatedAt = TestInstants.Now, UpdatedAt = TestInstants.Now };
         }
 
         private static async Task ExecuteAsync(IDbSession session, string sql)

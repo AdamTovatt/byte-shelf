@@ -85,8 +85,8 @@ namespace ByteShelf.Server.Tests.Users
 
         private async Task<Guid> CreateUserAsync()
         {
-            User user = new User { Id = Guid.NewGuid(), Email = "reset@example.com", DisplayName = "Reset", Roles = Array.Empty<string>() };
-            await _userRepository.InsertAsync(user, TestInstants.Now, Session);
+            User user = new User { Id = Guid.NewGuid(), Email = "reset@example.com", DisplayName = "Reset", Roles = Array.Empty<string>(), CreatedAt = TestInstants.Now, UpdatedAt = TestInstants.Now };
+            await _userRepository.InsertAsync(user, Session);
             return user.Id;
         }
 

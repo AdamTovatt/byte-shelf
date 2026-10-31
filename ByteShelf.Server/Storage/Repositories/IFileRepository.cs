@@ -44,5 +44,15 @@ namespace ByteShelf.Server.Storage.Repositories
 
         /// <summary>Whether any row, live or trashed, points at the object <paramref name="sha256"/>.</summary>
         Task<bool> IsObjectReferencedAsync(string sha256, IDbSession? session = null);
+
+        /// <summary>
+        /// Writes a file as a primary's change log holds it, logged as <paramref name="action"/>. A
+        /// different live file at the same place is moved to the trash first; the log brings it back
+        /// where it belongs if it still exists.
+        /// </summary>
+        Task UpsertReplicatedAsync(FileRecord file, string action, DateTimeOffset at, IDbSession session);
+
+        /// <summary>Removes every file of a shelf, trash included, for removing the shelf.</summary>
+        Task PurgeForShelfAsync(Guid shelfId, DateTimeOffset purgedAt, IDbSession session);
     }
 }

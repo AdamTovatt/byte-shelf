@@ -78,6 +78,8 @@ namespace ByteShelf.Server.Shared.Middleware
                 NotFoundException => (HttpStatusCode.NotFound, exception.Message, ErrorCodes.NotFound),
                 PermissionDeniedException => (HttpStatusCode.Forbidden, exception.Message, ErrorCodes.PermissionDenied),
                 ConflictException => (HttpStatusCode.Conflict, exception.Message, ErrorCodes.Conflict),
+                ReadOnlyReplicaException => (HttpStatusCode.Conflict, exception.Message, ErrorCodes.ReadOnlyReplica),
+                PrimaryFailedException => (HttpStatusCode.BadGateway, exception.Message, ErrorCodes.PrimaryFailed),
                 QuotaExceededException => (HttpStatusCode.InsufficientStorage, exception.Message, ErrorCodes.QuotaExceeded),
                 LengthRequiredException => (HttpStatusCode.LengthRequired, exception.Message, ErrorCodes.InvalidRequest),
 

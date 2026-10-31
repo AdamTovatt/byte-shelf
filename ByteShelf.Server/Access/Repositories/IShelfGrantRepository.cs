@@ -28,5 +28,15 @@ namespace ByteShelf.Server.Access.Repositories
 
         /// <summary>Removes every grant the user holds, for deleting them.</summary>
         Task DeleteForUserAsync(Guid userId, DateTimeOffset deletedAt, IDbSession session);
+
+        /// <summary>
+        /// Writes a grant as a primary's change log holds it, logged as <paramref name="action"/>. A
+        /// different grant for the same shelf and user is removed first: the log brings it back if it
+        /// still exists.
+        /// </summary>
+        Task UpsertReplicatedAsync(ShelfGrant grant, string action, DateTimeOffset at, IDbSession session);
+
+        /// <summary>Removes a grant by id; false when there is none.</summary>
+        Task<bool> DeleteByIdAsync(Guid id, DateTimeOffset deletedAt, IDbSession session);
     }
 }

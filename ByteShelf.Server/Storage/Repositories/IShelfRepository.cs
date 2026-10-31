@@ -25,5 +25,11 @@ namespace ByteShelf.Server.Storage.Repositories
 
         /// <summary>What counts against the shelf's quota right now.</summary>
         Task<ShelfUsage> GetUsageAsync(Guid shelfId, IDbSession? session = null);
+
+        /// <summary>
+        /// Writes a shelf as a primary's change log holds it, logged as <paramref name="action"/>. A
+        /// different shelf with the same name has it set aside first; the log gives it its own back.
+        /// </summary>
+        Task UpsertReplicatedAsync(Shelf shelf, string action, DateTimeOffset at, IDbSession session);
     }
 }

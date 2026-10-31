@@ -1,5 +1,6 @@
 using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Access.Repositories;
+using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
@@ -44,14 +45,14 @@ namespace ByteShelf.Server.Access.Services
                 throw new ArgumentException($"'{permission}' is not a shelf key permission.");
             }
 
-            string secret = ShelfKeySecrets.Generate();
+            string secret = RandomSecret.Generate(ShelfKeys.SecretPrefix);
             ShelfKey key = new ShelfKey
             {
                 Id = Guid.NewGuid(),
                 ShelfId = shelf.Id,
                 Name = trimmedName,
                 Permission = permission,
-                SecretSha256 = ShelfKeySecrets.Hash(secret),
+                SecretSha256 = SecretHash.Sha256Hex(secret),
                 CreatedAt = _timeProvider.GetUtcNow(),
             };
 
@@ -86,7 +87,7 @@ namespace ByteShelf.Server.Access.Services
         /// <inheritdoc />
         public async Task<ShelfKey?> FindBySecretAsync(string secret)
         {
-            return await _keyRepository.GetBySecretSha256Async(ShelfKeySecrets.Hash(secret));
+            return await _keyRepository.GetBySecretSha256Async(SecretHash.Sha256Hex(secret));
         }
     }
 }

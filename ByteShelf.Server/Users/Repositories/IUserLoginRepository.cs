@@ -16,5 +16,15 @@ namespace ByteShelf.Server.Users.Repositories
 
         /// <summary>Removes every login of the user, for deleting them.</summary>
         Task DeleteForUserAsync(Guid userId, DateTimeOffset deletedAt, IDbSession session);
+
+        /// <summary>
+        /// Writes a login as a primary's change log holds it, logged as <paramref name="action"/>. A
+        /// different login taking the same provider identity, or the same user's provider, is removed
+        /// first: the log brings it back if it still exists.
+        /// </summary>
+        Task UpsertReplicatedAsync(UserLogin login, string action, DateTimeOffset at, IDbSession session);
+
+        /// <summary>Removes a login by id; false when there is none.</summary>
+        Task<bool> DeleteByIdAsync(Guid id, DateTimeOffset deletedAt, IDbSession session);
     }
 }

@@ -17,6 +17,15 @@ namespace ByteShelf.Server.Access.Repositories
         /// <summary>Removes one of the shelf's keys. False when the shelf has no such key.</summary>
         Task<bool> DeleteAsync(Guid shelfId, Guid keyId, DateTimeOffset deletedAt, IDbSession session);
 
+        /// <summary>
+        /// Writes a key as a primary's change log holds it, logged as <paramref name="action"/>. A
+        /// different key with the same secret is removed first: the log brings it back if it still exists.
+        /// </summary>
+        Task UpsertReplicatedAsync(ShelfKey key, string action, DateTimeOffset at, IDbSession session);
+
+        /// <summary>Removes a key by id; false when there is none.</summary>
+        Task<bool> DeleteByIdAsync(Guid id, DateTimeOffset deletedAt, IDbSession session);
+
         /// <summary>Removes every key of the shelf, for deleting it.</summary>
         Task DeleteForShelfAsync(Guid shelfId, DateTimeOffset deletedAt, IDbSession session);
     }

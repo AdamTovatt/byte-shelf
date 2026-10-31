@@ -1,6 +1,7 @@
 using System.Data.Common;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
+using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Users.Models;
 using EasyReasy.Database;
 using EasyReasy.Database.Mapping;
@@ -17,7 +18,18 @@ namespace ByteShelf.Server.Users.Repositories
             id,
             email,
             display_name AS {nameof(UserEntity.DisplayName)},
-            roles AS {nameof(UserEntity.RolesJson)}";
+            roles AS {nameof(UserEntity.RolesJson)},
+            created_at AS {nameof(UserEntity.CreatedAt)},
+            updated_at AS {nameof(UserEntity.UpdatedAt)}";
+
+        private const string InsertSql = @"
+            INSERT INTO user_account (id, email, display_name, roles, created_at, updated_at)
+            VALUES (@Id, @Email, @DisplayName, @Roles, @CreatedAt, @UpdatedAt)";
+
+        private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict(InsertSql);
+
+        /// <summary>What a user's email becomes, after their id, while a replicated user takes it over.</summary>
+        private const string SetAsideEmailDomain = "@set-aside.invalid";
 
         private readonly IChangeLogRepository _changeLog;
 
@@ -56,20 +68,10 @@ namespace ByteShelf.Server.Users.Repositories
         }
 
         /// <inheritdoc />
-        public async Task InsertAsync(User user, DateTimeOffset createdAt, IDbSession session)
+        public async Task InsertAsync(User user, IDbSession session)
         {
-            string rolesJson = RolesJsonParser.Serialize(user.Roles);
-
-            string query = $@"
-                INSERT INTO user_account (id, email, display_name, roles, created_at, updated_at)
-                VALUES (@Id, @Email, @DisplayName, @{nameof(rolesJson)}, @{nameof(createdAt)}, @{nameof(createdAt)})";
-
-            await session.Connection.ExecuteAsync(
-                query,
-                new { user.Id, user.Email, user.DisplayName, rolesJson, createdAt },
-                transaction: session.Transaction);
-
-            await _changeLog.AppendAsync(ChangeEntityType.User, user.Id, ChangeAction.Added, user, createdAt, session);
+            await session.Connection.ExecuteAsync(InsertSql, Parameters(user), transaction: session.Transaction);
+            await _changeLog.AppendAsync(ChangeEntityType.User, user.Id, ChangeAction.Added, user, user.CreatedAt, session);
         }
 
         /// <inheritdoc />
@@ -103,6 +105,29 @@ namespace ByteShelf.Server.Users.Repositories
         }
 
         /// <inheritdoc />
+        public async Task UpsertReplicatedAsync(User user, string action, DateTimeOffset at, IDbSession session)
+        {
+            // Set aside, not removed: the other user keeps their logins and grants until the log says
+            // what became of them.
+            string asideQuery = $@"
+                UPDATE user_account
+                SET email = id || '{SetAsideEmailDomain}', updated_at = @{nameof(at)}
+                WHERE LOWER(email) = LOWER(@Email) AND id <> @Id
+                RETURNING {SelectColumns}";
+
+            IEnumerable<UserEntity> setAside = await session.Connection.QueryAsync<UserEntity>(
+                asideQuery, new { user.Email, user.Id, at }, transaction: session.Transaction);
+
+            foreach (UserEntity aside in setAside)
+            {
+                await _changeLog.AppendAsync(ChangeEntityType.User, aside.Id, ChangeAction.Updated, aside.ToDomain(), at, session);
+            }
+
+            await session.Connection.ExecuteAsync(UpsertReplicatedSql, Parameters(user), transaction: session.Transaction);
+            await _changeLog.AppendAsync(ChangeEntityType.User, user.Id, action, user, at, session);
+        }
+
+        /// <inheritdoc />
         public async Task<int> GetCountAsync(IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>
@@ -127,12 +152,27 @@ namespace ByteShelf.Server.Users.Repositories
             }, session);
         }
 
+        private static object Parameters(User user)
+        {
+            return new
+            {
+                user.Id,
+                user.Email,
+                user.DisplayName,
+                Roles = RolesJsonParser.Serialize(user.Roles),
+                user.CreatedAt,
+                user.UpdatedAt,
+            };
+        }
+
         internal class UserEntity
         {
             public Guid Id { get; set; }
             public string Email { get; set; } = string.Empty;
             public string DisplayName { get; set; } = string.Empty;
             public string RolesJson { get; set; } = string.Empty;
+            public DateTimeOffset CreatedAt { get; set; }
+            public DateTimeOffset UpdatedAt { get; set; }
 
             public User ToDomain()
             {
@@ -142,6 +182,8 @@ namespace ByteShelf.Server.Users.Repositories
                     Email = Email,
                     DisplayName = DisplayName,
                     Roles = RolesJsonParser.Parse(RolesJson),
+                    CreatedAt = CreatedAt,
+                    UpdatedAt = UpdatedAt,
                 };
             }
         }

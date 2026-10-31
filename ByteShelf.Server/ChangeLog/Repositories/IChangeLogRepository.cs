@@ -22,7 +22,29 @@ namespace ByteShelf.Server.ChangeLog.Repositories
         /// <summary>The entries after <paramref name="afterSequence"/>, oldest first, at most <paramref name="limit"/>.</summary>
         Task<IReadOnlyList<ChangeLogEntry>> GetAfterAsync(long afterSequence, int limit, IDbSession? session = null);
 
-        /// <summary>The newest sequence number, or 0 when the log is empty.</summary>
+        /// <summary>The newest sequence number ever given, or 0 before the first entry; compaction never lowers it.</summary>
         Task<long> GetLatestSequenceAsync(IDbSession? session = null);
+
+        /// <summary>
+        /// The newest entry of each entity that still exists, oldest first, after <paramref name="afterSequence"/>
+        /// and at most <paramref name="limit"/>: a whole copy of the state, read page by page.
+        /// </summary>
+        Task<IReadOnlyList<ChangeLogEntry>> GetLatestStatesAfterAsync(long afterSequence, int limit, IDbSession? session = null);
+
+        /// <summary>
+        /// Compacts the log: drops entries made before <paramref name="before"/> that a newer entry for the
+        /// same entity supersedes, and removals made before it, in <paramref name="session"/>'s
+        /// transaction, and records the highest sequence dropped. Answers how many were dropped.
+        /// </summary>
+        Task<int> CompactAsync(DateTimeOffset before, IDbSession session);
+
+        /// <summary>
+        /// The highest sequence compaction dropped. A follower behind it cannot replay the log: it may miss
+        /// a removal, or meet a row before the only entry left for the parent it names.
+        /// </summary>
+        Task<long> GetPrunedThroughAsync(IDbSession? session = null);
+
+        /// <summary>The entry numbered <paramref name="sequence"/>, or null when there is none (never made, or dropped).</summary>
+        Task<ChangeLogEntry?> GetBySequenceAsync(long sequence, IDbSession? session = null);
     }
 }

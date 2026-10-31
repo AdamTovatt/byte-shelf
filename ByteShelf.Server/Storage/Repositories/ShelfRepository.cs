@@ -17,6 +17,15 @@ namespace ByteShelf.Server.Storage.Repositories
             created_at AS {nameof(ShelfEntity.CreatedAt)},
             updated_at AS {nameof(ShelfEntity.UpdatedAt)}";
 
+        private const string InsertSql = @"
+            INSERT INTO shelf (id, name, quota_bytes, created_at, updated_at)
+            VALUES (@Id, @Name, @QuotaBytes, @CreatedAt, @UpdatedAt)";
+
+        private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict(InsertSql);
+
+        /// <summary>What a shelf's name becomes, before its id, while a replicated shelf takes the name over; '~' is in no shelf name.</summary>
+        private const string SetAsideNamePrefix = "~";
+
         private readonly IChangeLogRepository _changeLog;
 
         public ShelfRepository(DbDataSource dataSource, IDbSessionFactory sessionFactory, IChangeLogRepository changeLog)
@@ -70,16 +79,9 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <inheritdoc />
         public async Task<bool> TryInsertAsync(Shelf shelf, IDbSession session)
         {
-            string query = @"
-                INSERT INTO shelf (id, name, quota_bytes, created_at, updated_at)
-                VALUES (@Id, @Name, @QuotaBytes, @CreatedAt, @UpdatedAt)";
-
             try
             {
-                await session.Connection.ExecuteAsync(
-                    query,
-                    new { shelf.Id, shelf.Name, shelf.QuotaBytes, shelf.CreatedAt, shelf.UpdatedAt },
-                    transaction: session.Transaction);
+                await session.Connection.ExecuteAsync(InsertSql, Parameters(shelf), transaction: session.Transaction);
             }
             catch (DbException exception) when (SqliteUniqueViolation.Is(exception))
             {
@@ -141,6 +143,28 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
+        public async Task UpsertReplicatedAsync(Shelf shelf, string action, DateTimeOffset at, IDbSession session)
+        {
+            // Set aside under a name no shelf can be given, until the log names it again.
+            string asideQuery = $@"
+                UPDATE shelf
+                SET name = '{SetAsideNamePrefix}' || id, updated_at = @{nameof(at)}
+                WHERE name = @Name AND id <> @Id
+                RETURNING {SelectColumns}";
+
+            IEnumerable<ShelfEntity> setAside = await session.Connection.QueryAsync<ShelfEntity>(
+                asideQuery, new { shelf.Name, shelf.Id, at }, transaction: session.Transaction);
+
+            foreach (ShelfEntity aside in setAside)
+            {
+                await _changeLog.AppendAsync(ChangeEntityType.Shelf, aside.Id, ChangeAction.Updated, aside.ToDomain(), at, session);
+            }
+
+            await session.Connection.ExecuteAsync(UpsertReplicatedSql, Parameters(shelf), transaction: session.Transaction);
+            await _changeLog.AppendAsync(ChangeEntityType.Shelf, shelf.Id, action, shelf, at, session);
+        }
+
+        /// <inheritdoc />
         public async Task<ShelfUsage> GetUsageAsync(Guid shelfId, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>
@@ -161,6 +185,11 @@ namespace ByteShelf.Server.Storage.Repositories
                     FileCount = (int)entity.FileCount,
                 };
             }, session);
+        }
+
+        private static object Parameters(Shelf shelf)
+        {
+            return new { shelf.Id, shelf.Name, shelf.QuotaBytes, shelf.CreatedAt, shelf.UpdatedAt };
         }
 
         internal class ShelfEntity

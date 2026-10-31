@@ -182,6 +182,26 @@ namespace ByteShelf.Server.Tests.Invalidation
             {
                 throw new NotSupportedException();
             }
+
+            public Task<IReadOnlyList<ChangeLogEntry>> GetLatestStatesAfterAsync(long afterSequence, int limit, IDbSession? session = null)
+            {
+                throw new NotSupportedException();
+            }
+
+            public Task<int> CompactAsync(DateTimeOffset before, IDbSession session)
+            {
+                throw new NotSupportedException();
+            }
+
+            public Task<long> GetPrunedThroughAsync(IDbSession? session = null)
+            {
+                throw new NotSupportedException();
+            }
+
+            public Task<ChangeLogEntry?> GetBySequenceAsync(long sequence, IDbSession? session = null)
+            {
+                throw new NotSupportedException();
+            }
         }
 
         private sealed class RecordingBroadcaster : IInvalidationBroadcaster

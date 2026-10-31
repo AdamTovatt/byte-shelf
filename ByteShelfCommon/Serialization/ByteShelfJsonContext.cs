@@ -42,6 +42,10 @@ namespace ByteShelfCommon.Serialization
     [JsonSerializable(typeof(SignInRequest))]
     [JsonSerializable(typeof(SessionTokens))]
     [JsonSerializable(typeof(RefreshTokenRequest))]
+    [JsonSerializable(typeof(ReplicationStatus))]
+    [JsonSerializable(typeof(PairWithPrimaryRequest))]
+    [JsonSerializable(typeof(PairingCodeResponse))]
+    [JsonSerializable(typeof(PromoteResponse))]
     public sealed partial class ByteShelfJsonContext : JsonSerializerContext
     {
     }

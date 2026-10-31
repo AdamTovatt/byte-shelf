@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Tests.TestUtilities;
-using ByteShelf.Server.Users.Models;
 using ByteShelfCommon;
 
 namespace ByteShelf.Server.Tests.Users
@@ -25,7 +24,7 @@ namespace ByteShelf.Server.Tests.Users
         [Fact]
         public async Task GetMe_SignedIn_ReturnsThatUser()
         {
-            User? me = await _host.MemberClient.GetFromJsonAsync<User>("/api/users/me");
+            UserInfo? me = await _host.MemberClient.GetFromJsonAsync<UserInfo>("/api/users/me");
 
             Assert.Equal(ServerTestHost.MemberEmail, me?.Email);
         }
@@ -52,7 +51,7 @@ namespace ByteShelf.Server.Tests.Users
         [Fact]
         public async Task PutRoles_LastAdminDemoted_Returns409()
         {
-            User me = (await _host.AdminClient.GetFromJsonAsync<User>("/api/users/me"))!;
+            UserInfo me = (await _host.AdminClient.GetFromJsonAsync<UserInfo>("/api/users/me"))!;
 
             HttpResponseMessage response = await _host.AdminClient.PutAsJsonAsync($"/api/users/{me.Id}/roles", new { roles = Array.Empty<string>() });
 
@@ -82,7 +81,7 @@ namespace ByteShelf.Server.Tests.Users
         [Fact]
         public async Task GetUsers_Admin_ListsBothUsers()
         {
-            IReadOnlyList<User>? users = await _host.AdminClient.GetFromJsonAsync<IReadOnlyList<User>>("/api/users");
+            IReadOnlyList<UserInfo>? users = await _host.AdminClient.GetFromJsonAsync<IReadOnlyList<UserInfo>>("/api/users");
 
             Assert.Equal(new[] { ServerTestHost.AdminEmail, ServerTestHost.MemberEmail }, users!.Select(user => user.Email).Order());
             Assert.Contains(users!, user => user.Roles.Contains(UserRoles.Admin));

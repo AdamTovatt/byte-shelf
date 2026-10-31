@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Text.Json;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
+using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Storage.Models;
 using EasyReasy.Database;
 using EasyReasy.Database.Mapping;
@@ -22,6 +23,12 @@ namespace ByteShelf.Server.Storage.Repositories
             updated_at AS {nameof(FileEntity.UpdatedAt)},
             deleted_at AS {nameof(FileEntity.DeletedAt)},
             deletion_id AS {nameof(FileEntity.DeletionId)}";
+
+        private const string InsertSql = @"
+            INSERT INTO file (id, shelf_id, directory_id, name, content_type, size_bytes, sha256, created_at, updated_at, deleted_at, deletion_id)
+            VALUES (@Id, @ShelfId, @DirectoryId, @Name, @ContentType, @SizeBytes, @Sha256, @CreatedAt, @UpdatedAt, @DeletedAt, @DeletionId)";
+
+        private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict(InsertSql);
 
         private readonly IChangeLogRepository _changeLog;
 
@@ -83,28 +90,7 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <inheritdoc />
         public async Task InsertAsync(FileRecord file, IDbSession session)
         {
-            string query = @"
-                INSERT INTO file (id, shelf_id, directory_id, name, content_type, size_bytes, sha256, created_at, updated_at, deleted_at, deletion_id)
-                VALUES (@Id, @ShelfId, @DirectoryId, @Name, @ContentType, @SizeBytes, @Sha256, @CreatedAt, @UpdatedAt, @DeletedAt, @DeletionId)";
-
-            await session.Connection.ExecuteAsync(
-                query,
-                new
-                {
-                    file.Id,
-                    file.ShelfId,
-                    file.DirectoryId,
-                    file.Name,
-                    file.ContentType,
-                    file.SizeBytes,
-                    file.Sha256,
-                    file.CreatedAt,
-                    file.UpdatedAt,
-                    file.DeletedAt,
-                    file.DeletionId,
-                },
-                transaction: session.Transaction);
-
+            await session.Connection.ExecuteAsync(InsertSql, Parameters(file), transaction: session.Transaction);
             await _changeLog.AppendAsync(ChangeEntityType.File, file.Id, ChangeAction.Added, file, file.CreatedAt, session);
         }
 
@@ -233,6 +219,29 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
+        public async Task UpsertReplicatedAsync(FileRecord file, string action, DateTimeOffset at, IDbSession session)
+        {
+            if (file.DeletedAt == null)
+            {
+                FileRecord? holder = await GetLiveByNameAsync(file.DirectoryId, file.Name, session);
+                if (holder != null && holder.Id != file.Id)
+                {
+                    await SoftDeleteAsync(holder.Id, Guid.NewGuid(), at, session);
+                }
+            }
+
+            await session.Connection.ExecuteAsync(UpsertReplicatedSql, Parameters(file), transaction: session.Transaction);
+            await _changeLog.AppendAsync(ChangeEntityType.File, file.Id, action, file, at, session);
+        }
+
+        /// <inheritdoc />
+        public async Task PurgeForShelfAsync(Guid shelfId, DateTimeOffset purgedAt, IDbSession session)
+        {
+            string query = $"DELETE FROM file WHERE shelf_id = @{nameof(shelfId)} RETURNING id";
+            await _changeLog.DeleteAndLogAsync(ChangeEntityType.File, query, new { shelfId }, purgedAt, session);
+        }
+
+        /// <inheritdoc />
         public async Task<bool> IsObjectReferencedAsync(string sha256, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>
@@ -244,6 +253,24 @@ namespace ByteShelf.Server.Storage.Repositories
 
                 return exists != 0;
             }, session);
+        }
+
+        private static object Parameters(FileRecord file)
+        {
+            return new
+            {
+                file.Id,
+                file.ShelfId,
+                file.DirectoryId,
+                file.Name,
+                file.ContentType,
+                file.SizeBytes,
+                file.Sha256,
+                file.CreatedAt,
+                file.UpdatedAt,
+                file.DeletedAt,
+                file.DeletionId,
+            };
         }
 
         internal class FileEntity

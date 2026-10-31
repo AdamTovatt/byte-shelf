@@ -85,13 +85,15 @@ namespace ByteShelf.Server.Users.Services
                 Email = email,
                 DisplayName = displayName,
                 Roles = rolesList,
+                CreatedAt = now,
+                UpdatedAt = now,
             };
 
             try
             {
                 await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
                 {
-                    await _userRepository.InsertAsync(user, now, session);
+                    await _userRepository.InsertAsync(user, session);
                     await _userLoginRepository.CreateLoginAsync(user.Id, UserLoginRepository.LocalProvider, email, passwordHash, now, session);
                     await session.CommitAsync();
                 }

@@ -1,6 +1,7 @@
 using System.Data.Common;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
+using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Storage.Models;
 using EasyReasy.Database;
 using EasyReasy.Database.Mapping;
@@ -18,6 +19,12 @@ namespace ByteShelf.Server.Storage.Repositories
             updated_at AS {nameof(DirectoryEntity.UpdatedAt)},
             deleted_at AS {nameof(DirectoryEntity.DeletedAt)},
             deletion_id AS {nameof(DirectoryEntity.DeletionId)}";
+
+        private const string InsertSql = @"
+            INSERT INTO directory (id, shelf_id, parent_id, name, created_at, updated_at, deleted_at, deletion_id)
+            VALUES (@Id, @ShelfId, @ParentId, @Name, @CreatedAt, @UpdatedAt, @DeletedAt, @DeletionId)";
+
+        private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict(InsertSql);
 
         private readonly IChangeLogRepository _changeLog;
 
@@ -118,25 +125,7 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <inheritdoc />
         public async Task InsertAsync(DirectoryRecord directory, IDbSession session)
         {
-            string query = @"
-                INSERT INTO directory (id, shelf_id, parent_id, name, created_at, updated_at, deleted_at, deletion_id)
-                VALUES (@Id, @ShelfId, @ParentId, @Name, @CreatedAt, @UpdatedAt, @DeletedAt, @DeletionId)";
-
-            await session.Connection.ExecuteAsync(
-                query,
-                new
-                {
-                    directory.Id,
-                    directory.ShelfId,
-                    directory.ParentId,
-                    directory.Name,
-                    directory.CreatedAt,
-                    directory.UpdatedAt,
-                    directory.DeletedAt,
-                    directory.DeletionId,
-                },
-                transaction: session.Transaction);
-
+            await session.Connection.ExecuteAsync(InsertSql, Parameters(directory), transaction: session.Transaction);
             await _changeLog.AppendAsync(ChangeEntityType.Directory, directory.Id, ChangeAction.Added, directory, directory.CreatedAt, session);
         }
 
@@ -285,6 +274,66 @@ namespace ByteShelf.Server.Storage.Repositories
 
             await _changeLog.AppendAsync<DirectoryRecord>(ChangeEntityType.Directory, id, ChangeAction.Purged, null, purgedAt, session);
             return true;
+        }
+
+        /// <inheritdoc />
+        public async Task UpsertReplicatedAsync(DirectoryRecord directory, string action, DateTimeOffset at, IDbSession session)
+        {
+            if (directory.DeletedAt == null && directory.ParentId is Guid parentId)
+            {
+                DirectoryRecord? holder = await GetLiveChildAsync(parentId, directory.Name, session);
+                if (holder != null && holder.Id != directory.Id)
+                {
+                    await TrashIfLiveAsync(holder.Id, at, session);
+                }
+            }
+
+            await session.Connection.ExecuteAsync(UpsertReplicatedSql, Parameters(directory), transaction: session.Transaction);
+            await _changeLog.AppendAsync(ChangeEntityType.Directory, directory.Id, action, directory, at, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<bool> TrashIfLiveAsync(Guid id, DateTimeOffset at, IDbSession session)
+        {
+            Guid deletionId = Guid.NewGuid();
+            string query = $@"
+                UPDATE directory
+                SET deleted_at = @{nameof(at)}, deletion_id = @{nameof(deletionId)}, updated_at = @{nameof(at)}
+                WHERE id = @{nameof(id)} AND deleted_at IS NULL AND parent_id IS NOT NULL
+                RETURNING {SelectColumns}";
+
+            DirectoryEntity? trashed = await session.Connection.QuerySingleOrDefaultAsync<DirectoryEntity>(
+                query, new { id, at, deletionId }, transaction: session.Transaction);
+
+            if (trashed == null)
+            {
+                return false;
+            }
+
+            await _changeLog.AppendAsync(ChangeEntityType.Directory, id, ChangeAction.Deleted, trashed.ToDomain(), at, session);
+            return true;
+        }
+
+        /// <inheritdoc />
+        public async Task PurgeForShelfAsync(Guid shelfId, DateTimeOffset purgedAt, IDbSession session)
+        {
+            string query = $"DELETE FROM directory WHERE shelf_id = @{nameof(shelfId)} RETURNING id";
+            await _changeLog.DeleteAndLogAsync(ChangeEntityType.Directory, query, new { shelfId }, purgedAt, session);
+        }
+
+        private static object Parameters(DirectoryRecord directory)
+        {
+            return new
+            {
+                directory.Id,
+                directory.ShelfId,
+                directory.ParentId,
+                directory.Name,
+                directory.CreatedAt,
+                directory.UpdatedAt,
+                directory.DeletedAt,
+                directory.DeletionId,
+            };
         }
 
         internal class NameEntity

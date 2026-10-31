@@ -1,4 +1,5 @@
 using ByteShelf.Server.ChangeLog.Repositories;
+using ByteShelf.Server.ChangeLog.Services;
 using ByteShelf.Server.Shared;
 
 namespace ByteShelf.Server.ChangeLog
@@ -10,6 +11,7 @@ namespace ByteShelf.Server.ChangeLog
             services.TryAddTimeProvider();
 
             services.AddScoped<IChangeLogRepository, ChangeLogRepository>();
+            services.AddHostedService<ChangeLogCompactionWorker>();
 
             return services;
         }

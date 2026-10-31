@@ -59,5 +59,21 @@ namespace ByteShelf.Server.Storage.Repositories
 
         /// <summary>Removes a trashed directory's row for good. False when it is not in the trash.</summary>
         Task<bool> PurgeAsync(Guid id, DateTimeOffset purgedAt, IDbSession session);
+
+        /// <summary>
+        /// Writes a directory as a primary's change log holds it, logged as <paramref name="action"/>. A
+        /// different live directory of the same name in the same parent is moved to the trash first; the
+        /// log brings it back where it belongs if it still exists.
+        /// </summary>
+        Task UpsertReplicatedAsync(DirectoryRecord directory, string action, DateTimeOffset at, IDbSession session);
+
+        /// <summary>
+        /// Moves one directory (never a root) to the trash, unless it is there already, without what is
+        /// under it, so it is purged only after the restore window. False when it was not live.
+        /// </summary>
+        Task<bool> TrashIfLiveAsync(Guid id, DateTimeOffset at, IDbSession session);
+
+        /// <summary>Removes every directory of a shelf, its root and trash included, for removing the shelf.</summary>
+        Task PurgeForShelfAsync(Guid shelfId, DateTimeOffset purgedAt, IDbSession session);
     }
 }

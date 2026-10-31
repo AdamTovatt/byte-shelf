@@ -1,5 +1,6 @@
 using ByteShelf.Server.Access.Controllers;
 using ByteShelf.Server.Access.Models;
+using ByteShelf.Server.Replication.Controllers;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
@@ -95,6 +96,7 @@ namespace ByteShelf.Server.Storage.Controllers
         /// </summary>
         [HttpPost("download-link")]
         [ShelfAccess(ShelfOperation.Read)]
+        [AllowedOnReplica]
         [ProducesResponseType(typeof(DownloadLink), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         public async Task<IActionResult> CreateDownloadLink([FromQuery] string? path, [FromQuery] Guid? id)

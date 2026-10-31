@@ -13,5 +13,16 @@ logs each row it removed as purged.
 
 Credentials are logged as the server stores them: a user's `user_login` rows with the password hash,
 and a key with the SHA-256 of its secret. A replica holds every file already, and a replica promoted
-to primary must let its users sign in, so it is trusted with them too; whatever carries the log to a
-replica has to authenticate it.
+to primary must let its users sign in, so it is trusted with them too; the replication feed that
+carries the log needs a replica's credential ([Replication](../Replication/Replication.md)).
+
+## Compaction
+
+`ChangeLogCompactionWorker` compacts the log daily rather than cutting it: an entry older than 30 days
+(`ChangeLogCompactionWorker.Retention`) goes once a newer entry for the same entity exists, and a removal
+goes once it is that old. So the newest entry of every entity that still exists stays, and a whole copy
+of the state is read from the log itself (`GetLatestStatesAfterAsync`). A follower replaying the log across
+a dropped entry could miss a removal, or meet a row before the only entry left for the parent it names, so
+`change_log_state.pruned_through` keeps the highest sequence dropped: a replica behind it takes a whole
+copy. The newest sequence comes from SQLite's `AUTOINCREMENT` counter, never `MAX(sequence)`, so
+compaction cannot lower it.

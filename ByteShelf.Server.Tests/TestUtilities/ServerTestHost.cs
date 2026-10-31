@@ -66,7 +66,8 @@ namespace ByteShelf.Server.Tests.TestUtilities
             return client;
         }
 
-        public static async Task<ServerTestHost> StartAsync()
+        /// <param name="configureServices">Runs once the server's own services are registered, such as to route its calls to another host or replace a service.</param>
+        public static async Task<ServerTestHost> StartAsync(Action<IServiceCollection>? configureServices = null)
         {
             TestRoot root = TestRoot.Create();
 
@@ -78,6 +79,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
                 {
                     builder.WebHost.UseTestServer();
                     builder.Logging.SetMinimumLevel(LogLevel.Warning);
+                    configureServices?.Invoke(builder.Services);
                 });
 
             await app.StartAsync();
@@ -103,6 +105,14 @@ namespace ByteShelf.Server.Tests.TestUtilities
             await _app.StopAsync();
             await _app.DisposeAsync();
             await TestRoot.DisposeAsync();
+        }
+
+        /// <summary>A new client signed in as <paramref name="email"/> with <see cref="Password"/>.</summary>
+        public async Task<HttpClient> CreateSignedInClientAsync(string email)
+        {
+            HttpClient client = _app.GetTestClient();
+            await SignInAsync(client, email);
+            return client;
         }
 
         private async Task SignInAsync(HttpClient client, string email)

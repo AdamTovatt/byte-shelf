@@ -73,8 +73,82 @@ namespace ByteShelf.Server.ChangeLog.Repositories
         {
             return await UseSessionAsync(async (dbSession) =>
             {
+                // AUTOINCREMENT's counter, not MAX(sequence): compaction may drop the newest entries.
                 return await dbSession.Connection.QuerySingleAsync<long>(
-                    "SELECT COALESCE(MAX(sequence), 0) FROM change_log", transaction: dbSession.Transaction);
+                    "SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'change_log'), 0)", transaction: dbSession.Transaction);
+            }, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<IReadOnlyList<ChangeLogEntry>> GetLatestStatesAfterAsync(long afterSequence, int limit, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string query = $@"
+                    SELECT {SelectColumns}
+                    FROM change_log AS entry
+                    WHERE entry.sequence > @{nameof(afterSequence)}
+                      AND entry.payload IS NOT NULL
+                      AND NOT EXISTS (
+                          SELECT 1 FROM change_log AS newer
+                          WHERE newer.entity_type = entry.entity_type
+                            AND newer.entity_id = entry.entity_id
+                            AND newer.sequence > entry.sequence)
+                    ORDER BY entry.sequence
+                    LIMIT @{nameof(limit)}";
+
+                IEnumerable<ChangeLogEntity> entities = await dbSession.Connection.QueryAsync<ChangeLogEntity>(
+                    query, new { afterSequence, limit }, transaction: dbSession.Transaction);
+
+                return (IReadOnlyList<ChangeLogEntry>)entities.Select(entity => entity.ToDomain()).ToList();
+            }, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<int> CompactAsync(DateTimeOffset before, IDbSession session)
+        {
+            string deleteQuery = $@"
+                DELETE FROM change_log
+                WHERE created_at < @{nameof(before)}
+                  AND (payload IS NULL OR EXISTS (
+                      SELECT 1 FROM change_log AS newer
+                      WHERE newer.entity_type = change_log.entity_type
+                        AND newer.entity_id = change_log.entity_id
+                        AND newer.sequence > change_log.sequence))
+                RETURNING sequence";
+
+            List<long> dropped = (await session.Connection.QueryAsync<long>(deleteQuery, new { before }, transaction: session.Transaction)).ToList();
+            if (dropped.Count > 0)
+            {
+                long prunedThrough = dropped.Max();
+                await session.Connection.ExecuteAsync(
+                    $"UPDATE change_log_state SET pruned_through = MAX(pruned_through, @{nameof(prunedThrough)})",
+                    new { prunedThrough },
+                    transaction: session.Transaction);
+            }
+
+            return dropped.Count;
+        }
+
+        /// <inheritdoc />
+        public async Task<long> GetPrunedThroughAsync(IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                return await dbSession.Connection.QuerySingleAsync<long>(
+                    "SELECT pruned_through FROM change_log_state", transaction: dbSession.Transaction);
+            }, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<ChangeLogEntry?> GetBySequenceAsync(long sequence, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                ChangeLogEntity? entity = await dbSession.Connection.QuerySingleOrDefaultAsync<ChangeLogEntity>(
+                    $"SELECT {SelectColumns} FROM change_log WHERE sequence = @{nameof(sequence)}", new { sequence }, transaction: dbSession.Transaction);
+
+                return entity?.ToDomain();
             }, session);
         }
 

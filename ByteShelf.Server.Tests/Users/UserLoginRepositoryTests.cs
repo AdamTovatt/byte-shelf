@@ -63,8 +63,8 @@ namespace ByteShelf.Server.Tests.Users
 
         private async Task<User> CreateUserWithLoginAsync(string email, string passwordHash, params string[] roles)
         {
-            User user = new User { Id = Guid.NewGuid(), Email = email, DisplayName = "Name", Roles = roles };
-            await _userRepository.InsertAsync(user, TestInstants.Now, Session);
+            User user = new User { Id = Guid.NewGuid(), Email = email, DisplayName = "Name", Roles = roles, CreatedAt = TestInstants.Now, UpdatedAt = TestInstants.Now };
+            await _userRepository.InsertAsync(user, Session);
             await _loginRepository.CreateLoginAsync(user.Id, UserLoginRepository.LocalProvider, email, passwordHash, TestInstants.Now, Session);
             return user;
         }

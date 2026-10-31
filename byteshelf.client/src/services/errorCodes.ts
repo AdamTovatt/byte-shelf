@@ -12,4 +12,5 @@ export const ERROR_CODES = {
   unauthenticated: 'unauthenticated',
   permissionDenied: 'permission_denied',
   readOnlyReplica: 'read_only_replica',
+  primaryFailed: 'primary_failed',
 } as const;

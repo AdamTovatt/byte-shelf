@@ -1,6 +1,7 @@
 using System.Data.Common;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
+using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Users.Models;
 using EasyReasy.Database;
 using EasyReasy.Database.Mapping;
@@ -28,6 +29,12 @@ namespace ByteShelf.Server.Users.Repositories
             credential,
             created_at AS {nameof(UserLoginEntity.CreatedAt)}";
 
+        private const string InsertSql = @"
+            INSERT INTO user_login (id, user_id, provider, provider_user_id, credential, created_at)
+            VALUES (@Id, @UserId, @Provider, @ProviderUserId, @Credential, @CreatedAt)";
+
+        private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict(InsertSql);
+
         private readonly IChangeLogRepository _changeLog;
 
         public UserLoginRepository(DbDataSource dataSource, IDbSessionFactory sessionFactory, IChangeLogRepository changeLog)
@@ -47,6 +54,8 @@ namespace ByteShelf.Server.Users.Repositories
                         u.email,
                         u.display_name AS {nameof(CredentialsEntity.DisplayName)},
                         u.roles AS {nameof(CredentialsEntity.RolesJson)},
+                        u.created_at AS {nameof(CredentialsEntity.CreatedAt)},
+                        u.updated_at AS {nameof(CredentialsEntity.UpdatedAt)},
                         ul.credential AS {nameof(CredentialsEntity.PasswordHash)}
                     FROM user_login ul
                     JOIN user_account u ON u.id = ul.user_id
@@ -72,15 +81,7 @@ namespace ByteShelf.Server.Users.Repositories
                 CreatedAt = createdAt,
             };
 
-            string query = @"
-                INSERT INTO user_login (id, user_id, provider, provider_user_id, credential, created_at)
-                VALUES (@Id, @UserId, @Provider, @ProviderUserId, @Credential, @CreatedAt)";
-
-            await session.Connection.ExecuteAsync(
-                query,
-                new { login.Id, login.UserId, login.Provider, login.ProviderUserId, login.Credential, login.CreatedAt },
-                transaction: session.Transaction);
-
+            await session.Connection.ExecuteAsync(InsertSql, Parameters(login), transaction: session.Transaction);
             await _changeLog.AppendAsync(ChangeEntityType.UserLogin, login.Id, ChangeAction.Added, login, createdAt, session);
         }
 
@@ -112,6 +113,31 @@ namespace ByteShelf.Server.Users.Repositories
             await _changeLog.DeleteAndLogAsync(ChangeEntityType.UserLogin, query, new { userId }, deletedAt, session);
         }
 
+        /// <inheritdoc />
+        public async Task UpsertReplicatedAsync(UserLogin login, string action, DateTimeOffset at, IDbSession session)
+        {
+            string asideQuery = @"
+                DELETE FROM user_login
+                WHERE id <> @Id AND ((provider = @Provider AND provider_user_id = @ProviderUserId) OR (user_id = @UserId AND provider = @Provider))
+                RETURNING id";
+            await _changeLog.DeleteAndLogAsync(ChangeEntityType.UserLogin, asideQuery, new { login.Id, login.UserId, login.Provider, login.ProviderUserId }, at, session);
+
+            await session.Connection.ExecuteAsync(UpsertReplicatedSql, Parameters(login), transaction: session.Transaction);
+            await _changeLog.AppendAsync(ChangeEntityType.UserLogin, login.Id, action, login, at, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<bool> DeleteByIdAsync(Guid id, DateTimeOffset deletedAt, IDbSession session)
+        {
+            string query = $"DELETE FROM user_login WHERE id = @{nameof(id)} RETURNING id";
+            return await _changeLog.DeleteAndLogAsync(ChangeEntityType.UserLogin, query, new { id }, deletedAt, session) > 0;
+        }
+
+        private static object Parameters(UserLogin login)
+        {
+            return new { login.Id, login.UserId, login.Provider, login.ProviderUserId, login.Credential, login.CreatedAt };
+        }
+
         internal class UserLoginEntity
         {
             public Guid Id { get; set; }
@@ -141,6 +167,8 @@ namespace ByteShelf.Server.Users.Repositories
             public string Email { get; set; } = string.Empty;
             public string DisplayName { get; set; } = string.Empty;
             public string RolesJson { get; set; } = string.Empty;
+            public DateTimeOffset CreatedAt { get; set; }
+            public DateTimeOffset UpdatedAt { get; set; }
             public string PasswordHash { get; set; } = string.Empty;
 
             public UserCredentials ToDomain()
@@ -153,6 +181,8 @@ namespace ByteShelf.Server.Users.Repositories
                         Email = Email,
                         DisplayName = DisplayName,
                         Roles = RolesJsonParser.Parse(RolesJson),
+                        CreatedAt = CreatedAt,
+                        UpdatedAt = UpdatedAt,
                     },
                     PasswordHash = PasswordHash,
                 };

@@ -4,6 +4,7 @@ using ByteShelf.Server.ChangeLog;
 using ByteShelf.Server.Email;
 using ByteShelf.Server.Invalidation;
 using ByteShelf.Server.Jobs;
+using ByteShelf.Server.Replication;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Json;
@@ -97,12 +98,12 @@ namespace ByteShelf.Server
         /// <summary>
         /// Migrates the root's database and builds the full application on it. Separate from
         /// <see cref="RunApplication"/> so the in-process HTTP tests build the same pipeline on a root
-        /// of their own; <paramref name="configureForTests"/> runs before any service is registered.
+        /// of their own; <paramref name="configureForTests"/> runs once every service is registered, so a
+        /// test can replace or remove one.
         /// </summary>
         internal static WebApplication BuildApplication(string[] args, RootFolder root, Action<WebApplicationBuilder>? configureForTests = null)
         {
             WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
-            configureForTests?.Invoke(builder);
 
             using (ILoggerFactory loggerFactory = CreateStartupLoggerFactory())
             {
@@ -116,13 +117,16 @@ namespace ByteShelf.Server
             builder.Services.AddDatabaseServices(root);
             builder.Services.AddInvalidationServices();
             builder.Services.AddEmailServices();
-            builder.Services.AddUserServices(root, ResolveAppBaseUrl(builder.Environment));
+            string appBaseUrl = ResolveAppBaseUrl(builder.Environment);
+            builder.Services.AddUserServices(root, appBaseUrl);
             builder.Services.AddJobServices();
             builder.Services.AddVersionServices();
             builder.Services.AddChangeLogServices();
             builder.Services.AddStorageServices();
             builder.Services.AddAccessServices();
+            builder.Services.AddReplicationServices(appBaseUrl);
             builder.Services.AddRateLimitingServices();
+            configureForTests?.Invoke(builder);
 
             WebApplication app = builder.Build();
 
