@@ -10,7 +10,7 @@ see how far behind each is, remove one, and promote a replica.
 
 ```bash
 npm ci
-npm run dev        # Vite on port 44911, forwarding /api to the server (ASPNETCORE_URLS, else :5190)
+npm run dev        # Vite on port 44903, forwarding /api to the server (ASPNETCORE_URLS, else :5190)
 npm run lint
 npm test           # Vitest
 npm run test:e2e   # Playwright: builds the UI, starts the server on a root of its own, runs e2e/

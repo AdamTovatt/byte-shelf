@@ -24,9 +24,12 @@ export default defineConfig({
         secure: false
       }
     },
-    // SpaProxyServerUrl in ByteShelf.Server.csproj names this port.
-    port: 44911,
+    // SpaProxyServerUrl in ByteShelf.Server.csproj names this port. It is the house dev port, the one
+    // a dev subdomain's reverse proxy forwards to, so another app's dev server on it must stop first.
+    port: 44903,
     strictPort: true,
     open: false,
+    // Requests arrive through that proxy under its own host name.
+    allowedHosts: true,
   }
 })
