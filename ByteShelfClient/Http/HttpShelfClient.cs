@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using ByteShelfCommon;
@@ -83,7 +84,9 @@ namespace ByteShelfClient.Http
 
             try
             {
-                return new ResponseStream(response, await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false));
+                // The server's ETag is the contents' SHA-256, quoted.
+                string? sha256 = response.StatusCode == HttpStatusCode.OK ? response.Headers.ETag?.Tag.Trim('"') : null;
+                return new ResponseStream(response, await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false), sha256);
             }
             catch
             {

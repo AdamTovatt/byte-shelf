@@ -27,6 +27,17 @@ namespace ByteShelfCommon.Tests
             Assert.Throws<ArgumentException>(() => ContentTypes.Normalize(contentType));
         }
 
+        [Theory]
+        [InlineData("/2026/receipt.pdf", "application/pdf")]
+        [InlineData("photo.JPG", "image/jpeg")]
+        [InlineData("notes.md", "text/markdown")]
+        [InlineData("archive.unknown", null)]
+        [InlineData("no-extension", null)]
+        public void ForFileName_AnswersTheCommonTypeByExtension(string fileName, string? expected)
+        {
+            Assert.Equal(expected, ContentTypes.ForFileName(fileName));
+        }
+
         [Fact]
         public void Normalize_LongestAllowed_IsAccepted()
         {

@@ -21,7 +21,7 @@ A person signs in instead, and the session renews itself:
 
 ```csharp
 using UserSession session = await UserSession.SignInAsync(http, email, password);
-session.Renewed += (_, _) => Save(session.RefreshToken);   // to resume later with UserSession.Resume(http, saved)
+session.Renewed += (_, _) => Save(session.Tokens);   // to resume later with UserSession.Resume(http, saved)
 IByteShelfClient client = new ByteShelfHttpClient(http, session);
 // ...
 await session.SignOutAsync();   // ends it on the server; disposing alone leaves it resumable
@@ -58,6 +58,17 @@ it is cancelled, and `Renewed` reports each new token. A renewal the server refu
 error: `unauthenticated` when the session has ended (sign in again), anything else leaves the
 session as it was. A streamed upload cannot be sent twice, so it relies on the renewal ahead of
 time. Dispose a session when done with it; the `HttpClient` stays the caller's.
+
+`UserSession.Resume(http, tokens)` picks up kept `Tokens`, using the access token while it works.
+Processes that share one session open it with `UserSession.OpenSharedAsync(http, store)` instead:
+the `ISharedSessionStore` is locked for every renewal, which first takes up tokens another process
+renewed to and is then saved there, so no two renew with the same refresh token. The `byteshelf`
+CLI keeps its session that way, in its config file.
+
+## Downloads
+
+`OpenReadAsync` hashes the bytes as they are read, and reading to the end throws `IOException` if
+they do not match the file's SHA-256, so a file read whole is the file that was stored.
 
 ## In tests
 

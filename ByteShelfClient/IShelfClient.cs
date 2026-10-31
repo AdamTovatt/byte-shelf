@@ -43,7 +43,10 @@ namespace ByteShelfClient
         /// </summary>
         Task<ShelfFile> UploadAsync(string path, Stream content, UploadOptions? options = null, CancellationToken cancellationToken = default);
 
-        /// <summary>Opens a file's contents for reading. Dispose the stream when done.</summary>
+        /// <summary>
+        /// Opens a file's contents for reading. Dispose the stream when done. Reading it to the end
+        /// checks the bytes against the file's SHA-256 and throws <see cref="IOException"/> if they differ.
+        /// </summary>
         Task<Stream> OpenReadAsync(EntryReference file, CancellationToken cancellationToken = default);
 
         /// <summary>Creates a directory and any missing directory above it; an existing one is answered as it is.</summary>

@@ -52,6 +52,12 @@ namespace ByteShelf.Server.Tests.TestUtilities
             return _app.GetTestClient();
         }
 
+        /// <summary>A handler sending requests to the in-memory server at <c>http://localhost/</c>, for code that makes its own clients.</summary>
+        public HttpMessageHandler CreateHandler()
+        {
+            return _app.GetTestServer().CreateHandler();
+        }
+
         /// <summary>A client sending <paramref name="secret"/> as its shelf key on every request.</summary>
         public HttpClient CreateKeyClient(string secret)
         {

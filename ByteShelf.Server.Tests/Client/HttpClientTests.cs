@@ -68,7 +68,7 @@ namespace ByteShelf.Server.Tests.Client
         {
             FakeTimeProvider clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
             using UserSession session = await UserSession.SignInAsync(_http, ServerTestHost.AdminEmail, ServerTestHost.Password, clock);
-            string firstRefreshToken = session.RefreshToken;
+            string firstRefreshToken = session.Tokens.RefreshToken;
             int renewals = 0;
             session.Renewed += (_, _) => renewals++;
             clock.Advance(TimeSpan.FromHours(2));
@@ -77,21 +77,22 @@ namespace ByteShelf.Server.Tests.Client
 
             Assert.Equal(ServerTestHost.AdminEmail, me.Email);
             Assert.Equal(1, renewals);
-            Assert.NotEqual(firstRefreshToken, session.RefreshToken);
+            Assert.NotEqual(firstRefreshToken, session.Tokens.RefreshToken);
         }
 
         [Fact]
-        public async Task UserSession_ResumedFromAKeptRefreshToken_SignsTheUserBackIn()
+        public async Task UserSession_ResumedAfterItsAccessTokenRanOut_RenewsAndSignsTheUserBackIn()
         {
-            string refreshToken;
+            SessionTokens kept;
             using (UserSession first = await UserSession.SignInAsync(_http, ServerTestHost.AdminEmail, ServerTestHost.Password))
             {
-                refreshToken = first.RefreshToken;
+                kept = first.Tokens;
             }
 
-            using UserSession resumed = UserSession.Resume(_http, refreshToken);
+            using UserSession resumed = UserSession.Resume(_http, RunOut(kept));
 
             Assert.Equal(ServerTestHost.AdminEmail, (await new ByteShelfHttpClient(_http, resumed).GetCurrentUserAsync()).Email);
+            Assert.NotEqual(kept.RefreshToken, resumed.Tokens.RefreshToken);
         }
 
         [Fact]
@@ -100,10 +101,16 @@ namespace ByteShelf.Server.Tests.Client
             using UserSession session = await UserSession.SignInAsync(_http, ServerTestHost.AdminEmail, ServerTestHost.Password);
             await session.SignOutAsync();
 
-            using UserSession resumed = UserSession.Resume(_http, session.RefreshToken);
+            using UserSession resumed = UserSession.Resume(_http, RunOut(session.Tokens));
 
             ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => new ByteShelfHttpClient(_http, resumed).GetCurrentUserAsync());
             Assert.Equal(ErrorCodes.Unauthenticated, exception.Code);
+        }
+
+        /// <summary>The tokens as if the access token had run out, so the next request renews; signing out does not revoke an access token.</summary>
+        private static SessionTokens RunOut(SessionTokens tokens)
+        {
+            return new SessionTokens { Token = tokens.Token, ExpiresAt = DateTimeOffset.MinValue, RefreshToken = tokens.RefreshToken };
         }
 
         private async Task<IByteShelfClient> SignInAdminAsync()

@@ -30,7 +30,7 @@ namespace ByteShelfClient.Tests
 
             Assert.Equal("a@b.test", me.Email);
             Assert.Equal(new[] { "POST /api/auth/login", "GET /api/users/me first", "POST /api/auth/refresh", "GET /api/users/me second" }, server.Requests);
-            Assert.Equal("refresh-2", session.RefreshToken);
+            Assert.Equal("refresh-2", session.Tokens.RefreshToken);
         }
 
         [Fact]
@@ -68,6 +68,117 @@ namespace ByteShelfClient.Tests
         }
 
         [Fact]
+        public async Task Resume_KeptAccessTokenStillGood_UsesItWithoutRenewing()
+        {
+            using ScriptedServer server = new ScriptedServer(_ => ScriptedServer.Json(UserJson));
+            using HttpClient http = server.CreateClient();
+            using UserSession session = UserSession.Resume(http, Tokens("kept", "refresh-1", DateTimeOffset.UtcNow.AddHours(1)));
+
+            await new ByteShelfHttpClient(http, session).GetCurrentUserAsync();
+
+            Assert.Equal(new[] { "GET /api/users/me kept" }, server.Requests);
+        }
+
+        [Fact]
+        public async Task Resume_KeptAccessTokenRunOut_RenewsBeforeTheRequest()
+        {
+            using ScriptedServer server = new ScriptedServer(request => request.RequestUri!.AbsolutePath switch
+            {
+                "/api/auth/refresh" => ScriptedServer.Json(ScriptedServer.Tokens("second", "refresh-2")),
+                _ => ScriptedServer.Json(UserJson),
+            });
+            using HttpClient http = server.CreateClient();
+            using UserSession session = UserSession.Resume(http, Tokens("kept", "refresh-1", Expired));
+
+            await new ByteShelfHttpClient(http, session).GetCurrentUserAsync();
+
+            Assert.Equal(new[] { "POST /api/auth/refresh", "GET /api/users/me second" }, server.Requests);
+        }
+
+        [Fact]
+        public void Resume_TokensWithoutARefreshToken_Throws()
+        {
+            using HttpClient http = new HttpClient();
+
+            Assert.Throws<ArgumentException>(() => UserSession.Resume(http, Tokens("kept", " ", Expired)));
+        }
+
+        [Fact]
+        public async Task SharedSession_AnotherProcessRenewedMeanwhile_TakesUpTheirTokens()
+        {
+            using ScriptedServer server = new ScriptedServer(_ => ScriptedServer.Json(UserJson));
+            using HttpClient http = server.CreateClient();
+            MemorySessionStore store = new MemorySessionStore(Tokens("first", "refresh-1", Expired));
+            using UserSession session = await UserSession.OpenSharedAsync(http, store);
+            store.Tokens = Tokens("theirs", "refresh-2", DateTimeOffset.UtcNow.AddHours(1));
+
+            await new ByteShelfHttpClient(http, session).GetCurrentUserAsync();
+
+            Assert.Equal(new[] { "GET /api/users/me theirs" }, server.Requests);
+        }
+
+        [Fact]
+        public async Task SharedSession_Due_RenewsUnderTheLockAndSavesTheNewTokens()
+        {
+            using ScriptedServer server = new ScriptedServer(request => request.RequestUri!.AbsolutePath switch
+            {
+                "/api/auth/refresh" => ScriptedServer.Json(ScriptedServer.Tokens("second", "refresh-2")),
+                _ => ScriptedServer.Json(UserJson),
+            });
+            using HttpClient http = server.CreateClient();
+            MemorySessionStore store = new MemorySessionStore(Tokens("first", "refresh-1", Expired));
+            using UserSession session = await UserSession.OpenSharedAsync(http, store);
+
+            await new ByteShelfHttpClient(http, session).GetCurrentUserAsync();
+
+            Assert.Equal(("refresh-2", 1, false), (store.Tokens!.RefreshToken, store.Locks, store.Locked));
+        }
+
+        [Fact]
+        public async Task SharedSession_NoLongerKept_ThrowsUnauthenticated()
+        {
+            using ScriptedServer server = new ScriptedServer(_ => ScriptedServer.Json(UserJson));
+            using HttpClient http = server.CreateClient();
+            MemorySessionStore store = new MemorySessionStore(Tokens("first", "refresh-1", Expired));
+            using UserSession session = await UserSession.OpenSharedAsync(http, store);
+            store.Tokens = null;
+
+            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => new ByteShelfHttpClient(http, session).GetCurrentUserAsync());
+
+            Assert.Equal(ErrorCodes.Unauthenticated, exception.Code);
+            Assert.Empty(server.Requests);
+        }
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task OpenReadAsync_ReadToTheEnd_ChecksTheBytesAgainstTheirSha256(bool matches)
+        {
+            byte[] content = Encoding.UTF8.GetBytes("the contents");
+            string sha256 = matches ? Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(content)) : new string('0', 64);
+            using ScriptedServer server = new ScriptedServer(_ =>
+            {
+                HttpResponseMessage response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(content) };
+                response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue($"\"{sha256}\"");
+                return response;
+            });
+            using HttpClient http = server.CreateClient();
+            await using Stream stream = await new ByteShelfHttpClient(http, new ShelfKeyCredentials("bsk_secret")).Shelf("docs").OpenReadAsync("/a.txt");
+
+            Task read = stream.CopyToAsync(Stream.Null);
+
+            if (matches)
+            {
+                await read;
+            }
+            else
+            {
+                IOException exception = await Assert.ThrowsAsync<IOException>(() => read);
+                Assert.Contains("SHA-256", exception.Message, StringComparison.Ordinal);
+            }
+        }
+
+        [Fact]
         public async Task SendAsync_CancelledWhileRenewing_KeepsTheNewRefreshToken()
         {
             using CancellationTokenSource cancel = new CancellationTokenSource();
@@ -82,7 +193,7 @@ namespace ByteShelfClient.Tests
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new ByteShelfHttpClient(http, session).GetCurrentUserAsync(cancel.Token));
 
-            Assert.Equal("refresh-2", session.RefreshToken);
+            Assert.Equal("refresh-2", session.Tokens.RefreshToken);
         }
 
         [Fact]
@@ -100,7 +211,7 @@ namespace ByteShelfClient.Tests
             ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => new ByteShelfHttpClient(http, session).GetCurrentUserAsync());
 
             Assert.Equal(HttpStatusCode.ServiceUnavailable, exception.StatusCode);
-            Assert.Equal("refresh-1", session.RefreshToken);
+            Assert.Equal("refresh-1", session.Tokens.RefreshToken);
             Assert.DoesNotContain(server.Requests, request => request.StartsWith("GET", StringComparison.Ordinal));
         }
 
@@ -191,6 +302,11 @@ namespace ByteShelfClient.Tests
         {
             cancel.Cancel();
             return answer;
+        }
+
+        private static SessionTokens Tokens(string token, string refreshToken, DateTimeOffset expiresAt)
+        {
+            return new SessionTokens { Token = token, ExpiresAt = expiresAt, RefreshToken = refreshToken };
         }
 
         private static HttpResponseMessage Challenge()

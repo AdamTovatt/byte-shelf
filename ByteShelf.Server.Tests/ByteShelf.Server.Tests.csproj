@@ -22,6 +22,7 @@
   <ItemGroup>
     <ProjectReference Include="..\ByteShelf.Server\ByteShelf.Server.csproj" />
     <ProjectReference Include="..\ByteShelfClient\ByteShelfClient.csproj" />
+    <ProjectReference Include="..\ByteShelf.Cli\ByteShelf.Cli.csproj" />
   </ItemGroup>
 
 </Project>

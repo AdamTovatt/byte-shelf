@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ByteShelf.Cli</RootNamespace>
+    <PackAsTool>true</PackAsTool>
+    <!-- Not "shelf": an existing NuGet tool already installs a command by that name. -->
+    <ToolCommandName>byteshelf</ToolCommandName>
+    <PackageId>ByteShelf.Cli</PackageId>
+    <Title>ByteShelf CLI</Title>
+    <Authors>Adam Tovatt</Authors>
+    <PackageIcon>ByteShelfIcon256.png</PackageIcon>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/AdamTovatt/byte-shelf</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/AdamTovatt/byte-shelf</RepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>storage, cli, mcp, mcp-server, byteshelf, byte shelf, file storage</PackageTags>
+    <Description>The ByteShelf command line: shelves, files, the trash, users and keys from a terminal, and with --mcp an MCP server for agents.</Description>
+    <Copyright>MIT</Copyright>
+    <Version>2.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\Icons\ByteShelfIcon256.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+    <None Update="README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ByteShelf.Cli.Tests" />
+    <InternalsVisibleTo Include="ByteShelf.Server.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+    <PackageReference Include="ModelContextProtocol" Version="2.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ByteShelfClient\ByteShelfClient.csproj" />
+  </ItemGroup>
+
+</Project>
