@@ -255,6 +255,25 @@ namespace ByteShelf.Server.Storage.Repositories
             }, session);
         }
 
+        /// <inheritdoc />
+        public async Task<IReadOnlyList<string>> GetReferencedObjectsAsync(IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                IEnumerable<string> hashes = await dbSession.Connection.QueryAsync<string>(
+                    "SELECT DISTINCT sha256 FROM file ORDER BY sha256", transaction: dbSession.Transaction);
+
+                return (IReadOnlyList<string>)hashes.ToList();
+            }, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<int> PurgeAllWithObjectAsync(string sha256, DateTimeOffset purgedAt, IDbSession session)
+        {
+            string query = $"DELETE FROM file WHERE sha256 = @{nameof(sha256)} RETURNING id";
+            return await _changeLog.DeleteAndLogAsync(ChangeEntityType.File, query, new { sha256 }, purgedAt, session);
+        }
+
         private static object Parameters(FileRecord file)
         {
             return new

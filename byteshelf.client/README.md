@@ -3,7 +3,8 @@
 The ByteShelf web UI: React, TypeScript, Vite, Tailwind and TanStack Query, built on the house
 template. Everyone browses the shelves they reach, uploads (dropping files on a directory works too),
 opens and downloads files, moves, renames and deletes them, and restores them from the trash. Admins
-also create shelves and users, set quotas, give access and make keys.
+also create shelves and users, set quotas, give access and make keys, and in Settings pair replicas,
+see how far behind each is, and promote a replica.
 
 ## Working on it
 
@@ -41,4 +42,6 @@ npm run codegen    # in a second terminal
   token.
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and
   refetches what each event makes stale (`lib/invalidationMap.ts`), so a change made elsewhere shows up
-  within about a second. A test checks the map covers every resource the server publishes.
+  within about a second. A test checks the map covers every resource the server publishes. The one
+  exception is replication's status in Settings, polled every 5 seconds: a replica's lag changes
+  without anything being published.

@@ -35,18 +35,26 @@ namespace ByteShelf.Server.Shared.Root
 
         public string KeysPath { get; }
 
+        /// <summary>The connection string for <see cref="DatabasePath"/>.</summary>
+        public string ConnectionString => ConnectionStringFor(DatabasePath);
+
         /// <summary>
-        /// The connection string for <see cref="DatabasePath"/>. Foreign keys are switched on here rather
-        /// than by a pragma on one connection, because SQLite holds that setting per connection and a
-        /// pooled connection that never ran the pragma would ignore every foreign key.
+        /// The connection string for a ByteShelf database at <paramref name="databasePath"/>. Foreign keys
+        /// are switched on here rather than by a pragma on one connection, because SQLite holds that
+        /// setting per connection and a pooled connection that never ran the pragma would ignore every
+        /// foreign key. Without <paramref name="pooling"/>, closing the last connection releases the file,
+        /// for a copy that is moved or deleted next.
         /// </summary>
-        public string ConnectionString => new SqliteConnectionStringBuilder
+        public static string ConnectionStringFor(string databasePath, bool pooling = true)
         {
-            DataSource = DatabasePath,
-            ForeignKeys = true,
-            Pooling = true,
-            DefaultTimeout = 30,
-        }.ToString();
+            return new SqliteConnectionStringBuilder
+            {
+                DataSource = databasePath,
+                ForeignKeys = true,
+                Pooling = pooling,
+                DefaultTimeout = 30,
+            }.ToString();
+        }
 
         /// <summary>
         /// Opens the root at <paramref name="path"/>, creating it and its folders when they are missing.
@@ -60,6 +68,22 @@ namespace ByteShelf.Server.Shared.Root
             Directory.CreateDirectory(root.ObjectsPath);
             Directory.CreateDirectory(root.StagingPath);
             Directory.CreateDirectory(root.KeysPath);
+
+            return root;
+        }
+
+        /// <summary>
+        /// Opens the root of a server that has run at <paramref name="path"/>, creating nothing: for work
+        /// beside the server running on it, such as a backup.
+        /// </summary>
+        /// <exception cref="FileNotFoundException">There is no ByteShelf database at <paramref name="path"/>.</exception>
+        public static RootFolder OpenExisting(string path)
+        {
+            RootFolder root = new RootFolder(System.IO.Path.GetFullPath(path));
+            if (!File.Exists(root.DatabasePath))
+            {
+                throw new FileNotFoundException($"There is no ByteShelf database in {root.Path}.", root.DatabasePath);
+            }
 
             return root;
         }

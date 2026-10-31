@@ -39,26 +39,39 @@ follows no redirects); nothing needs to reach the replica but its own admins and
 
 1. Start the replica on a new, empty root with its own initial admin, and create no shelves on it. Not
    a copy of the primary's root: that would be the same instance, and pairing would be refused.
-2. On the primary, as an admin, make a pairing code: `POST /api/replication/codes`. It works once,
-   for 15 minutes.
-3. On the replica, as its admin, pair with it: `POST /api/replication/pair` with
-   `{"code": "<the code>", "name": "<what the primary calls it>"}`. The replica copies the primary, its
-   users included: from then on its admins sign in with their accounts on the primary.
+2. On the primary, as an admin, under Settings, Replication, make a pairing code. It works once, for
+   15 minutes.
+3. On the replica, as its admin, under Settings, Replication, choose Follow a primary, paste it and
+   give the replica a name, which the primary lists it by. The replica copies the primary, its users included: from then on its admins sign in with their
+   accounts on the primary.
 
-`GET /api/replication` shows on the primary each replica and how far behind it is, and on a replica the
-primary it follows and the last error. A replica only reads. A file or directory purged on the primary
-stays in the replica's trash until the replica's own restore window has passed since it was deleted.
+The same section shows on the primary each replica and how far behind it is, and on a replica the
+primary it follows and the last error (`GET /api/replication` answers the same). A replica only reads.
+A file or directory purged on the primary stays in the replica's trash until the replica's own restore
+window has passed since it was deleted.
 
-To make a replica the primary, `POST /api/replication/promote` on it, then point clients and
+To make a replica the primary, promote it in its Replication section, then point clients and
 `APP_BASE_URL` at it. Stop the old primary: other replicas keep following it, and pairing them with the
 new one needs servers without shelves, in practice new roots.
 
-A primary restored from a backup makes its replicas take a whole copy, since its log no longer matches
-what they applied.
-
 ## Backups
 
-Stop the server and zip the root folder; the zip is a complete copy.
+While the server runs, with the same `BYTESHELF_ROOT` (the only variable it reads):
+
+```bash
+BYTESHELF_ROOT=/srv/byteshelf ./ByteShelf.Server --backup /backups/byteshelf-2026-03-01.zip
+```
+
+This writes a consistent zip ([Backup](ByteShelf.Server/Backup/Backup.md)): the database as of one
+moment, the objects its files point at, and `keys/`. Unzipped, it is a root a server starts from.
+The zip is readable by its owner only, since it holds password hashes and the server's secrets. It
+must be written outside the root, to a folder with room for both the zip and a copy of the database,
+which is written beside it while the backup runs. Exit code 0 means it was written; 1 that it failed
+and wrote nothing, such as for a damaged object; 2 that the zip's path after `--backup` or
+`BYTESHELF_ROOT` is missing.
+
+A zip of a stopped server's root is a complete copy too. Restoring either onto a primary makes its
+replicas take a whole copy.
 
 ## Background work
 

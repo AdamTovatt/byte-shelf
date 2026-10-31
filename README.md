@@ -11,7 +11,7 @@ in the web UI.
 | `ByteShelf.Server` | The ASP.NET Core server (net10.0). |
 | `ByteShelfCommon` | The shared contract (net8.0, AOT-compatible): request and response types, path and shelf-name rules, source-generated JSON. Published as the `ByteShelfCommon` NuGet package. |
 | `ByteShelfClient` | The client library (net8.0, AOT-compatible): `IByteShelfClient` over HTTP, and in memory for an app's tests. Published as the `ByteShelfClient` NuGet package. |
-| `byteshelf.client` | The web UI (React, TypeScript, Vite): browse and upload to the shelves you reach; for admins, shelves, users, access and keys. The server serves its build. |
+| `byteshelf.client` | The web UI (React, TypeScript, Vite): browse and upload to the shelves you reach; for admins, shelves, users, access, keys and replication. The server serves its build. |
 | `ByteShelf.Cli` | The `byteshelf` dotnet tool (net10.0): the command line, and with `--mcp` an MCP server for agents. |
 | `ByteShelf.Server.Tests`, `ByteShelfCommon.Tests`, `ByteShelfClient.Tests`, `ByteShelf.Cli.Tests` | xUnit tests; the server's include the client contract, run against both clients, and the CLI's login against the server. |
 
@@ -27,8 +27,9 @@ One folder, named by `BYTESHELF_ROOT`, holds the whole instance:
   keys/                     secrets the server generates for itself (the JWT and download-link keys)
 ```
 
-Nothing lives outside it, so a zip of a stopped server's root is a complete copy. Every object is
-named by its SHA-256, so `sha256sum` verifies it, and identical contents are stored once.
+Nothing lives outside it, so a zip of a stopped server's root is a complete copy; `--backup` writes a
+consistent one from a running server, leaving out uploads in progress. Every object is named by its
+SHA-256, so `sha256sum` verifies it, and identical contents are stored once.
 
 ## Concepts
 
@@ -73,7 +74,7 @@ dotnet run --project ByteShelf.Cli -- shelves
   [Users](ByteShelf.Server/Users/Users.md),
   [Jobs](ByteShelf.Server/Jobs/Jobs.md), [Email](ByteShelf.Server/Email/Email.md),
   [Invalidation](ByteShelf.Server/Invalidation/Invalidation.md), [Version](ByteShelf.Server/Version/Version.md),
-  [Replication](ByteShelf.Server/Replication/Replication.md).
+  [Replication](ByteShelf.Server/Replication/Replication.md), [Backup](ByteShelf.Server/Backup/Backup.md).
 - [ByteShelfCommon](ByteShelfCommon/README.md), [ByteShelfClient](ByteShelfClient/README.md),
   [the CLI and MCP server](ByteShelf.Cli/README.md), [the web UI](byteshelf.client/README.md).
 

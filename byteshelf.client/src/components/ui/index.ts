@@ -20,3 +20,4 @@ export { Dialog, type DialogProps } from './Dialog';
 export { FileButton, type FileButtonProps } from './FileButton';
 export { ProgressBar, type ProgressBarProps } from './ProgressBar';
 export { ListRow, type ListRowProps } from './ListRow';
+export { CopyableSecret, type CopyableSecretProps } from './CopyableSecret';

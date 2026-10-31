@@ -10,9 +10,6 @@ namespace ByteShelf.Server.Shared.Root
     {
         public const string JwtSecretFileName = "jwt-secret";
 
-        private const UnixFileMode OwnerOnlyFile = UnixFileMode.UserRead | UnixFileMode.UserWrite;
-        private const UnixFileMode OwnerOnlyDirectory = UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
-
         /// <summary>
         /// Answers the secret stored as <paramref name="fileName"/> under <c>keys/</c>, generating
         /// <paramref name="byteCount"/> random bytes and writing them the first time. The folder and the
@@ -23,7 +20,7 @@ namespace ByteShelf.Server.Shared.Root
         {
             if (!OperatingSystem.IsWindows())
             {
-                File.SetUnixFileMode(root.KeysPath, OwnerOnlyDirectory);
+                File.SetUnixFileMode(root.KeysPath, OwnerOnly.Directory);
             }
 
             string path = Path.Combine(root.KeysPath, fileName);
@@ -35,13 +32,7 @@ namespace ByteShelf.Server.Shared.Root
             string secret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(byteCount));
             string temporaryPath = path + ".tmp";
 
-            FileStreamOptions options = new FileStreamOptions { Mode = FileMode.Create, Access = FileAccess.Write };
-            if (!OperatingSystem.IsWindows())
-            {
-                options.UnixCreateMode = OwnerOnlyFile;
-            }
-
-            using (StreamWriter writer = new StreamWriter(temporaryPath, options))
+            using (StreamWriter writer = new StreamWriter(temporaryPath, OwnerOnly.Write(FileMode.Create)))
             {
                 writer.Write(secret);
             }

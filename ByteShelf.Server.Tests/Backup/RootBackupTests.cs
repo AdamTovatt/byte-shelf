@@ -1,0 +1,243 @@
+using System.IO.Compression;
+using ByteShelf.Server.Backup.Models;
+using ByteShelf.Server.Backup.Services;
+using ByteShelf.Server.ChangeLog.Models;
+using ByteShelf.Server.Shared.Root;
+using ByteShelf.Server.Storage.Models;
+using ByteShelf.Server.Tests.TestUtilities;
+using ByteShelfCommon;
+using EasyReasy.Database.Mapping;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging.Abstractions;
+using StoredObjects = ByteShelf.Server.Storage.Services.ObjectStore;
+
+namespace ByteShelf.Server.Tests.Backup
+{
+    /// <summary>A backup of a root in use: the database as of one moment, the objects it names, the keys.</summary>
+    public sealed class RootBackupTests : ServiceTestBase
+    {
+        private string _zipPath = null!;
+        private string _restored = null!;
+
+        public override async Task InitializeAsync()
+        {
+            await base.InitializeAsync();
+            _zipPath = TestRoot.Root.Path + "-backup.zip";
+            _restored = TestRoot.Root.Path + "-restored";
+        }
+
+        public override async Task DisposeAsync()
+        {
+            SqliteConnection.ClearAllPools();
+            foreach (string file in Directory.GetFiles(Path.GetDirectoryName(_zipPath)!, Path.GetFileName(_zipPath) + "*"))
+            {
+                File.Delete(file);
+            }
+
+            if (Directory.Exists(_restored))
+            {
+                Directory.Delete(_restored, recursive: true);
+            }
+
+            await base.DisposeAsync();
+        }
+
+        [Fact]
+        public async Task WriteAsync_RootInUse_UnzipsToTheSameFilesObjectsAndKeys()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile a = await StoreTextAsync(shelf, "/a.txt", "first");
+            ShelfFile b = await StoreTextAsync(shelf, "/b.txt", "second");
+            await File.WriteAllTextAsync(Path.Combine(TestRoot.Root.KeysPath, "jwt-secret"), "secret");
+
+            BackupSummary summary = await RootBackup.WriteAsync(TestRoot.Root, _zipPath, CancellationToken.None);
+
+            RootFolder restored = Restore();
+            Assert.Equal((2, 11L), (summary.ObjectCount, summary.ObjectBytes));
+            StoredObjects objects = new StoredObjects(restored);
+            Assert.Equal("first", await File.ReadAllTextAsync(objects.GetPath(a.Sha256)));
+            Assert.Equal("second", await File.ReadAllTextAsync(objects.GetPath(b.Sha256)));
+            Assert.Equal("secret", await File.ReadAllTextAsync(Path.Combine(restored.KeysPath, "jwt-secret")));
+            Assert.Equal(2, await CountAsync(restored, "SELECT COUNT(*) FROM file"));
+        }
+
+        [Fact]
+        public async Task WriteAsync_FileInTheTrash_IsKeptWithItsObject()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile trashed = await StoreTextAsync(shelf, "/trashed.txt", "restorable");
+            await FileService.DeleteFileAsync(shelf, EntryReference.ForPath("/trashed.txt"));
+
+            BackupSummary summary = await RootBackup.WriteAsync(TestRoot.Root, _zipPath, CancellationToken.None);
+
+            RootFolder restored = Restore();
+            Assert.Equal(1, summary.ObjectCount);
+            Assert.True(new StoredObjects(restored).Exists(trashed.Sha256));
+            Assert.Equal(1, await CountAsync(restored, "SELECT COUNT(*) FROM file WHERE deleted_at IS NOT NULL"));
+        }
+
+        [Fact]
+        public async Task WriteAsync_TwoFilesWithTheSameContents_HoldTheObjectOnce()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await StoreTextAsync(shelf, "/a.txt", "same");
+            await StoreTextAsync(shelf, "/b.txt", "same");
+
+            BackupSummary summary = await RootBackup.WriteAsync(TestRoot.Root, _zipPath, CancellationToken.None);
+
+            Assert.Equal(1, summary.ObjectCount);
+            using ZipArchive zip = ZipFile.OpenRead(_zipPath);
+            Assert.Single(zip.Entries, entry => entry.FullName.StartsWith(RootFolder.ObjectsFolderName + "/", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public async Task WriteAsync_UploadInProgress_IsLeftOut()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/big.bin", SizeBytes = 5 }, Uploader);
+
+            await RootBackup.WriteAsync(TestRoot.Root, _zipPath, CancellationToken.None);
+
+            Assert.Equal(0, await CountAsync(Restore(), "SELECT COUNT(*) FROM upload"));
+        }
+
+        [Fact]
+        public async Task WriteAsync_FilePurgedAfterTheSnapshot_IsPurgedInTheBackupTooAndLogged()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await StoreTextAsync(shelf, "/kept.txt", "kept");
+            ShelfFile purged = await StoreTextAsync(shelf, "/purged.txt", "purged");
+
+            BackupSummary summary = await RootBackup.WriteAsync(TestRoot.Root, _zipPath, async () =>
+            {
+                await FileService.DeleteFileAsync(shelf, EntryReference.ForPath("/purged.txt"));
+                await TrashService.EmptyAsync(shelf, CancellationToken.None);
+                ObjectStore.Delete(purged.Sha256);
+            }, CancellationToken.None);
+
+            RootFolder restored = Restore();
+            Assert.Equal((1, 1), (summary.ObjectCount, summary.FilesPurgedMeanwhile));
+            Assert.Equal(1, await CountAsync(restored, "SELECT COUNT(*) FROM file"));
+            Assert.Equal(1, await CountAsync(restored, $"SELECT COUNT(*) FROM change_log WHERE entity_id = '{purged.Id}' AND action = '{ChangeAction.Purged}'"));
+        }
+
+        [Fact]
+        public async Task WriteAsync_ObjectMissingWhileAFilePointsAtIt_WritesNoBackup()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile lost = await StoreTextAsync(shelf, "/lost.txt", "lost");
+            File.Delete(ObjectStore.GetPath(lost.Sha256));
+
+            await Assert.ThrowsAsync<InvalidDataException>(() => RootBackup.WriteAsync(TestRoot.Root, _zipPath, CancellationToken.None));
+
+            Assert.False(File.Exists(_zipPath));
+        }
+
+        [Fact]
+        public async Task WriteAsync_ObjectThatNoLongerMatchesItsHash_WritesNothingAndKeepsTheBackupBefore()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "the real bytes");
+            await File.WriteAllTextAsync(ObjectStore.GetPath(file.Sha256), "damaged");
+            await File.WriteAllTextAsync(_zipPath, "the backup before");
+
+            await Assert.ThrowsAsync<InvalidDataException>(() => RootBackup.WriteAsync(TestRoot.Root, _zipPath, CancellationToken.None));
+
+            Assert.Equal("the backup before", await File.ReadAllTextAsync(_zipPath));
+            Assert.Equal(new[] { _zipPath }, Directory.GetFiles(Path.GetDirectoryName(_zipPath)!, Path.GetFileName(_zipPath) + "*"));
+        }
+
+        [Fact]
+        public async Task WriteAsync_BackupThere_IsReplaced()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await StoreTextAsync(shelf, "/a.txt", "first");
+            await File.WriteAllTextAsync(_zipPath, "the backup before");
+
+            await RootBackup.WriteAsync(TestRoot.Root, _zipPath, CancellationToken.None);
+
+            Assert.Equal(1, await CountAsync(Restore(), "SELECT COUNT(*) FROM file"));
+        }
+
+        [Fact]
+        public async Task WriteAsync_ZipSnapshotDatabaseAndKeys_AreOwnerOnly()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            await File.WriteAllTextAsync(Path.Combine(TestRoot.Root.KeysPath, "jwt-secret"), "secret");
+            UnixFileMode? snapshotMode = null;
+
+            string snapshotPath = _zipPath + ".db.partial";
+            await RootBackup.WriteAsync(TestRoot.Root, _zipPath, () =>
+            {
+                snapshotMode = OperatingSystem.IsWindows() ? null : File.GetUnixFileMode(snapshotPath);
+                return Task.CompletedTask;
+            }, CancellationToken.None);
+
+            Assert.Equal(OwnerOnly.File, snapshotMode);
+            Assert.Equal(OwnerOnly.File, File.GetUnixFileMode(_zipPath));
+            using ZipArchive zip = ZipFile.OpenRead(_zipPath);
+            Assert.Equal((int)OwnerOnly.File, zip.GetEntry(RootFolder.DatabaseFileName)!.ExternalAttributes >> 16);
+            Assert.Equal((int)OwnerOnly.File, zip.GetEntry($"{RootFolder.KeysFolderName}/jwt-secret")!.ExternalAttributes >> 16);
+        }
+
+        [Fact]
+        public async Task WriteAsync_InsideTheRoot_IsRefused()
+        {
+            await Assert.ThrowsAsync<ArgumentException>(() => RootBackup.WriteAsync(TestRoot.Root, Path.Combine(TestRoot.Root.Path, "backup.zip"), CancellationToken.None));
+        }
+
+        [Fact]
+        public void Run_WithoutAZipPathOrRoot_IsUsage()
+        {
+            Assert.Equal(BackupCommand.Usage, BackupCommand.Run(TestRoot.Root.Path, null, NullLogger.Instance));
+            Assert.Equal(BackupCommand.Usage, BackupCommand.Run(TestRoot.Root.Path, "--other", NullLogger.Instance));
+            Assert.Equal(BackupCommand.Usage, BackupCommand.Run(null, _zipPath, NullLogger.Instance));
+        }
+
+        [Fact]
+        public void Run_FolderWithoutADatabase_FailsAndCreatesNothing()
+        {
+            Directory.CreateDirectory(_restored);
+
+            Assert.Equal(BackupCommand.Failed, BackupCommand.Run(_restored, _zipPath, NullLogger.Instance));
+
+            Assert.Empty(Directory.EnumerateFileSystemEntries(_restored));
+            Assert.False(File.Exists(_zipPath));
+        }
+
+        [Fact]
+        public async Task Run_DamagedObject_Fails()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "the real bytes");
+            await File.WriteAllTextAsync(ObjectStore.GetPath(file.Sha256), "damaged");
+
+            Assert.Equal(BackupCommand.Failed, BackupCommand.Run(TestRoot.Root.Path, _zipPath, NullLogger.Instance));
+        }
+
+        [Fact]
+        public void Run_Root_WritesTheZip()
+        {
+            Assert.Equal(BackupCommand.Written, BackupCommand.Run(TestRoot.Root.Path, _zipPath, NullLogger.Instance));
+
+            Assert.True(File.Exists(_zipPath));
+        }
+
+        private RootFolder Restore()
+        {
+            ZipFile.ExtractToDirectory(_zipPath, _restored);
+            return RootFolder.OpenExisting(_restored);
+        }
+
+        private static async Task<long> CountAsync(RootFolder root, string sql)
+        {
+            await using SqliteConnection connection = new SqliteConnection(RootFolder.ConnectionStringFor(root.DatabasePath, pooling: false));
+            await connection.OpenAsync();
+            return await connection.QuerySingleAsync<long>(sql);
+        }
+    }
+}

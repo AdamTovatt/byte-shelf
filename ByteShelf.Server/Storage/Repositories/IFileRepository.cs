@@ -45,6 +45,15 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <summary>Whether any row, live or trashed, points at the object <paramref name="sha256"/>.</summary>
         Task<bool> IsObjectReferencedAsync(string sha256, IDbSession? session = null);
 
+        /// <summary>The SHA-256 of every object a row points at, live or trashed, each once, in order.</summary>
+        Task<IReadOnlyList<string>> GetReferencedObjectsAsync(IDbSession? session = null);
+
+        /// <summary>
+        /// Removes every row, live or trashed, pointing at the object <paramref name="sha256"/>, each logged
+        /// as purged; answers how many. For a backup whose object the server purged meanwhile.
+        /// </summary>
+        Task<int> PurgeAllWithObjectAsync(string sha256, DateTimeOffset purgedAt, IDbSession session);
+
         /// <summary>
         /// Writes a file as a primary's change log holds it, logged as <paramref name="action"/>. A
         /// different live file at the same place is moved to the trash first; the log brings it back

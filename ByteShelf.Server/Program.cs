@@ -1,5 +1,6 @@
 using System.Net;
 using ByteShelf.Server.Access;
+using ByteShelf.Server.Backup.Services;
 using ByteShelf.Server.ChangeLog;
 using ByteShelf.Server.Email;
 using ByteShelf.Server.Invalidation;
@@ -37,6 +38,18 @@ namespace ByteShelf.Server
             if (args.Contains("--migrate-only"))
             {
                 RunMigrateOnlyMode();
+                return;
+            }
+
+            int backup = Array.IndexOf(args, "--backup");
+            if (backup >= 0)
+            {
+                // Only BYTESHELF_ROOT is read: the root belongs to the server running on it.
+                using ILoggerFactory loggerFactory = CreateStartupLoggerFactory();
+                Environment.ExitCode = BackupCommand.Run(
+                    EnvironmentVariables.ByteShelfRoot.GetValueOrDefault(),
+                    args.ElementAtOrDefault(backup + 1),
+                    loggerFactory.CreateLogger<Program>());
                 return;
             }
 

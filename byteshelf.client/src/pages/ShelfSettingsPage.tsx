@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Button, ButtonGroup, CardList, CardListItem, Dialog, IconButton, Input } from '../components/ui';
+import { Button, ButtonGroup, CardList, CardListItem, CopyableSecret, Dialog, IconButton, Input } from '../components/ui';
 import { Icon } from '../components/ui/Icon';
 import { ShelfHeader } from '../components/ShelfHeader';
 import { useCreateKey, useDeleteKey, useGrants, useKeys, useRemoveGrant, useSetGrant } from '../hooks/useAccessQueries';
@@ -242,13 +242,7 @@ function CreateKeyDialog({ shelf, onClose }: { shelf: string; onClose: () => voi
     return (
       <Dialog open title={`Key "${created.key.name}"`} onClose={onClose}>
         <p className="text-body-md text-text-2-light dark:text-text-2-dark">Copy the secret now: it is shown this once.</p>
-        <code className="block break-all rounded-lg bg-elevation-3-light dark:bg-elevation-3-dark p-3 text-body-sm text-text-1-light dark:text-text-1-dark">{created.secret}</code>
-        <Button
-          variant="secondary"
-          onClick={() => void navigator.clipboard.writeText(created.secret).then(() => toast.success('Copied'), () => toast.error('Could not copy; select the secret instead'))}
-        >
-          Copy
-        </Button>
+        <CopyableSecret value={created.secret} />
       </Dialog>
     );
   }

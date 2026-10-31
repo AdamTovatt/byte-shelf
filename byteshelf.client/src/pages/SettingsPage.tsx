@@ -5,12 +5,14 @@ import { Icon } from '../components/ui/Icon';
 import { PasswordInput, Button, ButtonGroup } from '../components/ui';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
-import { useChangeOwnPassword, useCurrentUser } from '../hooks/useUserQueries';
+import { useChangeOwnPassword, useCurrentUser, useIsAdmin } from '../hooks/useUserQueries';
+import { ReplicationSection } from '../components/ReplicationSection';
 import { getErrorMessage } from '../lib/utils';
 import { validatePassword } from '../lib/passwordValidation';
 
 export function SettingsPage() {
   const { theme, setTheme } = useTheme();
+  const isAdmin = useIsAdmin();
 
   return (
     <div className="p-6 md:p-8">
@@ -33,6 +35,8 @@ export function SettingsPage() {
         </section>
 
         <ChangePasswordSection />
+
+        {isAdmin && <ReplicationSection />}
 
         <AccountSection />
       </div>
