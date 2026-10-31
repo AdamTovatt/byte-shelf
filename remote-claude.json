@@ -1,0 +1,7 @@
+{
+  "dev": {
+    "command": "dotnet run",
+    "cwd": "ByteShelf.Server",
+    "port": 44911
+  }
+}

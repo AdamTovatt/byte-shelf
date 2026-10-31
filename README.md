@@ -58,6 +58,8 @@ output. The web UI's own tests are in [byteshelf.client](byteshelf.client/README
 For the web UI while developing, copy `ByteShelf.Server/Properties/launchSettings_git.json` to
 `launchSettings.json` beside it and `dotnet run --project ByteShelf.Server`: the server starts the
 Vite dev server and forwards to it. A published server serves the UI's production build itself.
+remote-claude's dev server button runs the same thing from `remote-claude.json`, so it needs
+`launchSettings.json` copied first too.
 
 The CLI runs from source the same way, against a running server:
 
