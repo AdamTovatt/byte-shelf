@@ -59,8 +59,8 @@ namespace ByteShelfClient.InMemory
                 return new DirectoryListing
                 {
                     Directory = shelf.ToShelfDirectory(listed),
-                    Directories = shelf.LiveChildDirectories(listed.Id).OrderBy(child => child.Name, StringComparer.Ordinal).Select(shelf.ToShelfDirectory).ToList(),
-                    Files = shelf.LiveFilesIn(listed.Id).OrderBy(file => file.Name, StringComparer.Ordinal).Select(shelf.ToShelfFile).ToList(),
+                    Directories = shelf.LiveChildDirectories(listed.Id).OrderBy(child => child.Name, StoredOrder.Instance).Select(shelf.ToShelfDirectory).ToList(),
+                    Files = shelf.LiveFilesIn(listed.Id).OrderBy(file => file.Name, StoredOrder.Instance).Select(shelf.ToShelfFile).ToList(),
                 };
             });
         }
@@ -77,12 +77,54 @@ namespace ByteShelfClient.InMemory
             string normalizedPath = ShelfPath.Normalize(path);
             options ??= new UploadOptions();
             string contentType = ContentTypes.Normalize(options.ContentType);
+            string? description = FileDescription.Normalize(options.Description);
 
             using MemoryStream buffer = new MemoryStream();
             await content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
             byte[] bytes = buffer.ToArray();
 
-            return await Run(shelf => Store(shelf, normalizedPath, bytes, contentType, options.Overwrite)).ConfigureAwait(false);
+            return await Run(shelf => Store(shelf, normalizedPath, bytes, contentType, description, options.Overwrite)).ConfigureAwait(false);
+        }
+
+        public Task<ShelfFile> SetDescriptionAsync(EntryReference file, string? description, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(file);
+            string? normalized = FileDescription.Normalize(description);
+
+            return Run(shelf =>
+            {
+                FileNode described = shelf.GetFile(file);
+                if (described.Description != normalized)
+                {
+                    described.Description = normalized;
+                    described.UpdatedAt = _store.Now;
+                }
+
+                return shelf.ToShelfFile(described);
+            });
+        }
+
+        public Task<FileSearchResults> SearchAsync(FileSearch search, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(search);
+            FileSearch normalized = search.Normalize();
+
+            return Run(shelf =>
+            {
+                DirectoryNode under = shelf.GetDirectory(normalized.Under!);
+                HashSet<Guid> directories = shelf.LiveSubtree(under).Select(directory => directory.Id).ToHashSet();
+
+                List<ShelfFile> found = shelf.Files
+                    .Where(file => file.IsLive && directories.Contains(file.DirectoryId) && Matches(normalized, file))
+                    .Select(shelf.ToShelfFile)
+                    .Where(file => normalized.After == null || StoredOrder.Instance.Compare(file.Path, normalized.After) > 0)
+                    .OrderBy(file => file.Path, StoredOrder.Instance)
+                    .Take(normalized.Limit!.Value + 1)
+                    .ToList();
+
+                List<ShelfFile> page = found.Take(normalized.Limit.Value).ToList();
+                return new FileSearchResults { Files = page, NextCursor = found.Count > page.Count ? page[^1].Path : null };
+            });
         }
 
         public Task<Stream> OpenReadAsync(EntryReference file, CancellationToken cancellationToken = default)
@@ -359,7 +401,7 @@ namespace ByteShelfClient.InMemory
         }
 
         /// <summary>Stores a file as an upload does on the server: refuses up front, then replaces and creates what it needs.</summary>
-        private ShelfFile Store(InMemoryShelf shelf, string normalizedPath, byte[] bytes, string contentType, bool overwrite)
+        private ShelfFile Store(InMemoryShelf shelf, string normalizedPath, byte[] bytes, string contentType, string? description, bool overwrite)
         {
             if (normalizedPath == ShelfPath.Root)
             {
@@ -402,10 +444,27 @@ namespace ByteShelfClient.InMemory
                 Sha256 = Sha256Of(bytes),
                 CreatedAt = now,
                 UpdatedAt = now,
+                Description = description ?? replaced?.Description,
             };
 
             shelf.Files.Add(stored);
             return shelf.ToShelfFile(stored);
+        }
+
+        /// <summary>Whether a file meets every criterion of a normalized search but where it is, as the server's query decides.</summary>
+        private static bool Matches(FileSearch search, FileNode file)
+        {
+            return (search.Text == null
+                    || FileSearch.Fold(file.Name).Contains(search.Text, StringComparison.Ordinal)
+                    || (file.Description != null && FileSearch.Fold(file.Description).Contains(search.Text, StringComparison.Ordinal)))
+                && search.MatchesContentType(file.ContentType)
+                && (search.MinSizeBytes == null || file.Content.LongLength >= search.MinSizeBytes)
+                && (search.MaxSizeBytes == null || file.Content.LongLength <= search.MaxSizeBytes)
+                && (search.CreatedFrom == null || file.CreatedAt >= search.CreatedFrom)
+                && (search.CreatedBefore == null || file.CreatedAt < search.CreatedBefore)
+                && (search.UpdatedFrom == null || file.UpdatedAt >= search.UpdatedFrom)
+                && (search.UpdatedBefore == null || file.UpdatedAt < search.UpdatedBefore)
+                && (search.Sha256 == null || file.Sha256 == search.Sha256);
         }
 
         private static void Trash(FileNode file, Guid deletionId, DateTimeOffset at)

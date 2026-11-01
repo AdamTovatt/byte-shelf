@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace ByteShelf.Cli.Commands
 {
     /// <summary>
@@ -10,7 +12,9 @@ namespace ByteShelf.Cli.Commands
         /// <summary>The options that take a value; every other <c>--word</c> is a flag.</summary>
         private static readonly HashSet<string> ValueOptions = new HashSet<string>(StringComparer.Ordinal)
         {
-            "--email", "--name", "--quota", "--type",
+            "--email", "--name", "--quota", "--type", "--description",
+            "--min-size", "--max-size", "--created-from", "--created-before", "--updated-from", "--updated-before",
+            "--sha256", "--limit", "--after",
         };
 
         private readonly List<string> _positionals = new List<string>();
@@ -93,9 +97,38 @@ namespace ByteShelf.Cli.Commands
                 return null;
             }
 
-            return long.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out long bytes)
+            return long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out long bytes)
                 ? bytes
                 : throw new UsageException($"{name} takes a number of bytes, not '{value}'.");
+        }
+
+        /// <exception cref="UsageException">The value is not a whole number.</exception>
+        public int? Count(string name)
+        {
+            string? value = Value(name);
+            if (value == null)
+            {
+                return null;
+            }
+
+            return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int count)
+                ? count
+                : throw new UsageException($"{name} takes a whole number, not '{value}'.");
+        }
+
+        /// <summary>An ISO 8601 date or time; one without an offset is local time, as a person at a terminal means it.</summary>
+        /// <exception cref="UsageException">The value is not one.</exception>
+        public DateTimeOffset? Time(string name)
+        {
+            string? value = Value(name);
+            if (value == null)
+            {
+                return null;
+            }
+
+            return DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out DateTimeOffset time)
+                ? time
+                : throw new UsageException($"{name} takes a date or time such as 2026-03-01 or 2026-03-01T14:30Z, not '{value}'.");
         }
 
         /// <exception cref="UsageException">There is a positional argument or an option the command did not read.</exception>

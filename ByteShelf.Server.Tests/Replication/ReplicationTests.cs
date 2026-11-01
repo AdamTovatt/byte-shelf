@@ -78,6 +78,22 @@ namespace ByteShelf.Server.Tests.Replication
         }
 
         [Fact]
+        public async Task Sync_DescriptionSetOnThePrimary_ReachesTheReplicaAndItsSearch()
+        {
+            await _pair.PutOnPrimaryAsync("docs", "/a.txt", "first");
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+
+            (await _pair.Primary.AdminClient.PutAsJsonAsync("/api/shelves/docs/files/description?path=/a.txt", new SetDescriptionRequest { Description = "Signed copy" })).EnsureSuccessStatusCode();
+            await _pair.SyncAsync();
+
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            Assert.Equal("Signed copy", (await replica.GetFromJsonAsync<ShelfFile>("/api/shelves/docs/files?path=/a.txt"))!.Description);
+            FileSearchResults found = (await replica.GetFromJsonAsync<FileSearchResults>("/api/shelves/docs/search?text=signed"))!;
+            Assert.Equal("/a.txt", Assert.Single(found.Files).Path);
+        }
+
+        [Fact]
         public async Task Sync_FilePurgedOnThePrimary_StaysInTheReplicasTrash()
         {
             await _pair.PairAsync();

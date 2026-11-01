@@ -44,6 +44,13 @@ namespace ByteShelfCommon
             return ByExtension.GetValueOrDefault(Path.GetExtension(fileName));
         }
 
+        /// <summary>A stored type as it is compared: lowercase, without parameters such as <c>; charset=utf-8</c>.</summary>
+        public static string MediaTypeOf(string contentType)
+        {
+            int parameters = contentType.IndexOf(';', StringComparison.Ordinal);
+            return (parameters < 0 ? contentType : contentType[..parameters]).Trim().ToLowerInvariant();
+        }
+
         /// <summary>The type to store: <see cref="Default"/> when none is given.</summary>
         /// <exception cref="ArgumentException">The value is not a media type.</exception>
         public static string Normalize(string? contentType)

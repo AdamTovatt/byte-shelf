@@ -6,6 +6,7 @@ import {
   parentPath,
   pathFromRoute,
   pathSegments,
+  relativeTo,
   SHELF_ROUTE_PATTERNS,
   shelfRoute,
   shelfViewRoute,
@@ -30,6 +31,12 @@ describe('shelf paths', () => {
     expect(parentPath('/docs/2026/a.txt')).toBe('/docs/2026');
     expect(parentPath('/')).toBe('/');
     expect(nameOf('/docs/2026/a.txt')).toBe('a.txt');
+  });
+
+  it('reads a path below a directory from there, and leaves one elsewhere whole', () => {
+    expect(relativeTo('/', '/docs/a.txt')).toBe('docs/a.txt');
+    expect(relativeTo('/docs', '/docs/2026/a.txt')).toBe('2026/a.txt');
+    expect(relativeTo('/docs', '/docsextra/a.txt')).toBe('/docsextra/a.txt');
   });
 
   it('lists the directories down to a path', () => {

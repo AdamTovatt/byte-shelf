@@ -29,8 +29,8 @@ await session.SignOutAsync();   // ends it on the server; disposing alone leaves
 
 `IByteShelfClient` lists and creates shelves and, with a `UserSession`, the signed-in user and
 (for admins) the other users; a shelf key cannot reach users. `IShelfClient` works on one shelf:
-list, upload, open, create directories, move, delete, the trash, and for admins the shelf's settings,
-grants and keys. Files and directories are named by path or by id; both convert to an
+list, search, upload, open, describe, create directories, move, delete, the trash, and for admins
+the shelf's settings, grants and keys. Files and directories are named by path or by id; both convert to an
 `EntryReference`.
 
 ## Uploads
@@ -38,14 +38,15 @@ grants and keys. Files and directories are named by path or by id; both convert 
 The server needs a file's size before it accepts any bytes. A stream that can seek is sent from its
 position to its end; any other stream is first copied to a temporary file. Files up to
 `ByteShelfHttpClientOptions.SingleRequestMaxBytes` (32 MiB) go in one request, larger ones as a
-resumable upload in chunks of `ChunkBytes` (8 MiB). A failed or cancelled chunk aborts the upload,
+resumable upload in chunks of `ChunkBytes` (8 MiB). A file with a description always goes as a
+resumable upload, since a single request has no body but the contents to carry it. A failed or cancelled chunk aborts the upload,
 so its reservation against the quota is released at once; the abort gets 10 seconds, and the
 failure it follows is the one thrown.
 
 ## Errors
 
-A path or content type the rules in ByteShelfCommon refuse throws `ArgumentException` before
-anything is sent. Anything the server refuses throws `ByteShelfException`, whose `Code` is one of
+A path, content type, description or search the rules in ByteShelfCommon refuse throws
+`ArgumentException` before anything is sent. Anything the server refuses throws `ByteShelfException`, whose `Code` is one of
 `ErrorCodes`: `not_found`, `conflict`, `permission_denied`, `quota_exceeded` and so on. A request that
 never reached the server throws what `HttpClient` throws.
 

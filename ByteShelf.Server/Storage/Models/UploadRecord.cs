@@ -17,6 +17,9 @@ namespace ByteShelf.Server.Storage.Models
         public required long ReceivedBytes { get; init; }
         public required bool Overwrite { get; init; }
 
+        /// <summary>The description the file is stored with, as <see cref="ByteShelfCommon.FileDescription.Normalize"/> left it.</summary>
+        public string? Description { get; init; }
+
         /// <summary>False for a single PUT, whose upload cannot outlive the request that made it.</summary>
         public required bool IsResumable { get; init; }
 

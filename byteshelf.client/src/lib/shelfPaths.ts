@@ -12,6 +12,12 @@ export function parentPath(path: string): string {
   return cut <= 0 ? ROOT_PATH : path.slice(0, cut);
 }
 
+/** A path below `directory` as it reads from there: `2026/march.pdf` from `/invoices`; a path elsewhere stays whole. */
+export function relativeTo(directory: string, path: string): string {
+  const prefix = directory === ROOT_PATH ? ROOT_PATH : `${directory}/`;
+  return path.startsWith(prefix) ? path.slice(prefix.length) : path;
+}
+
 export function nameOf(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1);
 }

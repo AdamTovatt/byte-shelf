@@ -194,6 +194,19 @@ namespace ByteShelfClient.InMemory
             }
         }
 
+        /// <summary><paramref name="directory"/> and every live directory reached from it through live ones.</summary>
+        public IEnumerable<DirectoryNode> LiveSubtree(DirectoryNode directory)
+        {
+            yield return directory;
+            foreach (DirectoryNode child in LiveChildDirectories(directory.Id).ToList())
+            {
+                foreach (DirectoryNode descendant in LiveSubtree(child))
+                {
+                    yield return descendant;
+                }
+            }
+        }
+
         public ShelfFile ToShelfFile(FileNode file)
         {
             return new ShelfFile
@@ -208,6 +221,7 @@ namespace ByteShelfClient.InMemory
                 Sha256 = file.Sha256,
                 CreatedAt = file.CreatedAt,
                 UpdatedAt = file.UpdatedAt,
+                Description = file.Description,
             };
         }
 
@@ -257,6 +271,7 @@ namespace ByteShelfClient.InMemory
             public required string Sha256 { get; init; }
             public required DateTimeOffset CreatedAt { get; init; }
             public required DateTimeOffset UpdatedAt { get; set; }
+            public string? Description { get; set; }
             public DateTimeOffset? DeletedAt { get; set; }
             public Guid? DeletionId { get; set; }
             public bool IsLive => DeletedAt == null;

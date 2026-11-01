@@ -29,13 +29,15 @@ path that is not allowed is a 400.
 | `GET files?path=` | A file's record. |
 | `DELETE files?path=` | Moves a file to the trash; answers the deletion. |
 | `POST files/move?path=` | Moves or renames a file to the body's `toPath`; missing directories above it are created. 400 for `/`, 409 when the path is taken. |
+| `PUT files/description?path=` | Sets the body's `description`, or removes it when null or blank; 400 over `FileDescription.MaxLength` characters. |
+| `GET search?under=&text=&…` | One page of the live files under `under` (the root by default) that match every criterion given: `text`, `contentType`, `minSizeBytes`, `maxSizeBytes`, `createdFrom`, `createdBefore`, `updatedFrom`, `updatedBefore`, `sha256`, `limit` (1 to 1000, 100 by default) and `after` (the previous page's `nextCursor`). Sizes are inclusive; a time range includes its start and excludes its end. 400 for a criterion `FileSearch.Normalize` refuses, 404 for a missing `under`. See "Descriptions and search" below. |
 | `POST directories` | Creates the directory at the body's `path` and any missing one above it; an existing one is answered as it is. |
 | `POST directories/move?path=` | Moves or renames a directory with everything in it to the body's `toPath`. 400 for the root, a destination of `/` or inside itself, or one that would make a path under it longer than `ShelfPath.MaxPathLength`; 409 when the path is taken. |
 | `DELETE directories?path=` | Moves a directory and everything live under it to the trash as one deletion; 400 for the root. |
 | `GET content?path=` | Streams the contents; `Range`, `If-None-Match` and `If-Range` work, the ETag is the SHA-256. Served with `X-Content-Type-Options: nosniff` and, except for a PDF (Chrome's viewer does not run sandboxed), a sandboxing `Content-Security-Policy`. `download=true` adds a file name. |
 | `POST download-link?path=` | A link to the contents that works without a token for 5 minutes, for a browser to open or save (see below). |
 | `PUT content?path=&overwrite=` | Stores the body in one request. Needs `Content-Length` (411 without); the `Content-Type` is stored. 409 when the path is taken and `overwrite` is not set, 507 over quota. |
-| `POST uploads` | Starts a resumable upload with its size; reserves it against the quota. |
+| `POST uploads` | Starts a resumable upload with its size, and the file's `description` if it has one (a single `PUT` has no body to carry one); reserves the size against the quota. |
 | `GET uploads/{id}` | Progress: `receivedBytes` is where the next chunk starts. |
 | `PUT uploads/{id}?offset=` | Appends a chunk of at most `UploadLimits.MaxChunkBytes` (64 MiB, 413 above); 409 when `offset` is not `receivedBytes`. |
 | `POST uploads/{id}/complete` | Stores the file once every byte has arrived. 409 when the path was taken meanwhile; the upload is kept. |
@@ -55,7 +57,7 @@ the access it was made with is taken away meanwhile.
 
 ## Uploads (`UploadService`)
 
-1. Start: the path and content type are checked and the whole declared size is reserved against
+1. Start: the path, content type and description are checked and the whole declared size is reserved against
    the shelf's quota, in one write transaction (SQLite has one writer at a time, so two uploads can
    never both take the same free space). A single `PUT` uses `Content-Length` as the size. The
    upload records who started it (`started_by`), the only caller besides read-write ones who may use
@@ -78,6 +80,25 @@ window (`BYTESHELF_RESTORE_WINDOW_DAYS`, 30 by default) and count against the qu
 removes them; one past its window is neither listed nor restorable, even if the purge has not
 reached all of it yet. Emptying a shelf's trash purges all of it at once, whatever is left of each
 window.
+
+## Descriptions and search (`FileService`)
+
+A file has at most one description, free text of up to 2,000 characters (code points, as SQLite's
+`length()` counts them), trimmed, with blank meaning none. It is part of the file's row, so the change
+log carries it to replicas. Setting it moves the file's `updatedAt` and is logged as an update;
+setting the text it already has changes and logs nothing. A file stored over another keeps the
+other's description unless its upload brings one: a new version of a file is still that file.
+
+Search runs in one query: a recursive walk from the `under` directory builds each live file's full
+path, and the criteria of `ByteShelfCommon.FileSearch` filter the files. `text` matches the name or
+the description; both sides are folded by `FileSearch.Fold` (normalization form C, invariant
+lowercase). SQLite's own `lower()` folds ASCII only, so the file row keeps folded copies
+(`name_fold`, `description_fold`) that `FileRepository` writes from the name and description on
+every write. `contentType` compares the type without its parameters, kept the same way in
+`media_type` by `ContentTypes.MediaTypeOf`, and `type/*` matches the whole family.
+Results come by full path; a page asks for one row more than it returns, to know whether another
+follows, and its `nextCursor` is its last path, which the next page starts after. The in-memory
+client applies the same rules, and the client contract tests run both.
 
 ## Moves (`FileService`, `DirectoryService`)
 

@@ -11,10 +11,10 @@ namespace ByteShelf.Cli.Shared
 
         /// <summary>
         /// Stores a local file at <paramref name="location"/>, under its own name when that names a
-        /// directory, typed by its extension unless <paramref name="contentType"/> says otherwise.
+        /// directory, typed by its extension unless <paramref name="options"/> give a content type.
         /// </summary>
         /// <exception cref="UsageException">There is no such local file.</exception>
-        public static async Task<ShelfFile> UploadFileAsync(IShelfClient shelf, string localPath, ShelfLocation location, bool overwrite, string? contentType, CancellationToken cancellationToken)
+        public static async Task<ShelfFile> UploadFileAsync(IShelfClient shelf, string localPath, ShelfLocation location, UploadOptions options, CancellationToken cancellationToken)
         {
             if (!File.Exists(localPath))
             {
@@ -22,20 +22,20 @@ namespace ByteShelf.Cli.Shared
             }
 
             await using FileStream content = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read, CopyBufferBytes, useAsync: true);
-            return await UploadAsync(shelf, location.FilePathFor(Path.GetFileName(localPath)), content, overwrite, contentType, cancellationToken);
+            return await UploadAsync(shelf, location.FilePathFor(Path.GetFileName(localPath)), content, options, cancellationToken);
         }
 
         /// <summary>Stores <paramref name="content"/>, which has no name of its own, at <paramref name="location"/>.</summary>
         /// <param name="source">What the content is, to start an error with, such as "Standard input".</param>
         /// <exception cref="UsageException"><paramref name="location"/> names a directory.</exception>
-        public static Task<ShelfFile> UploadStreamAsync(IShelfClient shelf, ShelfLocation location, Stream content, string source, bool overwrite, string? contentType, CancellationToken cancellationToken)
+        public static Task<ShelfFile> UploadStreamAsync(IShelfClient shelf, ShelfLocation location, Stream content, string source, UploadOptions options, CancellationToken cancellationToken)
         {
             if (location.NamesADirectory)
             {
                 throw new UsageException($"{source} has no file name; end the path with one.");
             }
 
-            return UploadAsync(shelf, location.Path, content, overwrite, contentType, cancellationToken);
+            return UploadAsync(shelf, location.Path, content, options, cancellationToken);
         }
 
         /// <summary>
@@ -102,10 +102,9 @@ namespace ByteShelf.Cli.Shared
             }
         }
 
-        private static Task<ShelfFile> UploadAsync(IShelfClient shelf, string path, Stream content, bool overwrite, string? contentType, CancellationToken cancellationToken)
+        private static Task<ShelfFile> UploadAsync(IShelfClient shelf, string path, Stream content, UploadOptions options, CancellationToken cancellationToken)
         {
-            UploadOptions options = new UploadOptions { Overwrite = overwrite, ContentType = contentType ?? ContentTypes.ForFileName(path) };
-            return shelf.UploadAsync(path, content, options, cancellationToken);
+            return shelf.UploadAsync(path, content, options with { ContentType = options.ContentType ?? ContentTypes.ForFileName(path) }, cancellationToken);
         }
     }
 }

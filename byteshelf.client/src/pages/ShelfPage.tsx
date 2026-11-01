@@ -1,4 +1,4 @@
-import { useState, type DragEvent } from 'react';
+import { useState, type DragEvent, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
@@ -12,6 +12,7 @@ import {
   Input,
   PageLayout,
   Spinner,
+  Textarea,
   cn,
   getErrorMessage,
   getFileIcon,
@@ -21,13 +22,14 @@ import { FileButton } from '../components/FileButton';
 import { FormDialog } from '../components/FormDialog';
 import { MoveDialog } from '../components/MoveDialog';
 import { ShelfHeader } from '../components/ShelfHeader';
-import { useCreateDirectory, useDeleteEntry, useListing, useMoveEntry, useRestoreDeletion } from '../hooks/useShelfQueries';
+import { useCreateDirectory, useDeleteEntry, useFileSearch, useListing, useMoveEntry, useRestoreDeletion, useSetDescription } from '../hooks/useShelfQueries';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useUploads } from '../hooks/useUploads';
 import { formatBytes, formatTime } from '../lib/format';
-import { joinPath, parentPath, pathFromRoute, shelfRoute } from '../lib/shelfPaths';
+import { joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../lib/shelfPaths';
 import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
-import { createDownloadLink, type ShelfDirectory, type ShelfFile } from '../services/shelfService';
+import { createDownloadLink, type FileSearchResults, type ShelfDirectory, type ShelfFile } from '../services/shelfService';
 
 export type Entry = { kind: 'directory'; value: ShelfDirectory } | { kind: 'file'; value: ShelfFile };
 
@@ -44,7 +46,14 @@ export function ShelfPage() {
   const [creatingDirectory, setCreatingDirectory] = useState(false);
   const [renaming, setRenaming] = useState<Entry | null>(null);
   const [moving, setMoving] = useState<Entry | null>(null);
+  const [describing, setDescribing] = useState<ShelfFile | null>(null);
   const [dragging, setDragging] = useState(false);
+  // Kept with the shelf and folder it was typed in, so opening another starts with no search: the
+  // route, and so this component, stays the same from one shelf to the next.
+  const [typed, setTyped] = useState({ shelf, path, text: '' });
+  const searchText = typed.shelf === shelf && typed.path === path ? typed.text : '';
+  const searching = searchText.trim() !== '';
+  const found = useFileSearch(shelf, path, useDebouncedValue(searchText, SEARCH_DELAY_MS));
 
   function onDrop(event: DragEvent<HTMLDivElement>): void {
     event.preventDefault();
@@ -110,6 +119,22 @@ export function ShelfPage() {
       ]
     : [];
 
+  function row(entry: Entry, label?: string) {
+    return (
+      <EntryRow
+        key={entry.value.id}
+        entry={entry}
+        label={label}
+        onOpen={() => (entry.kind === 'directory' ? navigate(shelfRoute(shelf, entry.value.path)) : void open(entry.value, false))}
+        onDownload={entry.kind === 'file' ? () => void open(entry.value, true) : undefined}
+        onDescribe={entry.kind === 'file' ? () => setDescribing(entry.value) : undefined}
+        onRename={() => setRenaming(entry)}
+        onMove={() => setMoving(entry)}
+        onDelete={() => void remove(entry)}
+      />
+    );
+  }
+
   return (
     <div
       className="min-h-full"
@@ -123,59 +148,101 @@ export function ShelfPage() {
       <PageLayout className="space-y-6">
         <ShelfHeader shelf={shelf} view="files" path={path} />
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <FileButton variant="main" icon={<Icon icon={iconMap.upload} size={16} />} onFiles={(files) => uploads.upload(files, path)} aria-label="Upload files">
             Upload
           </FileButton>
           <Button variant="secondary" icon={<Icon icon={iconMap.folder} size={16} />} onClick={() => setCreatingDirectory(true)} aria-label="New folder">
             New folder
           </Button>
+          <div className="min-w-48 flex-1">
+            <Input
+              variant="quiet"
+              value={searchText}
+              onChange={(event) => setTyped({ shelf, path, text: event.target.value })}
+              onKeyDown={(event) => event.key === 'Escape' && setTyped({ shelf, path, text: '' })}
+              placeholder="Search names and descriptions"
+              aria-label="Search files in this folder and below"
+              icon={<Icon icon={iconMap.search} size={16} />}
+              endElement={searchText && (
+                <IconButton variant="ghost" size="sm" icon={iconMap.close} aria-label="Clear the search" onClick={() => setTyped({ shelf, path, text: '' })} />
+              )}
+              autoComplete="off"
+            />
+          </div>
         </div>
 
-        {isLoading && <Spinner />}
-        {error && <p className="text-body-md text-danger-11">{getErrorMessage(error, 'Could not list this directory')}</p>}
-        {listing && entries.length === 0 && (
-          <EmptyState
-            message={dragging ? 'Drop to upload into this folder.' : 'Nothing here yet. Upload files, or drop them anywhere on the page.'}
-            className={cn('rounded-xl border-2 border-dashed', dragging ? 'border-brand-border' : 'border-transparent')}
-          />
-        )}
-        {entries.length > 0 && (
-          <Card variant="elevated" padding="none" className={cn('divide-y divide-border overflow-hidden', dragging && 'ring-2 ring-brand-border')}>
-            {entries.map((entry) => (
-              <EntryRow
-                key={entry.value.id}
-                entry={entry}
-                onOpen={() => (entry.kind === 'directory' ? navigate(shelfRoute(shelf, entry.value.path)) : void open(entry.value, false))}
-                onDownload={entry.kind === 'file' ? () => void open(entry.value, true) : undefined}
-                onRename={() => setRenaming(entry)}
-                onMove={() => setMoving(entry)}
-                onDelete={() => void remove(entry)}
+        {searching ? (
+          <SearchResults results={found.data} isLoading={found.isLoading} error={found.error} text={searchText.trim()} row={(file) => row({ kind: 'file', value: file }, relativeTo(path, file.path))} />
+        ) : (
+          <>
+            {isLoading && <Spinner />}
+            {error && <p className="text-body-md text-danger-11">{getErrorMessage(error, 'Could not list this directory')}</p>}
+            {listing && entries.length === 0 && (
+              <EmptyState
+                message={dragging ? 'Drop to upload into this folder.' : 'Nothing here yet. Upload files, or drop them anywhere on the page.'}
+                className={cn('rounded-xl border-2 border-dashed', dragging ? 'border-brand-border' : 'border-transparent')}
               />
-            ))}
-          </Card>
+            )}
+            {entries.length > 0 && (
+              <Card variant="elevated" padding="none" className={cn('divide-y divide-border overflow-hidden', dragging && 'ring-2 ring-brand-border')}>
+                {entries.map((entry) => row(entry))}
+              </Card>
+            )}
+          </>
         )}
       </PageLayout>
 
       <NewDirectoryDialog shelf={shelf} parent={path} open={creatingDirectory} onClose={() => setCreatingDirectory(false)} />
       {renaming && <RenameDialog shelf={shelf} entry={renaming} onClose={() => setRenaming(null)} />}
       {moving && <MoveDialog shelf={shelf} entry={moving} onClose={() => setMoving(null)} />}
+      {describing && <DescriptionDialog shelf={shelf} file={describing} onClose={() => setDescribing(null)} />}
+    </div>
+  );
+}
+
+/** How long typing must pause before a search is sent. */
+const SEARCH_DELAY_MS = 250;
+
+interface SearchResultsProps {
+  results: FileSearchResults | undefined;
+  isLoading: boolean;
+  error: Error | null;
+  text: string;
+  row: (file: ShelfFile) => ReactNode;
+}
+
+function SearchResults({ results, isLoading, error, text, row }: SearchResultsProps) {
+  if (error) return <p className="text-body-md text-danger-11">{getErrorMessage(error, 'Could not search')}</p>;
+  if (isLoading || !results) return <Spinner />;
+  if (results.files.length === 0) return <EmptyState message={`No file here or below has “${text}” in its name or description.`} />;
+
+  return (
+    <div className="space-y-2">
+      <Card variant="elevated" padding="none" className="divide-y divide-border overflow-hidden">
+        {results.files.map(row)}
+      </Card>
+      {results.nextCursor && <p className="text-body-sm text-muted">Showing the first {results.files.length} matches. Type more to narrow them.</p>}
     </div>
   );
 }
 
 interface EntryRowProps {
   entry: Entry;
+  /** What the row is called: the name, unless a search shows the path from the folder. */
+  label?: string;
   onOpen: () => void;
   onDownload?: () => void;
+  onDescribe?: () => void;
   onRename: () => void;
   onMove: () => void;
   onDelete: () => void;
 }
 
-function EntryRow({ entry, onOpen, onDownload, onRename, onMove, onDelete }: EntryRowProps) {
+function EntryRow({ entry, label, onOpen, onDownload, onDescribe, onRename, onMove, onDelete }: EntryRowProps) {
   const isFile = entry.kind === 'file';
   const name = entry.value.name;
+  const description = isFile ? entry.value.description : null;
 
   return (
     <div className="group flex items-center gap-2 px-2 py-1 transition-colors hover:bg-row-hover">
@@ -187,7 +254,10 @@ function EntryRow({ entry, onOpen, onDownload, onRename, onMove, onDelete }: Ent
         className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2 text-left"
       >
         <Icon icon={isFile ? getFileIcon(name) : iconMap.folder} size={18} className="shrink-0 text-muted" />
-        <span className="min-w-0 truncate text-body-md text-fg">{name}</span>
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate text-body-md text-fg">{label ?? name}</span>
+          {description && <span className="truncate text-body-sm text-muted" title={description}>{description}</span>}
+        </span>
         {isFile && (
           <Icon icon={iconMap.externalLink} size={14} className="shrink-0 text-neutral-9 opacity-60 transition-opacity group-hover:opacity-100" />
         )}
@@ -199,6 +269,7 @@ function EntryRow({ entry, onOpen, onDownload, onRename, onMove, onDelete }: Ent
       )}
       <Dropdown align="right" trigger={<IconButton variant="ghost" size="sm" icon={iconMap.more} aria-label={`Actions for ${name}`} />}>
         {onDownload && <DropdownItem icon={<Icon icon={iconMap.download} size={16} />} onClick={onDownload}>Download</DropdownItem>}
+        {onDescribe && <DropdownItem icon={<Icon icon={iconMap.edit} size={16} />} onClick={onDescribe}>Description</DropdownItem>}
         <DropdownItem icon={<Icon icon={iconMap.rename} size={16} />} onClick={onRename}>Rename</DropdownItem>
         <DropdownItem icon={<Icon icon={iconMap.move} size={16} />} onClick={onMove}>Move</DropdownItem>
         <DropdownItem icon={<Icon icon={iconMap.delete} size={16} />} variant="danger" onClick={onDelete}>Delete</DropdownItem>
@@ -221,6 +292,32 @@ function NewDirectoryDialog({ shelf, parent, open, onClose }: { shelf: string; p
   return (
     <FormDialog open={open} title="New folder" onClose={close} onSubmit={() => void submit(() => createDirectory.mutateAsync(joinPath(parent, name.trim())), close)} submitLabel="Create" submitting={createDirectory.isPending} error={error}>
       <Input label="Name" value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" required />
+    </FormDialog>
+  );
+}
+
+function DescriptionDialog({ shelf, file, onClose }: { shelf: string; file: ShelfFile; onClose: () => void }) {
+  const setDescription = useSetDescription(shelf);
+  const [text, setText] = useState(file.description ?? '');
+  const { error, submit } = useSubmit('Could not save the description');
+
+  return (
+    <FormDialog
+      open
+      title={`Describe ${file.name}`}
+      onClose={onClose}
+      onSubmit={() => void submit(() => setDescription.mutateAsync({ id: file.id, description: text.trim() || null }), onClose)}
+      submitLabel="Save"
+      submitting={setDescription.isPending}
+      error={error}
+    >
+      <Textarea
+        label="Description"
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        placeholder="What the file is. Search finds it by these words too."
+        autoResize
+      />
     </FormDialog>
   );
 }

@@ -26,9 +26,9 @@ lives) whether the caller may do the operation there. No access answers 404, too
 
 | Operation | Endpoints | Who may |
 |---|---|---|
-| `Read` | list, file records, content, a download link, the shelf's info, the trash list | every caller with access |
-| `Add` | store a new file, create directories, every upload endpoint | `addOnly` and `readWrite` keys, `readWrite` users |
-| `Write` | overwrite, move, delete, restore, empty the trash | `readWrite` keys and users |
+| `Read` | list, search, file records, content, a download link, the shelf's info, the trash list | every caller with access |
+| `Add` | store a new file (with a description), create directories, every upload endpoint | `addOnly` and `readWrite` keys, `readWrite` users |
+| `Write` | overwrite, move, describe a stored file, delete, restore, empty the trash | `readWrite` keys and users |
 | `Administer` | rename, quota and delete the shelf; its grants and keys | admins |
 
 Storing with `overwrite`, as a single `PUT` or an upload, needs `Write` (`ShelfAccess.RequireStore`).

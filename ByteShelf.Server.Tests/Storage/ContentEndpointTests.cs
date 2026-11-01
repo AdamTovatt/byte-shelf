@@ -39,6 +39,40 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
+        public async Task Search_CriteriaInTheQueryString_BindByTheirCamelCaseNames()
+        {
+            await PutAsync("/reports/q3.txt", "abc", "text/plain");
+            await PutAsync("/reports/q3.png", "abc", "image/png");
+
+            FileSearchResults? found = await _host.AdminClient.GetFromJsonAsync<FileSearchResults>(
+                "/api/shelves/docs/search?under=%2Freports&text=Q3&contentType=text%2Fplain&maxSizeBytes=3&limit=5");
+
+            Assert.Equal("/reports/q3.txt", Assert.Single(found!.Files).Path);
+        }
+
+        [Fact]
+        public async Task Search_CriterionNotAllowed_Returns400()
+        {
+            HttpResponseMessage response = await _host.AdminClient.GetAsync("/api/shelves/docs/search?limit=0");
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal(ErrorCodes.InvalidRequest, (await response.Content.ReadFromJsonAsync<ErrorResponse>())?.Code);
+        }
+
+        [Fact]
+        public async Task PutDescription_OverTheLimit_Returns400AndKeepsTheFileUndescribed()
+        {
+            await PutAsync("/a.txt", "a");
+
+            HttpResponseMessage response = await _host.AdminClient.PutAsJsonAsync(
+                "/api/shelves/docs/files/description?path=/a.txt", new SetDescriptionRequest { Description = new string('a', FileDescription.MaxLength + 1) });
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal(ErrorCodes.InvalidRequest, (await response.Content.ReadFromJsonAsync<ErrorResponse>())?.Code);
+            Assert.Null((await _host.AdminClient.GetFromJsonAsync<ShelfFile>("/api/shelves/docs/files?path=/a.txt"))!.Description);
+        }
+
+        [Fact]
         public async Task PutThenGet_WithRange_ReturnsThePartAskedFor()
         {
             ShelfFile file = await PutAsync("/notes/hello.txt", "Hello, shelf!");

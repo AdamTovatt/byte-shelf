@@ -174,6 +174,97 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
+        public async Task Put_WithADescription_StoresIt()
+        {
+            await File.WriteAllTextAsync(_work.File("a.txt"), "a");
+
+            await RunAsync("put", _work.File("a.txt"), "docs:/a.txt", "--description", "The signed copy");
+
+            Assert.Equal("The signed copy", (await Docs.GetFileAsync("/a.txt")).Description);
+        }
+
+        [Fact]
+        public async Task Describe_Text_SetsItAndPrintsTheRecord()
+        {
+            await UploadAsync("/a.txt", "a");
+
+            CliRun described = await RunAsync("describe", "docs:/a.txt", "Signed copy\nby both");
+
+            Assert.EndsWith(
+                $"description  Signed copy{Environment.NewLine}             by both",
+                described.Output.TrimEnd(),
+                StringComparison.Ordinal);
+            Assert.Equal("Signed copy\nby both", (await Docs.GetFileAsync("/a.txt")).Description);
+        }
+
+        [Fact]
+        public async Task Describe_Clear_RemovesIt()
+        {
+            await Docs.UploadAsync("/a.txt", new MemoryStream(Encoding.UTF8.GetBytes("a")), new UploadOptions { Description = "Signed copy" });
+
+            await RunAsync("describe", "docs:/a.txt", "--clear");
+
+            Assert.Null((await Docs.GetFileAsync("/a.txt")).Description);
+        }
+
+        [Theory]
+        [InlineData(null, false)]
+        [InlineData("Signed copy", true)]
+        public async Task Describe_NotExactlyOneOfTextAndClear_FailsAsMisuseAndChangesNothing(string? text, bool clear)
+        {
+            await Docs.UploadAsync("/a.txt", new MemoryStream(Encoding.UTF8.GetBytes("a")), new UploadOptions { Description = "Kept" });
+            List<string> args = new List<string> { "describe", "docs:/a.txt" };
+            if (text != null)
+            {
+                args.Add(text);
+            }
+
+            if (clear)
+            {
+                args.Add("--clear");
+            }
+
+            CliRun run = await RunAsync(args.ToArray());
+
+            Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.Equal("Kept", (await Docs.GetFileAsync("/a.txt")).Description);
+        }
+
+        [Fact]
+        public async Task Find_NextPageAfterAPathWithAQuote_ShowsItQuotedForTheShell()
+        {
+            await UploadAsync("/it's.txt", "a");
+            await UploadAsync("/z.txt", "b");
+
+            CliRun run = await RunAsync("find", "docs", "--limit", "1");
+
+            Assert.EndsWith("More: add --after '/it'\\''s.txt'", run.Output.TrimEnd(), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Find_TextAndType_PrintsTheMatchesAndHowToGetTheNextPage()
+        {
+            await UploadAsync("/2026/march-invoice.pdf", "a");
+            await UploadAsync("/2026/april-invoice.pdf", "b");
+            await UploadAsync("/2026/invoice-notes.txt", "c");
+
+            CliRun run = await RunAsync("find", "docs:/2026", "INVOICE", "--type", "application/*", "--limit", "1");
+
+            Assert.Equal(CliApp.Succeeded, run.ExitCode);
+            string[] lines = run.Output.TrimEnd().Split(Environment.NewLine);
+            Assert.StartsWith("/2026/april-invoice.pdf  1 B", lines[0], StringComparison.Ordinal);
+            Assert.Equal("More: add --after '/2026/april-invoice.pdf'", lines[1]);
+        }
+
+        [Fact]
+        public async Task Find_TimeThatIsNotOne_FailsAsMisuse()
+        {
+            CliRun run = await RunAsync("find", "docs", "--created-from", "yesterday");
+
+            Assert.Equal(CliApp.Misused, run.ExitCode);
+        }
+
+        [Fact]
         public async Task Stat_AFileOrADirectory_PrintsItsRecord()
         {
             ShelfFile file = await UploadAsync("/a/b.txt", "b");

@@ -1,4 +1,5 @@
 using ByteShelf.Server.Storage.Models;
+using ByteShelfCommon;
 using EasyReasy.Database;
 
 namespace ByteShelf.Server.Storage.Repositories
@@ -29,6 +30,17 @@ namespace ByteShelf.Server.Storage.Repositories
 
         /// <summary>Puts a live file in <paramref name="directoryId"/> as <paramref name="name"/>; null when it is not live.</summary>
         Task<FileRecord?> MoveAsync(Guid id, Guid directoryId, string name, DateTimeOffset movedAt, IDbSession session);
+
+        /// <summary>Sets a live file's description, null for none; null when the file is not live.</summary>
+        Task<FileRecord?> SetDescriptionAsync(Guid id, string? description, DateTimeOffset at, IDbSession session);
+
+        /// <summary>
+        /// The live files under <paramref name="directoryId"/>, at any depth, that match the criteria of
+        /// <paramref name="search"/> (normalized), by full path, each with that path; at most
+        /// <paramref name="maxRows"/> of them, which the caller sets one past the page so it can tell
+        /// whether another follows. <paramref name="directoryPath"/> is the directory's own path.
+        /// </summary>
+        Task<IReadOnlyList<(FileRecord File, string Path)>> SearchAsync(Guid directoryId, string directoryPath, FileSearch search, int maxRows, IDbSession? session = null);
 
         /// <summary>Brings back every file of a deletion; answers how many.</summary>
         Task<int> RestoreDeletionAsync(Guid deletionId, DateTimeOffset restoredAt, IDbSession session);

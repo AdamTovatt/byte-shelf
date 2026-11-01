@@ -12,6 +12,9 @@ namespace ByteShelf.Server.Storage.Models
         public required string Sha256 { get; init; }
         public required DateTimeOffset CreatedAt { get; init; }
         public required DateTimeOffset UpdatedAt { get; init; }
+
+        /// <summary>Free text about the file, as <see cref="ByteShelfCommon.FileDescription.Normalize"/> left it; null for none.</summary>
+        public string? Description { get; init; }
         public DateTimeOffset? DeletedAt { get; init; }
         public Guid? DeletionId { get; init; }
     }

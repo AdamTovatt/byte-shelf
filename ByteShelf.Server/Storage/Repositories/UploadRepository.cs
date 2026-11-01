@@ -16,6 +16,7 @@ namespace ByteShelf.Server.Storage.Repositories
             size_bytes AS {nameof(UploadEntity.SizeBytes)},
             received_bytes AS {nameof(UploadEntity.ReceivedBytes)},
             overwrite,
+            description,
             is_resumable AS {nameof(UploadEntity.IsResumable)},
             created_at AS {nameof(UploadEntity.CreatedAt)},
             last_activity_at AS {nameof(UploadEntity.LastActivityAt)}";
@@ -43,8 +44,8 @@ namespace ByteShelf.Server.Storage.Repositories
         public async Task InsertAsync(UploadRecord upload, IDbSession session)
         {
             string query = @"
-                INSERT INTO upload (id, shelf_id, started_by, path, content_type, size_bytes, received_bytes, overwrite, is_resumable, created_at, last_activity_at)
-                VALUES (@Id, @ShelfId, @StartedBy, @Path, @ContentType, @SizeBytes, @ReceivedBytes, @Overwrite, @IsResumable, @CreatedAt, @LastActivityAt)";
+                INSERT INTO upload (id, shelf_id, started_by, path, content_type, size_bytes, received_bytes, overwrite, description, is_resumable, created_at, last_activity_at)
+                VALUES (@Id, @ShelfId, @StartedBy, @Path, @ContentType, @SizeBytes, @ReceivedBytes, @Overwrite, @Description, @IsResumable, @CreatedAt, @LastActivityAt)";
 
             await session.Connection.ExecuteAsync(
                 query,
@@ -58,6 +59,7 @@ namespace ByteShelf.Server.Storage.Repositories
                     upload.SizeBytes,
                     upload.ReceivedBytes,
                     upload.Overwrite,
+                    upload.Description,
                     upload.IsResumable,
                     upload.CreatedAt,
                     upload.LastActivityAt,
@@ -141,6 +143,7 @@ namespace ByteShelf.Server.Storage.Repositories
             public long SizeBytes { get; set; }
             public long ReceivedBytes { get; set; }
             public bool Overwrite { get; set; }
+            public string? Description { get; set; }
             public bool IsResumable { get; set; }
             public DateTimeOffset CreatedAt { get; set; }
             public DateTimeOffset LastActivityAt { get; set; }
@@ -157,6 +160,7 @@ namespace ByteShelf.Server.Storage.Repositories
                     SizeBytes = SizeBytes,
                     ReceivedBytes = ReceivedBytes,
                     Overwrite = Overwrite,
+                    Description = Description,
                     IsResumable = IsResumable,
                     CreatedAt = CreatedAt,
                     LastActivityAt = LastActivityAt,

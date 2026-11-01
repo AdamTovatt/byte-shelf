@@ -86,6 +86,7 @@ namespace ByteShelf.Cli.Mcp
             [Description("Text to store, as UTF-8.")] string? text = null,
             [Description("Replace a file already at the path.")] bool overwrite = false,
             [Description("The media type, such as application/pdf; by default from the file name's extension.")] string? contentType = null,
+            [Description("What the file is, in up to 2000 characters, for people and for search_files to find it by.")] string? description = null,
             CancellationToken cancellationToken = default)
         {
             return RunAsync(cancellationToken, async client =>
@@ -97,14 +98,65 @@ namespace ByteShelf.Cli.Mcp
 
                 ShelfLocation location = ShelfLocation.Of(shelf, path);
                 IShelfClient shelfClient = client.Shelf(location.Shelf);
+                UploadOptions options = new UploadOptions { Overwrite = overwrite, ContentType = contentType, Description = description };
                 if (localPath != null)
                 {
-                    return TextFormat.Stored(await Transfers.UploadFileAsync(shelfClient, Absolute(localPath), location, overwrite, contentType, cancellationToken));
+                    return TextFormat.Stored(await Transfers.UploadFileAsync(shelfClient, Absolute(localPath), location, options, cancellationToken));
                 }
 
                 using MemoryStream content = new MemoryStream(Encoding.UTF8.GetBytes(text!));
-                return TextFormat.Stored(await Transfers.UploadStreamAsync(shelfClient, location, content, "Text", overwrite, contentType, cancellationToken));
+                return TextFormat.Stored(await Transfers.UploadStreamAsync(shelfClient, location, content, "Text", options, cancellationToken));
             });
+        }
+
+        [McpServerTool(Name = "set_description", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [Description("Sets what a file is, in up to 2000 characters of free text, shown with the file and matched by search_files. Omit description to remove it.")]
+        public Task<string> SetDescriptionAsync(
+            [Description("The shelf's name.")] string shelf,
+            [Description("The file's path.")] string path,
+            [Description("The new description; omit or leave blank to remove it.")] string? description = null,
+            CancellationToken cancellationToken = default)
+        {
+            return RunAsync(cancellationToken, async client => TextFormat.File(await client.Shelf(shelf).SetDescriptionAsync(path, description, cancellationToken)));
+        }
+
+        [McpServerTool(Name = "search_files", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [Description("Finds files on a shelf, under a directory at any depth, that meet every criterion given; none given lists every file. Answers a page of paths by path order, with a cursor when more follow.")]
+        public Task<string> SearchFilesAsync(
+            [Description("The shelf's name.")] string shelf,
+            [Description("The directory to search under; / (the default) for the whole shelf.")] string under = ShelfPath.Root,
+            [Description("Text the file's name or description contains, ignoring case.")] string? text = null,
+            [Description("A media type such as application/pdf, or a family such as image/*.")] string? contentType = null,
+            [Description("The fewest bytes.")] long? minSizeBytes = null,
+            [Description("The most bytes.")] long? maxSizeBytes = null,
+            [Description("Stored at or after this ISO 8601 time.")] DateTimeOffset? createdFrom = null,
+            [Description("Stored before this ISO 8601 time.")] DateTimeOffset? createdBefore = null,
+            [Description("Last changed at or after this ISO 8601 time.")] DateTimeOffset? updatedFrom = null,
+            [Description("Last changed before this ISO 8601 time.")] DateTimeOffset? updatedBefore = null,
+            [Description("The contents' SHA-256 in hex, to find copies of a file.")] string? sha256 = null,
+            [Description("Files per page, 1 to 1000; 100 by default.")] int? limit = null,
+            [Description("The cursor a previous page ended with, for the next page.")] string? after = null,
+            CancellationToken cancellationToken = default)
+        {
+            FileSearch search = new FileSearch
+            {
+                Under = under,
+                Text = text,
+                ContentType = contentType,
+                MinSizeBytes = minSizeBytes,
+                MaxSizeBytes = maxSizeBytes,
+                CreatedFrom = createdFrom,
+                CreatedBefore = createdBefore,
+                UpdatedFrom = updatedFrom,
+                UpdatedBefore = updatedBefore,
+                Sha256 = sha256,
+                Limit = limit,
+                After = after,
+            };
+
+            return RunAsync(cancellationToken, async client => TextFormat.SearchResults(
+                await client.Shelf(shelf).SearchAsync(search, cancellationToken),
+                cursor => $"More files follow: call again with after = {cursor}"));
         }
 
         [McpServerTool(Name = "download_file", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]

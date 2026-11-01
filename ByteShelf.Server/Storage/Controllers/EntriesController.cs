@@ -77,6 +77,32 @@ namespace ByteShelf.Server.Storage.Controllers
             return Ok(await _fileService.MoveFileAsync(Shelf, EntryReference.From(path, id), request.ToPath));
         }
 
+        /// <summary>Sets a file's description, or removes it with null or blank text.</summary>
+        [HttpPut("files/description")]
+        [ShelfAccess(ShelfOperation.Write)]
+        [ProducesResponseType(typeof(ShelfFile), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        public async Task<IActionResult> SetDescription([FromQuery] string? path, [FromQuery] Guid? id, [FromBody] SetDescriptionRequest request)
+        {
+            return Ok(await _fileService.SetDescriptionAsync(Shelf, EntryReference.From(path, id), request.Description));
+        }
+
+        /// <summary>
+        /// Finds live files under a directory, at any depth, that match every criterion given, a page at
+        /// a time by path; <see cref="FileSearch"/> describes each. Pass a page's <c>nextCursor</c> as
+        /// <c>after</c> for the next.
+        /// </summary>
+        [HttpGet("search")]
+        [ShelfAccess(ShelfOperation.Read)]
+        [ProducesResponseType(typeof(FileSearchResults), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        public async Task<IActionResult> Search([FromQuery] FileSearch search)
+        {
+            return Ok(await _fileService.SearchAsync(Shelf, search));
+        }
+
         /// <summary>Streams a file's contents, as <see cref="FileContentResponse"/> describes.</summary>
         [HttpGet("content")]
         [HttpHead("content")]

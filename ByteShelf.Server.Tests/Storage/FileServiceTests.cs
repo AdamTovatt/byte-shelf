@@ -1,3 +1,4 @@
+using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
@@ -77,6 +78,68 @@ namespace ByteShelf.Server.Tests.Storage
             await StoreTextAsync(shelf, "/a.txt", "a");
 
             await Assert.ThrowsAsync<ArgumentException>(() => FileService.MoveFileAsync(shelf, EntryReference.ForPath("/a.txt"), "/"));
+        }
+
+        [Fact]
+        public async Task SetDescriptionAsync_LogsTheFileWithItsDescriptionForReplicas()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            await FileService.SetDescriptionAsync(shelf, EntryReference.ForPath("/a.txt"), "Signed copy");
+
+            ChangeLogEntry logged = Assert.Single(await ChangeLog.GetAfterAsync(before, 100));
+            Assert.Equal((ChangeEntityType.File, file.Id, ChangeAction.Updated), (logged.EntityType, logged.EntityId, logged.Action));
+            Assert.Equal("Signed copy", ChangePayload.Deserialize<FileRecord>(logged.Payload!).Description);
+        }
+
+        [Fact]
+        public async Task SetDescriptionAsync_NewText_MovesUpdatedAtToNow()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await StoreTextAsync(shelf, "/a.txt", "a");
+            Clock.Advance(TimeSpan.FromMinutes(1));
+
+            ShelfFile described = await FileService.SetDescriptionAsync(shelf, EntryReference.ForPath("/a.txt"), "Signed copy");
+
+            Assert.Equal(Clock.GetUtcNow(), described.UpdatedAt);
+        }
+
+        [Fact]
+        public async Task SetDescriptionAsync_TheSameText_ChangesAndLogsNothing()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await StoreTextAsync(shelf, "/a.txt", "a");
+            ShelfFile described = await FileService.SetDescriptionAsync(shelf, EntryReference.ForPath("/a.txt"), "note");
+            Clock.Advance(TimeSpan.FromMinutes(1));
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            ShelfFile same = await FileService.SetDescriptionAsync(shelf, EntryReference.ForPath("/a.txt"), " note ");
+
+            Assert.Equal(described.UpdatedAt, same.UpdatedAt);
+            Assert.Empty(await ChangeLog.GetAfterAsync(before, 100));
+        }
+
+        [Fact]
+        public async Task SetDescriptionAsync_OverTheLimit_ThrowsArgumentExceptionOnTheServerToo()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await StoreTextAsync(shelf, "/a.txt", "a");
+
+            await Assert.ThrowsAsync<ArgumentException>(
+                () => FileService.SetDescriptionAsync(shelf, EntryReference.ForPath("/a.txt"), new string('a', FileDescription.MaxLength + 1)));
+        }
+
+        [Fact]
+        public async Task StartAsync_DescriptionOverTheLimit_ThrowsBeforeReservingAnything()
+        {
+            Shelf shelf = await CreateShelfAsync();
+
+            await Assert.ThrowsAsync<ArgumentException>(() => UploadService.StartAsync(
+                shelf,
+                new StartUploadRequest { Path = "/a.txt", SizeBytes = 1, Description = new string('a', FileDescription.MaxLength + 1) },
+                Uploader));
         }
 
         [Fact]

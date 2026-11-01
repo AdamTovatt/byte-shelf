@@ -16,6 +16,12 @@ its root. Commands take a path without saying whether it is a file or a director
 `--json` prints a result as the server's JSON, for scripts, and prints nothing for a command without
 one (such as `restore`). `--` ends the options, for a path that starts with `--`.
 
+`find` searches under a directory by text in a file's name or description, type, size, times and
+SHA-256, a page at a time, and ends a page that has more after it with the `--after` to pass. Quote
+a type family, as in `--type 'image/*'`, or the shell expands it. A time without an offset, such as
+`2026-03-01`, is local time. `describe` sets a file's description and `describe --clear` removes
+it; `put --description` stores one with the file.
+
 A file is typed by its extension when `--type` does not say otherwise, and `get` checks what it
 saves against the file's SHA-256, writing to a side file first, so a failed download leaves nothing
 behind and replaces nothing.
@@ -45,9 +51,9 @@ claude mcp add byteshelf -- byteshelf --mcp
 ```
 
 It signs in as the CLI does, and its tools cover shelves, files, directories and the trash: listing,
-uploading a local file or text given in the call, downloading to a local file or as text (UTF-8, up
-to 256 KiB), moving, deleting, restoring and emptying the trash. Local paths must be absolute, since
-the server's working folder is not the agent's. Signing in, users, grants and keys stay on the
+searching, uploading a local file or text given in the call, describing a file, downloading to a
+local file or as text (UTF-8, up to 256 KiB), moving, deleting, restoring and emptying the trash.
+Local paths must be absolute, since the server's working folder is not the agent's. Signing in, users, grants and keys stay on the
 command line, since they carry passwords and secrets an agent's transcript should not hold.
 
 ## Exit codes

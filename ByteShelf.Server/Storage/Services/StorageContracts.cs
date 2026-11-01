@@ -20,6 +20,7 @@ namespace ByteShelf.Server.Storage.Services
                 Sha256 = file.Sha256,
                 CreatedAt = file.CreatedAt,
                 UpdatedAt = file.UpdatedAt,
+                Description = file.Description,
             };
         }
 

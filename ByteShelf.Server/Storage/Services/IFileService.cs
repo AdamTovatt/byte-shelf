@@ -21,5 +21,15 @@ namespace ByteShelf.Server.Storage.Services
         /// <exception cref="Shared.Errors.NotFoundException">There is no such live file.</exception>
         /// <exception cref="Shared.Errors.ConflictException">The destination is taken, or a file is in the way.</exception>
         Task<ShelfFile> MoveFileAsync(Shelf shelf, EntryReference reference, string toPath);
+
+        /// <summary>Sets a file's description; null or blank removes it.</summary>
+        /// <exception cref="ArgumentException">It is longer than <see cref="FileDescription.MaxLength"/>.</exception>
+        /// <exception cref="Shared.Errors.NotFoundException">There is no such live file.</exception>
+        Task<ShelfFile> SetDescriptionAsync(Shelf shelf, EntryReference reference, string? description);
+
+        /// <summary>One page of the live files that match <paramref name="search"/>, by path.</summary>
+        /// <exception cref="ArgumentException">A criterion is not allowed.</exception>
+        /// <exception cref="Shared.Errors.NotFoundException">There is no directory at <see cref="FileSearch.Under"/>.</exception>
+        Task<FileSearchResults> SearchAsync(Shelf shelf, FileSearch search);
     }
 }

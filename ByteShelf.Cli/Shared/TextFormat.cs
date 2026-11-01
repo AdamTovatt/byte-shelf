@@ -64,16 +64,43 @@ namespace ByteShelf.Cli.Shared
 
         public static string File(ShelfFile file)
         {
-            return Lines(new[]
+            List<string> lines = new List<string>
             {
-                $"path     {file.Path}",
-                $"id       {file.Id:D}",
-                $"size     {file.SizeBytes} bytes ({Size(file.SizeBytes)})",
-                $"type     {file.ContentType}",
-                $"sha256   {file.Sha256}",
-                $"created  {Time(file.CreatedAt)}",
-                $"updated  {Time(file.UpdatedAt)}",
-            });
+                Field("path", file.Path),
+                Field("id", file.Id.ToString("D")),
+                Field("size", $"{file.SizeBytes} bytes ({Size(file.SizeBytes)})"),
+                Field("type", file.ContentType),
+                Field("sha256", file.Sha256),
+                Field("created", Time(file.CreatedAt)),
+                Field("updated", Time(file.UpdatedAt)),
+            };
+
+            if (file.Description != null)
+            {
+                lines.Add(Field("description", file.Description));
+            }
+
+            return Lines(lines);
+        }
+
+        /// <summary>A labelled line of a record, its value starting in one column; a value's further lines start there too.</summary>
+        private static string Field(string label, string value)
+        {
+            const int ValueColumn = 13;
+            string indent = Environment.NewLine + new string(' ', ValueColumn);
+            return label.PadRight(ValueColumn) + value.ReplaceLineEndings(indent);
+        }
+
+        /// <summary>One line per file found, then <paramref name="more"/> of the cursor when a page follows.</summary>
+        public static string SearchResults(FileSearchResults results, Func<string, string> more)
+        {
+            if (results.Files.Count == 0)
+            {
+                return "No files found.";
+            }
+
+            IEnumerable<string> lines = results.Files.Select(file => $"{file.Path}  {Size(file.SizeBytes)}  {Time(file.UpdatedAt)}");
+            return Lines(results.NextCursor == null ? lines : lines.Append(more(results.NextCursor)));
         }
 
         public static string Directory(ShelfDirectory directory)

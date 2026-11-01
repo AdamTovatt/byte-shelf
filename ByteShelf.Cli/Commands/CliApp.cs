@@ -42,8 +42,15 @@ namespace ByteShelf.Cli.Commands
 
                 new Command(Section.Files, "ls", "<shelf>[:<path>]", "what a directory holds", ListAsync),
                 new Command(Section.Files, "stat", "<shelf>:<path>", "a file's record, or a directory's", StatAsync),
-                new Command(Section.Files, "put", "<local-file>|- <shelf>:<path> [--overwrite] [--type <content-type>]", "store a file, - for stdin; a path ending in / keeps the file's name", PutAsync),
+                new Command(Section.Files, "put", "<local-file>|- <shelf>:<path> [--overwrite] [--type <content-type>] [--description <text>]", "store a file, - for stdin; a path ending in / keeps the file's name", PutAsync),
                 new Command(Section.Files, "get", "<shelf>:<path> [<local-file>|<local-dir>|-] [--overwrite]", "save a file, - for stdout", GetAsync),
+                new Command(Section.Files, "describe", "<shelf>:<path> <text> | --clear", "set a file's description, which find matches too", DescribeAsync),
+                new Command(
+                    Section.Files,
+                    "find",
+                    "<shelf>[:<path>] [<text>] [--type <content-type>|'<type>/*'] [--min-size <bytes>] [--max-size <bytes>] [--created-from <time>] [--created-before <time>] [--updated-from <time>] [--updated-before <time>] [--sha256 <hex>] [--limit <n>] [--after <cursor>]",
+                    "files under a directory whose name or description holds <text>, ignoring case, and that meet every option; times are ISO 8601, local without an offset",
+                    FindAsync),
                 new Command(Section.Files, "mkdir", "<shelf>:<path>", "create a directory with any missing parents", MakeDirectoryAsync),
                 new Command(Section.Files, "mv", "<shelf>:<path> <new-path>", "move or rename a file or a directory within its shelf", MoveAsync),
                 new Command(Section.Files, "rm", "<shelf>:<path>", "move a file, or a directory with everything in it, to the trash", RemoveAsync),
@@ -276,8 +283,12 @@ namespace ByteShelf.Cli.Commands
         {
             string source = arguments.Required(0, "local-file");
             ShelfLocation location = ShelfLocation.Parse(arguments.Required(1, "shelf:path"));
-            bool overwrite = arguments.Flag("--overwrite");
-            string? contentType = arguments.Value("--type");
+            UploadOptions options = new UploadOptions
+            {
+                Overwrite = arguments.Flag("--overwrite"),
+                ContentType = arguments.Value("--type"),
+                Description = arguments.Value("--description"),
+            };
             arguments.EnsureAllUsed();
             IShelfClient shelf = await ShelfAsync(location.Shelf, cancellationToken);
 
@@ -285,11 +296,11 @@ namespace ByteShelf.Cli.Commands
             if (source == "-")
             {
                 await using Stream input = _terminal.OpenInput();
-                stored = await Transfers.UploadStreamAsync(shelf, location, input, "Standard input", overwrite, contentType, cancellationToken);
+                stored = await Transfers.UploadStreamAsync(shelf, location, input, "Standard input", options, cancellationToken);
             }
             else
             {
-                stored = await Transfers.UploadFileAsync(shelf, source, location, overwrite, contentType, cancellationToken);
+                stored = await Transfers.UploadFileAsync(shelf, source, location, options, cancellationToken);
             }
 
             Print(stored, ByteShelfJsonContext.Default.ShelfFile, TextFormat.Stored);
@@ -317,6 +328,47 @@ namespace ByteShelf.Cli.Commands
 
             string saved = await Transfers.DownloadToFileAsync(shelf, location.Path, target ?? ShelfPath.GetName(location.Path), overwrite, cancellationToken);
             Done($"Saved {saved}");
+        }
+
+        private async Task DescribeAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
+            string? text = arguments.Optional(1);
+            bool clear = arguments.Flag("--clear");
+            arguments.EnsureAllUsed();
+            if ((text == null) == !clear)
+            {
+                throw new UsageException("Give the description's <text>, or --clear to remove it, one of them.");
+            }
+
+            ShelfFile described = await (await ShelfAsync(location.Shelf, cancellationToken)).SetDescriptionAsync(location.Path, clear ? null : text, cancellationToken);
+            Print(described, ByteShelfJsonContext.Default.ShelfFile, TextFormat.File);
+        }
+
+        private async Task FindAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
+            FileSearch search = new FileSearch
+            {
+                Under = location.Path,
+                Text = arguments.Optional(1),
+                ContentType = arguments.Value("--type"),
+                MinSizeBytes = arguments.Bytes("--min-size"),
+                MaxSizeBytes = arguments.Bytes("--max-size"),
+                CreatedFrom = arguments.Time("--created-from"),
+                CreatedBefore = arguments.Time("--created-before"),
+                UpdatedFrom = arguments.Time("--updated-from"),
+                UpdatedBefore = arguments.Time("--updated-before"),
+                Sha256 = arguments.Value("--sha256"),
+                Limit = arguments.Count("--limit"),
+                After = arguments.Value("--after"),
+            };
+            arguments.EnsureAllUsed();
+
+            FileSearchResults found = await (await ShelfAsync(location.Shelf, cancellationToken)).SearchAsync(search, cancellationToken);
+            Print(found, ByteShelfJsonContext.Default.FileSearchResults, results => TextFormat.SearchResults(
+                results,
+                cursor => $"More: add --after '{cursor.Replace("'", "'\\''", StringComparison.Ordinal)}'"));
         }
 
         private async Task MakeDirectoryAsync(ArgumentList arguments, CancellationToken cancellationToken)

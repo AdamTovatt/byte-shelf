@@ -14,5 +14,12 @@ namespace ByteShelfCommon
 
         /// <summary>Whether a file already at <see cref="Path"/> is replaced (it goes to the trash). Refused otherwise.</summary>
         public bool Overwrite { get; init; }
+
+        /// <summary>
+        /// The file's description, at most <see cref="FileDescription.MaxLength"/> characters. Without
+        /// one, a file that replaces another keeps the other's. A single upload carries none, since it
+        /// has no body but the contents: describe the file afterwards.
+        /// </summary>
+        public string? Description { get; init; }
     }
 }

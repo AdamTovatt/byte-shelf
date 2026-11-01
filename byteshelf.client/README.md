@@ -1,8 +1,9 @@
 # byteshelf.client
 
 The ByteShelf web UI: React, TypeScript, Vite, Tailwind and TanStack Query, built on the house
-template. Everyone browses the shelves they reach, uploads (dropping files on a directory works too),
-opens and downloads files, moves, renames and deletes them, and restores them from the trash. Admins
+template. Everyone browses the shelves they reach, searches a folder and everything below it by
+name or description, uploads (dropping files on a directory works too), opens and downloads files,
+describes, moves, renames and deletes them, and restores them from the trash. Admins
 also create shelves and users, set quotas, give access from a shelf or from a user, make keys, and on
 the Replication page pair replicas, see how far behind each is, remove one, and promote a replica.
 

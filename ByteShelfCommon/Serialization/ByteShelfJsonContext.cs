@@ -21,6 +21,8 @@ namespace ByteShelfCommon.Serialization
     [JsonSerializable(typeof(UpdateShelfRequest))]
     [JsonSerializable(typeof(CreateDirectoryRequest))]
     [JsonSerializable(typeof(MoveRequest))]
+    [JsonSerializable(typeof(SetDescriptionRequest))]
+    [JsonSerializable(typeof(FileSearchResults))]
     [JsonSerializable(typeof(StartUploadRequest))]
     [JsonSerializable(typeof(UploadSession))]
     [JsonSerializable(typeof(TrashEntry))]

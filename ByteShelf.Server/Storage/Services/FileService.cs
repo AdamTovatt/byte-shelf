@@ -89,5 +89,44 @@ namespace ByteShelf.Server.Storage.Services
                 return StorageContracts.ToShelfFile(moved, ShelfPath.GetParent(normalizedPath));
             }
         }
+
+        /// <inheritdoc />
+        public async Task<ShelfFile> SetDescriptionAsync(Shelf shelf, EntryReference reference, string? description)
+        {
+            string? normalized = FileDescription.Normalize(description);
+
+            await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+            {
+                FileRecord file = await _shelfTree.GetFileAsync(shelf.Id, reference, session);
+                if (file.Description == normalized)
+                {
+                    return await _shelfTree.ToShelfFileAsync(file, session);
+                }
+
+                FileRecord updated = await _fileRepository.SetDescriptionAsync(file.Id, normalized, _timeProvider.GetUtcNow(), session)
+                    ?? throw new NotFoundException($"There is no file '{reference}' on this shelf.");
+                ShelfFile result = await _shelfTree.ToShelfFileAsync(updated, session);
+                await session.CommitAsync();
+                return result;
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task<FileSearchResults> SearchAsync(Shelf shelf, FileSearch search)
+        {
+            FileSearch normalized = search.Normalize();
+            DirectoryRecord directory = await _shelfTree.GetDirectoryAsync(shelf.Id, EntryReference.ForPath(normalized.Under!));
+
+            // One more than a page, to tell whether another page follows without a count.
+            int limit = normalized.Limit!.Value;
+            IReadOnlyList<(FileRecord File, string Path)> found = await _fileRepository.SearchAsync(directory.Id, normalized.Under!, normalized, limit + 1);
+            List<ShelfFile> files = found.Take(limit).Select(row => StorageContracts.ToShelfFile(row.File, ShelfPath.GetParent(row.Path))).ToList();
+
+            return new FileSearchResults
+            {
+                Files = files,
+                NextCursor = found.Count > limit ? files[^1].Path : null,
+            };
+        }
     }
 }

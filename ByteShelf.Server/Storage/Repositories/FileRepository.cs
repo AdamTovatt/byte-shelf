@@ -4,6 +4,7 @@ using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Storage.Models;
+using ByteShelfCommon;
 using EasyReasy.Database;
 using EasyReasy.Database.Mapping;
 
@@ -21,12 +22,13 @@ namespace ByteShelf.Server.Storage.Repositories
             sha256,
             created_at AS {nameof(FileEntity.CreatedAt)},
             updated_at AS {nameof(FileEntity.UpdatedAt)},
+            description,
             deleted_at AS {nameof(FileEntity.DeletedAt)},
             deletion_id AS {nameof(FileEntity.DeletionId)}";
 
         private const string InsertSql = @"
-            INSERT INTO file (id, shelf_id, directory_id, name, content_type, size_bytes, sha256, created_at, updated_at, deleted_at, deletion_id)
-            VALUES (@Id, @ShelfId, @DirectoryId, @Name, @ContentType, @SizeBytes, @Sha256, @CreatedAt, @UpdatedAt, @DeletedAt, @DeletionId)";
+            INSERT INTO file (id, shelf_id, directory_id, name, content_type, size_bytes, sha256, created_at, updated_at, description, deleted_at, deletion_id, name_fold, description_fold, media_type)
+            VALUES (@Id, @ShelfId, @DirectoryId, @Name, @ContentType, @SizeBytes, @Sha256, @CreatedAt, @UpdatedAt, @Description, @DeletedAt, @DeletionId, @NameFold, @DescriptionFold, @MediaType)";
 
         private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict(InsertSql);
 
@@ -142,14 +144,15 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <inheritdoc />
         public async Task<FileRecord?> MoveAsync(Guid id, Guid directoryId, string name, DateTimeOffset movedAt, IDbSession session)
         {
+            string nameFold = NameFold(name);
             string query = $@"
                 UPDATE file
-                SET directory_id = @{nameof(directoryId)}, name = @{nameof(name)}, updated_at = @{nameof(movedAt)}
+                SET directory_id = @{nameof(directoryId)}, name = @{nameof(name)}, name_fold = @{nameof(nameFold)}, updated_at = @{nameof(movedAt)}
                 WHERE id = @{nameof(id)} AND deleted_at IS NULL
                 RETURNING {SelectColumns}";
 
             FileEntity? moved = await session.Connection.QuerySingleOrDefaultAsync<FileEntity>(
-                query, new { id, directoryId, name, movedAt }, transaction: session.Transaction);
+                query, new { id, directoryId, name, nameFold, movedAt }, transaction: session.Transaction);
 
             if (moved == null)
             {
@@ -159,6 +162,87 @@ namespace ByteShelf.Server.Storage.Repositories
             FileRecord record = moved.ToDomain();
             await _changeLog.AppendAsync(ChangeEntityType.File, id, ChangeAction.Moved, record, movedAt, session);
             return record;
+        }
+
+        /// <inheritdoc />
+        public async Task<FileRecord?> SetDescriptionAsync(Guid id, string? description, DateTimeOffset at, IDbSession session)
+        {
+            string? descriptionFold = DescriptionFold(description);
+            string query = $@"
+                UPDATE file
+                SET description = @{nameof(description)}, description_fold = @{nameof(descriptionFold)}, updated_at = @{nameof(at)}
+                WHERE id = @{nameof(id)} AND deleted_at IS NULL
+                RETURNING {SelectColumns}";
+
+            FileEntity? updated = await session.Connection.QuerySingleOrDefaultAsync<FileEntity>(
+                query, new { id, description, descriptionFold, at }, transaction: session.Transaction);
+
+            if (updated == null)
+            {
+                return null;
+            }
+
+            FileRecord record = updated.ToDomain();
+            await _changeLog.AppendAsync(ChangeEntityType.File, id, ChangeAction.Updated, record, at, session);
+            return record;
+        }
+
+        /// <inheritdoc />
+        public async Task<IReadOnlyList<(FileRecord File, string Path)>> SearchAsync(Guid directoryId, string directoryPath, FileSearch search, int maxRows, IDbSession? session = null)
+        {
+            // The tree's paths are built as it is walked, so each file's full path is there to order and
+            // page by. The root's own path is empty here, so its children's are "/name".
+            string basePath = directoryPath == ShelfPath.Root ? string.Empty : directoryPath;
+            string? text = search.Text;
+            string? mediaType = search.ExactMediaType();
+            string? mediaPrefix = search.MediaTypePrefix();
+            long? minSize = search.MinSizeBytes;
+            long? maxSize = search.MaxSizeBytes;
+            DateTimeOffset? createdFrom = search.CreatedFrom;
+            DateTimeOffset? createdBefore = search.CreatedBefore;
+            DateTimeOffset? updatedFrom = search.UpdatedFrom;
+            DateTimeOffset? updatedBefore = search.UpdatedBefore;
+            string? sha256 = search.Sha256;
+            string? after = search.After;
+
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string query = $@"
+                    WITH RECURSIVE tree(node_id, node_path) AS (
+                        SELECT @{nameof(directoryId)}, @{nameof(basePath)}
+                        UNION ALL
+                        SELECT directory.id, tree.node_path || '/' || directory.name
+                        FROM directory JOIN tree ON directory.parent_id = tree.node_id
+                        -- A trashed directory holds only trashed files, so this only spares walking it.
+                        WHERE directory.deleted_at IS NULL
+                    )
+                    SELECT {SelectColumns}, tree.node_path || '/' || file.name AS {nameof(FileSearchEntity.FullPath)}
+                    FROM file JOIN tree ON file.directory_id = tree.node_id
+                    WHERE file.deleted_at IS NULL
+                      AND (@{nameof(text)} IS NULL
+                           OR instr(file.name_fold, @{nameof(text)}) > 0
+                           OR instr(coalesce(file.description_fold, ''), @{nameof(text)}) > 0)
+                      AND (@{nameof(mediaType)} IS NULL OR file.media_type = @{nameof(mediaType)})
+                      AND (@{nameof(mediaPrefix)} IS NULL
+                           OR substr(file.media_type, 1, length(@{nameof(mediaPrefix)})) = @{nameof(mediaPrefix)})
+                      AND (@{nameof(minSize)} IS NULL OR file.size_bytes >= @{nameof(minSize)})
+                      AND (@{nameof(maxSize)} IS NULL OR file.size_bytes <= @{nameof(maxSize)})
+                      AND (@{nameof(createdFrom)} IS NULL OR file.created_at >= @{nameof(createdFrom)})
+                      AND (@{nameof(createdBefore)} IS NULL OR file.created_at < @{nameof(createdBefore)})
+                      AND (@{nameof(updatedFrom)} IS NULL OR file.updated_at >= @{nameof(updatedFrom)})
+                      AND (@{nameof(updatedBefore)} IS NULL OR file.updated_at < @{nameof(updatedBefore)})
+                      AND (@{nameof(sha256)} IS NULL OR file.sha256 = @{nameof(sha256)})
+                      AND (@{nameof(after)} IS NULL OR {nameof(FileSearchEntity.FullPath)} > @{nameof(after)})
+                    ORDER BY {nameof(FileSearchEntity.FullPath)}
+                    LIMIT @{nameof(maxRows)}";
+
+                IEnumerable<FileSearchEntity> entities = await dbSession.Connection.QueryAsync<FileSearchEntity>(
+                    query,
+                    new { directoryId, basePath, text, mediaType, mediaPrefix, minSize, maxSize, createdFrom, createdBefore, updatedFrom, updatedBefore, sha256, after, maxRows },
+                    transaction: dbSession.Transaction);
+
+                return (IReadOnlyList<(FileRecord, string)>)entities.Select(entity => (entity.ToDomain(), entity.FullPath)).ToList();
+            }, session);
         }
 
         /// <inheritdoc />
@@ -287,9 +371,30 @@ namespace ByteShelf.Server.Storage.Repositories
                 file.Sha256,
                 file.CreatedAt,
                 file.UpdatedAt,
+                file.Description,
                 file.DeletedAt,
                 file.DeletionId,
+                NameFold = NameFold(file.Name),
+                DescriptionFold = DescriptionFold(file.Description),
+                MediaType = ContentTypes.MediaTypeOf(file.ContentType),
             };
+        }
+
+        // The columns search compares (see v0006) are only ever written through these and Parameters, so
+        // each always holds what Common's rules make of the row's own name, description and type.
+        private static string NameFold(string name)
+        {
+            return FileSearch.Fold(name);
+        }
+
+        private static string? DescriptionFold(string? description)
+        {
+            return description == null ? null : FileSearch.Fold(description);
+        }
+
+        internal sealed class FileSearchEntity : FileEntity
+        {
+            public string FullPath { get; set; } = string.Empty;
         }
 
         internal class FileEntity
@@ -303,6 +408,7 @@ namespace ByteShelf.Server.Storage.Repositories
             public string Sha256 { get; set; } = string.Empty;
             public DateTimeOffset CreatedAt { get; set; }
             public DateTimeOffset UpdatedAt { get; set; }
+            public string? Description { get; set; }
             public DateTimeOffset? DeletedAt { get; set; }
             public Guid? DeletionId { get; set; }
 
@@ -319,6 +425,7 @@ namespace ByteShelf.Server.Storage.Repositories
                     Sha256 = Sha256,
                     CreatedAt = CreatedAt,
                     UpdatedAt = UpdatedAt,
+                    Description = Description,
                     DeletedAt = DeletedAt,
                     DeletionId = DeletionId,
                 };

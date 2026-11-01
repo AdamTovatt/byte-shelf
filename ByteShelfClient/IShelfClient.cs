@@ -55,6 +55,18 @@ namespace ByteShelfClient
         /// <summary>Moves or renames a file to <paramref name="toPath"/>; the stored contents stay where they are.</summary>
         Task<ShelfFile> MoveFileAsync(EntryReference file, string toPath, CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// Sets a file's description, at most <see cref="FileDescription.MaxLength"/> characters; null or
+        /// blank removes it.
+        /// </summary>
+        Task<ShelfFile> SetDescriptionAsync(EntryReference file, string? description, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// One page of the live files that match <paramref name="search"/>, by path. A criterion
+        /// <see cref="FileSearch.Normalize"/> refuses throws <see cref="ArgumentException"/> before anything is sent.
+        /// </summary>
+        Task<FileSearchResults> SearchAsync(FileSearch search, CancellationToken cancellationToken = default);
+
         /// <summary>Moves or renames a directory, with everything in it, to <paramref name="toPath"/>.</summary>
         Task<ShelfDirectory> MoveDirectoryAsync(EntryReference directory, string toPath, CancellationToken cancellationToken = default);
 

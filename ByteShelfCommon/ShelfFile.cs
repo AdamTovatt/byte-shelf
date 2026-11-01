@@ -32,5 +32,8 @@ namespace ByteShelfCommon
 
         /// <summary>When the file's record last changed.</summary>
         public required DateTimeOffset UpdatedAt { get; init; }
+
+        /// <summary>What the file is, in free text; null when it has none. Search matches it.</summary>
+        public string? Description { get; init; }
     }
 }

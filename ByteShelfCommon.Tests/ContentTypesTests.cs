@@ -51,5 +51,13 @@ namespace ByteShelfCommon.Tests
         {
             Assert.Throws<ArgumentException>(() => ContentTypes.Normalize("text/" + new string('a', 251)));
         }
+
+        [Theory]
+        [InlineData("text/plain", "text/plain")]
+        [InlineData(" Text/Plain ; charset=UTF-8", "text/plain")]
+        public void MediaTypeOf_AnswersTheTypeLowercaseWithoutParameters(string contentType, string expected)
+        {
+            Assert.Equal(expected, ContentTypes.MediaTypeOf(contentType));
+        }
     }
 }

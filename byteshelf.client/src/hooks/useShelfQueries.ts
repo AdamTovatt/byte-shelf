@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../lib/queryKeys';
 import {
   createDirectory,
@@ -14,6 +14,8 @@ import {
   moveDirectory,
   moveFile,
   restoreDeletion,
+  searchFiles,
+  setDescription,
   updateShelf,
 } from '../services/shelfService';
 
@@ -27,6 +29,25 @@ export function useShelf(shelf: string) {
 
 export function useListing(shelf: string, path: string) {
   return useQuery({ queryKey: queryKeys.shelfContents.listing(shelf, path), queryFn: () => fetchListing(shelf, path) });
+}
+
+/** The files under `under` whose name or description holds `text`; idle while `text` is blank. */
+export function useFileSearch(shelf: string, under: string, text: string) {
+  const trimmed = text.trim();
+  return useQuery({
+    queryKey: queryKeys.shelfContents.search(shelf, under, trimmed),
+    queryFn: () => searchFiles(shelf, under, trimmed),
+    enabled: trimmed !== '',
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useSetDescription(shelf: string) {
+  const invalidate = useInvalidateShelf();
+  return useMutation({
+    mutationFn: ({ id, description }: { id: string; description: string | null }) => setDescription(shelf, id, description),
+    onSuccess: invalidate,
+  });
 }
 
 export function useTrash(shelf: string) {

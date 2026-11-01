@@ -34,6 +34,7 @@ export { default as Pdf02Icon } from './pdf-02-stroke-rounded.svg?react';
 export { default as PlusSignIcon } from './plus-sign-stroke-rounded.svg?react';
 export { default as ReloadIcon } from './reload-stroke-rounded.svg?react';
 export { default as RestoreIcon } from './restore.svg?react';
+export { default as Search01Icon } from './search-01-stroke-rounded.svg?react';
 export { default as Settings01Icon } from './settings-01-stroke-rounded.svg?react';
 export { default as ShelfIcon } from './shelf.svg?react';
 export { default as Shield01Icon } from './shield-01-stroke-rounded.svg?react';

@@ -239,6 +239,10 @@ namespace ByteShelf.Server
                 // Non-nullable reference types emit as required/non-nullable in the spec, so the
                 // generated TypeScript types match the C# nullability contract.
                 options.SupportNonNullableReferenceTypes();
+
+                // A query bound to an object (the search's FileSearch) is described by its property
+                // names; camelCase, as the JSON bodies are. Binding ignores case, so both work.
+                options.DescribeAllParametersInCamelCase();
             });
         }
 

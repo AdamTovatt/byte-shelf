@@ -21,6 +21,8 @@ namespace ByteShelf.Server.Tests.Access
             ["EntriesController.CreateDownloadLink"] = ShelfOperation.Read,
             ["EntriesController.DeleteFile"] = ShelfOperation.Write,
             ["EntriesController.MoveFile"] = ShelfOperation.Write,
+            ["EntriesController.SetDescription"] = ShelfOperation.Write,
+            ["EntriesController.Search"] = ShelfOperation.Read,
             ["DirectoriesController.Create"] = ShelfOperation.Add,
             ["DirectoriesController.Move"] = ShelfOperation.Write,
             ["DirectoriesController.Delete"] = ShelfOperation.Write,

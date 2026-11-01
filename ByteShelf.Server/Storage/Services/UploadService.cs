@@ -50,7 +50,9 @@ namespace ByteShelf.Server.Storage.Services
         /// <inheritdoc />
         public async Task<ShelfFile> StoreAsync(Shelf shelf, string path, string? contentType, long sizeBytes, bool overwrite, string startedBy, Stream content, CancellationToken cancellationToken)
         {
-            UploadRecord upload = await BeginAsync(shelf, path, contentType, sizeBytes, overwrite, startedBy, isResumable: false);
+            // A single upload's request carries no description: its body is the contents.
+            StartUploadRequest request = new StartUploadRequest { Path = path, SizeBytes = sizeBytes, ContentType = contentType, Overwrite = overwrite };
+            UploadRecord upload = await BeginAsync(shelf, request, startedBy, isResumable: false);
 
             using (await _uploadLocks.AcquireAsync(upload.Id, CancellationToken.None))
             {
@@ -80,7 +82,7 @@ namespace ByteShelf.Server.Storage.Services
         /// <inheritdoc />
         public async Task<UploadSession> StartAsync(Shelf shelf, StartUploadRequest request, string startedBy)
         {
-            UploadRecord upload = await BeginAsync(shelf, request.Path, request.ContentType, request.SizeBytes, request.Overwrite, startedBy, isResumable: true);
+            UploadRecord upload = await BeginAsync(shelf, request, startedBy, isResumable: true);
             return StorageContracts.ToUploadSession(upload, _options);
         }
 
@@ -149,19 +151,21 @@ namespace ByteShelf.Server.Storage.Services
         /// Validates the request and records the upload, reserving its size, in one write transaction:
         /// SQLite runs one writer at a time, so two uploads can never both fit into the same free space.
         /// </summary>
-        private async Task<UploadRecord> BeginAsync(Shelf shelf, string path, string? contentType, long sizeBytes, bool overwrite, string startedBy, bool isResumable)
+        private async Task<UploadRecord> BeginAsync(Shelf shelf, StartUploadRequest request, string startedBy, bool isResumable)
         {
-            string normalizedPath = ShelfPath.Normalize(path);
+            string normalizedPath = ShelfPath.Normalize(request.Path);
             if (normalizedPath == ShelfPath.Root)
             {
                 throw new ArgumentException("A file cannot be stored at the root itself; give it a name.");
             }
 
+            long sizeBytes = request.SizeBytes;
             if (sizeBytes < 0)
             {
                 throw new ArgumentException("The size of an upload cannot be negative.");
             }
 
+            bool overwrite = request.Overwrite;
             DateTimeOffset now = _timeProvider.GetUtcNow();
             UploadRecord upload = new UploadRecord
             {
@@ -169,10 +173,11 @@ namespace ByteShelf.Server.Storage.Services
                 ShelfId = shelf.Id,
                 StartedBy = startedBy,
                 Path = normalizedPath,
-                ContentType = ContentTypes.Normalize(contentType),
+                ContentType = ContentTypes.Normalize(request.ContentType),
                 SizeBytes = sizeBytes,
                 ReceivedBytes = 0,
                 Overwrite = overwrite,
+                Description = FileDescription.Normalize(request.Description),
                 IsResumable = isResumable,
                 CreatedAt = now,
                 LastActivityAt = now,
@@ -247,6 +252,9 @@ namespace ByteShelf.Server.Storage.Services
                             Sha256 = sha256,
                             CreatedAt = now,
                             UpdatedAt = now,
+                            // A new version of a file is still that file: it keeps what it was
+                            // described as unless the upload says anew.
+                            Description = upload.Description ?? replaced?.Description,
                         };
 
                         await _fileRepository.InsertAsync(file, session);

@@ -160,7 +160,7 @@ namespace ByteShelf.Cli.Tests
             string ofFile = await _tools.GetInfoAsync("docs", "/a/b.txt", CancellationToken.None);
             string ofDirectory = await _tools.GetInfoAsync("docs", "/a", CancellationToken.None);
 
-            Assert.Contains($"id       {file.Id:D}", ofFile, StringComparison.Ordinal);
+            Assert.Contains($"id           {file.Id:D}", ofFile, StringComparison.Ordinal);
             Assert.StartsWith("/a/  (id ", ofDirectory, StringComparison.Ordinal);
         }
 
@@ -198,6 +198,53 @@ namespace ByteShelf.Cli.Tests
             await _tools.EmptyTrashAsync("docs", CancellationToken.None);
 
             Assert.Equal("The trash is empty.", await _tools.ListTrashAsync("docs", CancellationToken.None));
+        }
+
+        [Fact]
+        public async Task UploadWithDescription_ThenSearchByIt_FindsTheFile()
+        {
+            await _tools.UploadFileAsync("docs", "/scans/0042.pdf", text: "a", description: "Receipt for the new bike");
+            await _tools.UploadFileAsync("docs", "/scans/0043.pdf", text: "b");
+
+            string found = await _tools.SearchFilesAsync("docs", text: "bike");
+
+            Assert.StartsWith("/scans/0042.pdf  1 B", found, StringComparison.Ordinal);
+            Assert.DoesNotContain("0043", found, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task SearchFiles_MorePagesFollow_SaysWhatToPassAsAfter()
+        {
+            await _tools.UploadFileAsync("docs", "/a.txt", text: "a");
+            await _tools.UploadFileAsync("docs", "/b.txt", text: "b");
+
+            string first = await _tools.SearchFilesAsync("docs", limit: 1);
+            string second = await _tools.SearchFilesAsync("docs", limit: 1, after: "/a.txt");
+
+            Assert.EndsWith($"{Environment.NewLine}More files follow: call again with after = /a.txt", first, StringComparison.Ordinal);
+            Assert.StartsWith("/b.txt", second, StringComparison.Ordinal);
+            Assert.DoesNotContain("More", second, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task SetDescription_Text_SetsItAndAnswersTheRecord()
+        {
+            await _tools.UploadFileAsync("docs", "/a.txt", text: "a");
+
+            string described = await _tools.SetDescriptionAsync("docs", "/a.txt", "Draft");
+
+            Assert.EndsWith("description  Draft", described, StringComparison.Ordinal);
+            Assert.Equal("Draft", (await Docs.GetFileAsync("/a.txt")).Description);
+        }
+
+        [Fact]
+        public async Task SetDescription_Without_RemovesIt()
+        {
+            await _tools.UploadFileAsync("docs", "/a.txt", text: "a", description: "Draft");
+
+            await _tools.SetDescriptionAsync("docs", "/a.txt");
+
+            Assert.Null((await Docs.GetFileAsync("/a.txt")).Description);
         }
 
         [Fact]

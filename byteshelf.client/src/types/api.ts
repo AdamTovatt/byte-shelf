@@ -655,6 +655,150 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shelves/{shelf}/files/description": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: {
+                    path?: string;
+                    id?: string;
+                };
+                header?: never;
+                path: {
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["SetDescriptionRequest"];
+                    "text/json": components["schemas"]["SetDescriptionRequest"];
+                    "application/*+json": components["schemas"]["SetDescriptionRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ShelfFile"];
+                        "application/json": components["schemas"]["ShelfFile"];
+                        "text/json": components["schemas"]["ShelfFile"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shelves/{shelf}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    under?: string;
+                    text?: string;
+                    contentType?: string;
+                    minSizeBytes?: number;
+                    maxSizeBytes?: number;
+                    createdFrom?: string;
+                    createdBefore?: string;
+                    updatedFrom?: string;
+                    updatedBefore?: string;
+                    sha256?: string;
+                    limit?: number;
+                    after?: string;
+                };
+                header?: never;
+                path: {
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["FileSearchResults"];
+                        "application/json": components["schemas"]["FileSearchResults"];
+                        "text/json": components["schemas"]["FileSearchResults"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/shelves/{shelf}/content": {
         parameters: {
             query?: never;
@@ -2694,6 +2838,10 @@ export interface components {
             message: string;
             code?: string | null;
         };
+        FileSearchResults: {
+            files: components["schemas"]["ShelfFile"][];
+            nextCursor?: string | null;
+        };
         HttpValidationProblemDetails: {
             type?: string | null;
             title?: string | null;
@@ -2767,6 +2915,9 @@ export interface components {
         RequestPasswordResetRequest: {
             email: string;
         };
+        SetDescriptionRequest: {
+            description?: string | null;
+        };
         SetShelfAccessRequest: {
             permission: components["schemas"]["ShelfAccessPermission"];
         };
@@ -2814,6 +2965,7 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            description?: string | null;
         };
         ShelfInfo: {
             /** Format: uuid */
@@ -2848,6 +3000,7 @@ export interface components {
             sizeBytes: number;
             contentType?: string | null;
             overwrite?: boolean;
+            description?: string | null;
         };
         TrashEntry: {
             /** Format: uuid */

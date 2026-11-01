@@ -66,12 +66,31 @@ namespace ByteShelfClient.Http
             string normalizedPath = ShelfPath.Normalize(path);
             options ??= new UploadOptions();
             string contentType = ContentTypes.Normalize(options.ContentType);
+            string? description = FileDescription.Normalize(options.Description);
 
             await using UploadSource source = await UploadSource.OpenAsync(content, cancellationToken).ConfigureAwait(false);
 
-            return source.SizeBytes <= _options.SingleRequestMaxBytes
+            return source.SizeBytes <= _options.SingleRequestMaxBytes && description == null
                 ? await PutAsync(normalizedPath, source, contentType, options.Overwrite, cancellationToken).ConfigureAwait(false)
-                : await UploadInChunksAsync(normalizedPath, source, contentType, options.Overwrite, cancellationToken).ConfigureAwait(false);
+                : await UploadInChunksAsync(normalizedPath, source, contentType, options.Overwrite, description, cancellationToken).ConfigureAwait(false);
+        }
+
+        public Task<ShelfFile> SetDescriptionAsync(EntryReference file, string? description, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(file);
+            return _connection.SendAsync(
+                HttpMethod.Put,
+                $"{_base}/files/description?{file.ToQuery()}",
+                new SetDescriptionRequest { Description = FileDescription.Normalize(description) },
+                ByteShelfJsonContext.Default.SetDescriptionRequest,
+                ByteShelfJsonContext.Default.ShelfFile,
+                cancellationToken);
+        }
+
+        public Task<FileSearchResults> SearchAsync(FileSearch search, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(search);
+            return _connection.SendAsync(HttpMethod.Get, $"{_base}/search?{search.Normalize().ToQuery()}", ByteShelfJsonContext.Default.FileSearchResults, cancellationToken);
         }
 
         public async Task<Stream> OpenReadAsync(EntryReference file, CancellationToken cancellationToken = default)
@@ -222,12 +241,12 @@ namespace ByteShelfClient.Http
         /// Starts a resumable upload, sends the content a chunk at a time, and completes it. A failure
         /// aborts the upload, so its reservation against the quota does not linger until it expires.
         /// </summary>
-        private async Task<ShelfFile> UploadInChunksAsync(string path, UploadSource source, string contentType, bool overwrite, CancellationToken cancellationToken)
+        private async Task<ShelfFile> UploadInChunksAsync(string path, UploadSource source, string contentType, bool overwrite, string? description, CancellationToken cancellationToken)
         {
             UploadSession session = await _connection.SendAsync(
                 HttpMethod.Post,
                 $"{_base}/uploads",
-                new StartUploadRequest { Path = path, SizeBytes = source.SizeBytes, ContentType = contentType, Overwrite = overwrite },
+                new StartUploadRequest { Path = path, SizeBytes = source.SizeBytes, ContentType = contentType, Overwrite = overwrite, Description = description },
                 ByteShelfJsonContext.Default.StartUploadRequest,
                 ByteShelfJsonContext.Default.UploadSession,
                 cancellationToken).ConfigureAwait(false);

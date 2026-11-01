@@ -11,7 +11,7 @@ namespace ByteShelf.Server.Tests.Client
     /// over HTTP and once against the in-memory client, so an app tested with the in-memory one meets
     /// the same rules in production.
     /// </summary>
-    public abstract class ClientContractTests : IAsyncLifetime
+    public abstract partial class ClientContractTests : IAsyncLifetime
     {
         /// <summary>The password of the admin the client acts as.</summary>
         protected const string AdminPassword = ServerTestHost.Password;

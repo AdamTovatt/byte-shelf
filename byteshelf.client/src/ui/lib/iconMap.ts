@@ -37,6 +37,7 @@ import {
   PlusSignIcon,
   ReloadIcon,
   RestoreIcon,
+  Search01Icon,
   Settings01Icon,
   ShelfIcon,
   Shield01Icon,
@@ -93,6 +94,7 @@ export const iconMap = {
   // Actions
   add: PlusSignIcon,
   edit: Edit04Icon,
+  search: Search01Icon,
   rename: TextSquareIcon,
   move: MoveRightIcon,
   delete: Delete01Icon,
