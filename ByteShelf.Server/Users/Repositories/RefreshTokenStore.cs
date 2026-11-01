@@ -10,7 +10,7 @@ namespace ByteShelf.Server.Users.Repositories
     /// tokens. Registered by <c>AddRefreshTokenService</c>; the base policy is multi-session (one
     /// token family per device), so nothing here revokes other sessions on login.
     /// </summary>
-    public class RefreshTokenStore : RepositoryBase, IRefreshTokenStore, IExpiredRefreshTokenCleanup
+    public class RefreshTokenStore : RepositoryBase, IRefreshTokenStore, IExpiredRefreshTokenCleanup, ISessionStampStore
     {
         public RefreshTokenStore(DbDataSource dataSource, IDbSessionFactory sessionFactory)
             : base(dataSource, sessionFactory)
@@ -136,6 +136,20 @@ namespace ByteShelf.Server.Users.Repositories
 
                 return families.Select(family => family.FamilyId).Distinct().Count();
             });
+        }
+
+        /// <inheritdoc />
+        public async Task RestampFamilyAsync(string subject, string familyId, string serializedClaims, IDbSession session)
+        {
+            string query = $@"
+                UPDATE refresh_token
+                SET serialized_claims = @{nameof(serializedClaims)}
+                WHERE family_id = @{nameof(familyId)}
+                  AND subject = @{nameof(subject)}
+                  AND consumed_at IS NULL
+                  AND is_invalidated = 0";
+
+            await session.Connection.ExecuteAsync(query, new { subject, familyId, serializedClaims }, transaction: session.Transaction);
         }
 
         /// <inheritdoc />

@@ -35,7 +35,9 @@ services to keep in step. The server calls itself at the first plain-HTTP addres
 to, as bound: a server bound to a single interface's address is called there, since loopback may
 not be listening. A listen-on-everything host (`+`, `*`, `0.0.0.0`, `[::]`) is called at loopback.
 HTTPS is never used: the certificate would not name the address called. A server with no plain-HTTP
-address (HTTPS or a Unix socket only) cannot run its tools, and says so.
+address (HTTPS or a Unix socket only) cannot run its tools, and says so. A link `share_file` makes is
+put on the server's public address, `APP_BASE_URL`, not on the address it called itself at, so the
+person the agent hands it to can open it.
 
 A local path means nothing on the server, so a tool given one (`upload_file`'s `localPath`,
 `download_file`'s) refuses it and says to give the contents instead: `upload_file` takes text or a

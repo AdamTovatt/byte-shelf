@@ -9,7 +9,7 @@ namespace ByteShelf.Tools
         public const string Examples = "minutes, hours or days such as 30m, 12h or 7d";
 
         /// <summary>The lifetime <paramref name="text"/> names, or null for none (the server's default).</summary>
-        /// <exception cref="ArgumentException">It is not a lifetime, or one <see cref="DownloadLink.NormalizeLifetime"/> refuses.</exception>
+        /// <exception cref="UsageException">It is not a lifetime, or one <see cref="DownloadLink.NormalizeLifetime"/> refuses.</exception>
         public static TimeSpan? Parse(string? text)
         {
             if (text == null)
@@ -32,11 +32,20 @@ namespace ByteShelf.Tools
 
                 if (lifetime != null)
                 {
-                    return DownloadLink.NormalizeLifetime(lifetime);
+                    try
+                    {
+                        return DownloadLink.NormalizeLifetime(lifetime);
+                    }
+                    catch (ArgumentException exception)
+                    {
+                        throw new UsageException(
+                            string.Create(CultureInfo.InvariantCulture, $"'{text}' is not how long a link may work: from {DownloadLink.MinLifetime.TotalMinutes} minute to {DownloadLink.MaxLifetime.TotalDays} days."),
+                            exception);
+                    }
                 }
             }
 
-            throw new ArgumentException($"'{text}' is not a lifetime: give {Examples}.");
+            throw new UsageException($"'{text}' is not a lifetime: give {Examples}.");
         }
     }
 }

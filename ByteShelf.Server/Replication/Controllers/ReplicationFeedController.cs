@@ -51,7 +51,7 @@ namespace ByteShelf.Server.Replication.Controllers
             return Ok(await _feed.GetChangesAsync(ReplicaAuthenticatedAttribute.GetReplica(HttpContext), after, fingerprint, limit));
         }
 
-        /// <summary>A page of a whole copy: the newest state of every entity, after <c>after</c>.</summary>
+        /// <summary>A page of a whole copy: the newest entry of every entity, its state or its removal, after <c>after</c>.</summary>
         [HttpGet("copy")]
         [DisableRateLimiting]
         [ReplicaAuthenticated]

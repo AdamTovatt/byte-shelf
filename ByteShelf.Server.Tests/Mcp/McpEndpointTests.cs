@@ -145,6 +145,24 @@ namespace ByteShelf.Server.Tests.Mcp
         }
 
         [Fact]
+        public async Task CallTool_ShareFile_AnswersALinkOnThePublicAddressThatServesTheFile()
+        {
+            // The tools reach the API at http://localhost/ (the test's self address); the public one,
+            // APP_BASE_URL, is Development's default here, so a link on the wrong one shows.
+            Uri publicAddress = new Uri(Program.DevelopmentAppBaseUrl + "/");
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+            AssertSucceeded(await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["shelf"] = "docs", ["path"] = "/a.txt", ["text"] = "shared" }));
+
+            CallToolResult shared = await client.CallToolAsync("share_file", new Dictionary<string, object?> { ["shelf"] = "docs", ["path"] = "/a.txt" });
+
+            AssertSucceeded(shared);
+            Uri link = new Uri(TextOf(shared).Split(Environment.NewLine)[0]);
+            Assert.Equal(publicAddress.GetLeftPart(UriPartial.Authority), link.GetLeftPart(UriPartial.Authority));
+            Assert.StartsWith("/api/downloads/", link.AbsolutePath, StringComparison.Ordinal);
+            Assert.Equal("shared", await _host.AnonymousClient.GetStringAsync(link.PathAndQuery));
+        }
+
+        [Fact]
         public async Task CallTool_AnotherShelf_IsNotFound()
         {
             await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));

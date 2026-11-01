@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchCurrentVersion } from '../services/versionService';
+import { queryKeys } from '../lib/queryKeys';
 
-const VERSION_KEY = ['version', 'current'] as const;
 const POLL_INTERVAL_MS = 5 * 60_000;
 
 /**
@@ -14,7 +14,7 @@ export function useNewVersionAvailable(): boolean {
   const bootVersion = useRef<string | null>(null);
 
   const { data } = useQuery({
-    queryKey: VERSION_KEY,
+    queryKey: queryKeys.version.current,
     queryFn: fetchCurrentVersion,
     refetchInterval: POLL_INTERVAL_MS,
     refetchOnWindowFocus: true,

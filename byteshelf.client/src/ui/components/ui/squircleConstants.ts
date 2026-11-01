@@ -2,7 +2,7 @@
  * Single source for the squircle corner scale. Mirrors the `borderRadius` tokens in
  * `tailwind.config.js` (`sm`/`md`/`lg`/`xl`/`2xl`), so a surface squircled in px stays in step with the
  * `rounded-*` token it replaces. Components map their own size preset to one of these keys rather than
- * re-encoding raw px (see Card / IconContainer / buttonStyles / Popover).
+ * re-encoding raw px (see Card / buttonStyles / Popover).
  */
 export const ROUNDED_PX = {
   sm: 4,

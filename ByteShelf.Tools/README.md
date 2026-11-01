@@ -34,6 +34,8 @@ the same words:
 - `upload_file` takes text or base64 of up to `MaxInlineBytes` (256 KiB), and `download_file`
   answers text up to the same size: what an agent can carry in its own context. Anything larger
   moves as a local file, through the API, or by a `share_file` link.
-- `ToolInstructions` is what both servers tell an agent when it connects. Tests check that it names
-  every tool a server offers.
+- `ToolInstructions` is what both servers tell an agent when it connects. Tests check what each
+  server actually sends: the stdio server's instructions name every tool except the admin-only
+  `create_shelf`, and `/mcp`'s name every tool it offers a read-write key. Other tests check that the
+  limits the instructions and the tool descriptions state match the constants they come from.
 - A failure reaches the agent as the tool's error text, ending with the error code in parentheses.

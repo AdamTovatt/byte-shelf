@@ -149,6 +149,8 @@ namespace ByteShelf.Server.Storage.Services
                         $"The shelf '{shelf.Name}' still holds files, directories, uploads or trash; a shelf is deleted only once it is empty. Empty its trash to remove what is in it right away.");
                 }
 
+                // Not done (review item 32, a taste call): a removal hook defined here and implemented
+                // in Access, so Storage would not write Access's tables. Two calls do not need one.
                 DateTimeOffset now = _timeProvider.GetUtcNow();
                 await _grantRepository.DeleteForShelfAsync(shelf.Id, now, session);
                 await _keyRepository.DeleteForShelfAsync(shelf.Id, now, session);

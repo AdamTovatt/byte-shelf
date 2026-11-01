@@ -4,6 +4,7 @@ using ByteShelf.Server.Shared.RateLimiting;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Services;
 using ByteShelfCommon;
+using EasyReasy.Auth;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -36,8 +37,9 @@ namespace ByteShelf.Server.Users.Controllers
         }
 
         /// <summary>
-        /// Changes the signed-in user's password after verifying the current one. A wrong current
-        /// password answers 401 so it counts towards the delay on repeated failed sign-ins.
+        /// Changes the signed-in user's password after verifying the current one, and ends the user's
+        /// other sessions; the one making the change carries on. A wrong current password answers 401 so
+        /// it counts towards the delay on repeated failed sign-ins.
         /// </summary>
         [HttpPut("me/password")]
         [Authorize]
@@ -49,7 +51,8 @@ namespace ByteShelf.Server.Users.Controllers
         {
             Guid userId = HttpContext.GetUserGuid();
 
-            if (!await _userService.UpdatePasswordAsync(userId, request.CurrentPassword, request.NewPassword))
+            // The family comes from the caller's own signed token, never the request body.
+            if (!await _userService.UpdatePasswordAsync(userId, request.CurrentPassword, request.NewPassword, HttpContext.GetRefreshFamilyId()))
             {
                 return Unauthorized(new ErrorResponse { Message = "The current password is incorrect.", Code = ErrorCodes.InvalidCredentials });
             }
@@ -84,7 +87,7 @@ namespace ByteShelf.Server.Users.Controllers
         }
 
         /// <summary>
-        /// Replaces a user's roles. Admin only. Takes effect on the user's next token refresh; the last
+        /// Replaces a user's roles. Admin only. Takes effect on the user's next request; the last
         /// admin cannot lose the role.
         /// </summary>
         [HttpPut("{userId:guid}/roles")]

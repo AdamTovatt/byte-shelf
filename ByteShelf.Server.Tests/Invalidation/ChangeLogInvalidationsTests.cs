@@ -98,17 +98,19 @@ namespace ByteShelf.Server.Tests.Invalidation
             await using ServerTestHost host = await ServerTestHost.StartAsync();
             using IInvalidationSubscription subscription = host.Services.GetRequiredService<IInvalidationBroadcaster>().Subscribe("test")!;
 
-            (await host.AdminClient.PostAsJsonAsync("/api/shelves", new CreateShelfRequest { Name = "docs" })).EnsureSuccessStatusCode();
+            HttpResponseMessage created = await host.AdminClient.PostAsJsonAsync("/api/shelves", new CreateShelfRequest { Name = "docs" });
+            created.EnsureSuccessStatusCode();
+            InvalidationEvent expected = Event(InvalidationResources.ShelfContents, (await created.Content.ReadFromJsonAsync<ShelfInfo>())!.Id);
 
-            // Other changes, such as the test host adding its users, may be published first. Reading
-            // times out (and fails the test) when the shelf's event never comes.
+            // Other changes, such as the test host adding its users, may be published first; only this
+            // shelf's own event names it. Reading times out (and fails the test) when it never comes.
             using CancellationTokenSource timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             InvalidationEvent received;
             do
             {
                 received = await subscription.Reader.ReadAsync(timeout.Token);
             }
-            while (received.Resource != InvalidationResources.Shelves);
+            while (received != expected);
         }
 
         private static ChangeLogEntry Entry(string entityType, string? payload, Guid? entityId = null)

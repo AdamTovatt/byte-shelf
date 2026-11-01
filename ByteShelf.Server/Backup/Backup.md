@@ -15,6 +15,10 @@ it never migrates the database or creates folders there, and it refuses a zip pa
 3. **The snapshot itself**, without uploads in progress (their staged bytes are not copied), as
    `byteshelf.db`, then every file in `keys/`.
 
+The zip holds every secret the server has: the password hashes, the sign-in and download-link secrets
+in `keys/`, and on a replica the credential it follows its primary with, in plain text in the
+database. Keep it as safe as the root itself.
+
 The zip is written as `<zip>.partial` and renamed into place only when whole, so a failed backup leaves
 nothing behind and never replaces a good one. `<zip>.lock` is held exclusively for the whole run, so a
 second backup to the same path fails rather than sharing those files. It is created readable by its owner only, and the database

@@ -8,9 +8,11 @@ A Server-Sent Events stream that tells the web UI which cached queries to refetc
 - `InMemoryInvalidationBroadcaster` keeps one bounded channel (capacity 100, `DropOldest`) per
   stream. Delivery is best-effort: events drop under backpressure, and the UI refetches when it
   reconnects.
-- An event names a resource, not the data, and goes to every stream. A resource that only some
-  users may see must not carry anything in its metadata the others may not; a shelf's id is all
-  any of them carries.
+- An event names a resource, not the data. One naming a shelf (`shelf-contents` and `shelf-access`
+  with the shelf's id) goes only to streams whose user can see that shelf when it is sent, by the
+  rule `ShelfAccessResolver` holds, with the user's roles and grants read as they are then
+  (`InvalidationAudience`); the rest name nothing and go to every stream. A stream ends once its
+  user has been deleted.
 
 ## Where events come from
 
@@ -18,7 +20,9 @@ A Server-Sent Events stream that tells the web UI which cached queries to refetc
 what each new entry makes stale (`ChangeLogInvalidations`). Every change to storage, users and
 access is in the log, written in the transaction that made it, so no service publishes on its own:
 nothing can forget to, and nothing is published for a change that rolls back. SQLite commits one
-writer at a time in sequence order, so following the sequence misses nothing.
+writer at a time in sequence order, so following the sequence misses nothing. It starts from where
+the log stands when it first reads it, and a failed read, that first one included, is tried again at
+the next poll.
 
 | Resource | Made stale by | Metadata |
 |---|---|---|

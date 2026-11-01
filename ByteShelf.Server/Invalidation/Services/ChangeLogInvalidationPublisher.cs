@@ -35,14 +35,17 @@ namespace ByteShelf.Server.Invalidation.Services
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            // Changes made before startup are no news to a web UI that connects after it.
-            long published = await ReadAsync(repository => repository.GetLatestSequenceAsync());
+            long? published = null;
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
                 {
-                    await Task.Delay(PollInterval, _timeProvider, stoppingToken);
-                    published = await PublishAfterAsync(published);
+                    // The first pass reads where the log stands: changes made before startup are no news
+                    // to a web UI that connects after it. Inside the try, so a failed read is tried again
+                    // like a failed poll rather than stopping the host.
+                    published = published == null
+                        ? await ReadAsync(repository => repository.GetLatestSequenceAsync())
+                        : await PublishAfterAsync(published.Value);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -53,6 +56,8 @@ namespace ByteShelf.Server.Invalidation.Services
                     // Live updates are best-effort; the next poll tries again from the same place.
                     _logger.LogError(exception, "Publishing invalidations from the change log failed.");
                 }
+
+                await Task.Delay(PollInterval, _timeProvider, stoppingToken).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             }
         }
 

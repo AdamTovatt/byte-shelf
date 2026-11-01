@@ -8,7 +8,10 @@ namespace ByteShelf.Server.Replication.Repositories
     {
         Task ClearAsync(IDbSession? session = null);
 
-        /// <summary>Adds a page of the copy; an entity already held keeps only the newer state.</summary>
+        /// <summary>
+        /// Adds a page of the copy: an entity already held keeps only the newer state, and one the page
+        /// gives as removed (a null payload) is dropped.
+        /// </summary>
         Task AddAsync(IReadOnlyList<ChangeLogEntry> entries, IDbSession session);
 
         /// <summary>The copied entries after <paramref name="afterSequence"/>, oldest first.</summary>

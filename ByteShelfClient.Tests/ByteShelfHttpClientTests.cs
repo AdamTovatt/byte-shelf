@@ -162,33 +162,171 @@ namespace ByteShelfClient.Tests
             Assert.Empty(server.Requests);
         }
 
-        [Theory]
-        [InlineData(true)]
-        [InlineData(false)]
-        public async Task OpenReadAsync_ReadToTheEnd_ChecksTheBytesAgainstTheirSha256(bool matches)
+        [Fact]
+        public async Task SharedSession_SignOut_EndsTheKeptTokensUnderTheLockAndForgetsThem()
+        {
+            MemorySessionStore store = new MemorySessionStore(Tokens("first", "refresh-1", Expired));
+            List<(string Body, bool Locked)> logouts = new List<(string, bool)>();
+            using ScriptedServer server = new ScriptedServer(async request =>
+            {
+                logouts.Add((await request.Content!.ReadAsStringAsync(), store.Locked));
+                return new HttpResponseMessage(HttpStatusCode.NoContent);
+            });
+            using HttpClient http = server.CreateClient();
+            using UserSession session = await UserSession.OpenSharedAsync(http, store);
+            store.Tokens = Tokens("theirs", "refresh-2", DateTimeOffset.UtcNow.AddHours(1));
+
+            await session.SignOutAsync();
+
+            (string body, bool locked) = Assert.Single(logouts);
+            Assert.Contains("refresh-2", body, StringComparison.Ordinal);
+            Assert.True(locked);
+            Assert.Null(store.Tokens);
+            Assert.False(store.Locked);
+        }
+
+        [Fact]
+        public async Task SignOut_ThenARequest_ThrowsUnauthenticatedWithoutSendingIt()
+        {
+            using ScriptedServer server = new ScriptedServer(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
+            using HttpClient http = server.CreateClient();
+            using UserSession session = UserSession.Resume(http, Tokens("first", "refresh-1", DateTimeOffset.UtcNow.AddHours(1)));
+
+            await session.SignOutAsync();
+            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => new ByteShelfHttpClient(http, session).GetCurrentUserAsync());
+
+            Assert.Equal(ErrorCodes.Unauthenticated, exception.Code);
+            Assert.Equal(new[] { "POST /api/auth/logout" }, server.Requests);
+        }
+
+        [Fact]
+        public async Task SharedSession_SignedOutElsewhere_SignsOutWithoutCallingTheServer()
+        {
+            using ScriptedServer server = new ScriptedServer(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
+            using HttpClient http = server.CreateClient();
+            MemorySessionStore store = new MemorySessionStore(Tokens("first", "refresh-1", Expired));
+            using UserSession session = await UserSession.OpenSharedAsync(http, store);
+            store.Tokens = null;
+
+            await session.SignOutAsync();
+
+            Assert.Empty(server.Requests);
+            await Assert.ThrowsAsync<ByteShelfException>(() => new ByteShelfHttpClient(http, session).GetCurrentUserAsync());
+        }
+
+        [Fact]
+        public async Task OpenReadAsync_BytesMatchTheirSha256_ReadsThemToTheEnd()
         {
             byte[] content = Encoding.UTF8.GetBytes("the contents");
-            string sha256 = matches ? Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(content)) : new string('0', 64);
-            using ScriptedServer server = new ScriptedServer(_ =>
-            {
-                HttpResponseMessage response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(content) };
-                response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue($"\"{sha256}\"");
-                return response;
-            });
+            using ScriptedServer server = ServingWithSha256(content, Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(content)));
+            using HttpClient http = server.CreateClient();
+            await using Stream stream = await new ByteShelfHttpClient(http, new ShelfKeyCredentials("bsk_secret")).Shelf("docs").OpenReadAsync("/a.txt");
+            using MemoryStream read = new MemoryStream();
+
+            await stream.CopyToAsync(read);
+
+            Assert.Equal(content, read.ToArray());
+        }
+
+        [Fact]
+        public async Task OpenReadAsync_BytesDoNotMatchTheirSha256_ThrowsAtTheEnd()
+        {
+            using ScriptedServer server = ServingWithSha256(Encoding.UTF8.GetBytes("the contents"), new string('0', 64));
             using HttpClient http = server.CreateClient();
             await using Stream stream = await new ByteShelfHttpClient(http, new ShelfKeyCredentials("bsk_secret")).Shelf("docs").OpenReadAsync("/a.txt");
 
-            Task read = stream.CopyToAsync(Stream.Null);
+            IOException exception = await Assert.ThrowsAsync<IOException>(() => stream.CopyToAsync(Stream.Null));
 
-            if (matches)
+            Assert.Contains("SHA-256", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Theory]
+        [InlineData(6, "")]
+        [InlineData(3, "456")]
+        public async Task UploadAsync_ChunkInterrupted_GoesOnFromWhatTheServerHolds(long heldAfterTheFailure, string resent)
+        {
+            Guid uploadId = Guid.NewGuid();
+            int failures = 0;
+            List<string> sent = new List<string>();
+            using ScriptedServer server = new ScriptedServer(request =>
             {
-                await read;
-            }
-            else
+                string uri = request.RequestUri!.PathAndQuery;
+                switch (request.Method.Method)
+                {
+                    case "POST" when uri.EndsWith("/complete", StringComparison.Ordinal):
+                        return ScriptedServer.Json(FileJson());
+                    case "POST":
+                        return ScriptedServer.Json(SessionJson(uploadId));
+                    case "GET":
+                        return ScriptedServer.Json(SessionJson(uploadId, heldAfterTheFailure));
+                    case "PUT" when uri.EndsWith("?offset=3", StringComparison.Ordinal) && failures++ == 0:
+                        throw new HttpRequestException("The connection was reset.");
+                    case "PUT":
+                        sent.Add(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                        return ScriptedServer.Json(SessionJson(uploadId));
+                    default:
+                        return new HttpResponseMessage(HttpStatusCode.InternalServerError);
+                }
+            });
+            using HttpClient http = server.CreateClient();
+            IShelfClient shelf = new ByteShelfHttpClient(http, new ShelfKeyCredentials("bsk_secret"), new ByteShelfHttpClientOptions { SingleRequestMaxBytes = 4, ChunkBytes = 3 }).Shelf("docs");
+
+            ShelfFile stored = await shelf.UploadAsync("/a.txt", new MemoryStream(Encoding.UTF8.GetBytes("123456")));
+
+            Assert.Equal("/a.txt", stored.Path);
+            Assert.Equal(new[] { "123", resent }.Where(text => text.Length > 0), sent);
+            Assert.Contains($"GET /api/shelves/docs/uploads/{uploadId:D}", server.Requests);
+            Assert.DoesNotContain(server.Requests, request => request.StartsWith("DELETE", StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public async Task UploadAsync_ChunkKeepsFailing_AbortsAfterResumingAFewTimes()
+        {
+            Guid uploadId = Guid.NewGuid();
+            using ScriptedServer server = new ScriptedServer(request => (request.Method.Method, request.RequestUri!.PathAndQuery) switch
             {
-                IOException exception = await Assert.ThrowsAsync<IOException>(() => read);
-                Assert.Contains("SHA-256", exception.Message, StringComparison.Ordinal);
-            }
+                ("POST", _) => ScriptedServer.Json(SessionJson(uploadId)),
+                ("GET", _) => ScriptedServer.Json(SessionJson(uploadId, receivedBytes: 3)),
+                ("PUT", var uri) when uri.EndsWith("?offset=0", StringComparison.Ordinal) => ScriptedServer.Json(SessionJson(uploadId)),
+                ("PUT", _) => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable),
+                ("DELETE", _) => new HttpResponseMessage(HttpStatusCode.NoContent),
+                _ => new HttpResponseMessage(HttpStatusCode.InternalServerError),
+            });
+            using HttpClient http = server.CreateClient();
+            IShelfClient shelf = new ByteShelfHttpClient(http, new ShelfKeyCredentials("bsk_secret"), new ByteShelfHttpClientOptions { SingleRequestMaxBytes = 4, ChunkBytes = 3 }).Shelf("docs");
+
+            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(
+                () => shelf.UploadAsync("/a.txt", new MemoryStream(Encoding.UTF8.GetBytes("123456"))));
+
+            Assert.Equal(HttpStatusCode.ServiceUnavailable, exception.StatusCode);
+            Assert.Equal(4, server.Requests.Count(request => request.EndsWith("?offset=3", StringComparison.Ordinal)));
+            Assert.Equal($"DELETE /api/shelves/docs/uploads/{uploadId:D}", server.Requests[^1]);
+        }
+
+        [Fact]
+        public async Task UploadAsync_ChunkRefusedWithAChallenge_RenewsAndSendsTheChunkAgain()
+        {
+            Guid uploadId = Guid.NewGuid();
+            using ScriptedServer server = new ScriptedServer(request => (request.Method.Method, request.RequestUri!.PathAndQuery, request.Headers.Authorization?.Parameter) switch
+            {
+                ("POST", "/api/auth/login", _) => ScriptedServer.Json(ScriptedServer.Tokens("first", "refresh-1")),
+                ("POST", "/api/auth/refresh", _) => ScriptedServer.Json(ScriptedServer.Tokens("second", "refresh-2")),
+                ("POST", var uri, _) when uri.EndsWith("/complete", StringComparison.Ordinal) => ScriptedServer.Json(FileJson()),
+                ("POST", _, _) => ScriptedServer.Json(SessionJson(uploadId)),
+                ("PUT", var uri, "first") when uri.EndsWith("?offset=3", StringComparison.Ordinal) => Challenge(),
+                ("PUT", _, _) => ScriptedServer.Json(SessionJson(uploadId)),
+                _ => new HttpResponseMessage(HttpStatusCode.InternalServerError),
+            });
+            using HttpClient http = server.CreateClient();
+            using UserSession session = await UserSession.SignInAsync(http, "a@b.test", "password");
+            IShelfClient shelf = new ByteShelfHttpClient(http, session, new ByteShelfHttpClientOptions { SingleRequestMaxBytes = 4, ChunkBytes = 3 }).Shelf("docs");
+
+            await shelf.UploadAsync("/a.txt", new MemoryStream(Encoding.UTF8.GetBytes("123456")));
+
+            string chunk = $"PUT /api/shelves/docs/uploads/{uploadId:D}?offset=3";
+            Assert.Equal(
+                new[] { $"{chunk} first", "POST /api/auth/refresh", $"{chunk} second", $"POST /api/shelves/docs/uploads/{uploadId:D}/complete second" },
+                server.Requests.SkipWhile(request => !request.StartsWith(chunk, StringComparison.Ordinal)));
         }
 
         [Fact]
@@ -311,6 +449,29 @@ namespace ByteShelfClient.Tests
             Assert.Throws<ArgumentException>(() => new ByteShelfHttpClient(http, new ShelfKeyCredentials("bsk_secret")));
         }
 
+        [Theory]
+        [InlineData("https://files.example.com/byteshelf")]
+        [InlineData("byteshelf/")]
+        public void Constructor_LinkBaseAddressNotAbsoluteEndingInASlash_Throws(string linkBase)
+        {
+            using HttpClient http = new HttpClient { BaseAddress = new Uri("http://127.0.0.1:5000/") };
+            ByteShelfHttpClientOptions options = new ByteShelfHttpClientOptions { LinkBaseAddress = new Uri(linkBase, UriKind.RelativeOrAbsolute) };
+
+            Assert.Throws<ArgumentException>(() => new ByteShelfHttpClient(http, new ShelfKeyCredentials("bsk_secret"), options));
+        }
+
+        [Fact]
+        public async Task CreateDownloadLinkAsync_WithALinkBaseAddress_AnswersTheLinkOnIt()
+        {
+            using ScriptedServer server = new ScriptedServer(_ => ScriptedServer.Json("{\"url\":\"/api/downloads/abc\",\"expiresAt\":\"2026-11-02T12:00:00+00:00\"}"));
+            using HttpClient http = server.CreateClient();
+            ByteShelfHttpClientOptions options = new ByteShelfHttpClientOptions { LinkBaseAddress = new Uri("https://files.example.com/shelf/") };
+
+            DownloadLink link = await new ByteShelfHttpClient(http, new ShelfKeyCredentials("secret"), options).Shelf("docs").CreateDownloadLinkAsync("/a.txt");
+
+            Assert.Equal("https://files.example.com/shelf/api/downloads/abc", link.Url);
+        }
+
         private static HttpResponseMessage CancelThenAnswer(CancellationTokenSource cancel, HttpResponseMessage answer)
         {
             cancel.Cancel();
@@ -329,9 +490,25 @@ namespace ByteShelfClient.Tests
             return response;
         }
 
-        private static string SessionJson(Guid uploadId)
+        private static string SessionJson(Guid uploadId, long receivedBytes = 0)
         {
-            return $"{{\"id\":\"{uploadId:D}\",\"shelfId\":\"{Guid.Empty:D}\",\"path\":\"/a.txt\",\"contentType\":\"application/octet-stream\",\"sizeBytes\":6,\"receivedBytes\":0,\"overwrite\":false,\"createdAt\":\"2026-01-01T00:00:00Z\",\"expiresAt\":\"2026-01-02T00:00:00Z\"}}";
+            return $"{{\"id\":\"{uploadId:D}\",\"shelfId\":\"{Guid.Empty:D}\",\"path\":\"/a.txt\",\"contentType\":\"application/octet-stream\",\"sizeBytes\":6,\"receivedBytes\":{receivedBytes},\"overwrite\":false,\"createdAt\":\"2026-01-01T00:00:00Z\",\"expiresAt\":\"2026-01-02T00:00:00Z\"}}";
+        }
+
+        /// <summary>What completing the six-byte upload of /a.txt answers.</summary>
+        private static string FileJson()
+        {
+            return $"{{\"id\":\"{Guid.NewGuid():D}\",\"shelfId\":\"{Guid.Empty:D}\",\"directoryId\":\"{Guid.Empty:D}\",\"path\":\"/a.txt\",\"name\":\"a.txt\",\"contentType\":\"text/plain\",\"sizeBytes\":6,\"sha256\":\"{new string('0', 64)}\",\"createdAt\":\"2026-01-01T00:00:00Z\",\"updatedAt\":\"2026-01-01T00:00:00Z\"}}";
+        }
+
+        private static ScriptedServer ServingWithSha256(byte[] content, string sha256)
+        {
+            return new ScriptedServer(_ =>
+            {
+                HttpResponseMessage response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(content) };
+                response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue($"\"{sha256}\"");
+                return response;
+            });
         }
     }
 }

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import toast from 'react-hot-toast';
 import { Button, ButtonGroup, Card, Dropdown, DropdownItem, Icon, IconButton, Input, PageLayout, Spinner, iconMap } from '../ui';
 import { FormDialog } from '../components/FormDialog';
+import { LoadError } from '../components/LoadError';
 import { PasswordInput } from '../components/PasswordInput';
 import { useCreateUser, useCurrentUser, useDeleteUser, useSetRoles, useUsers } from '../hooks/useUserQueries';
 import { useGrantsByShelf, useRemoveGrant, useSetGrant } from '../hooks/useAccessQueries';
@@ -21,10 +22,10 @@ interface UserShelf {
 
 /** Every user, for an admin: creating them, which shelves they reach, making them admins, and deleting them. */
 export function UsersPage() {
-  const { data: users, isLoading } = useUsers();
-  const { data: shelves = [] } = useShelves();
+  const { data: users, isLoading, error: usersError } = useUsers();
+  const { data: shelves = [], error: shelvesError } = useShelves();
   const shelfNames = shelves.map((shelf) => shelf.name);
-  const grantsByShelf = useGrantsByShelf(shelfNames);
+  const { byShelf: grantsByShelf, error: grantsError } = useGrantsByShelf(shelfNames);
   const [creating, setCreating] = useState(false);
   const [editingAccess, setEditingAccess] = useState<UserInfo | null>(null);
   const [deleting, setDeleting] = useState<UserInfo | null>(null);
@@ -47,6 +48,9 @@ export function UsersPage() {
       </div>
 
       {isLoading && <Spinner />}
+      <LoadError error={usersError} failure="Could not load the users" />
+      {/* Without them each user's shelves would read as none. */}
+      <LoadError error={shelvesError ?? grantsError} failure="Could not load who reaches which shelf" />
       {users && (
         <Card variant="elevated" padding="none" className="divide-y divide-border">
           {users.map((user) => (

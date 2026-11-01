@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using ByteShelf.Server.Users.Models;
+using ByteShelf.Server.Users.Repositories;
 using EasyReasy.Auth;
 
 namespace ByteShelf.Server.Users.Services
@@ -16,16 +17,22 @@ namespace ByteShelf.Server.Users.Services
 
         public const string AuthType = "user";
 
+        /// <summary>The claim EasyReasy.Auth puts a session's family on refreshed tokens under, and <c>GetRefreshFamilyId</c> reads.</summary>
+        private const string FamilyIdClaimType = "family_id";
+
         private readonly IUserService _userService;
+        private readonly IUserLoginRepository _userLoginRepository;
         private readonly IRefreshTokenService _refreshTokenService;
         private readonly TimeProvider _timeProvider;
 
         public AuthRequestValidationService(
             IUserService userService,
+            IUserLoginRepository userLoginRepository,
             IRefreshTokenService refreshTokenService,
             TimeProvider timeProvider)
         {
             _userService = userService;
+            _userLoginRepository = userLoginRepository;
             _refreshTokenService = refreshTokenService;
             _timeProvider = timeProvider;
         }
@@ -48,26 +55,37 @@ namespace ByteShelf.Server.Users.Services
             IJwtTokenService jwtTokenService,
             HttpContext? httpContext = null)
         {
-            User? user = await _userService.ValidateCredentialsAsync(request.Username, request.Password);
-            if (user == null)
+            UserCredentials? credentials = await _userService.ValidateCredentialsAsync(request.Username, request.Password);
+            if (credentials == null)
             {
                 return LoginResult.Failed(LoginFailureReason.InvalidCredentials, attemptedSubject: request.Username);
             }
 
+            User user = credentials.User;
             string subject = user.Id.ToString("D");
             string[] roles = user.Roles.ToArray();
 
             RefreshTokenCreationResult refreshTokenResult = await _refreshTokenService.CreateRefreshTokenWithFamilyAsync(
                 subject: subject,
                 authType: AuthType,
-                serializedClaims: null,
+                serializedClaims: CredentialStamp.SerializeClaimsFor(credentials.PasswordHash),
                 serializedRoles: RefreshTokenClaims.SerializeRoles(roles));
 
+            // A reset that committed after the password was checked ended the sessions there were, which
+            // did not yet include this one: the sign-in is refused rather than handed out.
+            UserCredentials? current = await _userLoginRepository.GetCredentialsByUserIdAsync(user.Id);
+            if (current == null || current.PasswordHash != credentials.PasswordHash)
+            {
+                return LoginResult.Failed(LoginFailureReason.InvalidCredentials, attemptedSubject: request.Username);
+            }
+
+            // The session's family rides on its access token from the start, as it does on refreshed
+            // ones, so a password change made with this token can keep this session.
             DateTime expiresAt = _timeProvider.GetUtcNow().UtcDateTime.Add(AccessTokenLifetime);
             string accessToken = jwtTokenService.CreateToken(
                 subject: subject,
                 authType: AuthType,
-                additionalClaims: Array.Empty<Claim>(),
+                additionalClaims: new[] { new Claim(FamilyIdClaimType, refreshTokenResult.FamilyId) },
                 roles: roles,
                 expiresAt: expiresAt);
 

@@ -21,6 +21,7 @@ import {
 } from '../ui';
 import { FileButton } from '../components/FileButton';
 import { FormDialog } from '../components/FormDialog';
+import { LoadError } from '../components/LoadError';
 import { MoveDialog } from '../components/MoveDialog';
 import { ShelfHeader } from '../components/ShelfHeader';
 import { useCreateDirectory, useDeleteEntry, useFileSearch, useListing, useMoveEntry, useRestoreDeletion, useSetDescription } from '../hooks/useShelfQueries';
@@ -31,10 +32,10 @@ import { joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../
 import { copyWhenReady } from '../lib/clipboard';
 import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
-import { createDownloadLink, type FileSearchResults, type ShelfDirectory, type ShelfFile } from '../services/shelfService';
+import { createDownloadLink, type Entry, type FileSearchResults, type ShelfFile } from '../services/shelfService';
 
-export type Entry = { kind: 'directory'; value: ShelfDirectory } | { kind: 'file'; value: ShelfFile };
-
+// Its toasts and dialogs stay here with the page rather than in their own modules: splitting them out
+// would only reshape working code (final review, item 51).
 /** One directory on a shelf: what is in it, uploading into it, and renaming, moving and deleting what is there. */
 export function ShelfPage() {
   const params = useParams();
@@ -205,7 +206,7 @@ export function ShelfPage() {
         ) : (
           <>
             {isLoading && <Spinner />}
-            {error && <p className="text-body-md text-danger-11">{getErrorMessage(error, 'Could not list this directory')}</p>}
+            <LoadError error={error} failure="Could not list this directory" />
             {listing && entries.length === 0 && (
               <EmptyState
                 message={dragging ? 'Drop to upload into this folder.' : 'Nothing here yet. Upload files, or drop them anywhere on the page.'}
@@ -244,7 +245,7 @@ interface SearchResultsProps {
 }
 
 function SearchResults({ results, isLoading, error, text, row }: SearchResultsProps) {
-  if (error) return <p className="text-body-md text-danger-11">{getErrorMessage(error, 'Could not search')}</p>;
+  if (error) return <LoadError error={error} failure="Could not search" />;
   if (isLoading || !results) return <Spinner />;
   if (results.files.length === 0) return <EmptyState message={`No file here or below has “${text}” in its name or description.`} />;
 

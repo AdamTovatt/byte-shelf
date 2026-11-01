@@ -25,6 +25,13 @@ namespace ByteShelf.Server.Shared.StaticFiles
             }
         }
 
+        /// <summary>The web UI's entry document under <paramref name="webRootPath"/>; null when no web UI has been published there.</summary>
+        public static string? FindIndexHtml(string? webRootPath)
+        {
+            string? indexPath = string.IsNullOrEmpty(webRootPath) ? null : Path.Combine(webRootPath, "index.html");
+            return indexPath != null && File.Exists(indexPath) ? indexPath : null;
+        }
+
         /// <summary>
         /// Applies the no-cache headers used for the SPA entry document.
         /// </summary>
@@ -50,10 +57,9 @@ namespace ByteShelf.Server.Shared.StaticFiles
                     && !context.Request.Path.StartsWithSegments("/api");
 
                 // Resolved per request: WebRootPath is null when no web UI has been published.
-                string? webRootPath = app.Environment.WebRootPath;
-                string? indexPath = string.IsNullOrEmpty(webRootPath) ? null : Path.Combine(webRootPath, "index.html");
+                string? indexPath = FindIndexHtml(app.Environment.WebRootPath);
 
-                if (!isPageRequest || indexPath == null || !File.Exists(indexPath))
+                if (!isPageRequest || indexPath == null)
                 {
                     context.Response.StatusCode = StatusCodes.Status404NotFound;
                     return;

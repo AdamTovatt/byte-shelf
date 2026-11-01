@@ -59,6 +59,13 @@ namespace ByteShelf.Server.Storage.Repositories
         Task<int> RestoreDeletionAsync(Guid deletionId, DateTimeOffset restoredAt, IDbSession session);
 
         /// <summary>
+        /// Gives every directory in the shelf's trash the deletion time <paramref name="deletedAt"/>, as
+        /// <see cref="IFileRepository.ExpireTrashAsync"/> does for its files, and not logged for the same
+        /// reason; answers how many.
+        /// </summary>
+        Task<int> ExpireTrashAsync(Guid shelfId, DateTimeOffset deletedAt, IDbSession session);
+
+        /// <summary>
         /// Directories deleted before <paramref name="deletedBefore"/>, on the shelf <paramref name="shelfId"/>
         /// or any shelf when it is null, that no row, live or trashed, still sits in, so they can be purged
         /// without leaving anything orphaned.
@@ -70,16 +77,17 @@ namespace ByteShelf.Server.Storage.Repositories
 
         /// <summary>
         /// Writes a directory as a primary's change log holds it, logged as <paramref name="action"/>. A
-        /// different live directory of the same name in the same parent is moved to the trash first; the
-        /// log brings it back where it belongs if it still exists.
+        /// different live directory of the same name in the same parent is moved to the trash first, as
+        /// <paramref name="displacedDeletionId"/>; the log brings it back where it belongs if it still exists.
         /// </summary>
-        Task UpsertReplicatedAsync(DirectoryRecord directory, string action, DateTimeOffset at, IDbSession session);
+        Task UpsertReplicatedAsync(DirectoryRecord directory, string action, Guid displacedDeletionId, DateTimeOffset at, IDbSession session);
 
         /// <summary>
-        /// Moves one directory (never a root) to the trash, unless it is there already, without what is
-        /// under it, so it is purged only after the restore window. False when it was not live.
+        /// Moves one directory (never a root) to the trash as <paramref name="deletionId"/>, unless it is
+        /// there already, without what is under it, so it is purged only after the restore window. False
+        /// when it was not live.
         /// </summary>
-        Task<bool> TrashIfLiveAsync(Guid id, DateTimeOffset at, IDbSession session);
+        Task<bool> TrashIfLiveAsync(Guid id, Guid deletionId, DateTimeOffset at, IDbSession session);
 
         /// <summary>Removes every directory of a shelf, its root and trash included, for removing the shelf.</summary>
         Task PurgeForShelfAsync(Guid shelfId, DateTimeOffset purgedAt, IDbSession session);

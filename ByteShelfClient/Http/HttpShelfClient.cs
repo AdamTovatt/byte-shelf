@@ -10,6 +10,9 @@ namespace ByteShelfClient.Http
     /// <summary><see cref="IShelfClient"/> over HTTP, for <see cref="ByteShelfHttpClient.Shelf"/>.</summary>
     internal sealed class HttpShelfClient : IShelfClient
     {
+        /// <summary>How many times in a row an interrupted chunk is resumed before the upload fails.</summary>
+        private const int MaxResumes = 3;
+
         /// <summary>How long aborting a failed upload may hold up reporting the failure.</summary>
         private static readonly TimeSpan AbortTimeout = TimeSpan.FromSeconds(10);
 
@@ -69,16 +72,13 @@ namespace ByteShelfClient.Http
         public async Task<ShelfFile> UploadAsync(string path, Stream content, UploadOptions? options = null, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(content);
-            string normalizedPath = ShelfPath.Normalize(path);
-            options ??= new UploadOptions();
-            string contentType = ContentTypes.Normalize(options.ContentType);
-            string? description = FileDescription.Normalize(options.Description);
+            NormalizedUpload upload = NormalizedUpload.Of(path, options);
 
             await using UploadSource source = await UploadSource.OpenAsync(content, cancellationToken).ConfigureAwait(false);
 
-            return source.SizeBytes <= _options.SingleRequestMaxBytes && description == null
-                ? await PutAsync(normalizedPath, source, contentType, options.Overwrite, cancellationToken).ConfigureAwait(false)
-                : await UploadInChunksAsync(normalizedPath, source, contentType, options.Overwrite, description, cancellationToken).ConfigureAwait(false);
+            return source.SizeBytes <= _options.SingleRequestMaxBytes && upload.Description == null
+                ? await PutAsync(upload.Path, source, upload.ContentType, upload.Overwrite, cancellationToken).ConfigureAwait(false)
+                : await UploadInChunksAsync(upload.Path, source, upload.ContentType, upload.Overwrite, upload.Description, cancellationToken).ConfigureAwait(false);
         }
 
         public Task<ShelfFile> SetDescriptionAsync(EntryReference file, string? description, CancellationToken cancellationToken = default)
@@ -111,7 +111,8 @@ namespace ByteShelfClient.Http
 
             // The server answers a path from its own root; relative to the base address, it stays right for
             // a server behind a path prefix it does not know about.
-            return new DownloadLink { Url = new Uri(_connection.BaseAddress, link.Url.TrimStart('/')).AbsoluteUri, ExpiresAt = link.ExpiresAt };
+            Uri linkBase = _options.LinkBaseAddress ?? _connection.BaseAddress;
+            return new DownloadLink { Url = new Uri(linkBase, link.Url.TrimStart('/')).AbsoluteUri, ExpiresAt = link.ExpiresAt };
         }
 
         public async Task<Stream> OpenReadAsync(EntryReference file, CancellationToken cancellationToken = default)
@@ -259,8 +260,10 @@ namespace ByteShelfClient.Http
         }
 
         /// <summary>
-        /// Starts a resumable upload, sends the content a chunk at a time, and completes it. A failure
-        /// aborts the upload, so its reservation against the quota does not linger until it expires.
+        /// Starts a resumable upload, sends the content a chunk at a time, and completes it. A chunk
+        /// that is interrupted (<see cref="IsInterruption"/>) is resumed from where the server says the
+        /// upload stands, up to <see cref="MaxResumes"/> times in a row. Any other failure aborts the
+        /// upload, so its reservation against the quota does not linger until it expires.
         /// </summary>
         private async Task<ShelfFile> UploadInChunksAsync(string path, UploadSource source, string contentType, bool overwrite, string? description, CancellationToken cancellationToken)
         {
@@ -277,17 +280,29 @@ namespace ByteShelfClient.Http
             {
                 byte[] chunk = new byte[(int)Math.Min(_options.ChunkBytes, Math.Max(source.SizeBytes, 1))];
                 long offset = 0;
+                int resumes = 0;
                 while (offset < source.SizeBytes)
                 {
                     int length = (int)Math.Min(chunk.Length, source.SizeBytes - offset);
                     await source.Stream.ReadExactlyAsync(chunk.AsMemory(0, length), cancellationToken).ConfigureAwait(false);
 
                     string chunkUri = $"{uploadUri}?offset={offset.ToString(CultureInfo.InvariantCulture)}";
-                    using HttpResponseMessage sent = await _connection.SendRawAsync(
-                        () => new HttpRequestMessage(HttpMethod.Put, chunkUri) { Content = new ByteArrayContent(chunk, 0, length) },
-                        cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        using HttpResponseMessage sent = await _connection.SendRawAsync(
+                            () => new HttpRequestMessage(HttpMethod.Put, chunkUri) { Content = new ByteArrayContent(chunk, 0, length) },
+                            cancellationToken).ConfigureAwait(false);
 
-                    offset += length;
+                        offset += length;
+                        resumes = 0;
+                    }
+                    catch (Exception exception) when (resumes < MaxResumes && IsInterruption(exception, cancellationToken))
+                    {
+                        // The chunk may have arrived though its answer did not, so the server says where to go on.
+                        resumes++;
+                        offset = await ResumeOffsetAsync(uploadUri, source.SizeBytes, cancellationToken).ConfigureAwait(false);
+                        source.Stream.Position = offset;
+                    }
                 }
 
                 return await _connection.SendAsync(HttpMethod.Post, $"{uploadUri}/complete", ByteShelfJsonContext.Default.ShelfFile, cancellationToken).ConfigureAwait(false);
@@ -297,6 +312,33 @@ namespace ByteShelfClient.Http
                 await AbortAsync(uploadUri).ConfigureAwait(false);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Whether a chunk failed on the way rather than being refused, so sending on from the server's
+        /// count can work: the connection broke, the client's own timeout ran out, the server failed
+        /// (5xx, except 507 for the quota), or it holds a different count than the chunk assumed (409).
+        /// </summary>
+        private static bool IsInterruption(Exception exception, CancellationToken cancellationToken)
+        {
+            return exception switch
+            {
+                HttpRequestException => true,
+                OperationCanceledException => !cancellationToken.IsCancellationRequested,
+                ByteShelfException refused => refused.Code == ErrorCodes.Conflict
+                    || (refused.StatusCode is HttpStatusCode status && (int)status >= 500 && status != HttpStatusCode.InsufficientStorage),
+                _ => false,
+            };
+        }
+
+        /// <summary>The offset the next chunk starts at, by the server's count of what the upload holds.</summary>
+        /// <exception cref="ByteShelfException">The server answered a count outside the upload.</exception>
+        private async Task<long> ResumeOffsetAsync(string uploadUri, long sizeBytes, CancellationToken cancellationToken)
+        {
+            UploadSession progress = await _connection.SendAsync(HttpMethod.Get, uploadUri, ByteShelfJsonContext.Default.UploadSession, cancellationToken).ConfigureAwait(false);
+            return progress.ReceivedBytes >= 0 && progress.ReceivedBytes <= sizeBytes
+                ? progress.ReceivedBytes
+                : throw new ByteShelfException($"The server holds {progress.ReceivedBytes} bytes of an upload of {sizeBytes}.", code: null);
         }
 
         /// <summary>

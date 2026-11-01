@@ -28,7 +28,7 @@ namespace ByteShelf.Cli.Connection
         private readonly TimeProvider _timeProvider;
         private readonly SemaphoreSlim _openLock = new SemaphoreSlim(1, 1);
         private readonly List<IDisposable> _owned = new List<IDisposable>();
-        private OpenedLogin? _opened;
+        private OpenedCredential? _opened;
 
         /// <param name="store">Where the login is kept.</param>
         /// <param name="environment">Reads an environment variable.</param>
@@ -44,30 +44,35 @@ namespace ByteShelf.Cli.Connection
 
         public async Task<IByteShelfClient> OpenAsync(CancellationToken cancellationToken)
         {
-            Login login = Resolve() ?? throw new UsageException(NotSignedIn);
+            Credential credential = Resolve() ?? throw new UsageException(NotSignedIn);
             await _openLock.WaitAsync(cancellationToken);
             try
             {
-                if (_opened?.Login == login)
+                // Compared by value: the same key, or the same user's session on the same server, is the
+                // same client, however often the session's tokens have been renewed since.
+                if (_opened?.Credential == credential)
                 {
                     return _opened.Client;
                 }
 
-                HttpClient http = CreateHttp(login.Server);
+                HttpClient http = CreateHttp(credential.Server);
                 IByteShelfClient client;
-                if (login.Key != null)
+                switch (credential)
                 {
-                    client = new ByteShelfHttpClient(http, new ShelfKeyCredentials(login.Key));
-                }
-                else
-                {
-                    ConfigSessionStore sessionStore = new ConfigSessionStore(_store, login.Server, login.Email!);
-                    UserSession session = await UserSession.OpenSharedAsync(http, sessionStore, _timeProvider, cancellationToken);
-                    _owned.Add(session);
-                    client = new ByteShelfHttpClient(http, session);
+                    case KeyCredential key:
+                        client = new ByteShelfHttpClient(http, new ShelfKeyCredentials(key.Key));
+                        break;
+                    case SessionCredential session:
+                        ConfigSessionStore sessionStore = new ConfigSessionStore(_store, session.Server, session.Email);
+                        UserSession shared = await UserSession.OpenSharedAsync(http, sessionStore, _timeProvider, cancellationToken);
+                        _owned.Add(shared);
+                        client = new ByteShelfHttpClient(http, shared);
+                        break;
+                    default:
+                        throw new UnreachableException();
                 }
 
-                _opened = new OpenedLogin(login, client);
+                _opened = new OpenedCredential(credential, client);
                 return client;
             }
             finally
@@ -165,7 +170,7 @@ namespace ByteShelf.Cli.Connection
         /// tool call, so a long-running MCP server follows a login or logout made elsewhere.
         /// </summary>
         /// <exception cref="UsageException">The environment names a server without a key, or the config file is damaged.</exception>
-        private Login? Resolve()
+        private Credential? Resolve()
         {
             string? environmentServer = _environment(ServerVariable);
             string? environmentKey = _environment(KeyVariable);
@@ -174,7 +179,7 @@ namespace ByteShelf.Cli.Connection
                 // The file's credentials belong to the file's server, never to another one.
                 string key = environmentKey ?? throw new UsageException($"{ServerVariable} is set, so {KeyVariable} must be too.");
                 string server = NormalizeServer(environmentServer);
-                return new Login(server, key, null, $"{server} with the key in {KeyVariable}");
+                return new KeyCredential(server, key, $"{server} with the key in {KeyVariable}");
             }
 
             CliConfig? config = _store.Load();
@@ -185,28 +190,39 @@ namespace ByteShelf.Cli.Connection
 
             if (environmentKey != null)
             {
-                return new Login(config.Server, environmentKey, null, $"{config.Server} with the key in {KeyVariable}");
+                return new KeyCredential(config.Server, environmentKey, $"{config.Server} with the key in {KeyVariable}");
             }
 
             return config.Login switch
             {
-                KeyLogin key => new Login(config.Server, key.Key, null, $"{config.Server} with a shelf key"),
-                SessionLogin session => new Login(config.Server, null, session.Email, $"{config.Server} as {session.Email}"),
+                KeyLogin key => new KeyCredential(config.Server, key.Key, $"{config.Server} with a shelf key"),
+                SessionLogin session => new SessionCredential(config.Server, session.Email, $"{config.Server} as {session.Email}"),
                 _ => throw new UnreachableException(),
             };
         }
 
-        private HttpClient CreateHttp(string server)
+        /// <summary>
+        /// A client for <paramref name="server"/> without a timeout of its own: an upload or a download
+        /// takes as long as it takes, and a command ends early only when it is cancelled.
+        /// </summary>
+        internal HttpClient CreateHttp(string server)
         {
             HttpClient http = _handler == null ? new HttpClient() : new HttpClient(_handler, disposeHandler: false);
             http.BaseAddress = new Uri(server);
+            http.Timeout = Timeout.InfiniteTimeSpan;
             _owned.Add(http);
             return http;
         }
 
-        /// <summary>A server and how to prove who you are there: a key, or the session kept for an email.</summary>
-        private sealed record Login(string Server, string? Key, string? Email, string Description);
+        /// <summary>A server and how to prove who you are there, with how <see cref="Describe"/> says so.</summary>
+        private abstract record Credential(string Server, string Description);
 
-        private sealed record OpenedLogin(Login Login, IByteShelfClient Client);
+        /// <summary>A shelf key.</summary>
+        private sealed record KeyCredential(string Server, string Key, string Description) : Credential(Server, Description);
+
+        /// <summary>The session the config file keeps for <paramref name="Email"/>; its tokens are read when it is used.</summary>
+        private sealed record SessionCredential(string Server, string Email, string Description) : Credential(Server, Description);
+
+        private sealed record OpenedCredential(Credential Credential, IByteShelfClient Client);
     }
 }

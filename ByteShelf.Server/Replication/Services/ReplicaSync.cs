@@ -1,11 +1,10 @@
-using System.Security.Cryptography;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.Replication.Models;
 using ByteShelf.Server.Replication.Repositories;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
-using EasyReasy.Auth;
+using ByteShelf.Server.Users.Services;
 using EasyReasy.Database;
 
 namespace ByteShelf.Server.Replication.Services
@@ -25,9 +24,6 @@ namespace ByteShelf.Server.Replication.Services
     /// </remarks>
     public sealed class ReplicaSync
     {
-        /// <summary>How many entries are asked for, and applied, at a time.</summary>
-        public const int PageSize = 500;
-
         private readonly IReplicationSourceRepository _sourceRepository;
         private readonly IReplicationCopyRepository _copyRepository;
         private readonly IDbSessionFactory _sessionFactory;
@@ -37,7 +33,8 @@ namespace ByteShelf.Server.Replication.Services
         private readonly StagingArea _stagingArea;
         private readonly MaintenanceGate _maintenanceGate;
         private readonly ReplicaSyncControl _control;
-        private readonly IRefreshTokenStore _refreshTokenStore;
+        private readonly IUserService _userService;
+        private readonly int _pageSize;
         private readonly TimeProvider _timeProvider;
 
         public ReplicaSync(
@@ -50,7 +47,8 @@ namespace ByteShelf.Server.Replication.Services
             StagingArea stagingArea,
             MaintenanceGate maintenanceGate,
             ReplicaSyncControl control,
-            IRefreshTokenStore refreshTokenStore,
+            IUserService userService,
+            ReplicationOptions options,
             TimeProvider timeProvider)
         {
             _sourceRepository = sourceRepository;
@@ -62,7 +60,8 @@ namespace ByteShelf.Server.Replication.Services
             _stagingArea = stagingArea;
             _maintenanceGate = maintenanceGate;
             _control = control;
-            _refreshTokenStore = refreshTokenStore;
+            _userService = userService;
+            _pageSize = options.PageSize;
             _timeProvider = timeProvider;
         }
 
@@ -115,7 +114,7 @@ namespace ByteShelf.Server.Replication.Services
                 return false;
             }
 
-            ChangeFeedPage page = await _primaryClient.GetChangesAsync(source, source.AppliedSequence, source.AppliedFingerprint, PageSize, cancellationToken);
+            ChangeFeedPage page = await _primaryClient.GetChangesAsync(source, source.AppliedSequence, source.AppliedFingerprint, _pageSize, cancellationToken);
             if (page.CopyNeeded)
             {
                 await _sourceRepository.RequireCopyAsync();
@@ -151,9 +150,12 @@ namespace ByteShelf.Server.Replication.Services
 
         /// <summary>
         /// Reads the primary's whole state into <c>replication_copy</c>, fetches the objects it names, then
-        /// in one transaction removes what the primary no longer has and writes everything it does. The
-        /// log is then followed from where it stood when the copy began, so a change made while the copy
-        /// was read is applied after it, whatever page it fell on.
+        /// in one transaction removes what the primary no longer has and writes everything it does. Each
+        /// page is read at its own moment, not from one snapshot: an entity that changes after its page
+        /// comes again on a later one, as its newer state or its removal, which replaces or drops what was
+        /// copied, so the copy ends as the primary stood at its last page. The log is then followed from
+        /// where it stood when the copy began, so a change made while the copy was read is applied after
+        /// it, whatever page it fell on.
         /// </summary>
         private async Task CopyAsync(ReplicationSource source, CancellationToken cancellationToken)
         {
@@ -164,7 +166,7 @@ namespace ByteShelf.Server.Replication.Services
             HashSet<Guid> purged = new HashSet<Guid>();
             while (true)
             {
-                ChangeFeedPage page = await _primaryClient.GetCopyAsync(source, after, PageSize, cancellationToken);
+                ChangeFeedPage page = await _primaryClient.GetCopyAsync(source, after, _pageSize, cancellationToken);
                 startedAt ??= page.LatestSequence;
 
                 await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
@@ -191,7 +193,7 @@ namespace ByteShelf.Server.Replication.Services
                 long applied = 0;
                 while (true)
                 {
-                    IReadOnlyList<ChangeLogEntry> copied = await _copyRepository.GetAfterAsync(applied, PageSize, session);
+                    IReadOnlyList<ChangeLogEntry> copied = await _copyRepository.GetAfterAsync(applied, _pageSize, session);
                     if (copied.Count == 0)
                     {
                         break;
@@ -262,11 +264,10 @@ namespace ByteShelf.Server.Replication.Services
         /// <summary>Fetches one file's bytes as <paramref name="sha256"/>; false when the primary has purged the file.</summary>
         private async Task<bool> FetchObjectAsync(ReplicationSource source, Guid fileId, string sha256, CancellationToken cancellationToken)
         {
-            string stagingPath = _stagingArea.GetPath(Guid.NewGuid());
+            Guid stagingId = Guid.NewGuid();
             try
             {
-                string received;
-                await using (FileStream file = new FileStream(stagingPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, bufferSize: 1, FileOptions.Asynchronous))
+                await using (FileStream file = new FileStream(_stagingArea.GetPath(stagingId), FileMode.CreateNew, FileAccess.Write, FileShare.None, bufferSize: 1, FileOptions.Asynchronous))
                 {
                     if (!await _primaryClient.DownloadObjectAsync(source, fileId, file, cancellationToken))
                     {
@@ -275,10 +276,9 @@ namespace ByteShelf.Server.Replication.Services
 
                     await file.FlushAsync(cancellationToken);
                     file.Flush(flushToDisk: true);
-                    file.Position = 0;
-                    received = Convert.ToHexStringLower(await SHA256.HashDataAsync(file, cancellationToken));
                 }
 
+                string received = await _stagingArea.ComputeSha256Async(stagingId, cancellationToken);
                 if (!string.Equals(received, sha256, StringComparison.Ordinal))
                 {
                     throw new PrimaryFailedException($"A file from the primary at {source.PrimaryUrl} did not match its SHA-256 ({sha256}), so it was not kept.");
@@ -286,17 +286,14 @@ namespace ByteShelf.Server.Replication.Services
 
                 using (await _objectStore.LockAsync(sha256, cancellationToken))
                 {
-                    _objectStore.Place(stagingPath, sha256);
+                    _objectStore.Place(_stagingArea.GetPath(stagingId), sha256);
                 }
 
                 return true;
             }
             finally
             {
-                if (File.Exists(stagingPath))
-                {
-                    File.Delete(stagingPath);
-                }
+                _stagingArea.Delete(stagingId);
             }
         }
 
@@ -304,7 +301,7 @@ namespace ByteShelf.Server.Replication.Services
         {
             foreach (Guid userId in removedUsers)
             {
-                await _refreshTokenStore.InvalidateAllFamiliesForUserAsync(userId.ToString("D"));
+                await _userService.EndSessionsAsync(userId);
             }
         }
     }

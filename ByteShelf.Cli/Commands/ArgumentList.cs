@@ -11,6 +11,11 @@ namespace ByteShelf.Cli.Commands
     internal sealed class ArgumentList
     {
         /// <summary>The options that take a value; every other <c>--word</c> is a flag.</summary>
+        /// <remarks>
+        /// One list for every command rather than each command declaring its own: an option left off it
+        /// is mostly caught, its value refused as unexpected. Per-command options were left out of 2.0
+        /// as a reshaping of working code.
+        /// </remarks>
         private static readonly HashSet<string> ValueOptions = new HashSet<string>(StringComparer.Ordinal)
         {
             "--email", "--name", "--quota", "--type", "--description",

@@ -14,7 +14,9 @@ permissions: read, add-only (read, and store new files, never replace or remove)
   in `X-Api-Key`). It reaches the key's own shelf, and offers only the tools the key's permission
   allows (only reading ones on a replica). The server tells the agent the shelf's name when it
   connects. It cannot read or write the agent's own files: upload text or base64 (up to 256 KiB),
-  read text of up to 256 KiB, and use share_file for a link to anything larger or binary.
+  read text of up to 256 KiB, and use share_file for a link to anything larger or binary. Add it to
+  Claude Code with this server's address and the key:
+  `claude mcp add --transport http byteshelf https://<this-server>/mcp --header "Authorization: Bearer bsk_..."`
 - `byteshelf --mcp`: the same tools over stdio on the agent's own machine, signed in as the CLI is,
   plus moving local files and whole folders. Add it with `claude mcp add byteshelf -- byteshelf --mcp`.
 
@@ -22,10 +24,12 @@ permissions: read, add-only (read, and store new files, never replace or remove)
 
 - Install with `dotnet tool install -g ByteShelf.Cli`. With `BYTESHELF_URL` and `BYTESHELF_KEY` set it
   needs no login.
-- `byteshelf ls`, `tree`, `find`, `stat`, `get`, `put`, `describe`, `share`, `mv`, `rm`, `trash`,
-  `restore`; `--json` prints the server's JSON. A place is written `shelf:/path`.
+- `byteshelf whoami`, `shelves`, `ls`, `tree`, `find`, `stat`, `get`, `put`, `mkdir`, `describe`,
+  `share`, `mv`, `rm`, `trash`, `restore`, `empty-trash`; `--json` prints the server's JSON. A place
+  is written `shelf:/path`. `byteshelf help` lists every command.
 - [The CLI's guide](https://github.com/AdamTovatt/byte-shelf/blob/master/ByteShelf.Cli/README.md)
-- [A skill for agents using it](https://github.com/AdamTovatt/byte-shelf/blob/master/skills/byteshelf/SKILL.md)
+- [A skill for agents using it](https://github.com/AdamTovatt/byte-shelf/blob/master/skills/byteshelf/SKILL.md):
+  for Claude Code, copy its folder to `~/.claude/skills/byteshelf/`.
 
 ## REST API
 

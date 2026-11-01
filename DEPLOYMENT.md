@@ -5,12 +5,26 @@ executable with its `updaemon.json`, which names it, and the web UI's build in `
 builds the web UI, so it needs Node.js and npm. The running server needs one writable folder, the
 root, and nothing else on disk.
 
+## Installing
+
+1. Publish: `dotnet publish ByteShelf.Server -c Release -o <folder>`, and install that folder with
+   updaemon (or run the `ByteShelf.Server` executable in it under any service manager).
+2. Set `BYTESHELF_ROOT` to an empty folder the service user owns, `APP_BASE_URL` to the public URL,
+   and `INITIAL_ADMIN_EMAIL` with `INITIAL_ADMIN_PASSWORD` for the first start (table below).
+3. Choose where it listens with `ASPNETCORE_URLS`, such as `http://127.0.0.1:5000` behind a reverse
+   proxy. Unset, Kestrel listens on `http://localhost:5000`.
+4. Start it. The first start creates the root, migrates its database, generates its secrets and
+   creates the admin; sign in at `APP_BASE_URL` and remove the two `INITIAL_ADMIN_*` variables.
+
+Every start migrates the database first. `ByteShelf.Server --migrate-only` (with `BYTESHELF_ROOT`)
+only migrates it and exits, for running migrations as their own step before a start.
+
 ## Environment variables
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `BYTESHELF_ROOT` | yes | The root folder. Created on first start, with `objects/`, `staging/` and `keys/` inside. |
-| `APP_BASE_URL` | outside Development | The public URL, e.g. `https://shelf.example.com`. Password-reset links point at it. |
+| `BYTESHELF_ROOT` | yes | The root folder. Created on first start, with `objects/`, `staging/` and `keys/` inside. The server makes it reachable by its owner only on every start, so it must be owned by the user the server runs as. |
+| `APP_BASE_URL` | outside Development | The public URL, e.g. `https://shelf.example.com`. Password-reset links point at it, once email can be sent (see below). |
 | `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD` | first start | Create the first admin while there are no users; ignored afterwards and can be removed. |
 | `INITIAL_ADMIN_DISPLAY_NAME` | no | The first admin's display name; the email's local part otherwise. |
 | `BYTESHELF_RESTORE_WINDOW_DAYS` | no | How long a deletion can be restored before it is purged. 30 by default. |
@@ -24,6 +38,39 @@ so a copied or restored root keeps its sign-ins and its unexpired links, share l
 single link cannot be taken back; deleting `download-link-secret` and restarting ends every link at
 once, and a new secret is generated.
 
+## Email
+
+There is no mail provider yet, so the server sends no email. A user who asks for a password reset
+gets the same answer as ever, but no link reaches them: outside Development the server logs only
+that a reset email was asked for and no mail provider is configured, never the link, and says at
+startup that email is not sent. So a forgotten password cannot be reset; an admin can still make a
+new account. In Development the link is written to the log instead. Reset links wait in an outbox
+in memory that holds 100: when it is full a new link is dropped with a warning, links still waiting
+are lost on a restart, and a failed send is not retried ([Users](ByteShelf.Server/Users/Users.md#password-reset)).
+
+## Logging
+
+The server logs to the console. `appsettings.json` beside the executable sets the levels: Information
+for the server's own messages, Warning for ASP.NET Core's (`Microsoft.AspNetCore`). Keep ASP.NET
+Core at Warning or above: at Information it logs every request's URL, and download links and reset
+links carry their secret token in the URL.
+
+## Rate limits
+
+Every request counts against limits per caller and per minute. The caller is the signed-in user, or
+the shelf key, or else the client's address, which behind a proxy needs `BYTESHELF_TRUSTED_PROXIES`.
+
+| Tier | Requests per minute | Applies to |
+|---|---|---|
+| Global | 1,200 | every request, beside any tier below |
+| Strict | 60 | signing in and renewing a session together (`/api/auth/login`, `/api/auth/refresh`); changing your own password |
+| Very strict | 10 | asking for a password reset and completing one; a replica accepting a pairing code |
+
+A request past a limit gets 429 with an error message, and the window starts over each minute.
+Separately, failed sign-ins from one address are slowed down step by step until one succeeds, and
+one user may hold 10 live-update streams at once. A replica's feed calls, which carry its
+credential, are outside the limits.
+
 ## Behind a reverse proxy
 
 - Set `BYTESHELF_TRUSTED_PROXIES` to the proxy's address.
@@ -34,6 +81,9 @@ once, and a new secret is generated.
   sends `X-Accel-Buffering: no`.
 - Pass `Authorization` through for `/mcp` and `/api` (nginx does by default): MCP clients send their
   shelf key there.
+- Allow long request lines: a path of up to 4096 characters travels in the query string,
+  percent-encoded, and the server accepts lines of about 98 KB. For nginx:
+  `large_client_header_buffers 4 128k;` (its default of 8k answers 414 for a long path).
 
 ## MCP
 
@@ -92,6 +142,5 @@ replicas take a whole copy once they notice, which [Backup](ByteShelf.Server/Bac
 The server cleans up after itself: hourly it removes abandoned uploads, staging leftovers, the trash
 past its restore window, and objects no file points at; daily it deletes expired sign-in and reset
 tokens and compacts the change log (entries older than 30 days that something newer replaced, and
-removals that old). Each
-pass is recorded in the `job_run` table. A replica also follows its primary continuously, every two
-seconds when caught up.
+removals that old). A failed pass is logged as an error and the next one runs on schedule. A replica
+also follows its primary continuously, every two seconds when caught up.

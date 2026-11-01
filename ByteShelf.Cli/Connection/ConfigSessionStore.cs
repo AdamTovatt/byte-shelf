@@ -41,6 +41,16 @@ namespace ByteShelf.Cli.Connection
             return Task.CompletedTask;
         }
 
+        public Task ClearAsync(CancellationToken cancellationToken)
+        {
+            if (Kept(_store.Load()) != null)
+            {
+                _store.Delete();
+            }
+
+            return Task.CompletedTask;
+        }
+
         private SessionTokens? Kept(CliConfig? config)
         {
             return config?.Server == _server && config.Login is SessionLogin session && session.Email == _email ? session.Tokens : null;

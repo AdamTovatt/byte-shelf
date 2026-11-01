@@ -26,8 +26,11 @@ namespace ByteShelf.Server.ChangeLog.Repositories
         Task<long> GetLatestSequenceAsync(IDbSession? session = null);
 
         /// <summary>
-        /// The newest entry of each entity that still exists, oldest first, after <paramref name="afterSequence"/>
-        /// and at most <paramref name="limit"/>: a whole copy of the state, read page by page.
+        /// The newest entry of each entity, oldest first, after <paramref name="afterSequence"/> and at most
+        /// <paramref name="limit"/>: a whole copy of the state, read page by page. An entity that no longer
+        /// exists comes as its removal (null payload), so a reader that copied it on an earlier page,
+        /// before it was removed, drops it; compaction drops old removals, so a copy from the start
+        /// meets only recent ones.
         /// </summary>
         Task<IReadOnlyList<ChangeLogEntry>> GetLatestStatesAfterAsync(long afterSequence, int limit, IDbSession? session = null);
 

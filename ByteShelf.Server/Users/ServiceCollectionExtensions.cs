@@ -6,6 +6,7 @@ using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Repositories;
 using ByteShelf.Server.Users.Services;
 using EasyReasy.Auth;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 
 namespace ByteShelf.Server.Users
 {
@@ -22,6 +23,13 @@ namespace ByteShelf.Server.Users
             string jwtSecret = RootKeyMaterial.GetOrCreate(root, RootKeyMaterial.JwtSecretFileName);
             services.AddEasyReasyAuth(jwtSecret, options => options.Issuer = AuthSetup.JwtIssuer);
 
+            // Every request of a signed-in user sees the roles they have now, not the token's.
+            services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+            {
+                options.Events ??= new JwtBearerEvents();
+                CurrentUserTokenValidation.AddTo(options.Events);
+            });
+
             services.AddSingleton<IPasswordHasher, SecurePasswordHasher>();
             services.AddPasswordResetTokenHandler();
 
@@ -31,6 +39,8 @@ namespace ByteShelf.Server.Users
             services.AddScoped<IRefreshClaimsResolver, CurrentRolesRefreshResolver>();
             services.AddScoped<IExpiredRefreshTokenCleanup>(provider =>
                 (IExpiredRefreshTokenCleanup)provider.GetRequiredService<IRefreshTokenStore>());
+            services.AddScoped<ISessionStampStore>(provider =>
+                (ISessionStampStore)provider.GetRequiredService<IRefreshTokenStore>());
 
             services.AddScoped<IUserRepository, UserRepository>();
             services.AddScoped<IUserLoginRepository, UserLoginRepository>();

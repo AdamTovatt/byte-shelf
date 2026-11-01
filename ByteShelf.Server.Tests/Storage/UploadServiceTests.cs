@@ -16,8 +16,8 @@ namespace ByteShelf.Server.Tests.Storage
 
         protected override void ConfigureServices(IServiceCollection services)
         {
-            services.AddScoped<IDbSessionFactory>(provider =>
-                _sessionFactory = new FailingCommitSessionFactory(TestRoot.DataSource));
+            _sessionFactory = new FailingCommitSessionFactory(TestRoot.DataSource);
+            services.AddSingleton<IDbSessionFactory>(_sessionFactory);
         }
 
         [Fact]
@@ -126,6 +126,101 @@ namespace ByteShelf.Server.Tests.Storage
             await FileService.DeleteFileAsync(shelf, EntryReference.ForPath("/a"));
 
             await Assert.ThrowsAsync<QuotaExceededException>(() => StoreTextAsync(shelf, "/b", "123456"));
+        }
+
+        [Fact]
+        public async Task StoreAsync_ExactlyFillingTheQuota_StoresItAndRefusesOneByteMore()
+        {
+            Shelf shelf = await CreateShelfAsync(quotaBytes: 10);
+
+            await StoreTextAsync(shelf, "/a", "0123456789");
+
+            Assert.Equal(10, (await GetUsageAsync(shelf)).TotalBytes);
+            await Assert.ThrowsAsync<QuotaExceededException>(() => StoreTextAsync(shelf, "/b", "x"));
+        }
+
+        [Fact]
+        public async Task StoreAsync_Overwrite_CountsTheVersionItMovesToTheTrash()
+        {
+            Shelf shelf = await CreateShelfAsync(quotaBytes: 10);
+            ShelfFile first = await StoreTextAsync(shelf, "/a", "12345");
+
+            // Fits exactly: the new version and the trashed one fill the quota between them.
+            ShelfFile second = await StoreTextAsync(shelf, "/a", "abcde", overwrite: true);
+
+            await Assert.ThrowsAsync<QuotaExceededException>(() => StoreTextAsync(shelf, "/a", "x", overwrite: true));
+            Assert.Equal(second.Id, (await FileService.GetFileAsync(shelf, EntryReference.ForPath("/a"))).Id);
+            Assert.Equal(first.Id, Assert.Single(await TrashService.GetTrashAsync(shelf)).EntryId);
+        }
+
+        [Fact]
+        public async Task StoreAsync_QuotaLoweredBelowUsage_KeepsWhatIsStoredAndRefusesMoreUntilFreed()
+        {
+            Shelf shelf = await CreateShelfAsync(quotaBytes: 10);
+            ShelfFile kept = await StoreTextAsync(shelf, "/a", "12345678");
+
+            Shelf lowered = await ShelfService.UpdateAsync(shelf, shelf.Name, quotaBytes: 5);
+
+            QuotaExceededException refused = await Assert.ThrowsAsync<QuotaExceededException>(() => StoreTextAsync(lowered, "/b", "x"));
+            Assert.Contains("has 0 bytes free of its 5", refused.Message, StringComparison.Ordinal);
+            Assert.Equal(kept.Id, (await FileService.GetFileAsync(lowered, EntryReference.ForPath("/a"))).Id);
+
+            await FileService.DeleteFileAsync(lowered, EntryReference.ForPath("/a"));
+            await TrashService.EmptyAsync(lowered, CancellationToken.None);
+            await StoreTextAsync(lowered, "/b", "12345");
+        }
+
+        [Fact]
+        public async Task StoreAsync_TwoAtOnceToDifferentPaths_StoresBoth()
+        {
+            Shelf shelf = await CreateShelfAsync();
+
+            ShelfFile[] stored = await Task.WhenAll(
+                Task.Run(() => StoreTextAsync(shelf, "/a.txt", "first")),
+                Task.Run(() => StoreTextAsync(shelf, "/b.txt", "second")));
+
+            DirectoryListing listing = await DirectoryService.ListAsync(shelf, EntryReference.ForPath("/"));
+            Assert.Equal(new[] { ("a.txt", stored[0].Id), ("b.txt", stored[1].Id) }, listing.Files.Select(file => (file.Name, file.Id)));
+            Assert.Equal("first", await ReadObjectTextAsync(stored[0].Sha256));
+            Assert.Equal("second", await ReadObjectTextAsync(stored[1].Sha256));
+            Assert.Equal(0, (await GetUsageAsync(shelf)).ReservedBytes);
+            Assert.Empty(StagingArea.List());
+        }
+
+        [Fact]
+        public async Task StoreAsync_TwoAtOnceToTheSamePath_StoresOneAndRefusesTheOther()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            Task<ShelfFile>[] uploads =
+            {
+                Task.Run(() => StoreTextAsync(shelf, "/a.txt", "first")),
+                Task.Run(() => StoreTextAsync(shelf, "/a.txt", "second")),
+            };
+
+            await Assert.ThrowsAsync<ConflictException>(() => Task.WhenAll(uploads));
+
+            ShelfFile stored = await Assert.Single(uploads, upload => upload.IsCompletedSuccessfully);
+            Assert.IsType<ConflictException>(Assert.Single(uploads, upload => upload.IsFaulted).Exception!.InnerException);
+            Assert.Equal(stored.Id, (await FileService.GetFileAsync(shelf, EntryReference.ForPath("/a.txt"))).Id);
+            Assert.Empty(await TrashService.GetTrashAsync(shelf));
+            Assert.Equal(0, (await GetUsageAsync(shelf)).ReservedBytes);
+            Assert.Empty(StagingArea.List());
+        }
+
+        [Fact]
+        public async Task StoreAsync_TwoOverwritesAtOnceToTheSamePath_KeepsOneLiveAndTheOtherInTheTrash()
+        {
+            Shelf shelf = await CreateShelfAsync();
+
+            ShelfFile[] stored = await Task.WhenAll(
+                Task.Run(() => StoreTextAsync(shelf, "/a.txt", "first", overwrite: true)),
+                Task.Run(() => StoreTextAsync(shelf, "/a.txt", "second", overwrite: true)));
+
+            Guid live = (await FileService.GetFileAsync(shelf, EntryReference.ForPath("/a.txt"))).Id;
+            Guid trashed = Assert.Single(await TrashService.GetTrashAsync(shelf)).EntryId;
+            Assert.Equal(stored.Select(file => file.Id).Order(), new[] { live, trashed }.Order());
+            Assert.Equal(0, (await GetUsageAsync(shelf)).ReservedBytes);
+            Assert.Empty(StagingArea.List());
         }
 
         [Fact]

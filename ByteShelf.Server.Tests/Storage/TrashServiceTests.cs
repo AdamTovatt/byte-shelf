@@ -5,12 +5,21 @@ using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using EasyReasy.Database;
+using EasyReasy.Database.Mapping;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ByteShelf.Server.Tests.Storage
 {
     public class TrashServiceTests : ServiceTestBase
     {
+        private FailingCommitSessionFactory _sessionFactory = null!;
+
+        protected override void ConfigureServices(IServiceCollection services)
+        {
+            _sessionFactory = new FailingCommitSessionFactory(TestRoot.DataSource);
+            services.AddSingleton<IDbSessionFactory>(_sessionFactory);
+        }
+
         [Fact]
         public async Task DeleteFileAsync_LiveFile_HidesItAndListsTheDeletion()
         {
@@ -51,6 +60,34 @@ namespace ByteShelf.Server.Tests.Storage
             await StoreTextAsync(shelf, "/a.txt", "new");
 
             await Assert.ThrowsAsync<ConflictException>(() => TrashService.RestoreAsync(shelf, entry.DeletionId));
+        }
+
+        [Fact]
+        public async Task RestoreAsync_DirectoryWhoseNameAFileNowHas_ThrowsConflictAndKeepsBoth()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await StoreTextAsync(shelf, "/a/x.txt", "in the directory");
+            TrashEntry entry = await DirectoryService.DeleteAsync(shelf, EntryReference.ForPath("/a"));
+            ShelfFile file = await StoreTextAsync(shelf, "/a", "a file now");
+
+            await Assert.ThrowsAsync<ConflictException>(() => TrashService.RestoreAsync(shelf, entry.DeletionId));
+
+            Assert.Equal(file.Id, (await FileService.GetFileAsync(shelf, EntryReference.ForPath("/a"))).Id);
+            Assert.Equal(entry.DeletionId, Assert.Single(await TrashService.GetTrashAsync(shelf)).DeletionId);
+        }
+
+        [Fact]
+        public async Task RestoreAsync_FileWhoseNameADirectoryNowHas_ThrowsConflictAndKeepsBoth()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await StoreTextAsync(shelf, "/a", "a file");
+            TrashEntry entry = await FileService.DeleteFileAsync(shelf, EntryReference.ForPath("/a"));
+            ShelfDirectory directory = await DirectoryService.CreateAsync(shelf, "/a");
+
+            await Assert.ThrowsAsync<ConflictException>(() => TrashService.RestoreAsync(shelf, entry.DeletionId));
+
+            Assert.Equal(directory.Id, (await DirectoryService.ListAsync(shelf, EntryReference.ForPath("/a"))).Directory.Id);
+            Assert.Equal(entry.DeletionId, Assert.Single(await TrashService.GetTrashAsync(shelf)).DeletionId);
         }
 
         [Fact]
@@ -149,16 +186,66 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
-        public async Task PurgeExpiredAsync_MoreThanOneBatch_PurgesEveryFile()
+        public async Task PurgeExpiredAsync_MoreThanOneBatchOfFilesAndDirectories_PurgesExactlyThem()
         {
             Shelf shelf = await CreateShelfAsync();
-            int fileCount = ByteShelf.Server.Storage.Services.TrashService.PurgeBatchSize + 1;
-            await InsertDeletedDirectoryAsync(shelf, "many", Enumerable.Repeat(1L, fileCount).ToArray());
+            ShelfFile live = await StoreTextAsync(shelf, "/kept/a.txt", "kept");
+            int count = ByteShelf.Server.Storage.Services.TrashService.PurgeBatchSize + 1;
+            await InsertDeletedTreeAsync(shelf, "many", count);
             Clock.Advance(Options.RestoreWindow + TimeSpan.FromSeconds(1));
 
             int purged = await TrashService.PurgeExpiredAsync(CancellationToken.None);
 
-            Assert.Equal(fileCount, purged);
+            Assert.Equal(count, purged);
+            Assert.Equal(new[] { live.Id }, await IdsOnShelfAsync("file", shelf));
+            Assert.Equal(await LiveDirectoryIdsAsync(shelf, "/", "/kept"), await IdsOnShelfAsync("directory", shelf));
+            Assert.True(ObjectStore.Exists(live.Sha256));
+        }
+
+        [Fact]
+        public async Task EmptyAsync_MoreThanOneBatchOfFilesAndDirectories_PurgesExactlyThatShelfsTrash()
+        {
+            Shelf mine = await CreateShelfAsync("mine");
+            Shelf other = await CreateShelfAsync("other");
+            ShelfFile live = await StoreTextAsync(mine, "/kept/a.txt", "kept");
+            ShelfFile trashed = await StoreTextAsync(mine, "/gone.txt", "gone");
+            await FileService.DeleteFileAsync(mine, EntryReference.ForPath("/gone.txt"));
+            await StoreTextAsync(other, "/theirs.txt", "theirs");
+            await FileService.DeleteFileAsync(other, EntryReference.ForPath("/theirs.txt"));
+            int count = ByteShelf.Server.Storage.Services.TrashService.PurgeBatchSize + 1;
+            await InsertDeletedTreeAsync(mine, "many", count);
+
+            int purged = await TrashService.EmptyAsync(mine, CancellationToken.None);
+
+            Assert.Equal(count + 1, purged);
+            Assert.Equal(new[] { live.Id }, await IdsOnShelfAsync("file", mine));
+            Assert.Equal(await LiveDirectoryIdsAsync(mine, "/", "/kept"), await IdsOnShelfAsync("directory", mine));
+            Assert.False(ObjectStore.Exists(trashed.Sha256));
+            Assert.True(ObjectStore.Exists(live.Sha256));
+            Assert.Equal("/theirs.txt", Assert.Single(await TrashService.GetTrashAsync(other)).Path);
+        }
+
+        [Fact]
+        public async Task EmptyAsync_StoppedPartWay_LeavesNothingRestorableAndMaintenanceFinishesIt()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/photos/a.jpg", "a");
+            TrashEntry deletion = await DirectoryService.DeleteAsync(shelf, EntryReference.ForPath("/photos"));
+
+            // The first transaction puts the trash past its window; the first purge, the second, fails.
+            _sessionFactory.FailTransaction(2);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => TrashService.EmptyAsync(shelf, CancellationToken.None));
+
+            Assert.Empty(await TrashService.GetTrashAsync(shelf));
+            await Assert.ThrowsAsync<NotFoundException>(() => TrashService.RestoreAsync(shelf, deletion.DeletionId));
+            Assert.Equal(new[] { file.Id }, await IdsOnShelfAsync("file", shelf));
+
+            StorageMaintenanceSummary summary = await Services.GetRequiredService<IStorageMaintenance>().RunAsync(TestInstants.Now - TimeSpan.FromDays(365), CancellationToken.None);
+
+            Assert.Equal(1, summary.PurgedFiles);
+            Assert.Empty(await IdsOnShelfAsync("file", shelf));
+            Assert.Equal(await LiveDirectoryIdsAsync(shelf, "/"), await IdsOnShelfAsync("directory", shelf));
+            Assert.False(ObjectStore.Exists(file.Sha256));
         }
 
         [Fact]
@@ -184,10 +271,11 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         /// <summary>
-        /// Inserts a directory under the root, deleted as one deletion with a file of each size in it,
-        /// the way a directory delete leaves the rows; faster than storing hundreds of files.
+        /// Inserts a directory under the root, deleted as one deletion with <paramref name="subdirectories"/>
+        /// directories in it, each holding one file: the rows a directory delete leaves, faster than storing
+        /// hundreds of files.
         /// </summary>
-        private async Task<Guid> InsertDeletedDirectoryAsync(Shelf shelf, string name, long[] fileSizes)
+        private async Task InsertDeletedTreeAsync(Shelf shelf, string name, int subdirectories)
         {
             IDirectoryRepository directories = Services.GetRequiredService<IDirectoryRepository>();
             IFileRepository files = Services.GetRequiredService<IFileRepository>();
@@ -197,30 +285,22 @@ namespace ByteShelf.Server.Tests.Storage
 
             await using IDbTransactionSession session = await TestRoot.SessionFactory.CreateSessionWithTransactionAsync();
             DirectoryRecord root = await directories.GetRootAsync(shelf.Id, session);
-            DirectoryRecord directory = new DirectoryRecord
-            {
-                Id = Guid.NewGuid(),
-                ShelfId = shelf.Id,
-                ParentId = root.Id,
-                Name = name,
-                CreatedAt = now,
-                UpdatedAt = now,
-                DeletedAt = now,
-                DeletionId = deletionId,
-            };
-            await directories.InsertAsync(directory, session);
+            DirectoryRecord top = DeletedDirectory(shelf, root.Id, name, deletionId, now);
+            await directories.InsertAsync(top, session);
 
-            for (int i = 0; i < fileSizes.Length; i++)
+            for (int i = 0; i < subdirectories; i++)
             {
+                DirectoryRecord directory = DeletedDirectory(shelf, top.Id, $"directory-{i}", deletionId, now);
+                await directories.InsertAsync(directory, session);
                 await files.InsertAsync(
                     new FileRecord
                     {
                         Id = Guid.NewGuid(),
                         ShelfId = shelf.Id,
                         DirectoryId = directory.Id,
-                        Name = $"file-{i}",
+                        Name = "file",
                         ContentType = ContentTypes.Default,
-                        SizeBytes = fileSizes[i],
+                        SizeBytes = 1,
                         Sha256 = sha256,
                         CreatedAt = now,
                         UpdatedAt = now,
@@ -231,7 +311,41 @@ namespace ByteShelf.Server.Tests.Storage
             }
 
             await session.CommitAsync();
-            return deletionId;
+        }
+
+        private static DirectoryRecord DeletedDirectory(Shelf shelf, Guid parentId, string name, Guid deletionId, DateTimeOffset at)
+        {
+            return new DirectoryRecord
+            {
+                Id = Guid.NewGuid(),
+                ShelfId = shelf.Id,
+                ParentId = parentId,
+                Name = name,
+                CreatedAt = at,
+                UpdatedAt = at,
+                DeletedAt = at,
+                DeletionId = deletionId,
+            };
+        }
+
+        /// <summary>The ids of every row of <paramref name="table"/> on the shelf, live or in the trash, in order.</summary>
+        private async Task<IReadOnlyList<Guid>> IdsOnShelfAsync(string table, Shelf shelf)
+        {
+            await using IDbSession session = await TestRoot.SessionFactory.CreateSessionAsync();
+            IEnumerable<Guid> ids = await session.Connection.QueryAsync<Guid>($"SELECT id FROM {table} WHERE shelf_id = @shelfId", new { shelfId = shelf.Id });
+            return ids.Order().ToList();
+        }
+
+        /// <summary>The ids of the live directories at <paramref name="paths"/>, in order.</summary>
+        private async Task<IReadOnlyList<Guid>> LiveDirectoryIdsAsync(Shelf shelf, params string[] paths)
+        {
+            List<Guid> ids = new List<Guid>();
+            foreach (string path in paths)
+            {
+                ids.Add((await DirectoryService.ListAsync(shelf, EntryReference.ForPath(path))).Directory.Id);
+            }
+
+            return ids.Order().ToList();
         }
     }
 }

@@ -2,12 +2,13 @@ using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Access.Repositories;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.Replication.Repositories;
+using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Repositories;
+using ByteShelf.Server.Users.Services;
 using EasyReasy.Database;
-using EasyReasy.Database.Mapping;
 
 namespace ByteShelf.Server.Replication.Services
 {
@@ -32,6 +33,7 @@ namespace ByteShelf.Server.Replication.Services
 
         public ReplicaApplier(
             IUserRepository userRepository,
+            IUserService userService,
             IUserLoginRepository loginRepository,
             IShelfRepository shelfRepository,
             IDirectoryRepository directoryRepository,
@@ -45,7 +47,11 @@ namespace ByteShelf.Server.Replication.Services
             _timeProvider = timeProvider;
 
             // Every entity type the change log holds, with its table and how to write and remove one. The
-            // order is the copy's removal pass: what refers to others first.
+            // order is the copy's removal pass: what refers to others first. A file or directory set aside
+            // here goes to the trash as a deletion of its own.
+            // Not done (review items 27 and 28, a taste call): each feature owning a handler for its
+            // entities, keyed on typed descriptors such as ChangeEntity<FileRecord> rather than strings.
+            // The list below works and keeps the removal order in one place.
             _handlers = new[]
             {
                 new EntityHandler(
@@ -66,13 +72,13 @@ namespace ByteShelf.Server.Replication.Services
                 new EntityHandler(
                     ChangeEntityType.File,
                     "file",
-                    (entry, at, session) => fileRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<FileRecord>(entry.Payload!), entry.Action, at, session),
+                    (entry, at, session) => fileRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<FileRecord>(entry.Payload!), entry.Action, Guid.NewGuid(), at, session),
                     (id, at, session) => fileRepository.SoftDeleteAsync(id, Guid.NewGuid(), at, session)),
                 new EntityHandler(
                     ChangeEntityType.Directory,
                     "directory",
-                    (entry, at, session) => directoryRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<DirectoryRecord>(entry.Payload!), entry.Action, at, session),
-                    directoryRepository.TrashIfLiveAsync),
+                    (entry, at, session) => directoryRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<DirectoryRecord>(entry.Payload!), entry.Action, Guid.NewGuid(), at, session),
+                    (id, at, session) => directoryRepository.TrashIfLiveAsync(id, Guid.NewGuid(), at, session)),
                 new EntityHandler(
                     ChangeEntityType.Shelf,
                     "shelf",
@@ -95,12 +101,7 @@ namespace ByteShelf.Server.Replication.Services
                     ChangeEntityType.User,
                     "user_account",
                     (entry, at, session) => userRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<User>(entry.Payload!), entry.Action, at, session),
-                    async (id, at, session) =>
-                    {
-                        await grantRepository.DeleteForUserAsync(id, at, session);
-                        await loginRepository.DeleteForUserAsync(id, at, session);
-                        return await userRepository.DeleteAsync(id, at, session);
-                    },
+                    userService.RemoveUserAsync,
                     RemovalEndsSessions: true),
             };
         }
@@ -112,7 +113,8 @@ namespace ByteShelf.Server.Replication.Services
         /// <exception cref="ReplicaOutdatedException">An entry is of a type this build does not know.</exception>
         public async Task<IReadOnlyList<Guid>> ApplyAsync(IReadOnlyList<ChangeLogEntry> entries, IDbSession session)
         {
-            await DeferForeignKeysAsync(session);
+            // An entry may name a parent that a later one in the same batch writes.
+            await session.DeferForeignKeysAsync();
 
             DateTimeOffset now = _timeProvider.GetUtcNow();
             List<Guid> removedUsers = new List<Guid>();
@@ -140,7 +142,7 @@ namespace ByteShelf.Server.Replication.Services
         /// </summary>
         public async Task<IReadOnlyList<Guid>> RemoveMissingFromCopyAsync(IDbSession session)
         {
-            await DeferForeignKeysAsync(session);
+            await session.DeferForeignKeysAsync();
 
             DateTimeOffset now = _timeProvider.GetUtcNow();
             List<Guid> removedUsers = new List<Guid>();
@@ -161,15 +163,6 @@ namespace ByteShelf.Server.Replication.Services
             {
                 removedUsers.Add(id);
             }
-        }
-
-        /// <summary>
-        /// Lets rows refer to ones written later in <paramref name="session"/>'s transaction: an entry may
-        /// name a parent that a later one in the same batch writes. Checked at commit; setting it twice is harmless.
-        /// </summary>
-        private static async Task DeferForeignKeysAsync(IDbSession session)
-        {
-            await session.Connection.ExecuteAsync("PRAGMA defer_foreign_keys = ON", transaction: session.Transaction);
         }
 
         /// <param name="EntityType">The type as <see cref="ChangeEntityType"/> names it.</param>

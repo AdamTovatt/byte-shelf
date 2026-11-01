@@ -3,8 +3,6 @@ using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Repositories;
 using ByteShelf.Server.Users.Services;
 using EasyReasy.Auth;
-using EasyReasy.Database;
-using EasyReasy.Database.Mapping;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -26,7 +24,7 @@ namespace ByteShelf.Server.Tests.Users
                 Services.GetRequiredService<IServiceScopeFactory>(), Clock, NullLogger<ExpiredTokenCleanupWorker>.Instance);
 
             await worker.StartAsync(CancellationToken.None);
-            await WaitForCompletedRunAsync();
+            await WaitForExpiredTokensGoneAsync(resetTokens, refreshTokens);
             await worker.StopAsync(CancellationToken.None);
 
             Assert.Null(await resetTokens.GetByTokenHashAsync("expired-reset"));
@@ -35,14 +33,12 @@ namespace ByteShelf.Server.Tests.Users
             Assert.NotNull(await refreshTokens.GetByTokenHashAsync("live-refresh"));
         }
 
-        private async Task WaitForCompletedRunAsync()
+        /// <summary>Waits for the first pass to have removed both expired tokens; the live ones are checked after.</summary>
+        private static async Task WaitForExpiredTokensGoneAsync(IPasswordResetTokenRepository resetTokens, IRefreshTokenStore refreshTokens)
         {
             for (int attempt = 0; attempt < 200; attempt++)
             {
-                await using IDbSession session = await TestRoot.SessionFactory.CreateSessionAsync();
-                int completed = await session.Connection.QuerySingleAsync<int>(
-                    "SELECT COUNT(*) FROM job_run WHERE completed_at IS NOT NULL");
-                if (completed > 0)
+                if (await resetTokens.GetByTokenHashAsync("expired-reset") == null && await refreshTokens.GetByTokenHashAsync("expired-refresh") == null)
                 {
                     return;
                 }
@@ -50,7 +46,7 @@ namespace ByteShelf.Server.Tests.Users
                 await Task.Delay(25);
             }
 
-            throw new TimeoutException("The cleanup job never completed a run.");
+            throw new TimeoutException("The cleanup job never removed the expired tokens.");
         }
 
         private static StoredRefreshToken NewRefreshToken(string tokenHash, DateTime expiresAt)

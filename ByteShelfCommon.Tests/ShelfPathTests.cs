@@ -75,8 +75,39 @@ namespace ByteShelfCommon.Tests
             // U+0958 is excluded from composition, so form C writes it as two characters.
             string name = new string('\x0958', ShelfPath.MaxNameLength);
 
-            Assert.True(ShelfPath.TryValidateName(name, out _));
+            Assert.False(ShelfPath.TryValidateName(name, out _));
             Assert.False(ShelfPath.TryNormalize("/" + name, out _, out _));
+        }
+
+        [Fact]
+        public void Normalize_DecomposedNameOverTheLimitThatComposesWithinIt_IsAllowed()
+        {
+            // e and a combining acute: two characters typed, one stored.
+            string decomposed = string.Concat(Enumerable.Repeat("e\x0301", ShelfPath.MaxNameLength));
+
+            Assert.True(ShelfPath.TryValidateName(decomposed, out _));
+            Assert.Equal("/" + new string('\x00e9', ShelfPath.MaxNameLength), ShelfPath.Normalize("/" + decomposed));
+        }
+
+        [Fact]
+        public void Normalize_DecomposedPathOverTheLimitThatComposesWithinIt_IsAllowed()
+        {
+            string name = string.Concat(Enumerable.Repeat("e\x0301", ShelfPath.MaxNameLength));
+            string decomposed = string.Concat(Enumerable.Repeat("/" + name, ShelfPath.MaxPathLength / (ShelfPath.MaxNameLength + 1)));
+
+            string normalized = ShelfPath.Normalize(decomposed);
+
+            Assert.True(decomposed.Length > ShelfPath.MaxPathLength);
+            Assert.Equal(ShelfPath.MaxPathLength, normalized.Length);
+        }
+
+        [Fact]
+        public void Normalize_DecomposedNameThatComposesPastTheLimit_IsRefused()
+        {
+            string decomposed = string.Concat(Enumerable.Repeat("e\x0301", ShelfPath.MaxNameLength + 1));
+
+            Assert.False(ShelfPath.TryValidateName(decomposed, out _));
+            Assert.Throws<ArgumentException>(() => ShelfPath.Normalize("/" + decomposed));
         }
 
         [Fact]

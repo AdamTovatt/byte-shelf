@@ -4,6 +4,10 @@ using ByteShelfCommon;
 namespace ByteShelf.Tools
 {
     /// <summary>A file or a directory, whichever a path named.</summary>
+    /// <remarks>
+    /// Common's TreeEntry and EntryReference have the same two-nullables shape. One closed hierarchy for
+    /// all three was left out of 2.0 as a reshaping of working code, not a fix.
+    /// </remarks>
     internal sealed class Entry
     {
         private Entry(ShelfFile? file, ShelfDirectory? directory)

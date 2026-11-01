@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using ByteShelf.Server.Replication.Models;
 using ByteShelf.Server.Shared.Errors;
+using ByteShelf.Server.Shared.IO;
 using ByteShelf.Server.Shared.Json;
 
 namespace ByteShelf.Server.Replication.Services
@@ -21,11 +22,13 @@ namespace ByteShelf.Server.Replication.Services
 
         private readonly HttpClient _http;
         private readonly TimeSpan _idleTimeout;
+        private readonly TimeProvider _timeProvider;
 
-        public PrimaryClient(IHttpClientFactory httpClientFactory, ReplicationOptions options)
+        public PrimaryClient(IHttpClientFactory httpClientFactory, ReplicationOptions options, TimeProvider timeProvider)
         {
             _http = httpClientFactory.CreateClient(HttpClientName);
             _idleTimeout = options.IdleTimeout;
+            _timeProvider = timeProvider;
         }
 
         /// <summary>Pairs with the primary using a code's secret; a used or expired code is refused.</summary>
@@ -62,7 +65,7 @@ namespace ByteShelf.Server.Replication.Services
             return await GetPageAsync(source, query, cancellationToken);
         }
 
-        /// <summary>A page of a whole copy: the newest state of each entity, after <paramref name="afterSequence"/>.</summary>
+        /// <summary>A page of a whole copy: the newest entry of each entity, its state or its removal, after <paramref name="afterSequence"/>.</summary>
         public async Task<ChangeFeedPage> GetCopyAsync(ReplicationSource source, long afterSequence, int limit, CancellationToken cancellationToken)
         {
             return await GetPageAsync(source, $"copy?after={afterSequence.ToString(CultureInfo.InvariantCulture)}&limit={limit.ToString(CultureInfo.InvariantCulture)}", cancellationToken);
@@ -147,14 +150,14 @@ namespace ByteShelf.Server.Replication.Services
             Func<HttpResponseMessage, Stream, CancellationToken, Task<T>> handle,
             CancellationToken cancellationToken)
         {
-            using CancellationTokenSource idle = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            idle.CancelAfter(_idleTimeout);
+            using CancellationTokenSource idle = new CancellationTokenSource(_idleTimeout, _timeProvider);
+            using CancellationTokenSource call = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, idle.Token);
 
             try
             {
-                using HttpResponseMessage response = await _http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, idle.Token);
-                await using Stream body = new IdleTimeoutStream(await response.Content.ReadAsStreamAsync(idle.Token), () => idle.CancelAfter(_idleTimeout));
-                return await handle(response, body, idle.Token);
+                using HttpResponseMessage response = await _http.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, call.Token);
+                await using Stream body = new IdleTimeoutStream(await response.Content.ReadAsStreamAsync(call.Token), () => idle.CancelAfter(_idleTimeout));
+                return await handle(response, body, call.Token);
             }
             catch (HttpRequestException exception)
             {

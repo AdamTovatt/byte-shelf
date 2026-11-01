@@ -2,7 +2,8 @@
 
 One-way: a primary is paired with replicas, each of which keeps a whole copy of it and follows it.
 A server is a replica while it has a `replication_source` row; otherwise it is a primary, with or
-without replicas. A replica has no replicas of its own.
+without replicas. A replica has no replicas of its own. The rest of the server asks
+`ReplicationState.AllowsWritesAsync` rather than looking for the row.
 
 The replica does all the calling: it pulls the primary's change log and the bytes of its files. The
 primary never calls a replica, so a replica needs to reach the primary's public URL and nothing needs
@@ -74,8 +75,7 @@ any other failure shows only that the server's log says why.
 
 ## Whole copies
 
-A replica takes a whole copy when it is paired, and when the primary says it must, reading the log in one
-snapshot:
+A replica takes a whole copy when it is paired, and when the primary says it must:
 
 - it is behind an entry compaction dropped (`change_log_state.pruned_through`): replaying what is left
   could miss a removal, or meet a row before the only entry for the parent it names;
@@ -86,20 +86,29 @@ snapshot:
   the replica has none until it applies an entry, so a restore in that gap goes unnoticed unless the
   replica is ahead.
 
-The copy is read from the log itself (see [ChangeLog.md](../ChangeLog/ChangeLog.md), *Compaction*): the
-newest entry of every entity that still exists (`GET api/replication/feed/copy`). The pages go into
-`replication_copy`, the bytes are fetched as they arrive, and then one transaction removes what the copy
-does not hold (files and directories only to the trash, as above) and writes everything it does.
-`ReplicaApplier` holds, for each entity type, its table and how to write and remove one, so the removal
-pass and applying entries cannot disagree on the types there are. The log is then followed from where it
-stood when the copy began, so a change made while the copy was read is applied after it.
+The copy is read from the log itself (see [ChangeLog.md](../ChangeLog/ChangeLog.md), *Compaction*), page
+by page in order of sequence (`GET api/replication/feed/copy`): the newest entry of every entity, which is
+its state, or its removal once it is gone. The pages go into `replication_copy`, the bytes are fetched as
+they arrive, and then one transaction removes what the copy does not hold (files and directories only to
+the trash, as above) and writes everything it does. `ReplicaApplier` holds, for each entity type, its table
+and how to write and remove one, so the removal pass and applying entries cannot disagree on the types
+there are.
+
+The pages are not one snapshot: each is read when it is asked for, and the primary goes on changing in
+between. An entity that changes after its page was read has a newer entry, so it comes again on a later
+page: a newer state replaces the one copied, and a removal drops it from `replication_copy`. So the copy
+ends as the primary stood when its last page was read, and a file never stays in it without the directory
+it is in. The log is then followed from where it stood when the copy began, so every change made while the
+copy was read is applied after it as well.
 
 ## Read-only
 
 On a replica `ReplicaReadOnlyFilter`, applied to every controller, refuses every action but GET and HEAD
 with 409 `read_only_replica`, unless it carries `[AllowedOnReplica]`: asking for a download link and
-promoting. `ReplicaWriteCoverageTests` lists them, so a new write is refused on a replica until somebody
-decides otherwise. Signing in, renewing and signing out are not controller actions and work as anywhere.
+promoting. Signing in, renewing and signing out are not controller actions and work as anywhere, and so
+does `/mcp`, whose tools write through the filtered API. `ReplicaWriteCoverageTests` goes through every
+endpoint the server maps, minimal APIs included, and lists each one that takes a write on a replica, so a
+new one is refused there, or fails that test, until somebody decides otherwise.
 
 ## Promoting
 
@@ -123,7 +132,7 @@ objects, since every write that could is refused.
 | GET | `/api/replication` | admin | This server's replicas with how many changes each is behind, or the primary it follows. |
 | POST | `/api/replication/codes` | admin, primary | A pairing code. |
 | DELETE | `/api/replication/replicas/{id}` | admin, primary | Unpair a replica. |
-| POST | `/api/replication/pair` | admin | Make this server a replica of the code's primary. 409 for a replica, a server with shelves or replicas, or a used or expired code; 502 `primary_failed` when the primary cannot be reached or used. |
+| POST | `/api/replication/pair` | admin | Make this server a replica of the code's primary. 400 for something that is not a pairing code, or a missing or too long name; 409 for a replica, a server with shelves or replicas, a code made on this server, or a used or expired code; 502 `primary_failed` when the primary cannot be reached or used. |
 | POST | `/api/replication/promote` | admin, replica | Stop following the primary. |
 | POST | `/api/replication/feed/accept` | a code's secret | The primary's half of pairing; 404 for a used or expired code. |
 | GET | `/api/replication/feed/changes?after=N&fingerprint=F&limit=L` | replica credential | The log after `N`, or that a copy is needed. |

@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Repositories;
 using EasyReasy.Auth;
@@ -7,16 +6,16 @@ namespace ByteShelf.Server.Users.Services
 {
     /// <summary>
     /// Puts the user's roles as they are now on every refreshed token, rather than the ones stored when
-    /// they signed in, and refuses the refresh once the user no longer exists. A role taken away
-    /// therefore reaches a signed-in user within one access-token lifetime.
+    /// they signed in, and refuses the refresh once the user no longer exists or their password is not
+    /// the one the session was signed in with (<see cref="CredentialStamp"/>).
     /// </summary>
     public class CurrentRolesRefreshResolver : IRefreshClaimsResolver
     {
-        private readonly IUserRepository _userRepository;
+        private readonly IUserLoginRepository _loginRepository;
 
-        public CurrentRolesRefreshResolver(IUserRepository userRepository)
+        public CurrentRolesRefreshResolver(IUserLoginRepository loginRepository)
         {
-            _userRepository = userRepository;
+            _loginRepository = loginRepository;
         }
 
         public async Task<RefreshClaimsDecision> ResolveAsync(RefreshClaimsContext context, CancellationToken cancellationToken)
@@ -26,13 +25,13 @@ namespace ByteShelf.Server.Users.Services
                 return RefreshClaimsDecision.Deny();
             }
 
-            User? user = await _userRepository.GetByIdAsync(userId);
-            if (user == null)
+            UserCredentials? credentials = await _loginRepository.GetCredentialsByUserIdAsync(userId);
+            if (credentials == null || !CredentialStamp.Matches(context.StoredClaims, credentials.PasswordHash))
             {
                 return RefreshClaimsDecision.Deny();
             }
 
-            return RefreshClaimsDecision.Allow(Array.Empty<Claim>(), user.Roles);
+            return RefreshClaimsDecision.Allow(context.StoredClaims, credentials.User.Roles);
         }
     }
 }

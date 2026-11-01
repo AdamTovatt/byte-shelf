@@ -5,7 +5,9 @@ import { Notice } from '../components/Notice';
 import { PasswordInput } from '../components/PasswordInput';
 import { AuthLayout } from '../components/layout/AuthLayout';
 import { completePasswordReset } from '../services/passwordResetService';
-import { validatePassword } from '../lib/passwordValidation';
+import { validateNewPassword } from '../lib/passwordValidation';
+import { useSubmit } from '../hooks/useSubmit';
+import { ROUTES } from '../lib/routes';
 
 // Landing page for the emailed reset link (/reset-password?token=…). Consumes the single-use
 // token and sets the new password; a successful reset also revokes every other session.
@@ -16,39 +18,18 @@ export function ResetPasswordPage() {
 
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const { error, setError, submitting, submit } = useSubmit('Something went wrong. Please try again.');
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
 
-    const validationError = validatePassword(newPassword);
+    const validationError = validateNewPassword(newPassword, confirmPassword);
     if (validationError) {
       setError(validationError);
       return;
     }
 
-    if (newPassword !== confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-
-    setError('');
-    setIsLoading(true);
-
-    try {
-      const success = await completePasswordReset(token, newPassword);
-      if (!success) {
-        setError('This reset link is invalid or has expired. Request a new one.');
-        return;
-      }
-
-      navigate('/login', { replace: true });
-    } catch {
-      setError('Something went wrong. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
+    await submit(() => completePasswordReset(token, newPassword), () => navigate(ROUTES.LOGIN, { replace: true }));
   };
 
   return (
@@ -58,7 +39,7 @@ export function ResetPasswordPage() {
           <Notice variant="danger">
             This reset link is missing its token. Use the link from the email, or request a new one.
           </Notice>
-          <Link to="/forgot-password" className="text-body-md text-muted hover:text-fg hover:underline text-center">
+          <Link to={ROUTES.FORGOT_PASSWORD} className="text-body-md text-muted hover:text-fg hover:underline text-center">
             Request a new link
           </Link>
         </div>
@@ -75,7 +56,7 @@ export function ResetPasswordPage() {
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
             placeholder="Enter new password"
-            disabled={isLoading}
+            disabled={submitting}
             required
             autoComplete="new-password"
           />
@@ -85,7 +66,7 @@ export function ResetPasswordPage() {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             placeholder="Confirm new password"
-            disabled={isLoading}
+            disabled={submitting}
             required
             autoComplete="new-password"
           />
@@ -95,8 +76,8 @@ export function ResetPasswordPage() {
             variant="main"
             size="lg"
             className="w-full"
-            disabled={isLoading || !newPassword || !confirmPassword}
-            loading={isLoading}
+            disabled={submitting || !newPassword || !confirmPassword}
+            loading={submitting}
           >
             Set new password
           </Button>

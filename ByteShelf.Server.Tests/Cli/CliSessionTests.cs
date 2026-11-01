@@ -74,6 +74,7 @@ namespace ByteShelf.Server.Tests.Cli
         public async Task CommandsSideBySide_SessionDue_RenewOneAtATimeAndKeepItWorking()
         {
             await SignInAsync();
+            string refreshToken = KeptTokens.RefreshToken;
             using ConfiguredClientSource first = Process(NearExpiry());
             using ConfiguredClientSource second = Process(NearExpiry());
 
@@ -82,6 +83,7 @@ namespace ByteShelf.Server.Tests.Cli
                 (await first.OpenAsync(CancellationToken.None)).GetCurrentUserAsync(),
                 (await second.OpenAsync(CancellationToken.None)).GetCurrentUserAsync());
 
+            Assert.NotEqual(refreshToken, KeptTokens.RefreshToken);
             await AssertSignedInAsync();
         }
 
@@ -189,10 +191,10 @@ namespace ByteShelf.Server.Tests.Cli
             Assert.Equal(ServerTestHost.AdminEmail, (await (await afterwards.OpenAsync(CancellationToken.None)).GetCurrentUserAsync()).Email);
         }
 
-        /// <summary>A clock 59.5 minutes on, inside the last minute of an hour-long access token, when it is due for renewal.</summary>
-        private static FakeTimeProvider NearExpiry()
+        /// <summary>A clock a second before the kept access token runs out, which is due for renewal by then.</summary>
+        private FakeTimeProvider NearExpiry()
         {
-            return new FakeTimeProvider(DateTimeOffset.UtcNow.AddMinutes(59.5));
+            return new FakeTimeProvider(KeptTokens.ExpiresAt.AddSeconds(-1));
         }
 
         /// <summary>Runs one command line as its own process and answers what it printed; fails the test unless it succeeded.</summary>

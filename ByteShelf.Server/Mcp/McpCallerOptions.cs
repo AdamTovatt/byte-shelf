@@ -3,7 +3,7 @@ using ByteShelf.Tools.Mcp;
 using ByteShelf.Server.Access.Auth;
 using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Access.Services;
-using ByteShelf.Server.Replication.Repositories;
+using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
 using ByteShelfCommon;
@@ -25,7 +25,7 @@ namespace ByteShelf.Server.Mcp
             IServiceProvider services = httpContext.RequestServices;
             ShelfKey key = ShelfKeyAuthenticationHandler.GetKey(httpContext)
                 ?? throw new InvalidOperationException("/mcp ran without the key its policy requires.");
-            bool isReplica = await services.GetRequiredService<IReplicationSourceRepository>().GetAsync() != null;
+            bool isReplica = !await services.GetRequiredService<ReplicationState>().AllowsWritesAsync();
             Shelf shelf = await services.GetRequiredService<IShelfService>().GetByIdAsync(key.ShelfId);
             ShelfAccess access = await services.GetRequiredService<IShelfAccessResolver>().ResolveAsync(ShelfCaller.ForKey(key), shelf);
             ToolHost host = services.GetRequiredService<ToolHost>();

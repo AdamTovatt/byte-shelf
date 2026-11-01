@@ -76,6 +76,21 @@ namespace ByteShelf.Server.Tests.ChangeLog
             Assert.Equal(ChangeAction.Moved, fileState.Action);
         }
 
+        [Fact]
+        public async Task GetLatestStatesAfterAsync_AnEntityRemoved_ComesAsItsRemoval()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
+            await FileService.DeleteFileAsync(shelf, EntryReference.ForId(file.Id));
+            await TrashService.EmptyAsync(shelf, CancellationToken.None);
+
+            IReadOnlyList<ChangeLogEntry> states = await ChangeLog.GetLatestStatesAfterAsync(0, 100);
+
+            // So a copy that took the file on an earlier page drops it.
+            ChangeLogEntry removal = Assert.Single(states, entry => entry.EntityId == file.Id);
+            Assert.Equal((ChangeAction.Purged, null), (removal.Action, removal.Payload));
+        }
+
         private async Task CompactAsync()
         {
             await using IDbTransactionSession session = await Services.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync();

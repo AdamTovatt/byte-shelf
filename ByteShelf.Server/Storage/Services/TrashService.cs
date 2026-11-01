@@ -12,6 +12,9 @@ namespace ByteShelf.Server.Storage.Services
         /// <summary>How many rows one purge transaction removes.</summary>
         internal const int PurgeBatchSize = 500;
 
+        /// <summary>The deletion time emptying the trash gives what it holds: past any restore window.</summary>
+        private static readonly DateTimeOffset ExpiredDeletionTime = DateTimeOffset.UnixEpoch;
+
         private readonly IDbSessionFactory _sessionFactory;
         private readonly IDirectoryRepository _directoryRepository;
         private readonly IFileRepository _fileRepository;
@@ -131,7 +134,19 @@ namespace ByteShelf.Server.Storage.Services
         /// <inheritdoc />
         public async Task<int> EmptyAsync(Shelf shelf, CancellationToken cancellationToken)
         {
-            return await PurgeDeletedBeforeAsync(DateTimeOffset.MaxValue, shelf.Id, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // All of the trash goes past its window at once, so none of it can be restored from here on,
+            // and a purge stopped part way (a crash, a cancelled request) leaves only expired rows, which
+            // maintenance's next purge takes.
+            await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+            {
+                await _fileRepository.ExpireTrashAsync(shelf.Id, ExpiredDeletionTime, session);
+                await _directoryRepository.ExpireTrashAsync(shelf.Id, ExpiredDeletionTime, session);
+                await session.CommitAsync();
+            }
+
+            return await PurgeDeletedBeforeAsync(RestorableSince(), shelf.Id, cancellationToken);
         }
 
         /// <summary>

@@ -37,6 +37,7 @@ namespace ByteShelf.Server.Replication
             services.AddScoped<IReplicaRepository, ReplicaRepository>();
             services.AddScoped<IReplicationSourceRepository, ReplicationSourceRepository>();
             services.AddScoped<IReplicationCopyRepository, ReplicationCopyRepository>();
+            services.AddScoped<ReplicationState>();
             services.AddScoped<PrimaryClient>();
             services.AddScoped<ReplicaApplier>();
             services.AddScoped<ReplicationPairing>();

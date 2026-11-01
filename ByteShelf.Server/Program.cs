@@ -17,6 +17,7 @@ using ByteShelf.Server.Shared.StaticFiles;
 using ByteShelf.Server.Storage;
 using ByteShelf.Server.Users;
 using ByteShelf.Server.Version;
+using ByteShelfCommon;
 using EasyReasy.Auth;
 using EasyReasy.EnvironmentVariables;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -26,7 +27,15 @@ namespace ByteShelf.Server
     public class Program
     {
         /// <summary>Where reset links point in Development when <c>APP_BASE_URL</c> is not set.</summary>
-        private const string DevelopmentAppBaseUrl = "http://localhost:5190";
+        internal const string DevelopmentAppBaseUrl = "http://localhost:5190";
+
+        /// <summary>
+        /// The longest request line the server takes. Paths travel in the query string, and a search
+        /// carries two (<c>under</c> and <c>after</c>) besides its text. Percent-encoded, a UTF-16 unit
+        /// takes at most 9 bytes (3 bytes of UTF-8, each as %XX), so this fits the longest of each with
+        /// room for the rest; Kestrel's own 8 KiB answers 414 to one long non-ASCII path.
+        /// </summary>
+        internal const int MaxRequestLineBytes = 9 * ((2 * ShelfPath.MaxPathLength) + FileDescription.MaxLength) + (8 * 1024);
 
         public static void Main(string[] args)
         {
@@ -115,9 +124,25 @@ namespace ByteShelf.Server
         /// of their own; <paramref name="configureForTests"/> runs once every service is registered, so a
         /// test can replace or remove one.
         /// </summary>
+        /// <summary>
+        /// The features that hold and change the data, which the service tests build on their own; the
+        /// web host adds the rest (live updates, version, replication, MCP, rate limits) beside them.
+        /// </summary>
+        internal static void AddDomainServices(IServiceCollection services, RootFolder root, string appBaseUrl)
+        {
+            services.AddDatabaseServices(root);
+            services.AddEmailServices();
+            services.AddUserServices(root, appBaseUrl);
+            services.AddJobServices();
+            services.AddChangeLogServices();
+            services.AddStorageServices();
+            services.AddAccessServices();
+        }
+
         internal static WebApplication BuildApplication(string[] args, RootFolder root, Action<WebApplicationBuilder>? configureForTests = null)
         {
             WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+            builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestLineSize = MaxRequestLineBytes);
 
             using (ILoggerFactory loggerFactory = CreateStartupLoggerFactory())
             {
@@ -127,19 +152,13 @@ namespace ByteShelf.Server
             AddApi(builder.Services);
             ConfigureForwardedHeaders(builder.Services);
 
-            // Domain services — one line per domain; adding a feature = add a folder, add one line.
-            builder.Services.AddDatabaseServices(root);
-            builder.Services.AddInvalidationServices();
-            builder.Services.AddEmailServices();
+            // One line per feature; adding a feature = add a folder, add one line here or in AddDomainServices.
             string appBaseUrl = ResolveAppBaseUrl(builder.Environment);
-            builder.Services.AddUserServices(root, appBaseUrl);
-            builder.Services.AddJobServices();
+            AddDomainServices(builder.Services, root, appBaseUrl);
+            builder.Services.AddInvalidationServices();
             builder.Services.AddVersionServices();
-            builder.Services.AddChangeLogServices();
-            builder.Services.AddStorageServices();
-            builder.Services.AddAccessServices();
             builder.Services.AddReplicationServices(appBaseUrl);
-            builder.Services.AddMcpServices();
+            builder.Services.AddMcpServices(appBaseUrl);
             builder.Services.AddRateLimitingServices();
             configureForTests?.Invoke(builder);
 

@@ -11,3 +11,8 @@ export function validatePassword(password: string): string | undefined {
   }
   return undefined;
 }
+
+/** For a form that asks for a new password twice: why it cannot be used, or undefined when it can. */
+export function validateNewPassword(newPassword: string, confirmPassword: string): string | undefined {
+  return validatePassword(newPassword) ?? (newPassword !== confirmPassword ? 'Passwords do not match' : undefined);
+}

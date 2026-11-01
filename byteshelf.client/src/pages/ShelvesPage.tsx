@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Button, Card, EmptyState, Icon, Input, PageLayout, ProgressBar, Spinner, iconMap } from '../ui';
 import { FormDialog } from '../components/FormDialog';
+import { LoadError } from '../components/LoadError';
 import { QuotaField } from '../components/QuotaField';
 import { useCreateShelf, useShelves } from '../hooks/useShelfQueries';
 import { useIsAdmin } from '../hooks/useUserQueries';
@@ -13,7 +14,7 @@ import type { ShelfInfo } from '../services/shelfService';
 
 /** The shelves the user reaches, with their usage; admins create new ones here. */
 export function ShelvesPage() {
-  const { data: shelves, isLoading } = useShelves();
+  const { data: shelves, isLoading, error } = useShelves();
   const isAdmin = useIsAdmin();
   const [creating, setCreating] = useState(false);
 
@@ -31,6 +32,7 @@ export function ShelvesPage() {
       </div>
 
       {isLoading && <Spinner />}
+      <LoadError error={error} failure="Could not load the shelves" />
       {shelves && shelves.length === 0 && (
         <EmptyState
           message={isAdmin ? 'No shelves yet. A shelf holds files for one purpose, with its own folders, quota and access.' : 'You have not been given access to any shelf yet.'}

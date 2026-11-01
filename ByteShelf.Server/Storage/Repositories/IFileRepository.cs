@@ -54,6 +54,15 @@ namespace ByteShelf.Server.Storage.Repositories
         Task<int> RestoreDeletionAsync(Guid deletionId, DateTimeOffset restoredAt, IDbSession session);
 
         /// <summary>
+        /// Gives every file in the shelf's trash the deletion time <paramref name="deletedAt"/>, one past
+        /// any restore window, so none of them is listed or restored again and the purge of expired rows
+        /// takes them; answers how many. Not logged, unlike every other write: the log already holds them
+        /// as deleted, and their purge is logged. A replica keeps what it follows in its own trash for its
+        /// own window, which this must not cut short.
+        /// </summary>
+        Task<int> ExpireTrashAsync(Guid shelfId, DateTimeOffset deletedAt, IDbSession session);
+
+        /// <summary>
         /// Files deleted before <paramref name="deletedBefore"/>, on the shelf <paramref name="shelfId"/> or
         /// any shelf when it is null, oldest first, at most <paramref name="limit"/>.
         /// </summary>
@@ -76,10 +85,10 @@ namespace ByteShelf.Server.Storage.Repositories
 
         /// <summary>
         /// Writes a file as a primary's change log holds it, logged as <paramref name="action"/>. A
-        /// different live file at the same place is moved to the trash first; the log brings it back
-        /// where it belongs if it still exists.
+        /// different live file at the same place is moved to the trash first, as
+        /// <paramref name="displacedDeletionId"/>; the log brings it back where it belongs if it still exists.
         /// </summary>
-        Task UpsertReplicatedAsync(FileRecord file, string action, DateTimeOffset at, IDbSession session);
+        Task UpsertReplicatedAsync(FileRecord file, string action, Guid displacedDeletionId, DateTimeOffset at, IDbSession session);
 
         /// <summary>Removes every file of a shelf, trash included, for removing the shelf.</summary>
         Task PurgeForShelfAsync(Guid shelfId, DateTimeOffset purgedAt, IDbSession session);

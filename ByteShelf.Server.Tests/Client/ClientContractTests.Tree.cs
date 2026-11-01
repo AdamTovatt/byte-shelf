@@ -103,8 +103,8 @@ namespace ByteShelf.Server.Tests.Client
         {
             await UploadTextAsync("/a.txt", "1");
 
-            ByteShelfException file = await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.ListTreeAsync(new TreeQuery { Under = "/a.txt" }));
-            ByteShelfException missing = await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.ListTreeAsync(new TreeQuery { Under = "/missing" }));
+            ByteShelfException file = await RefusalOf(Shelf.ListTreeAsync(new TreeQuery { Under = "/a.txt" }));
+            ByteShelfException missing = await RefusalOf(Shelf.ListTreeAsync(new TreeQuery { Under = "/missing" }));
 
             Assert.Equal((ErrorCodes.NotFound, ErrorCodes.NotFound), (file.Code, missing.Code));
         }

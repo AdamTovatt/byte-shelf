@@ -27,4 +27,8 @@ export const queryKeys = {
   replication: {
     status: ['replication', 'status'] as const,
   },
+  // Not an invalidation resource either: the running build's version is polled.
+  version: {
+    current: ['version', 'current'] as const,
+  },
 } as const;

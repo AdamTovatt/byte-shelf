@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
-import { Button, Card, CopyField, Dropdown, DropdownItem, Icon, IconButton, Input, PageLayout, Spinner, getErrorMessage, iconMap } from '../ui';
+import { Button, Card, CopyField, Dropdown, DropdownItem, FormError, Icon, IconButton, Input, PageLayout, Spinner, iconMap } from '../ui';
 import { FormDialog } from '../components/FormDialog';
+import { LoadError } from '../components/LoadError';
 import { SectionTitle } from '../components/SectionTitle';
 import { useAuth } from '../contexts/AuthContext';
 import { useCreatePairingCode, usePairWithPrimary, usePromote, useRemoveReplica, useReplicationStatus } from '../hooks/useReplicationQueries';
@@ -26,7 +27,7 @@ export function ReplicationPage() {
         <p className="text-body-md text-muted">A replica keeps a whole copy of this server and follows it; it only reads.</p>
       </div>
       {isLoading && <Spinner />}
-      {error && !status && <p className="text-body-md text-danger-11">{getErrorMessage(error, 'Could not load the replication status')}</p>}
+      {!status && <LoadError error={error} failure="Could not load the replication status" />}
       {status && (status.source ? <ReplicaView source={status.source} /> : <PrimaryView replicas={status.replicas} />)}
     </PageLayout>
   );
@@ -52,7 +53,7 @@ function PrimaryView({ replicas }: { replicas: ReplicaInfo[] }) {
         >
           Replicas
         </SectionTitle>
-        {error && <p className="text-body-md text-danger-11">{error}</p>}
+        <FormError message={error} />
         {replicas.length === 0 ? (
           <p className="text-body-md text-muted">No replicas yet. Make a pairing code here, and paste it on the new server under Replication.</p>
         ) : (

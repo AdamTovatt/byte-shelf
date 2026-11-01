@@ -262,6 +262,17 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<int> ExpireTrashAsync(Guid shelfId, DateTimeOffset deletedAt, IDbSession session)
+        {
+            string query = $@"
+                UPDATE directory
+                SET deleted_at = @{nameof(deletedAt)}
+                WHERE shelf_id = @{nameof(shelfId)} AND deleted_at IS NOT NULL";
+
+            return await session.Connection.ExecuteAsync(query, new { shelfId, deletedAt }, transaction: session.Transaction);
+        }
+
+        /// <inheritdoc />
         public async Task<IReadOnlyList<DirectoryRecord>> GetPurgeableBeforeAsync(DateTimeOffset deletedBefore, Guid? shelfId, int limit, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>
@@ -301,14 +312,14 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
-        public async Task UpsertReplicatedAsync(DirectoryRecord directory, string action, DateTimeOffset at, IDbSession session)
+        public async Task UpsertReplicatedAsync(DirectoryRecord directory, string action, Guid displacedDeletionId, DateTimeOffset at, IDbSession session)
         {
             if (directory.DeletedAt == null && directory.ParentId is Guid parentId)
             {
                 DirectoryRecord? holder = await GetLiveChildAsync(parentId, directory.Name, session);
                 if (holder != null && holder.Id != directory.Id)
                 {
-                    await TrashIfLiveAsync(holder.Id, at, session);
+                    await TrashIfLiveAsync(holder.Id, displacedDeletionId, at, session);
                 }
             }
 
@@ -317,9 +328,8 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<bool> TrashIfLiveAsync(Guid id, DateTimeOffset at, IDbSession session)
+        public async Task<bool> TrashIfLiveAsync(Guid id, Guid deletionId, DateTimeOffset at, IDbSession session)
         {
-            Guid deletionId = Guid.NewGuid();
             string query = $@"
                 UPDATE directory
                 SET deleted_at = @{nameof(at)}, deletion_id = @{nameof(deletionId)}, updated_at = @{nameof(at)}

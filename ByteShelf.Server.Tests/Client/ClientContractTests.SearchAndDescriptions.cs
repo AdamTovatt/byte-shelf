@@ -91,7 +91,7 @@ namespace ByteShelf.Server.Tests.Client
             await UploadTextAsync("/a.txt", "a");
             await Shelf.DeleteFileAsync("/a.txt");
 
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.SetDescriptionAsync("/a.txt", "x"));
+            ByteShelfException exception = await RefusalOf(Shelf.SetDescriptionAsync("/a.txt", "x"));
 
             Assert.Equal(ErrorCodes.NotFound, exception.Code);
         }
@@ -154,7 +154,7 @@ namespace ByteShelf.Server.Tests.Client
         [Fact]
         public async Task SearchAsync_UnderMissingDirectory_ThrowsNotFound()
         {
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.SearchAsync(new FileSearch { Under = "/missing" }));
+            ByteShelfException exception = await RefusalOf(Shelf.SearchAsync(new FileSearch { Under = "/missing" }));
 
             Assert.Equal(ErrorCodes.NotFound, exception.Code);
         }

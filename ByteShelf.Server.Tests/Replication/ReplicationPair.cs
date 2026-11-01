@@ -28,7 +28,13 @@ namespace ByteShelf.Server.Tests.Replication
 
         /// <param name="wrapPrimary">Wraps the replica's way to the primary, such as to tamper with what it answers.</param>
         /// <param name="idleTimeout">How long the replica waits on a silent primary; the server's own by default.</param>
-        public static async Task<ReplicationPair> StartAsync(Func<HttpMessageHandler, HttpMessageHandler>? wrapPrimary = null, TimeSpan? idleTimeout = null)
+        /// <param name="pageSize">How many entries the replica asks for at a time; the server's own by default.</param>
+        /// <param name="primaryClock">The clock the replica times its calls to the primary by; the real one by default.</param>
+        public static async Task<ReplicationPair> StartAsync(
+            Func<HttpMessageHandler, HttpMessageHandler>? wrapPrimary = null,
+            TimeSpan? idleTimeout = null,
+            int? pageSize = null,
+            TimeProvider? primaryClock = null)
         {
             ServerTestHost primary = await ServerTestHost.StartAsync();
             ServerTestHost replica = await ServerTestHost.StartAsync(services =>
@@ -38,9 +44,20 @@ namespace ByteShelf.Server.Tests.Replication
                     .AddHttpClient(PrimaryClient.HttpClientName)
                     .ConfigurePrimaryHttpMessageHandler(() => wrapPrimary == null ? primary.CreateHandler() : wrapPrimary(primary.CreateHandler()));
 
-                if (idleTimeout != null)
+                ReplicationOptions defaults = new ReplicationOptions { PublicUrl = "http://replica.test" };
+                services.Replace(ServiceDescriptor.Singleton(new ReplicationOptions
                 {
-                    services.Replace(ServiceDescriptor.Singleton(new ReplicationOptions { PublicUrl = "http://replica.test", IdleTimeout = idleTimeout.Value }));
+                    PublicUrl = defaults.PublicUrl,
+                    IdleTimeout = idleTimeout ?? defaults.IdleTimeout,
+                    PageSize = pageSize ?? defaults.PageSize,
+                }));
+
+                if (primaryClock != null)
+                {
+                    services.Replace(ServiceDescriptor.Scoped(provider => new PrimaryClient(
+                        provider.GetRequiredService<IHttpClientFactory>(),
+                        provider.GetRequiredService<ReplicationOptions>(),
+                        primaryClock)));
                 }
             });
 

@@ -7,7 +7,11 @@ namespace ByteShelf.Server.ChangeLog.Repositories
 {
     public class ChangeLogRepository : RepositoryBase, IChangeLogRepository
     {
-        private const string SelectColumns = $@"
+        /// <summary>
+        /// The columns of an entry, as <see cref="ChangeLogEntity"/> reads them; any table holding entries
+        /// in the change log's shape (a replica's <c>replication_copy</c>) reads them the same way.
+        /// </summary>
+        internal const string SelectColumns = $@"
             sequence,
             entity_type AS {nameof(ChangeLogEntity.EntityType)},
             entity_id AS {nameof(ChangeLogEntity.EntityId)},
@@ -88,7 +92,6 @@ namespace ByteShelf.Server.ChangeLog.Repositories
                     SELECT {SelectColumns}
                     FROM change_log AS entry
                     WHERE entry.sequence > @{nameof(afterSequence)}
-                      AND entry.payload IS NOT NULL
                       AND NOT EXISTS (
                           SELECT 1 FROM change_log AS newer
                           WHERE newer.entity_type = entry.entity_type

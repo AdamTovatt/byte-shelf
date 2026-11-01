@@ -11,13 +11,15 @@ byteshelf ls receipts:/2026
 byteshelf get receipts:/2026/receipt.pdf ~/Downloads
 ```
 
-`byteshelf help` lists every command. A place on a shelf is written `shelf:/path`; `shelf` alone is
-its root. Commands take a path without saying whether it is a file or a directory, as a shell's do.
+`byteshelf help` lists every command with its options; this page covers the main ones. A place on a
+shelf is written `shelf:/path`; `shelf` alone is its root. Commands take a path without saying whether it is a file or a directory, as a shell's do.
 `--json` prints a result as the server's JSON, for scripts, and prints nothing for a command without
 one (such as `restore`). `--` ends the options, for a path that starts with `--`.
 
-`find` searches under a directory by text in a file's name or description, type, size, times and
-SHA-256, a page at a time, and ends a page that has more after it with the `--after` to pass. Quote
+`find` searches under a directory by text in a file's name or description, and by `--type`,
+`--min-size` and `--max-size`, `--created-from` and `--created-before`, `--updated-from` and
+`--updated-before`, and `--sha256`; a file must meet every one given. It answers a page at a time
+(`--limit`, 100 by default) and ends a page that has more after it with the `--after` to pass. Quote
 a type family, as in `--type 'image/*'`, or the shell expands it. A time without an offset, such as
 `2026-03-01`, is local time. `describe` sets a file's description and `describe --clear` removes
 it; `put --description` stores one with the file. `share` prints a link that opens a file without
@@ -33,7 +35,21 @@ or folder that cannot be moved, such as a path already taken without `--overwrit
 
 A file is typed by its extension when `--type` does not say otherwise, and `get` checks what it
 saves against the file's SHA-256, writing to a side file first, so a failed download leaves nothing
-behind and replaces nothing.
+behind and replaces nothing. `get … -` is the exception: it writes to standard output as the bytes
+arrive, so a mismatch is reported (exit code 1) only after they have gone out. Check the exit code
+before trusting what was piped.
+
+`mkdir` creates a directory with any missing parents, `rm` moves a file or a directory to the trash,
+`trash` lists what can be restored, `restore` brings a deletion back, and `empty-trash` deletes the
+trash for good. `shelves` lists the shelves you can reach and `whoami` says who commands act as.
+
+## Shelves, users and keys
+
+Admins also run these, as `byteshelf help` lists them: `shelf create`, `shelf update` and
+`shelf delete`; `users`, and `user create`, `user admin`, `user no-admin` and `user delete`; `grants`,
+`grant` and `revoke` for a user's access to a shelf; and `keys`, `key create` and `key delete` for a
+shelf's keys (a new key's secret is shown once). `passwd` changes your own password and is for
+anyone signed in as a user.
 
 ## Signing in
 
@@ -73,12 +89,18 @@ must be absolute, since the server's working folder is not the agent's. Signing 
 and keys stay on the command line, since they carry passwords and secrets an agent's transcript
 should not hold.
 
+## A skill for agents
+
+[`skills/byteshelf`](https://github.com/AdamTovatt/byte-shelf/tree/master/skills/byteshelf) teaches
+an agent with only a shell to use `byteshelf`. For Claude Code, copy that folder to
+`~/.claude/skills/byteshelf/` for every project, or to `.claude/skills/byteshelf/` in one project.
+
 ## Exit codes
 
 - `0`: done.
-- `1`: the server refused or could not be reached, a download did not match its SHA-256, a local
-  file could not be read or written, a folder transfer left anything out, or another command held
-  the config for 30 seconds.
+- `1`: the server refused or could not be reached, a download did not match its SHA-256 (with
+  `get … -`, after the bytes were written), a local file could not be read or written, a folder
+  transfer left anything out, or another command held the config for 30 seconds.
 - `2`: the command was given wrongly or cannot run as things are: before signing in, a local file
   or folder that is missing, or a file that exists when `get` of that one file was not asked to
   overwrite it.

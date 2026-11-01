@@ -1,9 +1,6 @@
 namespace ByteShelf.Server.Jobs.Models
 {
-    /// <summary>
-    /// Canonical names for the background jobs whose runs are recorded in <c>job_run</c>, as
-    /// <c>domain.job</c>.
-    /// </summary>
+    /// <summary>The background jobs' names, as <c>domain.job</c>, which their log lines carry.</summary>
     public static class JobNames
     {
         /// <summary>Removes abandoned uploads, purges the expired trash and unreferenced objects.</summary>

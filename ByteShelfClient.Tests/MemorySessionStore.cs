@@ -37,6 +37,13 @@ namespace ByteShelfClient.Tests
             return Task.CompletedTask;
         }
 
+        public Task ClearAsync(CancellationToken cancellationToken)
+        {
+            Assert.True(Locked, "Cleared without holding the lock.");
+            Tokens = null;
+            return Task.CompletedTask;
+        }
+
         private sealed class Release : IAsyncDisposable
         {
             private readonly MemorySessionStore _store;

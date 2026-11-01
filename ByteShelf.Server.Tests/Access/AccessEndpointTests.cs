@@ -369,7 +369,37 @@ namespace ByteShelf.Server.Tests.Access
 
             HttpResponseMessage response = await _host.MemberClient.GetAsync("/api/shelves/docs/entries");
 
-            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        [Fact]
+        public async Task DownloadLinkMadeWithAKey_KeyDeleted_StillServesTheFile()
+        {
+            CreatedShelfKey created = await CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            using HttpClient key = _host.CreateKeyClient(created.Secret);
+            DownloadLink link = await CreateLinkAsync(key, "/existing.txt");
+
+            (await _host.AdminClient.DeleteAsync($"/api/shelves/docs/keys/{created.Key.Id}")).EnsureSuccessStatusCode();
+
+            Assert.Equal("old", await _host.AnonymousClient.GetStringAsync(link.Url));
+        }
+
+        [Fact]
+        public async Task DownloadLinkMadeByAMember_GrantTakenAway_StillServesTheFile()
+        {
+            await GrantMemberAsync("docs", ShelfAccessPermission.Read);
+            DownloadLink link = await CreateLinkAsync(_host.MemberClient, "/existing.txt");
+
+            (await _host.AdminClient.DeleteAsync($"/api/shelves/docs/access/{_host.MemberId}")).EnsureSuccessStatusCode();
+
+            Assert.Equal("old", await _host.AnonymousClient.GetStringAsync(link.Url));
+        }
+
+        private static async Task<DownloadLink> CreateLinkAsync(HttpClient client, string path)
+        {
+            HttpResponseMessage created = await client.PostAsync($"/api/shelves/docs/download-link?path={Uri.EscapeDataString(path)}", null);
+            created.EnsureSuccessStatusCode();
+            return (await created.Content.ReadFromJsonAsync<DownloadLink>())!;
         }
 
         private async Task GrantMemberAsync(string shelf, ShelfAccessPermission permission)

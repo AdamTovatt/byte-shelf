@@ -62,6 +62,45 @@ namespace ByteShelf.Cli.Tests
             Assert.All(named, tool => Assert.Matches($@"(?<!\w){Regex.Escape(tool)}(?!\w)", McpServerRunner.Instructions));
         }
 
+        /// <summary>
+        /// The limits the tool descriptions state, built from the constants they come from: an attribute's
+        /// text is a constant, so it cannot be built from them, and this is what keeps it in step.
+        /// </summary>
+        public static TheoryData<string, string?, string> StatedLimits => new TheoryData<string, string?, string>
+        {
+            { "create_shelf", null, $"1 to {ShelfName.MaxLength} " },
+            { "upload_file", "text", $"at most {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)}" },
+            { "upload_file", "base64", $"at most {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)}" },
+            { "upload_file", "description", $"up to {FileDescription.MaxLength} characters" },
+            { "set_description", null, $"up to {FileDescription.MaxLength} characters" },
+            { "download_file", null, $"at most {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)}" },
+            { "share_file", "expiresIn", $"{DownloadLink.DefaultLifetime.TotalHours}h by default, at most {DownloadLink.MaxLifetime.TotalDays}d" },
+            { "search_files", "limit", $"1 to {FileSearch.MaxLimit}; {FileSearch.DefaultLimit} by default" },
+            { "list_tree", "limit", $"1 to {TreeQuery.MaxLimit}; {TreeQuery.DefaultLimit} by default" },
+        };
+
+        [Theory]
+        [MemberData(nameof(StatedLimits))]
+        public void Descriptions_StateTheLimitsTheConstantsSet(string tool, string? parameter, string stated)
+        {
+            MethodInfo method = typeof(ByteShelfMcpTools).GetMethods().Single(candidate => candidate.GetCustomAttribute<McpServerToolAttribute>()?.Name == tool);
+            ICustomAttributeProvider described = parameter == null ? method : method.GetParameters().Single(candidate => candidate.Name == parameter);
+
+            string description = ((DescriptionAttribute)described.GetCustomAttributes(typeof(DescriptionAttribute), inherit: false).Single()).Description;
+
+            Assert.Contains(stated, description, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void Instructions_StateTheLimitsTheConstantsSet()
+        {
+            string instructions = Regex.Replace(ToolInstructions.Text, @"\s+", " ");
+
+            Assert.Contains($"up to {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)}", instructions, StringComparison.Ordinal);
+            Assert.Contains($"for {DownloadLink.DefaultLifetime.TotalHours} hours", instructions, StringComparison.Ordinal);
+            Assert.Contains($"(at most {DownloadLink.MaxLifetime.TotalDays} days)", instructions, StringComparison.Ordinal);
+        }
+
         [Fact]
         public async Task ListShelves_AndCreateShelf_ShowTheNewShelf()
         {
@@ -363,7 +402,8 @@ namespace ByteShelf.Cli.Tests
 
             McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadDirectoryAsync("docs", "/a", "copy"));
 
-            Assert.Contains("absolute", exception.Message, StringComparison.Ordinal);
+            Assert.Equal("'copy' is relative; give an absolute local path.", exception.Message);
+            Assert.False(Directory.Exists(Path.GetFullPath("copy")));
         }
 
         [Fact]

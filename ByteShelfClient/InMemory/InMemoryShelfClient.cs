@@ -19,12 +19,12 @@ namespace ByteShelfClient.InMemory
 
         public Task<ShelfInfo> GetInfoAsync(CancellationToken cancellationToken = default)
         {
-            return Run(shelf => shelf.ToInfo());
+            return Run(cancellationToken, shelf => shelf.ToInfo());
         }
 
         public Task<ShelfInfo> UpdateAsync(string name, long? quotaBytes, CancellationToken cancellationToken = default)
         {
-            return Run(shelf =>
+            return Run(cancellationToken, shelf =>
             {
                 InMemoryErrors.Checked(() => ShelfSettings.Validate(name, quotaBytes));
                 if (_store.Shelves.Any(other => other != shelf && other.Name == name))
@@ -40,7 +40,7 @@ namespace ByteShelfClient.InMemory
 
         public Task DeleteAsync(CancellationToken cancellationToken = default)
         {
-            return Run(shelf =>
+            return Run(cancellationToken, shelf =>
             {
                 if (shelf.Files.Count > 0 || shelf.Directories.Count > 1)
                 {
@@ -53,7 +53,7 @@ namespace ByteShelfClient.InMemory
 
         public Task<DirectoryListing> ListAsync(EntryReference? directory = null, CancellationToken cancellationToken = default)
         {
-            return Run(shelf =>
+            return Run(cancellationToken, shelf =>
             {
                 DirectoryNode listed = directory == null ? shelf.Root : shelf.GetDirectory(directory);
                 return new DirectoryListing
@@ -69,7 +69,7 @@ namespace ByteShelfClient.InMemory
         {
             TreeQuery normalized = (query ?? new TreeQuery()).Normalize();
 
-            return Run(shelf =>
+            return Run(cancellationToken, shelf =>
             {
                 DirectoryNode under = shelf.GetDirectory(normalized.Under!);
 
@@ -87,22 +87,19 @@ namespace ByteShelfClient.InMemory
         public Task<ShelfFile> GetFileAsync(EntryReference file, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(file);
-            return Run(shelf => shelf.ToShelfFile(shelf.GetFile(file)));
+            return Run(cancellationToken, shelf => shelf.ToShelfFile(shelf.GetFile(file)));
         }
 
         public async Task<ShelfFile> UploadAsync(string path, Stream content, UploadOptions? options = null, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(content);
-            string normalizedPath = ShelfPath.Normalize(path);
-            options ??= new UploadOptions();
-            string contentType = ContentTypes.Normalize(options.ContentType);
-            string? description = FileDescription.Normalize(options.Description);
+            NormalizedUpload upload = NormalizedUpload.Of(path, options);
 
             using MemoryStream buffer = new MemoryStream();
             await content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
             byte[] bytes = buffer.ToArray();
 
-            return await Run(shelf => Store(shelf, normalizedPath, bytes, contentType, description, options.Overwrite)).ConfigureAwait(false);
+            return await Run(cancellationToken, shelf => Store(shelf, upload.Path, bytes, upload.ContentType, upload.Description, upload.Overwrite)).ConfigureAwait(false);
         }
 
         public Task<ShelfFile> SetDescriptionAsync(EntryReference file, string? description, CancellationToken cancellationToken = default)
@@ -110,7 +107,7 @@ namespace ByteShelfClient.InMemory
             ArgumentNullException.ThrowIfNull(file);
             string? normalized = FileDescription.Normalize(description);
 
-            return Run(shelf =>
+            return Run(cancellationToken, shelf =>
             {
                 FileNode described = shelf.GetFile(file);
                 if (described.Description != normalized)
@@ -128,11 +125,13 @@ namespace ByteShelfClient.InMemory
             ArgumentNullException.ThrowIfNull(search);
             FileSearch normalized = search.Normalize();
 
-            return Run(shelf =>
+            return Run(cancellationToken, shelf =>
             {
                 DirectoryNode under = shelf.GetDirectory(normalized.Under!);
                 HashSet<Guid> directories = shelf.LiveSubtree(under).Select(directory => directory.Id).ToHashSet();
 
+                // The one-more-than-a-page paging here is also in DirectoryTree.Page and the server's
+                // FileService; left as is, since sharing it would reshape working code for a few lines.
                 List<ShelfFile> found = shelf.Files
                     .Where(file => file.IsLive && directories.Contains(file.DirectoryId) && Matches(normalized, file))
                     .Select(shelf.ToShelfFile)
@@ -149,7 +148,7 @@ namespace ByteShelfClient.InMemory
         public Task<Stream> OpenReadAsync(EntryReference file, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(file);
-            return Run<Stream>(shelf => new MemoryStream(shelf.GetFile(file).Content, writable: false));
+            return Run<Stream>(cancellationToken, shelf => new MemoryStream(shelf.GetFile(file).Content, writable: false));
         }
 
         /// <summary>
@@ -160,7 +159,7 @@ namespace ByteShelfClient.InMemory
         {
             ArgumentNullException.ThrowIfNull(file);
             TimeSpan normalized = DownloadLink.NormalizeLifetime(lifetime);
-            return Run(shelf => new DownloadLink
+            return Run(cancellationToken, shelf => new DownloadLink
             {
                 Url = $"https://byteshelf.invalid/api/downloads/{shelf.GetFile(file).Id:N}{Guid.NewGuid():N}",
                 ExpiresAt = _store.Now + normalized,
@@ -170,7 +169,7 @@ namespace ByteShelfClient.InMemory
         public Task<ShelfDirectory> CreateDirectoryAsync(string path, CancellationToken cancellationToken = default)
         {
             string normalizedPath = ShelfPath.Normalize(path);
-            return Run(shelf => shelf.ToShelfDirectory(shelf.EnsureDirectory(normalizedPath, _store.Now)));
+            return Run(cancellationToken, shelf => shelf.ToShelfDirectory(shelf.EnsureDirectory(normalizedPath, _store.Now)));
         }
 
         public Task<ShelfFile> MoveFileAsync(EntryReference file, string toPath, CancellationToken cancellationToken = default)
@@ -178,7 +177,7 @@ namespace ByteShelfClient.InMemory
             ArgumentNullException.ThrowIfNull(file);
             string normalizedPath = ShelfPath.Normalize(toPath);
 
-            return Run(shelf =>
+            return Run(cancellationToken, shelf =>
             {
                 FileNode moved = shelf.GetFile(file);
                 if (shelf.ToShelfFile(moved).Path == normalizedPath)
@@ -200,7 +199,7 @@ namespace ByteShelfClient.InMemory
             ArgumentNullException.ThrowIfNull(directory);
             string normalizedPath = ShelfPath.Normalize(toPath);
 
-            return Run(shelf =>
+            return Run(cancellationToken, shelf =>
             {
                 DirectoryNode moved = shelf.GetDirectory(directory);
                 if (moved == shelf.Root)
@@ -230,7 +229,7 @@ namespace ByteShelfClient.InMemory
         public Task<TrashEntry> DeleteFileAsync(EntryReference file, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(file);
-            return Run(shelf =>
+            return Run(cancellationToken, shelf =>
             {
                 FileNode deleted = shelf.GetFile(file);
                 Guid deletionId = Guid.NewGuid();
@@ -242,7 +241,7 @@ namespace ByteShelfClient.InMemory
         public Task<TrashEntry> DeleteDirectoryAsync(EntryReference directory, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(directory);
-            return Run(shelf =>
+            return Run(cancellationToken, shelf =>
             {
                 DirectoryNode deleted = shelf.GetDirectory(directory);
                 if (deleted == shelf.Root)
@@ -272,7 +271,7 @@ namespace ByteShelfClient.InMemory
 
         public Task<IReadOnlyList<TrashEntry>> GetTrashAsync(CancellationToken cancellationToken = default)
         {
-            return Run<IReadOnlyList<TrashEntry>>(shelf => DeletionIds(shelf)
+            return Run<IReadOnlyList<TrashEntry>>(cancellationToken, shelf => DeletionIds(shelf)
                 .Select(deletionId => ToTrashEntry(shelf, deletionId))
                 .OrderByDescending(entry => entry.DeletedAt)
                 .ThenBy(entry => ShelfPath.GetName(entry.Path), StringComparer.Ordinal)
@@ -281,7 +280,7 @@ namespace ByteShelfClient.InMemory
 
         public Task RestoreAsync(Guid deletionId, CancellationToken cancellationToken = default)
         {
-            return Run(shelf =>
+            return Run(cancellationToken, shelf =>
             {
                 if (!DeletionIds(shelf).Contains(deletionId))
                 {
@@ -316,7 +315,7 @@ namespace ByteShelfClient.InMemory
 
         public Task EmptyTrashAsync(CancellationToken cancellationToken = default)
         {
-            return Run(shelf =>
+            return Run(cancellationToken, shelf =>
             {
                 shelf.Files.RemoveAll(file => !file.IsLive);
                 shelf.Directories.RemoveAll(directory => !directory.IsLive);
@@ -325,12 +324,12 @@ namespace ByteShelfClient.InMemory
 
         public Task<IReadOnlyList<ShelfAccessGrant>> GetGrantsAsync(CancellationToken cancellationToken = default)
         {
-            return Run<IReadOnlyList<ShelfAccessGrant>>(shelf => shelf.Grants.ToList());
+            return Run<IReadOnlyList<ShelfAccessGrant>>(cancellationToken, shelf => shelf.Grants.ToList());
         }
 
         public Task<ShelfAccessGrant> SetGrantAsync(Guid userId, ShelfAccessPermission permission, CancellationToken cancellationToken = default)
         {
-            return Run(shelf =>
+            return Run(cancellationToken, shelf =>
             {
                 if (!Enum.IsDefined(permission))
                 {
@@ -372,7 +371,7 @@ namespace ByteShelfClient.InMemory
 
         public Task RemoveGrantAsync(Guid userId, CancellationToken cancellationToken = default)
         {
-            return Run(shelf =>
+            return Run(cancellationToken, shelf =>
             {
                 if (shelf.Grants.RemoveAll(grant => grant.UserId == userId) == 0)
                 {
@@ -383,12 +382,12 @@ namespace ByteShelfClient.InMemory
 
         public Task<IReadOnlyList<ShelfKeyInfo>> GetKeysAsync(CancellationToken cancellationToken = default)
         {
-            return Run<IReadOnlyList<ShelfKeyInfo>>(shelf => shelf.Keys.ToList());
+            return Run<IReadOnlyList<ShelfKeyInfo>>(cancellationToken, shelf => shelf.Keys.ToList());
         }
 
         public Task<CreatedShelfKey> CreateKeyAsync(string name, ShelfKeyPermission permission, CancellationToken cancellationToken = default)
         {
-            return Run(shelf =>
+            return Run(cancellationToken, shelf =>
             {
                 string trimmedName = InMemoryErrors.Checked(() => DisplayText.Validate(name, ShelfKeys.MaxNameLength, "A key's name"));
                 if (!Enum.IsDefined(permission))
@@ -406,7 +405,7 @@ namespace ByteShelfClient.InMemory
 
         public Task DeleteKeyAsync(Guid keyId, CancellationToken cancellationToken = default)
         {
-            return Run(shelf =>
+            return Run(cancellationToken, shelf =>
             {
                 if (shelf.Keys.RemoveAll(key => key.Id == keyId) == 0)
                 {
@@ -415,23 +414,16 @@ namespace ByteShelfClient.InMemory
             });
         }
 
-        /// <summary>Runs <paramref name="action"/> on this shelf under the store's lock.</summary>
-        private Task<T> Run<T>(Func<InMemoryShelf, T> action)
+        /// <summary>Runs <paramref name="action"/> on this shelf as <see cref="InMemoryStore.RunAsync{T}"/> does.</summary>
+        private Task<T> Run<T>(CancellationToken cancellationToken, Func<InMemoryShelf, T> action)
         {
-            lock (_store.Gate)
-            {
-                return Task.FromResult(action(_store.GetShelf(Name)));
-            }
+            return _store.RunAsync(() => action(_store.GetShelf(Name)), cancellationToken);
         }
 
-        /// <inheritdoc cref="Run{T}(Func{InMemoryShelf, T})"/>
-        private Task Run(Action<InMemoryShelf> action)
+        /// <inheritdoc cref="Run{T}(CancellationToken, Func{InMemoryShelf, T})"/>
+        private Task Run(CancellationToken cancellationToken, Action<InMemoryShelf> action)
         {
-            lock (_store.Gate)
-            {
-                action(_store.GetShelf(Name));
-                return Task.CompletedTask;
-            }
+            return _store.RunAsync(() => action(_store.GetShelf(Name)), cancellationToken);
         }
 
         /// <summary>Stores a file as an upload does on the server: refuses up front, then replaces and creates what it needs.</summary>
@@ -485,13 +477,13 @@ namespace ByteShelfClient.InMemory
             return shelf.ToShelfFile(stored);
         }
 
-        /// <summary>Whether a file meets every criterion of a normalized search but where it is, as the server's query decides.</summary>
         /// <summary>Whether <paramref name="path"/> belongs on a page after <paramref name="cursor"/>: the first page takes every path.</summary>
         private static bool IsAfter(string path, string? cursor)
         {
             return cursor == null || StoredOrder.Instance.Compare(path, cursor) > 0;
         }
 
+        /// <summary>Whether a file meets every criterion of a normalized search but where it is, as the server's query decides.</summary>
         private static bool Matches(FileSearch search, FileNode file)
         {
             return (search.Text == null

@@ -64,7 +64,7 @@ export function isSquircleIconButtonVariant(variant: IconButtonVariant): variant
 // is not lost the way a mask/clip-path would lose it.
 /**
  * The keyboard focus ring every button draws. Exported for a control that is a button without being
- * a `Button` — a bare `ClickableRow` trigger, say — so it shows focus the same way rather than
+ * a `Button` so it shows focus the same way rather than
  * spelling the ring again.
  */
 export const FOCUS_RING_CLASS =

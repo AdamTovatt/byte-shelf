@@ -4,28 +4,19 @@ import { Button, Input } from '../ui';
 import { Notice } from '../components/Notice';
 import { AuthLayout } from '../components/layout/AuthLayout';
 import { requestPasswordReset } from '../services/passwordResetService';
+import { useSubmit } from '../hooks/useSubmit';
+import { ROUTES } from '../lib/routes';
 
 export function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const { error, submitting, submit } = useSubmit('Something went wrong. Please try again.');
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     if (!email.trim()) return;
 
-    setError('');
-    setIsLoading(true);
-
-    try {
-      await requestPasswordReset(email.trim());
-      setSubmitted(true);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Something went wrong. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
+    await submit(() => requestPasswordReset(email.trim()), () => setSubmitted(true));
   };
 
   return (
@@ -35,7 +26,7 @@ export function ForgotPasswordPage() {
           <Notice variant="info">
             If an account exists for {email.trim()}, a reset link has been sent. Check your inbox.
           </Notice>
-          <Link to="/login" className="text-body-md text-muted hover:text-fg hover:underline text-center">
+          <Link to={ROUTES.LOGIN} className="text-body-md text-muted hover:text-fg hover:underline text-center">
             Back to sign in
           </Link>
         </div>
@@ -53,7 +44,7 @@ export function ForgotPasswordPage() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Enter your email"
-            disabled={isLoading}
+            disabled={submitting}
             required
             autoComplete="email"
           />
@@ -63,13 +54,13 @@ export function ForgotPasswordPage() {
             variant="main"
             size="lg"
             className="w-full"
-            disabled={isLoading || !email.trim()}
-            loading={isLoading}
+            disabled={submitting || !email.trim()}
+            loading={submitting}
           >
             Send reset link
           </Button>
 
-          <Link to="/login" className="text-body-md text-muted hover:text-fg hover:underline text-center">
+          <Link to={ROUTES.LOGIN} className="text-body-md text-muted hover:text-fg hover:underline text-center">
             Back to sign in
           </Link>
         </form>

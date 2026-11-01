@@ -1,8 +1,12 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Tests.TestUtilities;
+using ByteShelf.Server.Users.Repositories;
 using ByteShelfCommon;
+using EasyReasy.Auth;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ByteShelf.Server.Tests.Users
 {
@@ -85,6 +89,106 @@ namespace ByteShelf.Server.Tests.Users
 
             Assert.Equal(new[] { ServerTestHost.AdminEmail, ServerTestHost.MemberEmail }, users!.Select(user => user.Email).Order());
             Assert.Contains(users!, user => user.Roles.Contains(UserRoles.Admin));
+        }
+
+        [Fact]
+        public async Task DemotedAdmin_TheirStillValidToken_LosesAdminAtOnce()
+        {
+            (UserInfo second, HttpClient secondClient) = await CreateSecondAdminAsync();
+            (await _host.AdminClient.PutAsJsonAsync($"/api/users/{second.Id}/roles", new { roles = Array.Empty<string>() })).EnsureSuccessStatusCode();
+
+            HttpResponseMessage list = await secondClient.GetAsync("/api/users");
+            HttpResponseMessage create = await secondClient.PostAsJsonAsync(
+                "/api/users", new { email = "new@example.com", displayName = "New", password = "password123", roles = new[] { UserRoles.Admin } });
+
+            Assert.Equal(HttpStatusCode.Forbidden, list.StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, create.StatusCode);
+        }
+
+        [Fact]
+        public async Task DeletedAdmin_TheirStillValidToken_IsRefusedAtOnce()
+        {
+            (UserInfo second, HttpClient secondClient) = await CreateSecondAdminAsync();
+            (await _host.AdminClient.DeleteAsync($"/api/users/{second.Id}")).EnsureSuccessStatusCode();
+
+            HttpResponseMessage create = await secondClient.PostAsJsonAsync(
+                "/api/users", new { email = "new@example.com", displayName = "New", password = "password123", roles = new[] { UserRoles.Admin } });
+            HttpResponseMessage shelves = await secondClient.GetAsync("/api/shelves");
+
+            Assert.Equal(HttpStatusCode.Unauthorized, create.StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, shelves.StatusCode);
+        }
+
+        [Fact]
+        public async Task PromotedMember_TheirStillValidToken_GainsAdminAtOnce()
+        {
+            (await _host.AdminClient.PutAsJsonAsync($"/api/users/{_host.MemberId}/roles", new { roles = new[] { UserRoles.Admin } })).EnsureSuccessStatusCode();
+
+            HttpResponseMessage response = await _host.MemberClient.GetAsync("/api/users");
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        [Fact]
+        public async Task PutMyPassword_EndsTheOtherSessionsButNotThisOne()
+        {
+            (HttpClient changing, string changingRefresh) = await SignInAsync(ServerTestHost.MemberEmail, ServerTestHost.Password);
+            (_, string otherRefresh) = await SignInAsync(ServerTestHost.MemberEmail, ServerTestHost.Password);
+
+            (await changing.PutAsJsonAsync("/api/users/me/password", new { currentPassword = ServerTestHost.Password, newPassword = "new-password-1" })).EnsureSuccessStatusCode();
+
+            Assert.Equal(HttpStatusCode.OK, (await RefreshAsync(changingRefresh)).StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, (await RefreshAsync(otherRefresh)).StatusCode);
+        }
+
+        [Fact]
+        public async Task PostResetComplete_EndsEverySession()
+        {
+            (_, string refresh) = await SignInAsync(ServerTestHost.MemberEmail, ServerTestHost.Password);
+            string token = await RequestResetTokenAsync(ServerTestHost.MemberEmail);
+
+            (await _host.AnonymousClient.PostAsJsonAsync("/api/password-reset/complete", new { token, newPassword = "new-password-1" })).EnsureSuccessStatusCode();
+
+            Assert.Equal(HttpStatusCode.Unauthorized, (await RefreshAsync(refresh)).StatusCode);
+        }
+
+        private async Task<(UserInfo User, HttpClient Client)> CreateSecondAdminAsync()
+        {
+            HttpResponseMessage created = await _host.AdminClient.PostAsJsonAsync(
+                "/api/users", new { email = "second@byteshelf.test", displayName = "Second", password = ServerTestHost.Password, roles = new[] { UserRoles.Admin } });
+            created.EnsureSuccessStatusCode();
+            UserInfo second = (await created.Content.ReadFromJsonAsync<UserInfo>())!;
+
+            HttpClient client = await _host.CreateSignedInClientAsync(second.Email);
+            (await client.GetAsync("/api/users")).EnsureSuccessStatusCode();
+            return (second, client);
+        }
+
+        private async Task<(HttpClient Client, string RefreshToken)> SignInAsync(string email, string password)
+        {
+            HttpResponseMessage login = await _host.AnonymousClient.PostAsJsonAsync("/api/auth/login", new { username = email, password });
+            login.EnsureSuccessStatusCode();
+            SessionTokens tokens = (await login.Content.ReadFromJsonAsync<SessionTokens>())!;
+
+            HttpClient client = _host.CreateClient();
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.Token);
+            return (client, tokens.RefreshToken);
+        }
+
+        private Task<HttpResponseMessage> RefreshAsync(string refreshToken)
+        {
+            return _host.AnonymousClient.PostAsJsonAsync("/api/auth/refresh", new { refreshToken });
+        }
+
+        /// <summary>A reset token for <paramref name="email"/>, stored the way a request stores one.</summary>
+        private async Task<string> RequestResetTokenAsync(string email)
+        {
+            using IServiceScope scope = _host.Services.CreateScope();
+            Guid userId = (await scope.ServiceProvider.GetRequiredService<IUserLoginRepository>().GetCredentialsByEmailAsync(email))!.User.Id;
+            PasswordResetToken token = scope.ServiceProvider.GetRequiredService<IPasswordResetTokenHandler>().GenerateResetToken();
+            DateTimeOffset now = DateTimeOffset.UtcNow;
+            await scope.ServiceProvider.GetRequiredService<IPasswordResetTokenRepository>().CreateAsync(userId, token.TokenHash, now, now.AddHours(1));
+            return token.Token;
         }
     }
 }

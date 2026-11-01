@@ -4,7 +4,7 @@ import { FormDialog } from './FormDialog';
 import { useListing, useMoveEntry } from '../hooks/useShelfQueries';
 import { useSubmit } from '../hooks/useSubmit';
 import { joinPath, parentPath, pathSegments, ROOT_PATH } from '../lib/shelfPaths';
-import type { Entry } from '../pages/ShelfPage';
+import type { Entry } from '../services/shelfService';
 
 interface MoveDialogProps {
   shelf: string;

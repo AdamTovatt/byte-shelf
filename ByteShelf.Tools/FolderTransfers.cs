@@ -208,12 +208,13 @@ namespace ByteShelf.Tools
         /// <summary>
         /// The local paths a download's entries take. Names that differ only in case on the shelf are one
         /// name on a disk that ignores case (as macOS and Windows disks do by default), so the second of
-        /// them is left out, with what under it, rather than saved over the first or merged into it.
+        /// them is left out, with what under it, rather than saved over the first or merged into it. A
+        /// local folder on the way that is a symbolic link is never followed, as on upload, so nothing
+        /// lands outside the target through one.
         /// </summary>
         /// <remarks>
-        /// The tests run on a Linux disk, which keeps case, so nothing there reaches the refusals, and no
-        /// test covers them; nor the refusal of a name that leaves the folder (a backslash on Windows),
-        /// which the server's name rules (no '/', '.' or '..') already rule out on Linux.
+        /// The tests run on a Linux disk, which keeps case, so nothing there reaches the case refusals,
+        /// and no test covers them.
         /// </remarks>
         private sealed class LocalNames
         {
@@ -239,6 +240,17 @@ namespace ByteShelf.Tools
                 }
 
                 string local = LocalPathFor(path);
+                string? link = LinkOnTheWay(isDirectory ? local : Path.GetDirectoryName(local)!);
+                if (link != null)
+                {
+                    if (isDirectory)
+                    {
+                        _leftOutDirectories.Add(path);
+                    }
+
+                    throw new UsageException($"{link} is a symbolic link, which is never followed.");
+                }
+
                 bool taken = isDirectory ? Directory.Exists(local) : File.Exists(local);
                 if (_claimed.TryGetValue(local, out string? other) && taken)
                 {
@@ -252,6 +264,21 @@ namespace ByteShelf.Tools
 
                 _claimed[local] = path;
                 return local;
+            }
+
+            /// <summary>The first folder from <paramref name="folder"/> up to the root (not the root itself) that is a symbolic link, or null.</summary>
+            private string? LinkOnTheWay(string folder)
+            {
+                string root = Path.TrimEndingDirectorySeparator(_root);
+                for (string? current = folder; current != null && current.Length > root.Length; current = Path.GetDirectoryName(current))
+                {
+                    if (new DirectoryInfo(current).LinkTarget != null)
+                    {
+                        return current;
+                    }
+                }
+
+                return null;
             }
 
             private string LocalPathFor(string path)

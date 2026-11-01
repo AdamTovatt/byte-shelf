@@ -1,5 +1,6 @@
 import type { AuthResponse } from './authTypes';
 import { AUTH_PATHS } from './authPaths';
+import { ROUTES } from '../lib/routes';
 
 // The session lives in localStorage, shared by every tab. A refresh token works once, and reusing a
 // spent one ends every session in its family, so renewals run one at a time across tabs (Web Locks)
@@ -48,8 +49,8 @@ export function isSessionStorageKey(key: string | null): boolean {
 }
 
 export function redirectToLoginIfNeeded(): void {
-  if (window.location.pathname !== '/login') {
-    window.location.href = '/login';
+  if (window.location.pathname !== ROUTES.LOGIN) {
+    window.location.href = ROUTES.LOGIN;
   }
 }
 
@@ -58,9 +59,24 @@ function isDue(): boolean {
   return !expiresAt || new Date(expiresAt).getTime() - Date.now() <= RENEW_AHEAD_MS;
 }
 
-/** Runs `work` while no other renewal runs, in this tab or another. */
+/** The last renewal queued in this tab, for when there are no Web Locks. */
+let tabRenewTail: Promise<unknown> = Promise.resolve();
+
+/**
+ * Runs `work` while no other renewal runs, in this tab or another. Web Locks exist only in a secure
+ * context (HTTPS or localhost); over plain HTTP renewals queue within this tab alone, so two tabs
+ * renewing at the same moment can still spend the same refresh token, which ends that session.
+ */
 function withRenewLock<T>(work: () => Promise<T>): Promise<T> {
-  return navigator.locks.request(RENEW_LOCK_NAME, work) as Promise<T>;
+  // Absent at runtime outside a secure context, whatever the DOM types say.
+  const locks: LockManager | undefined = navigator.locks;
+  if (locks) {
+    return locks.request(RENEW_LOCK_NAME, work) as Promise<T>;
+  }
+
+  const run = tabRenewTail.then(work, work);
+  tabRenewTail = run.catch(() => undefined);
+  return run;
 }
 
 /**
@@ -114,8 +130,13 @@ export async function getFreshToken(): Promise<string | null> {
 
 /** Ends the session on the server, as far as it can, and forgets it here and in every tab. */
 export async function signOut(): Promise<void> {
-  const refreshToken = getRefreshToken();
-  clearTokens();
+  // Under the renewal lock, so a renewal in flight cannot save a new session after this forgets it;
+  // the token it renewed to is the one ended on the server.
+  const refreshToken = await withRenewLock(async () => {
+    const current = getRefreshToken();
+    clearTokens();
+    return current;
+  });
   if (!refreshToken) {
     return;
   }

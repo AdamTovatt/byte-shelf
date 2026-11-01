@@ -19,8 +19,9 @@ cleanup. Shelves themselves are described in [Shelves.md](Shelves.md).
 
 All under `/api/shelves/{shelf}`, open to whoever may do the operation there; what each endpoint
 needs is in the table in [Access.md](../Access/Access.md). An existing file or directory is named by
-exactly one of the `path` and `id` query parameters; a new path (`POST directories`, the `toPath` of
-a move) is in the JSON body. Errors answer an `ErrorResponse` with a `code` from `ByteShelfCommon.ErrorCodes`; a
+exactly one of the `path` and `id` query parameters. A new path is in the JSON body for
+`POST directories`, `POST uploads` and the `toPath` of a move, and in the `path` query parameter for
+`PUT content`. Errors answer an `ErrorResponse` with a `code` from `ByteShelfCommon.ErrorCodes`; a
 path that is not allowed is a 400.
 
 | Method and route | What it does |
@@ -35,24 +36,24 @@ path that is not allowed is a 400.
 | `POST directories` | Creates the directory at the body's `path` and any missing one above it; an existing one is answered as it is. |
 | `POST directories/move?path=` | Moves or renames a directory with everything in it to the body's `toPath`. 400 for the root, a destination of `/` or inside itself, or one that would make a path under it longer than `ShelfPath.MaxPathLength`; 409 when the path is taken. |
 | `DELETE directories?path=` | Moves a directory and everything live under it to the trash as one deletion; 400 for the root. |
-| `GET content?path=` | Streams the contents; `Range`, `If-None-Match` and `If-Range` work, the ETag is the SHA-256. Served with `X-Content-Type-Options: nosniff` and, except for a PDF (Chrome's viewer does not run sandboxed), a sandboxing `Content-Security-Policy`. `download=true` adds a file name. |
+| `GET content?path=` (and `HEAD`) | Streams the contents (`HEAD`: only the headers); `Range`, `If-None-Match` and `If-Range` work, the ETag is the SHA-256. Served with `X-Content-Type-Options: nosniff` and, except for a PDF (Chrome's viewer does not run sandboxed), a sandboxing `Content-Security-Policy`. `download=true` adds a file name. |
 | `POST download-link?path=&expiresInMinutes=` | A link to the contents that works without a token for `expiresInMinutes` (1 to 10080, 1440 by default), to open, save or share the file (see below). Making one is a read; 400 for a lifetime outside those bounds. |
 | `PUT content?path=&overwrite=` | Stores the body in one request. Needs `Content-Length` (411 without); the `Content-Type` is stored. 409 when the path is taken and `overwrite` is not set, 507 over quota. |
-| `POST uploads` | Starts a resumable upload with its size, and the file's `description` if it has one (a single `PUT` has no body to carry one); reserves the size against the quota. |
+| `POST uploads` | Starts a resumable upload from the body's `path`, `sizeBytes`, `contentType` (optional), `overwrite` (false by default) and the file's `description` if it has one (a single `PUT` has no body to carry one); reserves the size against the quota. |
 | `GET uploads/{id}` | Progress: `receivedBytes` is where the next chunk starts. |
 | `PUT uploads/{id}?offset=` | Appends a chunk of at most `UploadLimits.MaxChunkBytes` (64 MiB, 413 above); 409 when `offset` is not `receivedBytes`. |
 | `POST uploads/{id}/complete` | Stores the file once every byte has arrived. 409 when the path was taken meanwhile; the upload is kept. |
 | `DELETE uploads/{id}` | Drops the upload and releases its reservation. |
 | `GET trash` | Deletions still inside the restore window, newest first. |
 | `POST trash/{deletionId}/restore` | Puts a deletion back where it was. |
-| `DELETE trash` | Empties the trash: everything in it is purged now, its objects too, and can no longer be restored. |
+| `DELETE trash` | Empties the trash: everything in it can no longer be restored, and is purged now with its objects (see below). |
 
 ## Download links (`DownloadLinks`)
 
 One mechanism serves two uses. A plain link or an image's source cannot carry a token, so the web
 UI asks for a five-minute link before it opens or saves a file; and a link shares a file with someone
 who has no access, for the caller's pick of lifetime: a day by default, at most 7 days
-(`DownloadLink.NormalizeLifetime`). `/api/downloads/{token}` serves the contents as `GET content`
+(`DownloadLink.NormalizeLifetime`). `GET` or `HEAD /api/downloads/{token}` serves the contents as `GET content`
 does, `download=true` included, to anyone holding the token until it runs out. The token names the
 shelf and the file by id and when it runs out, signed with HMAC-SHA256 by `keys/download-link-secret`;
 an altered or expired one, or one whose file is in the trash, answers 404; a restored file keeps its
@@ -85,8 +86,10 @@ the trash keeps its own deletion. A restore is refused when the name has been ta
 containing directory is itself in the trash. Deletions stay listed and restorable for the restore
 window (`BYTESHELF_RESTORE_WINDOW_DAYS`, 30 by default) and count against the quota until the purge
 removes them; one past its window is neither listed nor restorable, even if the purge has not
-reached all of it yet. Emptying a shelf's trash purges all of it at once, whatever is left of each
-window.
+reached all of it yet. Emptying a shelf's trash first marks everything in it as past its window, in
+one transaction, so none of it can be listed or restored from then on, and then purges it in batches.
+What a crash or a cancelled request leaves unpurged is already past its window, so the next
+maintenance pass purges it. A deletion made while emptying runs is kept.
 
 ## Descriptions and search (`FileService`)
 
@@ -134,7 +137,7 @@ whole step instead, which keeps maintenance, and so every removal, away until th
 
 ## Maintenance (`StorageMaintenanceWorker`)
 
-At startup and then hourly, recorded in `job_run` as `storage.maintenance`: removes uploads idle for
+At startup and then hourly, as the job `storage.maintenance` ([Jobs](../Jobs/Jobs.md)): removes uploads idle for
 24 hours, single-`PUT` uploads started before the process (their request did not survive the
 restart), staging entries with no upload, the trash past its window, and objects no row points at.
 A pass holds `MaintenanceGate` throughout, so on a replica it waits for a sync step (a whole copy

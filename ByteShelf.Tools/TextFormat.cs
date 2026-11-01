@@ -99,13 +99,13 @@ namespace ByteShelf.Tools
             List<string> lines = new List<string> { $"{verb} {files} ({Size(result.Bytes)}) to {result.Target}." };
             if (result.LeftOut.Count > 0)
             {
-                lines.Add($"Left out {CountOf(result.LeftOut.Count, "file or folder", "files or folders")}:");
+                lines.Add(LeftOut(result) + ":");
                 lines.AddRange(result.LeftOut.Select(failure => "  " + failure));
             }
 
             if (result.StoppedBy != null)
             {
-                lines.Add($"Stopped before the end: {Failure.From(result.StoppedBy)!.Message}");
+                lines.Add(StoppedBy(result.StoppedBy));
             }
 
             return Lines(lines);
@@ -114,9 +114,17 @@ namespace ByteShelf.Tools
         /// <summary>Why a folder transfer that did not reach everything failed, in one line.</summary>
         public static string FolderTransferFailure(FolderTransferResult result)
         {
-            return result.StoppedBy != null
-                ? $"Stopped before the end: {Failure.From(result.StoppedBy)!.Message}"
-                : $"Left out {CountOf(result.LeftOut.Count, "file or folder", "files or folders")}.";
+            return result.StoppedBy != null ? StoppedBy(result.StoppedBy) : LeftOut(result) + ".";
+        }
+
+        private static string LeftOut(FolderTransferResult result)
+        {
+            return $"Left out {CountOf(result.LeftOut.Count, "file or folder", "files or folders")}";
+        }
+
+        private static string StoppedBy(Exception exception)
+        {
+            return $"Stopped before the end: {Failure.From(exception)!.Message}";
         }
 
         private static string CountOf(int count, string one, string many)
@@ -172,6 +180,26 @@ namespace ByteShelf.Tools
         {
             return $"Stored {file.Path}  {Size(file.SizeBytes)}  sha256 {file.Sha256}";
         }
+
+        /// <summary>A file saved to <paramref name="localPath"/>.</summary>
+        public static string Saved(string localPath)
+        {
+            return $"Saved {localPath}";
+        }
+
+        public static string Moved(Entry entry)
+        {
+            return $"Moved to {entry.Path}";
+        }
+
+        public static string Trashed(TrashEntry entry)
+        {
+            return $"Moved to the trash: {TrashEntry(entry)}";
+        }
+
+        public static string Restored => "Restored.";
+
+        public static string EmptiedTrash => "Emptied the trash.";
 
         public static string Trash(IReadOnlyList<TrashEntry> entries)
         {

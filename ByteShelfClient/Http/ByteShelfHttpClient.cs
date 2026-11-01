@@ -31,13 +31,22 @@ namespace ByteShelfClient.Http
                 throw new ArgumentException($"Chunks must be 1 to {UploadLimits.MaxChunkBytes} bytes, and the single-request limit cannot be negative.", nameof(options));
             }
 
+            if (_options.LinkBaseAddress != null && (!_options.LinkBaseAddress.IsAbsoluteUri || !_options.LinkBaseAddress.AbsolutePath.EndsWith('/')))
+            {
+                throw new ArgumentException("The link base address must be an absolute address ending in '/'.", nameof(options));
+            }
+
             _connection = new ApiConnection(http, credentials);
         }
 
         /// <inheritdoc />
         public IShelfClient Shelf(string name)
         {
-            ArgumentException.ThrowIfNullOrWhiteSpace(name);
+            ArgumentNullException.ThrowIfNull(name);
+
+            // Checked here, not left to the server: a name such as "." or ".." is resolved away in the
+            // URL, so the request would reach another route.
+            ShelfName.Validate(name);
             return new HttpShelfClient(_connection, _options, name);
         }
 

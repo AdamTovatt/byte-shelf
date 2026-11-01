@@ -102,6 +102,22 @@ namespace ByteShelf.Server.Tests.Invalidation
             Assert.Equal(shelf.ToString("D"), _broadcaster.Published[0].Metadata);
         }
 
+        [Fact]
+        public async Task ExecuteAsync_StartPositionReadFails_ReadsItAgainAndPublishes()
+        {
+            Guid shelf = Guid.NewGuid();
+            _changeLog.FailNextLatestRead = true;
+
+            await _publisher.StartAsync(CancellationToken.None);
+            await _clock.AdvanceUntilAsync(_changeLog.LatestRead, ChangeLogInvalidationPublisher.PollInterval);
+            _changeLog.AddKey(shelf);
+            await _clock.AdvanceUntilAsync(_broadcaster.WaitForAsync(1), ChangeLogInvalidationPublisher.PollInterval);
+            await _publisher.StopAsync(CancellationToken.None);
+
+            Assert.False(_changeLog.FailNextLatestRead);
+            Assert.Equal(shelf.ToString("D"), _broadcaster.Published[0].Metadata);
+        }
+
         public void Dispose()
         {
             _publisher.Dispose();
@@ -116,11 +132,18 @@ namespace ByteShelf.Server.Tests.Invalidation
             private readonly List<int> _limits = new List<int>();
             private readonly TaskCompletionSource _latestRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             private bool _failNextRead;
+            private bool _failNextLatestRead;
 
             public bool FailNextRead
             {
                 get { lock (_gate) { return _failNextRead; } }
                 set { lock (_gate) { _failNextRead = value; } }
+            }
+
+            public bool FailNextLatestRead
+            {
+                get { lock (_gate) { return _failNextLatestRead; } }
+                set { lock (_gate) { _failNextLatestRead = value; } }
             }
 
             public IReadOnlyList<int> Limits
@@ -167,6 +190,12 @@ namespace ByteShelf.Server.Tests.Invalidation
             {
                 lock (_gate)
                 {
+                    if (_failNextLatestRead)
+                    {
+                        _failNextLatestRead = false;
+                        throw new InvalidOperationException("The database is busy (test).");
+                    }
+
                     _latestRead.TrySetResult();
                     return Task.FromResult((long)_entries.Count);
                 }

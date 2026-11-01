@@ -79,7 +79,7 @@ namespace ByteShelf.Server.Tests.Client
         {
             await UploadTextAsync("/a.txt", "old");
 
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => UploadTextAsync("/a.txt", "new"));
+            ByteShelfException exception = await RefusalOf(UploadTextAsync("/a.txt", "new"));
 
             Assert.Equal(ErrorCodes.Conflict, exception.Code);
             Assert.Equal("old", await ReadTextAsync("/a.txt"));
@@ -102,8 +102,7 @@ namespace ByteShelf.Server.Tests.Client
         {
             await Client.CreateShelfAsync("small", quotaBytes: 4);
 
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(
-                () => Client.Shelf("small").UploadAsync("/a.txt", new MemoryStream(Encoding.UTF8.GetBytes("12345"))));
+            ByteShelfException exception = await RefusalOf(Client.Shelf("small").UploadAsync("/a.txt", new MemoryStream(Encoding.UTF8.GetBytes("12345"))));
 
             Assert.Equal(ErrorCodes.QuotaExceeded, exception.Code);
         }
@@ -143,7 +142,7 @@ namespace ByteShelf.Server.Tests.Client
         [Fact]
         public async Task GetFileAsync_Missing_ThrowsNotFound()
         {
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.GetFileAsync("/missing.txt"));
+            ByteShelfException exception = await RefusalOf(Shelf.GetFileAsync("/missing.txt"));
 
             Assert.Equal(ErrorCodes.NotFound, exception.Code);
         }
@@ -192,7 +191,7 @@ namespace ByteShelf.Server.Tests.Client
         {
             await UploadTextAsync("/a", "a");
 
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.CreateDirectoryAsync("/a/b"));
+            ByteShelfException exception = await RefusalOf(Shelf.CreateDirectoryAsync("/a/b"));
 
             Assert.Equal(ErrorCodes.Conflict, exception.Code);
         }
@@ -205,7 +204,7 @@ namespace ByteShelf.Server.Tests.Client
             ShelfFile moved = await Shelf.MoveFileAsync("/a.txt", "/archive/b.txt");
 
             Assert.Equal((stored.Id, "/archive/b.txt"), (moved.Id, moved.Path));
-            Assert.Equal(ErrorCodes.NotFound, (await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.GetFileAsync("/a.txt"))).Code);
+            Assert.Equal(ErrorCodes.NotFound, (await RefusalOf(Shelf.GetFileAsync("/a.txt"))).Code);
         }
 
         [Fact]
@@ -214,7 +213,7 @@ namespace ByteShelf.Server.Tests.Client
             await UploadTextAsync("/a.txt", "a");
             await UploadTextAsync("/b.txt", "b");
 
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.MoveFileAsync("/a.txt", "/b.txt"));
+            ByteShelfException exception = await RefusalOf(Shelf.MoveFileAsync("/a.txt", "/b.txt"));
 
             Assert.Equal(ErrorCodes.Conflict, exception.Code);
         }
@@ -234,7 +233,7 @@ namespace ByteShelf.Server.Tests.Client
         {
             await Shelf.CreateDirectoryAsync("/a");
 
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.MoveDirectoryAsync("/a", "/a/b"));
+            ByteShelfException exception = await RefusalOf(Shelf.MoveDirectoryAsync("/a", "/a/b"));
 
             Assert.Equal(ErrorCodes.InvalidRequest, exception.Code);
         }
@@ -270,7 +269,7 @@ namespace ByteShelf.Server.Tests.Client
             TrashEntry deleted = await Shelf.DeleteFileAsync("/a.txt");
             await UploadTextAsync("/a.txt", "new");
 
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.RestoreAsync(deleted.DeletionId));
+            ByteShelfException exception = await RefusalOf(Shelf.RestoreAsync(deleted.DeletionId));
 
             Assert.Equal(ErrorCodes.Conflict, exception.Code);
         }
@@ -282,7 +281,7 @@ namespace ByteShelf.Server.Tests.Client
             TrashEntry file = await Shelf.DeleteFileAsync("/a/b.txt");
             await Shelf.DeleteDirectoryAsync("/a");
 
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.RestoreAsync(file.DeletionId));
+            ByteShelfException exception = await RefusalOf(Shelf.RestoreAsync(file.DeletionId));
 
             Assert.Equal(ErrorCodes.Conflict, exception.Code);
         }
@@ -329,7 +328,7 @@ namespace ByteShelf.Server.Tests.Client
         [Fact]
         public async Task CreateShelfAsync_NameTaken_ThrowsConflict()
         {
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Client.CreateShelfAsync("docs"));
+            ByteShelfException exception = await RefusalOf(Client.CreateShelfAsync("docs"));
 
             Assert.Equal(ErrorCodes.Conflict, exception.Code);
         }
@@ -352,7 +351,7 @@ namespace ByteShelf.Server.Tests.Client
             await Shelf.UpdateAsync("papers", quotaBytes: 100);
 
             Assert.Equal(100, (await Client.Shelf("papers").GetInfoAsync()).QuotaBytes);
-            Assert.Equal(ErrorCodes.NotFound, (await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.GetInfoAsync())).Code);
+            Assert.Equal(ErrorCodes.NotFound, (await RefusalOf(Shelf.GetInfoAsync())).Code);
         }
 
         [Fact]
@@ -361,7 +360,7 @@ namespace ByteShelf.Server.Tests.Client
             await UploadTextAsync("/a.txt", "a");
             await Shelf.DeleteFileAsync("/a.txt");
 
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.DeleteAsync());
+            ByteShelfException exception = await RefusalOf(Shelf.DeleteAsync());
 
             Assert.Equal(ErrorCodes.Conflict, exception.Code);
         }
@@ -379,7 +378,7 @@ namespace ByteShelf.Server.Tests.Client
         {
             await CreateUserAsync("user@example.com");
 
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => CreateUserAsync("USER@example.com"));
+            ByteShelfException exception = await RefusalOf(CreateUserAsync("USER@example.com"));
 
             Assert.Equal(ErrorCodes.Conflict, exception.Code);
         }
@@ -400,7 +399,7 @@ namespace ByteShelf.Server.Tests.Client
         {
             UserInfo admin = await Client.GetCurrentUserAsync();
 
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Client.SetUserRolesAsync(admin.Id, Array.Empty<string>()));
+            ByteShelfException exception = await RefusalOf(Client.SetUserRolesAsync(admin.Id, Array.Empty<string>()));
 
             Assert.Equal(ErrorCodes.Conflict, exception.Code);
         }
@@ -420,7 +419,7 @@ namespace ByteShelf.Server.Tests.Client
         [Fact]
         public async Task ChangePasswordAsync_WrongCurrentPassword_ThrowsInvalidCredentials()
         {
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Client.ChangePasswordAsync("not-the-password", "a-new-password"));
+            ByteShelfException exception = await RefusalOf(Client.ChangePasswordAsync("not-the-password", "a-new-password"));
 
             Assert.Equal(ErrorCodes.InvalidCredentials, exception.Code);
         }
@@ -430,7 +429,7 @@ namespace ByteShelf.Server.Tests.Client
         {
             await Client.ChangePasswordAsync(AdminPassword, "a-new-password");
 
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Client.ChangePasswordAsync(AdminPassword, "another-password"));
+            ByteShelfException exception = await RefusalOf(Client.ChangePasswordAsync(AdminPassword, "another-password"));
             Assert.Equal(ErrorCodes.InvalidCredentials, exception.Code);
             await Client.ChangePasswordAsync("a-new-password", AdminPassword);
         }
@@ -449,7 +448,7 @@ namespace ByteShelf.Server.Tests.Client
         [Fact]
         public async Task SetGrantAsync_UnknownUser_ThrowsNotFound()
         {
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.SetGrantAsync(Guid.NewGuid(), ShelfAccessPermission.Read));
+            ByteShelfException exception = await RefusalOf(Shelf.SetGrantAsync(Guid.NewGuid(), ShelfAccessPermission.Read));
 
             Assert.Equal(ErrorCodes.NotFound, exception.Code);
         }
@@ -459,7 +458,7 @@ namespace ByteShelf.Server.Tests.Client
         {
             UserInfo user = await CreateUserAsync("user@example.com");
 
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.RemoveGrantAsync(user.Id));
+            ByteShelfException exception = await RefusalOf(Shelf.RemoveGrantAsync(user.Id));
 
             Assert.Equal(ErrorCodes.NotFound, exception.Code);
         }
@@ -478,7 +477,7 @@ namespace ByteShelf.Server.Tests.Client
         [Fact]
         public async Task CreateKeyAsync_NameWithAControlCharacter_ThrowsInvalidRequest()
         {
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.CreateKeyAsync("tab\there", ShelfKeyPermission.Read));
+            ByteShelfException exception = await RefusalOf(Shelf.CreateKeyAsync("tab\there", ShelfKeyPermission.Read));
 
             Assert.Equal(ErrorCodes.InvalidRequest, exception.Code);
         }
@@ -489,14 +488,48 @@ namespace ByteShelf.Server.Tests.Client
             CreatedShelfKey created = await Shelf.CreateKeyAsync("app", ShelfKeyPermission.Read);
             await Shelf.DeleteKeyAsync(created.Key.Id);
 
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.DeleteKeyAsync(created.Key.Id));
+            ByteShelfException exception = await RefusalOf(Shelf.DeleteKeyAsync(created.Key.Id));
 
             Assert.Equal(ErrorCodes.NotFound, exception.Code);
             Assert.Empty(await Shelf.GetKeysAsync());
         }
 
+        [Theory]
+        [InlineData(".")]
+        [InlineData("..")]
+        [InlineData("Docs")]
+        [InlineData("")]
+        public void Shelf_NotAShelfName_ThrowsArgumentException(string name)
+        {
+            // "." and ".." would otherwise be resolved away in the URL, reaching another route.
+            Assert.Throws<ArgumentException>(() => Client.Shelf(name));
+        }
+
+        [Fact]
+        public async Task Calls_TokenAlreadyCancelled_AnswerACancelledTaskAndChangeNothing()
+        {
+            using CancellationTokenSource cancelled = new CancellationTokenSource();
+            await cancelled.CancelAsync();
+
+            Task<ShelfDirectory> created = Shelf.CreateDirectoryAsync("/a", cancelled.Token);
+            Task<IReadOnlyList<ShelfInfo>> shelves = Client.GetShelvesAsync(cancelled.Token);
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => created);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => shelves);
+            Assert.Empty((await Shelf.ListAsync()).Directories);
+        }
+
         /// <summary>A client acting as an admin whose password is <see cref="AdminPassword"/>.</summary>
         protected abstract Task<IByteShelfClient> CreateAdminClientAsync();
+
+        /// <summary>
+        /// The refusal <paramref name="call"/> ends in. It takes the task the call answered, so a client
+        /// that threw from the call itself, rather than through its task, fails the test there.
+        /// </summary>
+        protected static Task<ByteShelfException> RefusalOf(Task call)
+        {
+            return Assert.ThrowsAsync<ByteShelfException>(() => call);
+        }
 
         protected Task<ShelfFile> UploadTextAsync(string path, string text, bool overwrite = false, string? contentType = null)
         {
@@ -517,7 +550,7 @@ namespace ByteShelf.Server.Tests.Client
 
         private static string Sha256Of(string text)
         {
-            return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+            return TestHashes.Sha256Of(text);
         }
 
         /// <summary>A stream that can only be read forwards, like a pipe or a network body.</summary>

@@ -10,15 +10,15 @@ namespace ByteShelf.Server.Storage.Repositories
     {
         // A deletion's top entry is the one row of it whose container is not part of the same deletion:
         // the deleted file, or the directory a subtree was deleted from. Its totals count every file the
-        // deletion took.
-        private const string EntriesQuery = $@"
+        // deletion took. The kind column holds the TrashEntryKind value.
+        private static readonly string EntriesQuery = $@"
             WITH top_entry AS (
-                SELECT 'directory' AS kind, d.id AS entry_id, d.deletion_id, d.deleted_at, d.parent_id AS container_id, d.name
+                SELECT {(int)TrashEntryKind.Directory} AS kind, d.id AS entry_id, d.deletion_id, d.deleted_at, d.parent_id AS container_id, d.name
                 FROM directory d
                 WHERE d.shelf_id = @shelfId AND d.deletion_id IS NOT NULL
                   AND NOT EXISTS (SELECT 1 FROM directory p WHERE p.id = d.parent_id AND p.deletion_id = d.deletion_id)
                 UNION ALL
-                SELECT 'file', f.id, f.deletion_id, f.deleted_at, f.directory_id, f.name
+                SELECT {(int)TrashEntryKind.File}, f.id, f.deletion_id, f.deleted_at, f.directory_id, f.name
                 FROM file f
                 WHERE f.shelf_id = @shelfId AND f.deletion_id IS NOT NULL
                   AND NOT EXISTS (SELECT 1 FROM directory p WHERE p.id = f.directory_id AND p.deletion_id = f.deletion_id)
@@ -76,7 +76,7 @@ namespace ByteShelf.Server.Storage.Repositories
 
         internal class TrashedEntryEntity
         {
-            public string Kind { get; set; } = string.Empty;
+            public TrashEntryKind Kind { get; set; }
             public Guid EntryId { get; set; }
             public Guid DeletionId { get; set; }
             public DateTimeOffset DeletedAt { get; set; }
@@ -89,7 +89,7 @@ namespace ByteShelf.Server.Storage.Repositories
             {
                 return new TrashedEntry
                 {
-                    Kind = Kind == "directory" ? TrashEntryKind.Directory : TrashEntryKind.File,
+                    Kind = Kind,
                     EntryId = EntryId,
                     DeletionId = DeletionId,
                     DeletedAt = DeletedAt,

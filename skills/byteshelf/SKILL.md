@@ -21,6 +21,8 @@ A key reaches one shelf, with one permission: `read`, `add-only` (read, and stor
 replace, move or delete) or `read-write`. Never print the key or put it on a command line; keep it in
 the environment. A person can instead run `byteshelf login <server> --email <email>` once.
 
+`byteshelf help` lists every command with its options.
+
 ## Places and paths
 
 A place is written `shelf:/path`; `shelf` alone is its root. Paths start with `/`. A path ending in
@@ -31,6 +33,7 @@ spaces.
 
 | To | Run |
 |---|---|
+| See which shelves you reach | `byteshelf shelves`, and `byteshelf whoami` for who you act as |
 | See what is there | `byteshelf ls docs:/2026` or, everything below, `byteshelf tree docs:/2026 --depth 2` |
 | Find files | `byteshelf find docs invoice --type application/pdf --created-from 2026-03-01` |
 | Read a file's record | `byteshelf stat docs:/2026/report.pdf` |
@@ -40,8 +43,10 @@ spaces.
 | Back up or restore a folder | `byteshelf put ./site docs:/backups/` and `byteshelf get docs:/backups/site ./site-copy` |
 | Give someone a link | `byteshelf share docs:/2026/report.pdf --expires 2d` |
 | Say what a file is | `byteshelf describe docs:/2026/report.pdf "Signed by both parties"` |
+| Make a directory | `byteshelf mkdir docs:/2026/q2` (missing parents too) |
 | Move or rename | `byteshelf mv docs:/2026/draft.pdf /2026/final.pdf` |
 | Delete (to the trash) | `byteshelf rm docs:/2026/old.pdf`, then `byteshelf trash docs` and `byteshelf restore docs <id>` |
+| Empty the trash for good | `byteshelf empty-trash docs` (nothing in it can come back afterwards) |
 
 - `find` matches text in a file's name or its description, ignoring case, so describe what you store.
   Quote a type family: `--type 'image/*'`.
@@ -49,7 +54,9 @@ spaces.
   `More: add --after '<cursor>'`; run the same command with that option for the next page.
 - `put` refuses a path that is taken; add `--overwrite` to replace the file (it goes to the trash, so
   it can come back). `get` refuses to replace a local file without `--overwrite` too.
-- `get` checks every file against its SHA-256 and writes nothing when they differ.
+- `get` checks every file against its SHA-256; saving to a local file, a mismatch leaves nothing
+  behind. `get … -` writes to stdout as the bytes arrive, so a mismatch fails the command (exit code
+  1) only after they have gone out: check the exit code before using what was piped.
 - `share` prints the link alone on its first line. Anyone who has it can open the file until it runs
   out (24 hours by default, at most 7 days), and nothing takes it back sooner, so share only what may
   be seen.
@@ -61,9 +68,11 @@ The exit code says what kind of failure it was:
 
 - `0`: done.
 - `1`: the server refused or could not be reached, a download did not match its hash, a local file
-  could not be read or written, or a folder transfer left something out (listed in the output).
+  could not be read or written, a folder transfer left something out (listed in the output), or
+  another `byteshelf` command held the config file for 30 seconds (run it again).
 - `2`: the command was given wrongly, or cannot run as things are (not signed in, a missing local
   file, a local file in the way without `--overwrite`).
+- `130`: interrupted with Ctrl+C.
 
 A refusal ends with its code in parentheses: `(not_found)`, `(conflict)` for a path that is taken,
 `(permission_denied)` for something the key may not do, `(quota_exceeded)` when the shelf is full.
@@ -73,3 +82,8 @@ A refusal ends with its code in parentheses: `(not_found)`, `(conflict)` for a p
 `byteshelf --mcp` serves the same operations as MCP tools over stdio, and the server itself serves
 them at `/mcp` for a key. Prefer the tools when they are connected; this skill is for when only a
 shell is.
+
+## Installing this skill
+
+For Claude Code, copy this folder (`skills/byteshelf` in the ByteShelf repository) to
+`~/.claude/skills/byteshelf/` for every project, or to `.claude/skills/byteshelf/` in one project.

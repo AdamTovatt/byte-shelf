@@ -22,6 +22,7 @@ namespace ByteShelf.Server.Users.Services
         private readonly IUserLoginRepository _userLoginRepository;
         private readonly IShelfGrantRepository _grantRepository;
         private readonly IRefreshTokenStore _refreshTokenStore;
+        private readonly ISessionStampStore _sessionStamps;
         private readonly IPasswordHasher _passwordHasher;
         private readonly IDbSessionFactory _sessionFactory;
         private readonly TimeProvider _timeProvider;
@@ -32,6 +33,7 @@ namespace ByteShelf.Server.Users.Services
             IUserLoginRepository userLoginRepository,
             IShelfGrantRepository grantRepository,
             IRefreshTokenStore refreshTokenStore,
+            ISessionStampStore sessionStamps,
             IPasswordHasher passwordHasher,
             IDbSessionFactory sessionFactory,
             TimeProvider timeProvider)
@@ -40,6 +42,7 @@ namespace ByteShelf.Server.Users.Services
             _userLoginRepository = userLoginRepository;
             _grantRepository = grantRepository;
             _refreshTokenStore = refreshTokenStore;
+            _sessionStamps = sessionStamps;
             _passwordHasher = passwordHasher;
             _sessionFactory = sessionFactory;
             _timeProvider = timeProvider;
@@ -50,7 +53,7 @@ namespace ByteShelf.Server.Users.Services
         }
 
         /// <inheritdoc />
-        public async Task<User?> ValidateCredentialsAsync(string email, string password)
+        public async Task<UserCredentials?> ValidateCredentialsAsync(string email, string password)
         {
             UserCredentials? credentials = await _userLoginRepository.GetCredentialsByEmailAsync(email);
             if (credentials == null)
@@ -59,7 +62,7 @@ namespace ByteShelf.Server.Users.Services
                 return null;
             }
 
-            return _passwordHasher.ValidatePassword(password, credentials.PasswordHash) ? credentials.User : null;
+            return _passwordHasher.ValidatePassword(password, credentials.PasswordHash) ? credentials : null;
         }
 
         /// <inheritdoc />
@@ -107,7 +110,7 @@ namespace ByteShelf.Server.Users.Services
         }
 
         /// <inheritdoc />
-        public async Task<bool> UpdatePasswordAsync(Guid userId, string currentPassword, string newPassword)
+        public async Task<bool> UpdatePasswordAsync(Guid userId, string currentPassword, string newPassword, string? keepSessionFamilyId = null)
         {
             PasswordPolicy.Validate(newPassword);
 
@@ -130,6 +133,13 @@ namespace ByteShelf.Server.Users.Services
                 if (!await _userLoginRepository.UpdateCredentialAsync(userId, UserLoginRepository.LocalProvider, passwordHash, _timeProvider.GetUtcNow(), session))
                 {
                     return false;
+                }
+
+                // The new credential ends every session signed in with the old one (CredentialStamp),
+                // except the one the change was made from, which moves onto the new credential with it.
+                if (!string.IsNullOrEmpty(keepSessionFamilyId))
+                {
+                    await _sessionStamps.RestampFamilyAsync(userId.ToString("D"), keepSessionFamilyId, CredentialStamp.SerializeClaimsFor(passwordHash), session);
                 }
 
                 await session.CommitAsync();
@@ -178,16 +188,27 @@ namespace ByteShelf.Server.Users.Services
                     throw new ConflictException("This is the only admin; make someone else an admin first.");
                 }
 
-                DateTimeOffset now = _timeProvider.GetUtcNow();
-                await _grantRepository.DeleteForUserAsync(userId, now, session);
-                await _userLoginRepository.DeleteForUserAsync(userId, now, session);
-                await _userRepository.DeleteAsync(userId, now, session);
+                await RemoveUserAsync(userId, _timeProvider.GetUtcNow(), session);
                 await session.CommitAsync();
             }
 
             // After the commit, as a password reset does. A refresh would be refused anyway, since the
             // user is gone; this also drops the stored tokens.
-            await _refreshTokenStore.InvalidateAllFamiliesForUserAsync(userId.ToString("D"));
+            await EndSessionsAsync(userId);
+        }
+
+        /// <inheritdoc />
+        public async Task<bool> RemoveUserAsync(Guid userId, DateTimeOffset at, IDbSession session)
+        {
+            await _grantRepository.DeleteForUserAsync(userId, at, session);
+            await _userLoginRepository.DeleteForUserAsync(userId, at, session);
+            return await _userRepository.DeleteAsync(userId, at, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<int> EndSessionsAsync(Guid userId)
+        {
+            return await _refreshTokenStore.InvalidateAllFamiliesForUserAsync(userId.ToString("D"));
         }
 
         /// <inheritdoc />

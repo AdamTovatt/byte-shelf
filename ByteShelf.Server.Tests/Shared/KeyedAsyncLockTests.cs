@@ -19,6 +19,21 @@ namespace ByteShelf.Server.Tests.Shared
         }
 
         [Fact]
+        public async Task AcquireAsync_KeyHeldByAnother_ReportsTheWaitAndOnlyThat()
+        {
+            KeyedAsyncLock locks = new KeyedAsyncLock();
+            List<string> waited = new List<string>();
+            locks.WaitingStarted = waited.Add;
+
+            IDisposable first = await locks.AcquireAsync("a");
+            Task<IDisposable> second = locks.AcquireAsync("a");
+            first.Dispose();
+            (await second.WaitAsync(TimeSpan.FromSeconds(5))).Dispose();
+
+            Assert.Equal(new[] { "a" }, waited);
+        }
+
+        [Fact]
         public async Task AcquireAsync_OtherKeyHeld_DoesNotWait()
         {
             KeyedAsyncLock locks = new KeyedAsyncLock();

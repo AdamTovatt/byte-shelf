@@ -49,22 +49,67 @@ namespace ByteShelf.Server.Tests.Storage
         public async Task RunAsync_SinglePutStartedBeforeTheProcess_RemovesIt()
         {
             Shelf shelf = await CreateShelfAsync();
-            await InsertSinglePutAsync(shelf, startedAt: Clock.GetUtcNow());
+            UploadRecord upload = await InsertSinglePutAsync(shelf, startedAt: Clock.GetUtcNow());
 
             StorageMaintenanceSummary summary = await Maintenance.RunAsync(Clock.GetUtcNow() + TimeSpan.FromSeconds(1), CancellationToken.None);
 
             Assert.Equal(1, summary.AbandonedUploads);
+            Assert.Null(await Services.GetRequiredService<IUploadRepository>().GetByIdAsync(upload.Id));
+            Assert.Empty(StagingArea.List());
+            Assert.Equal(0, (await Services.GetRequiredService<IShelfRepository>().GetUsageAsync(shelf.Id)).ReservedBytes);
         }
 
         [Fact]
         public async Task RunAsync_SinglePutStartedAfterTheProcess_KeepsIt()
         {
             Shelf shelf = await CreateShelfAsync();
-            await InsertSinglePutAsync(shelf, startedAt: Clock.GetUtcNow());
+            UploadRecord upload = await InsertSinglePutAsync(shelf, startedAt: Clock.GetUtcNow());
 
             StorageMaintenanceSummary summary = await Maintenance.RunAsync(Clock.GetUtcNow() - TimeSpan.FromSeconds(1), CancellationToken.None);
 
             Assert.Equal(0, summary.AbandonedUploads);
+            Assert.NotNull(await Services.GetRequiredService<IUploadRepository>().GetByIdAsync(upload.Id));
+            Assert.Equal(upload.Id, Assert.Single(StagingArea.List()).UploadId);
+        }
+
+        [Fact]
+        public async Task RunAsync_TrashPastItsWindow_PurgesItAndCountsTheFiles()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile gone = await StoreTextAsync(shelf, "/d/gone.txt", "gone");
+            await StoreTextAsync(shelf, "/d/also.txt", "also");
+            ShelfFile kept = await StoreTextAsync(shelf, "/kept.txt", "kept");
+            await DirectoryService.DeleteAsync(shelf, EntryReference.ForPath("/d"));
+            Clock.Advance(Options.RestoreWindow + TimeSpan.FromSeconds(1));
+            await StoreTextAsync(shelf, "/recent.txt", "recent");
+            await FileService.DeleteFileAsync(shelf, EntryReference.ForPath("/recent.txt"));
+
+            StorageMaintenanceSummary summary = await Maintenance.RunAsync(LongAgo, CancellationToken.None);
+
+            Assert.Equal(2, summary.PurgedFiles);
+            Assert.False(ObjectStore.Exists(gone.Sha256));
+            Assert.Equal("/recent.txt", Assert.Single(await TrashService.GetTrashAsync(shelf)).Path);
+            Assert.Equal(kept.Id, (await FileService.GetFileAsync(shelf, EntryReference.ForPath("/kept.txt"))).Id);
+        }
+
+        [Fact]
+        public async Task RunAsync_WhileTheGateIsHeld_WaitsForIt()
+        {
+            await CreateShelfAsync();
+            await File.WriteAllTextAsync(StagingArea.GetPath(Guid.NewGuid()), "being fetched");
+            MaintenanceGate gate = Services.GetRequiredService<MaintenanceGate>();
+
+            Task<StorageMaintenanceSummary> run;
+            using (await gate.EnterAsync(CancellationToken.None))
+            {
+                run = Maintenance.RunAsync(LongAgo, CancellationToken.None);
+
+                // Nothing is swept while the gate is held, however long that is.
+                Assert.False(run.IsCompleted);
+                Assert.Single(StagingArea.List());
+            }
+
+            Assert.Equal(1, (await run.WaitAsync(TimeSpan.FromSeconds(30))).StrayStagingEntries);
         }
 
         [Fact]
@@ -74,13 +119,21 @@ namespace ByteShelf.Server.Tests.Storage
             UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/a", SizeBytes = 5 }, Uploader);
             Clock.Advance(Options.AbandonedUploadAge + TimeSpan.FromSeconds(1));
             UploadLocks locks = Services.GetRequiredService<UploadLocks>();
+            TaskCompletionSource waiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            locks.OnWaitingStarted(uploadId =>
+            {
+                if (uploadId == upload.Id)
+                {
+                    waiting.TrySetResult();
+                }
+            });
 
             Task<StorageMaintenanceSummary> run;
             using (await locks.AcquireAsync(upload.Id))
             {
                 // Maintenance reads the upload as abandoned, then waits for its lock while a chunk lands.
                 run = Maintenance.RunAsync(LongAgo, CancellationToken.None);
-                await Task.Delay(100);
+                await waiting.Task.WaitAsync(TimeSpan.FromSeconds(30));
                 await Services.GetRequiredService<IUploadRepository>().UpdateReceivedAsync(upload.Id, 0, 0, Clock.GetUtcNow());
             }
 
@@ -134,8 +187,8 @@ namespace ByteShelf.Server.Tests.Storage
             Assert.True(ObjectStore.Exists(file.Sha256));
         }
 
-        /// <summary>The row a single PUT leaves when its process dies before the request ends.</summary>
-        private async Task InsertSinglePutAsync(Shelf shelf, DateTimeOffset startedAt)
+        /// <summary>The row and staging file a single PUT leaves when its process dies before the request ends.</summary>
+        private async Task<UploadRecord> InsertSinglePutAsync(Shelf shelf, DateTimeOffset startedAt)
         {
             UploadRecord upload = new UploadRecord
             {
@@ -152,9 +205,14 @@ namespace ByteShelf.Server.Tests.Storage
                 LastActivityAt = startedAt,
             };
 
-            await using IDbTransactionSession session = await TestRoot.SessionFactory.CreateSessionWithTransactionAsync();
-            await Services.GetRequiredService<IUploadRepository>().InsertAsync(upload, session);
-            await session.CommitAsync();
+            await using (IDbTransactionSession session = await TestRoot.SessionFactory.CreateSessionWithTransactionAsync())
+            {
+                await Services.GetRequiredService<IUploadRepository>().InsertAsync(upload, session);
+                await session.CommitAsync();
+            }
+
+            StagingArea.EnsureExists(upload.Id);
+            return upload;
         }
     }
 }

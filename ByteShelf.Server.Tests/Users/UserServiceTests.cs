@@ -21,9 +21,9 @@ namespace ByteShelf.Server.Tests.Users
         {
             User created = await UserService.CreateUserAsync("user@example.com", "User", "correct-password");
 
-            User? signedIn = await UserService.ValidateCredentialsAsync("USER@example.com", "correct-password");
+            UserCredentials? signedIn = await UserService.ValidateCredentialsAsync("USER@example.com", "correct-password");
 
-            Assert.Equal(created.Id, signedIn?.Id);
+            Assert.Equal(created.Id, signedIn?.User.Id);
         }
 
         [Fact]

@@ -48,7 +48,9 @@ namespace ByteShelf.Tools
         /// <summary>
         /// Saves a file from the shelf to <paramref name="localPath"/>, or into it when it is a
         /// directory, and answers where. The bytes go to a side file first, so a failed download
-        /// leaves nothing behind and replaces nothing.
+        /// leaves nothing behind and replaces nothing. The side file's name is new for each download,
+        /// so two downloads to one path never write into each other's, and it does not grow with the
+        /// file's own name, which may already be as long as the disk allows.
         /// </summary>
         /// <exception cref="UsageException">The local file exists and <paramref name="overwrite"/> is false.</exception>
         public static async Task<string> DownloadToFileAsync(IShelfClient shelf, string path, string localPath, bool overwrite, CancellationToken cancellationToken)
@@ -64,11 +66,11 @@ namespace ByteShelf.Tools
                 throw new UsageException($"{target} exists already; ask to overwrite it.");
             }
 
-            string partial = target + ".byteshelf-partial";
+            string partial = Path.Combine(Path.GetDirectoryName(target)!, $".byteshelf-{Guid.NewGuid():N}.partial");
             try
             {
                 await using (Stream content = await shelf.OpenReadAsync(path, cancellationToken))
-                await using (FileStream file = new FileStream(partial, FileMode.Create, FileAccess.Write, FileShare.None, CopyBufferBytes, useAsync: true))
+                await using (FileStream file = new FileStream(partial, FileMode.CreateNew, FileAccess.Write, FileShare.None, CopyBufferBytes, useAsync: true))
                 {
                     await content.CopyToAsync(file, cancellationToken);
                 }

@@ -60,6 +60,18 @@ export const apiClient = createClient<paths>({
   fetch: (request: Request) => sendAuthorized(request, (sent) => fetch(sent)),
 });
 
+/** The `{name}` parameters in a path template, such as 'shelf' | 'uploadId'. */
+type PathParams<P extends string> = P extends `${string}{${infer Name}}${infer Rest}` ? Name | PathParams<Rest> : never;
+
+/**
+ * The URL of one of the server's paths, each `{name}` in `template` filled in escaped: for requests
+ * made with authorizedFetch, so their paths are checked against the API description as apiClient's are.
+ */
+export function apiUrl<P extends keyof paths>(template: P, params: Record<PathParams<P>, string>, query?: URLSearchParams): string {
+  const path = template.replace(/\{(\w+)\}/g, (_, name: PathParams<P>) => encodeURIComponent(params[name]));
+  return query ? `${path}?${query}` : path;
+}
+
 /** For requests openapi-fetch does not suit, such as sending a file's bytes. */
 export function authorizedFetch(input: string, init: RequestInit): Promise<Response> {
   return sendAuthorized(new Request(input, init), (request) => fetch(request));

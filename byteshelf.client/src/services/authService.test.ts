@@ -1,69 +1,126 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getFreshToken, renewAccessToken, saveTokens } from './authService';
-import { installFakeWebLocks } from '../test/fakeWebLocks';
+import { getFreshToken, renewAccessToken, saveTokens, signOut } from './authService';
+import { installFakeWebLocks, removeWebLocks } from '../test/fakeWebLocks';
+import { inAnHour, json, stubServer } from '../test/fakeServer';
 
-const inAnHour = () => new Date(Date.now() + 60 * 60_000).toISOString();
 const runOut = () => new Date(Date.now() - 1_000).toISOString();
 
-function tokensResponse(token: string, refreshToken: string): Response {
-  return new Response(JSON.stringify({ token, expiresAt: inAnHour(), refreshToken }), { status: 200 });
+function tokens(token: string, refreshToken: string): Response {
+  return json({ token, expiresAt: inAnHour(), refreshToken });
 }
 
-describe('session renewal', () => {
-  const fetchMock = vi.fn<typeof fetch>();
-  let lockRequests = new Map<string, number>();
+describe('the session', () => {
+  let answer: (request: Request) => Promise<Response>;
+  // Each request as "METHOD /path", and the refresh token each one carried.
+  let sent: string[] = [];
+  let spent: string[] = [];
 
   beforeEach(() => {
     localStorage.clear();
-    fetchMock.mockReset();
-    vi.stubGlobal('fetch', fetchMock);
-    lockRequests = installFakeWebLocks();
+    installFakeWebLocks();
+    answer = async () => new Response(null, { status: 500 });
+    spent = [];
+    sent = stubServer(async (request) => {
+      spent.push(((await request.clone().json()) as { refreshToken?: string }).refreshToken ?? '');
+      return answer(request);
+    });
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('uses the access token while it works', async () => {
-    saveTokens({ token: 'kept', expiresAt: inAnHour(), refreshToken: 'refresh-1' });
+  describe('renewal', () => {
+    it('uses the access token while it works', async () => {
+      saveTokens({ token: 'kept', expiresAt: inAnHour(), refreshToken: 'refresh-1' });
 
-    expect(await getFreshToken()).toBe('kept');
-    expect(fetchMock).not.toHaveBeenCalled();
+      expect(await getFreshToken()).toBe('kept');
+      expect(sent).toEqual([]);
+    });
+
+    it('renews a token that has run out, once, however many requests ask at the same time', async () => {
+      saveTokens({ token: 'first', expiresAt: runOut(), refreshToken: 'refresh-1' });
+      answer = async () => tokens('second', 'refresh-2');
+
+      const renewed = await Promise.all([getFreshToken(), getFreshToken(), getFreshToken()]);
+
+      expect(renewed).toEqual(['second', 'second', 'second']);
+      expect([sent, spent]).toEqual([['POST /api/auth/refresh'], ['refresh-1']]);
+      expect(localStorage.getItem('byteshelf_auth_refresh_token')).toBe('refresh-2');
+    });
+
+    it('renews once without Web Locks too, as over plain HTTP', async () => {
+      removeWebLocks();
+      saveTokens({ token: 'first', expiresAt: runOut(), refreshToken: 'refresh-1' });
+      answer = async () => tokens('second', 'refresh-2');
+
+      const renewed = await Promise.all([getFreshToken(), getFreshToken(), getFreshToken()]);
+
+      expect(renewed).toEqual(['second', 'second', 'second']);
+      expect([sent, spent]).toEqual([['POST /api/auth/refresh'], ['refresh-1']]);
+    });
+
+    it('takes up a token another tab renewed to instead of spending the refresh token again', async () => {
+      saveTokens({ token: 'theirs', expiresAt: inAnHour(), refreshToken: 'refresh-2' });
+
+      expect(await renewAccessToken('mine')).toBe('theirs');
+      expect(sent).toEqual([]);
+    });
+
+    it('forgets a session the server has ended', async () => {
+      saveTokens({ token: 'first', expiresAt: runOut(), refreshToken: 'refresh-1' });
+      answer = async () => new Response(null, { status: 401 });
+
+      expect(await getFreshToken()).toBeNull();
+      expect(localStorage.getItem('byteshelf_auth_refresh_token')).toBeNull();
+    });
+
+    it('keeps the session when the server cannot renew it just now', async () => {
+      saveTokens({ token: 'first', expiresAt: runOut(), refreshToken: 'refresh-1' });
+      answer = async () => new Response(null, { status: 503 });
+
+      expect(await getFreshToken()).toBeNull();
+      expect(localStorage.getItem('byteshelf_auth_refresh_token')).toBe('refresh-1');
+    });
   });
 
-  it('renews a token that has run out, once, however many requests ask at the same time', async () => {
-    saveTokens({ token: 'first', expiresAt: runOut(), refreshToken: 'refresh-1' });
-    fetchMock.mockResolvedValue(tokensResponse('second', 'refresh-2'));
+  describe('signing out', () => {
+    it('ends the session on the server and forgets it', async () => {
+      saveTokens({ token: 'first', expiresAt: inAnHour(), refreshToken: 'refresh-1' });
+      answer = async () => new Response(null, { status: 204 });
 
-    const tokens = await Promise.all([getFreshToken(), getFreshToken(), getFreshToken()]);
+      await signOut();
 
-    expect(tokens).toEqual(['second', 'second', 'second']);
-    expect(lockRequests.get('byteshelf-token-renewal')).toBe(3);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(localStorage.getItem('byteshelf_auth_refresh_token')).toBe('refresh-2');
-  });
+      expect([sent, spent]).toEqual([['POST /api/auth/logout'], ['refresh-1']]);
+      expect(localStorage.getItem('byteshelf_auth_refresh_token')).toBeNull();
+      expect(localStorage.getItem('byteshelf_auth_token')).toBeNull();
+    });
 
-  it('takes up a token another tab renewed to instead of spending the refresh token again', async () => {
-    saveTokens({ token: 'theirs', expiresAt: inAnHour(), refreshToken: 'refresh-2' });
+    it('forgets the session even when the server cannot be reached', async () => {
+      saveTokens({ token: 'first', expiresAt: inAnHour(), refreshToken: 'refresh-1' });
+      answer = () => Promise.reject(new TypeError('Failed to fetch'));
 
-    expect(await renewAccessToken('mine')).toBe('theirs');
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
+      await signOut();
 
-  it('forgets a session the server has ended', async () => {
-    saveTokens({ token: 'first', expiresAt: runOut(), refreshToken: 'refresh-1' });
-    fetchMock.mockResolvedValue(new Response(null, { status: 401 }));
+      expect(localStorage.getItem('byteshelf_auth_refresh_token')).toBeNull();
+    });
 
-    expect(await getFreshToken()).toBeNull();
-    expect(localStorage.getItem('byteshelf_auth_refresh_token')).toBeNull();
-  });
+    it('cannot be undone by a renewal that was under way', async () => {
+      saveTokens({ token: 'first', expiresAt: runOut(), refreshToken: 'refresh-1' });
+      let answerRefresh: (response: Response) => void = () => undefined;
+      answer = (request) => new URL(request.url).pathname === '/api/auth/refresh'
+        ? new Promise<Response>((resolve) => { answerRefresh = resolve; })
+        : Promise.resolve(new Response(null, { status: 204 }));
 
-  it('keeps the session when the server cannot renew it just now', async () => {
-    saveTokens({ token: 'first', expiresAt: runOut(), refreshToken: 'refresh-1' });
-    fetchMock.mockResolvedValue(new Response(null, { status: 503 }));
+      const renewing = getFreshToken();
+      await vi.waitFor(() => expect(sent).toEqual(['POST /api/auth/refresh']));
+      const signingOut = signOut();
+      answerRefresh(tokens('second', 'refresh-2'));
+      await Promise.all([renewing, signingOut]);
 
-    expect(await getFreshToken()).toBeNull();
-    expect(localStorage.getItem('byteshelf_auth_refresh_token')).toBe('refresh-1');
+      expect(localStorage.getItem('byteshelf_auth_refresh_token')).toBeNull();
+      expect([sent, spent]).toEqual([['POST /api/auth/refresh', 'POST /api/auth/logout'], ['refresh-1', 'refresh-2']]);
+    });
   });
 });

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -10,7 +11,10 @@ using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using EasyReasy.Database;
 using EasyReasy.Database.Mapping;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Primitives;
+using Microsoft.Extensions.Time.Testing;
 
 namespace ByteShelf.Server.Tests.Replication
 {
@@ -252,22 +256,30 @@ namespace ByteShelf.Server.Tests.Replication
         [Fact]
         public async Task Sync_PrimaryThatGoesQuietPartWay_IsGivenUpAfterTheIdleTimeout()
         {
+            StallingHandler? stalling = null;
             await using ReplicationPair quiet = await ReplicationPair.StartAsync(
-                primary => new StallingHandler(primary),
+                primary => stalling = new StallingHandler(primary),
                 idleTimeout: TimeSpan.FromMilliseconds(200));
             await quiet.CreateShelfAsync("docs");
             await quiet.PutOnPrimaryAsync("docs", "/a.txt", "never arrives");
             await quiet.PairAsync();
 
-            await Assert.ThrowsAsync<PrimaryFailedException>(() => quiet.SyncAsync().WaitAsync(TimeSpan.FromSeconds(30)));
+            PrimaryFailedException failed = await Assert.ThrowsAsync<PrimaryFailedException>(() => quiet.SyncAsync().WaitAsync(TimeSpan.FromSeconds(30)));
+
+            // Given up on the file's bytes that stalled, not on anything before them.
+            Assert.True(stalling!.Stalled.IsCompleted);
+            Assert.Contains("sent nothing for", failed.Message, StringComparison.Ordinal);
         }
 
         [Fact]
         public async Task Sync_FileThatArrivesSlowlyButSteadily_IsNotGivenUp()
         {
+            // Each byte comes 100 ms after the last on the replica's clock: 1.8 seconds in all, never 500 ms apart.
+            FakeTimeProvider clock = new FakeTimeProvider();
             await using ReplicationPair slow = await ReplicationPair.StartAsync(
-                primary => new TricklingHandler(primary),
-                idleTimeout: TimeSpan.FromMilliseconds(500));
+                primary => new TricklingHandler(primary, clock),
+                idleTimeout: TimeSpan.FromMilliseconds(500),
+                primaryClock: clock);
             await slow.CreateShelfAsync("docs");
             await slow.PutOnPrimaryAsync("docs", "/a.txt", "one byte at a time");
             await slow.PairAsync();
@@ -276,6 +288,37 @@ namespace ByteShelf.Server.Tests.Replication
 
             using HttpClient replica = await slow.SignInOnReplicaAsync();
             Assert.Equal("one byte at a time", await replica.GetStringAsync("/api/shelves/docs/content?path=/a.txt"));
+        }
+
+        [Fact]
+        public async Task Sync_PrimaryChangedBetweenCopyPages_CopiesWhatItHoldsAtTheEnd()
+        {
+            ChangeBetweenCopyPages between = new ChangeBetweenCopyPages();
+            await using ReplicationPair pair = await ReplicationPair.StartAsync(primary => new BetweenCopyPagesHandler(primary, between), pageSize: 1);
+            await pair.CreateShelfAsync("docs");
+            await pair.PutOnPrimaryAsync("docs", "/d/a.txt", "a");
+            between.CopiedThrough = await LatestSequenceAsync(pair.Primary);
+
+            // The directory's newest entry now comes after the file's, so the copy takes the file a page
+            // before the directory. Both are gone before the replica asks for the directory's page.
+            (await pair.Primary.AdminClient.PostAsJsonAsync("/api/shelves/docs/directories/move?path=/d", new MoveRequest { ToPath = "/e" })).EnsureSuccessStatusCode();
+            between.Change = async () =>
+            {
+                (await pair.Primary.AdminClient.DeleteAsync("/api/shelves/docs/directories?path=/e")).EnsureSuccessStatusCode();
+                (await pair.Primary.AdminClient.DeleteAsync("/api/shelves/docs/trash")).EnsureSuccessStatusCode();
+            };
+            await pair.PairAsync();
+
+            await pair.SyncAsync();
+
+            // The copy left out what the primary removed meanwhile; the log after it brought both back as
+            // they stood when removed, in the trash, where a replica keeps what the primary purges.
+            Assert.True(between.Made);
+            using HttpClient replica = await pair.SignInOnReplicaAsync();
+            Assert.Empty((await replica.GetFromJsonAsync<DirectoryListing>("/api/shelves/docs/entries"))!.Directories);
+            TrashEntry trashed = Assert.Single((await replica.GetFromJsonAsync<List<TrashEntry>>("/api/shelves/docs/trash"))!);
+            Assert.Equal(("/e", 1), (trashed.Path, trashed.FileCount));
+            Assert.Equal(await LatestSequenceAsync(pair.Primary), (await ReplicationPair.GetStatusAsync(replica)).Source!.AppliedSequence);
         }
 
         [Fact]
@@ -319,7 +362,9 @@ namespace ByteShelf.Server.Tests.Replication
         {
             await _pair.PairAsync();
             await _pair.SyncAsync();
+            long caughtUpTo = await LatestSequenceAsync(_pair.Primary);
             await _pair.PutOnPrimaryAsync("docs", "/a.txt", "a");
+            long latest = await LatestSequenceAsync(_pair.Primary);
 
             ReplicationStatus before = await ReplicationPair.GetStatusAsync(_pair.Primary.AdminClient);
 
@@ -329,7 +374,7 @@ namespace ByteShelf.Server.Tests.Replication
             ReplicationStatus after = await ReplicationPair.GetStatusAsync(_pair.Primary.AdminClient);
 
             Assert.Equal("backup", Assert.Single(before.Replicas).Name);
-            Assert.True(before.Replicas[0].ChangesBehind > 0);
+            Assert.Equal(latest - caughtUpTo, before.Replicas[0].ChangesBehind);
             Assert.Equal(0, Assert.Single(after.Replicas).ChangesBehind);
         }
 
@@ -424,7 +469,8 @@ namespace ByteShelf.Server.Tests.Replication
 
             HttpResponseMessage pairing = await _pair.TryPairAsync(await _pair.CreateCodeAsync());
 
-            Assert.Equal(HttpStatusCode.Conflict, pairing.StatusCode);
+            await AssertRefusedAsync(pairing, "Only a server without shelves can become a replica");
+            Assert.Null((await ReplicationPair.GetStatusAsync(_pair.Replica.AdminClient)).Source);
         }
 
         [Fact]
@@ -435,7 +481,8 @@ namespace ByteShelf.Server.Tests.Replication
 
             HttpResponseMessage pairing = await _pair.TryPairAsync(ownCode);
 
-            Assert.Equal(HttpStatusCode.Conflict, pairing.StatusCode);
+            await AssertRefusedAsync(pairing, "That code was made on this server");
+            Assert.Null((await ReplicationPair.GetStatusAsync(_pair.Replica.AdminClient)).Source);
         }
 
         [Fact]
@@ -445,7 +492,11 @@ namespace ByteShelf.Server.Tests.Replication
 
             HttpResponseMessage again = await _pair.TryPairAsync(await _pair.CreateCodeAsync());
 
+            // Refused as a write on a replica, before the second code was presented: the primary paired
+            // only the first.
             Assert.Equal(HttpStatusCode.Conflict, again.StatusCode);
+            Assert.Equal(ErrorCodes.ReadOnlyReplica, (await again.Content.ReadFromJsonAsync<ErrorResponse>())!.Code);
+            Assert.Single((await ReplicationPair.GetStatusAsync(_pair.Primary.AdminClient)).Replicas);
         }
 
         [Fact]
@@ -457,7 +508,8 @@ namespace ByteShelf.Server.Tests.Replication
 
             HttpResponseMessage pairing = await _pair.TryPairAsync(await _pair.CreateCodeAsync());
 
-            Assert.Equal(HttpStatusCode.Conflict, pairing.StatusCode);
+            await AssertRefusedAsync(pairing, "This server has replicas of its own");
+            Assert.Null((await ReplicationPair.GetStatusAsync(_pair.Replica.AdminClient)).Source);
         }
 
         [Fact]
@@ -468,7 +520,7 @@ namespace ByteShelf.Server.Tests.Replication
 
             HttpResponseMessage pairing = await _pair.TryPairAsync(code);
 
-            Assert.Equal(HttpStatusCode.Conflict, pairing.StatusCode);
+            await AssertRefusedAsync(pairing, "The primary did not accept the code");
             Assert.Null((await ReplicationPair.GetStatusAsync(_pair.Replica.AdminClient)).Source);
         }
 
@@ -567,12 +619,18 @@ namespace ByteShelf.Server.Tests.Replication
             }
         }
 
-        /// <summary>Hands the replica every file's bytes one at a time, 100 ms apart: longer in all than the idle timeout, never idle that long.</summary>
+        /// <summary>
+        /// Hands the replica every file's bytes one at a time, moving <paramref name="clock"/> on 100 ms
+        /// before each: longer in all than the idle timeout, never idle that long.
+        /// </summary>
         private sealed class TricklingHandler : DelegatingHandler
         {
-            public TricklingHandler(HttpMessageHandler primary)
+            private readonly FakeTimeProvider _clock;
+
+            public TricklingHandler(HttpMessageHandler primary, FakeTimeProvider clock)
                 : base(primary)
             {
+                _clock = clock;
             }
 
             protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -580,7 +638,7 @@ namespace ByteShelf.Server.Tests.Replication
                 HttpResponseMessage response = await base.SendAsync(request, cancellationToken);
                 if (request.RequestUri!.AbsolutePath.EndsWith("/object", StringComparison.Ordinal) && response.IsSuccessStatusCode)
                 {
-                    response.Content = new StreamContent(new TricklingStream(await response.Content.ReadAsByteArrayAsync(cancellationToken)));
+                    response.Content = new StreamContent(new TricklingStream(await response.Content.ReadAsByteArrayAsync(cancellationToken), _clock));
                 }
 
                 return response;
@@ -589,15 +647,18 @@ namespace ByteShelf.Server.Tests.Replication
 
         private sealed class TricklingStream : MemoryStream
         {
-            public TricklingStream(byte[] bytes)
+            private readonly FakeTimeProvider _clock;
+
+            public TricklingStream(byte[] bytes, FakeTimeProvider clock)
                 : base(bytes)
             {
+                _clock = clock;
             }
 
-            public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken);
-                return await base.ReadAsync(buffer[..Math.Min(buffer.Length, 1)], cancellationToken);
+                _clock.Advance(TimeSpan.FromMilliseconds(100));
+                return base.ReadAsync(buffer[..Math.Min(buffer.Length, 1)], cancellationToken);
             }
 
             public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
@@ -616,8 +677,52 @@ namespace ByteShelf.Server.Tests.Replication
 
             protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
-                request.RequestUri = new Uri(request.RequestUri!.ToString().Replace($"limit={ReplicaSync.PageSize}", "limit=1", StringComparison.Ordinal));
+                Dictionary<string, StringValues> query = QueryHelpers.ParseQuery(request.RequestUri!.Query);
+                if (query.ContainsKey("limit"))
+                {
+                    query["limit"] = "1";
+                    request.RequestUri = new Uri(QueryHelpers.AddQueryString(request.RequestUri.GetLeftPart(UriPartial.Path), query));
+                }
+
                 return base.SendAsync(request, cancellationToken);
+            }
+        }
+
+        /// <summary>
+        /// A change to make on the primary once, just before the replica asks for the page of a whole copy
+        /// after <see cref="CopiedThrough"/>: by then the pages up to it are copied and their files fetched.
+        /// </summary>
+        private sealed class ChangeBetweenCopyPages
+        {
+            public long CopiedThrough { get; set; } = long.MaxValue;
+
+            public Func<Task>? Change { get; set; }
+
+            public bool Made { get; set; }
+        }
+
+        /// <summary>Makes <see cref="ChangeBetweenCopyPages"/>'s change when its page is asked for.</summary>
+        private sealed class BetweenCopyPagesHandler : DelegatingHandler
+        {
+            private readonly ChangeBetweenCopyPages _between;
+
+            public BetweenCopyPagesHandler(HttpMessageHandler primary, ChangeBetweenCopyPages between)
+                : base(primary)
+            {
+                _between = between;
+            }
+
+            protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                bool copyPage = request.RequestUri!.AbsolutePath.EndsWith("/feed/copy", StringComparison.Ordinal);
+                if (copyPage && _between.Change != null && !_between.Made
+                    && long.Parse(QueryHelpers.ParseQuery(request.RequestUri.Query)["after"].ToString(), CultureInfo.InvariantCulture) >= _between.CopiedThrough)
+                {
+                    _between.Made = true;
+                    await _between.Change();
+                }
+
+                return await base.SendAsync(request, cancellationToken);
             }
         }
 
@@ -637,6 +742,13 @@ namespace ByteShelf.Server.Tests.Replication
                     ? Task.FromException<HttpResponseMessage>(new HttpRequestException("The primary is down."))
                     : base.SendAsync(request, cancellationToken);
             }
+        }
+
+        /// <summary>Asserts a 409 whose message starts with <paramref name="reason"/>, so each refusal is told apart.</summary>
+        private static async Task AssertRefusedAsync(HttpResponseMessage response, string reason)
+        {
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.StartsWith(reason, (await response.Content.ReadFromJsonAsync<ErrorResponse>())!.Message, StringComparison.Ordinal);
         }
 
         private static async Task<List<Guid>> UserIdsAsync(HttpClient client)

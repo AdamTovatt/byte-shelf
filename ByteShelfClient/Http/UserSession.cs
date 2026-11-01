@@ -23,6 +23,7 @@ namespace ByteShelfClient.Http
         private readonly TimeProvider _timeProvider;
         private readonly ISharedSessionStore? _store;
         private SessionTokens _tokens;
+        private volatile bool _ended;
 
         private UserSession(HttpClient http, SessionTokens tokens, TimeProvider timeProvider, ISharedSessionStore? store)
         {
@@ -91,16 +92,55 @@ namespace ByteShelfClient.Http
             return new UserSession(http, tokens, timeProvider ?? TimeProvider.System, store);
         }
 
-        /// <summary>Ends the session on the server, so its refresh token stops working.</summary>
+        /// <summary>
+        /// Ends the session on the server, so its refresh token stops working, and here, so this session
+        /// sends no more requests. A shared session is signed out with the store locked, with the tokens it
+        /// keeps now, which another process may have renewed, and the store stops keeping it.
+        /// </summary>
+        /// <exception cref="ByteShelfException">The server refused; the session is left as it was.</exception>
         public async Task SignOutAsync(CancellationToken cancellationToken = default)
         {
-            using HttpResponseMessage response = await _http.PostAsJsonAsync(
-                "api/auth/logout",
-                new RefreshTokenRequest { RefreshToken = _tokens.RefreshToken },
-                ByteShelfJsonContext.Default.RefreshTokenRequest,
-                cancellationToken).ConfigureAwait(false);
+            await _renewLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                IAsyncDisposable? storeLock = _store == null ? null : await _store.LockAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    SessionTokens? current = _store == null
+                        ? _tokens
+                        : await _store.LoadAsync(cancellationToken).ConfigureAwait(false);
 
-            await ApiErrors.ThrowIfFailedAsync(response, cancellationToken).ConfigureAwait(false);
+                    // A store that keeps nothing has been signed out already, by another process.
+                    if (current != null)
+                    {
+                        using HttpResponseMessage response = await _http.PostAsJsonAsync(
+                            "api/auth/logout",
+                            new RefreshTokenRequest { RefreshToken = current.RefreshToken },
+                            ByteShelfJsonContext.Default.RefreshTokenRequest,
+                            cancellationToken).ConfigureAwait(false);
+
+                        await ApiErrors.ThrowIfFailedAsync(response, cancellationToken).ConfigureAwait(false);
+
+                        if (_store != null)
+                        {
+                            await _store.ClearAsync(CancellationToken.None).ConfigureAwait(false);
+                        }
+                    }
+
+                    _ended = true;
+                }
+                finally
+                {
+                    if (storeLock != null)
+                    {
+                        await storeLock.DisposeAsync().ConfigureAwait(false);
+                    }
+                }
+            }
+            finally
+            {
+                _renewLock.Release();
+            }
         }
 
         /// <inheritdoc />
@@ -111,6 +151,11 @@ namespace ByteShelfClient.Http
 
         internal override async Task ApplyAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            if (_ended)
+            {
+                throw NotKept();
+            }
+
             SessionTokens tokens = _tokens;
             if (IsDue(tokens))
             {
@@ -159,6 +204,11 @@ namespace ByteShelfClient.Http
             await _renewLock.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                if (_ended)
+                {
+                    throw NotKept();
+                }
+
                 IAsyncDisposable? storeLock = _store == null ? null : await _store.LockAsync(cancellationToken).ConfigureAwait(false);
                 try
                 {

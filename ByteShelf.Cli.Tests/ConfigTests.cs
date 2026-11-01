@@ -74,6 +74,68 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
+        public void Load_KindAfterTheLoginsOtherFields_ReadsTheLogin()
+        {
+            WriteConfig("""{ "server": "https://files.test/", "login": { "key": "bsk_file", "kind": "key" } }""");
+
+            KeyLogin login = Assert.IsType<KeyLogin>(Store.Load()!.Login);
+
+            Assert.Equal("bsk_file", login.Key);
+        }
+
+        [Theory]
+        [InlineData("""{ "server": "https://files.test/", "login": {} }""")]
+        [InlineData("""{ "server": "https://files.test/", "login": null }""")]
+        [InlineData("""{ "server": "https://files.test/", "login": { "kind": "session", "email": "a@b.test", "tokens": null } }""")]
+        [InlineData("""{ "server": null, "login": { "kind": "key", "key": "bsk_file" } }""")]
+        [InlineData("""{ "server": "files.test", "login": { "kind": "key", "key": "bsk_file" } }""")]
+        public void Load_DamagedLogin_ThrowsUsageNamingTheFile(string json)
+        {
+            WriteConfig(json);
+
+            UsageException exception = Assert.Throws<UsageException>(() => Store.Load());
+
+            Assert.StartsWith($"{Store.FilePath} is not a byteshelf config (", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Theory]
+        [InlineData("""{ "server": "https://files.test/", "login": {} }""")]
+        [InlineData("""{ "server": "https://files.test/", "login": null }""")]
+        [InlineData("""{ "server": "files.test", "login": { "kind": "session", "email": "a@b.test", "tokens": { "token": "t", "expiresAt": "2026-01-01T00:00:00Z", "refreshToken": "r" } } }""")]
+        public async Task DamagedLogin_CommandsFailAsMisuseAndLogoutRemovesIt(string json)
+        {
+            WriteConfig(json);
+            using ConfiguredClientSource clients = Clients(NoVariables);
+
+            await Assert.ThrowsAsync<UsageException>(() => clients.OpenAsync(CancellationToken.None));
+            await clients.SignOutAsync(CancellationToken.None);
+
+            Assert.False(File.Exists(Store.FilePath));
+            Assert.Empty(_servers.Requests);
+        }
+
+        [Fact]
+        public async Task Open_SameSessionAfterAnotherProcessRenewedIt_AnswersTheSameClient()
+        {
+            Store.Save(SessionConfig("https://files.test/", "t", "r"));
+            using ConfiguredClientSource clients = Clients(NoVariables);
+            IByteShelfClient first = await clients.OpenAsync(CancellationToken.None);
+
+            Store.Save(SessionConfig("https://files.test/", "renewed", "r2"));
+            IByteShelfClient second = await clients.OpenAsync(CancellationToken.None);
+
+            Assert.Same(first, second);
+        }
+
+        [Fact]
+        public void CreateHttp_HasNoTimeoutOfItsOwn()
+        {
+            using ConfiguredClientSource clients = Clients(NoVariables);
+
+            Assert.Equal(Timeout.InfiniteTimeSpan, clients.CreateHttp("https://files.test/").Timeout);
+        }
+
+        [Fact]
         public async Task Lock_HeldByOne_MakesTheNextWait()
         {
             IAsyncDisposable first = await Store.LockAsync(CancellationToken.None);
@@ -251,6 +313,12 @@ namespace ByteShelf.Cli.Tests
         {
             SessionTokens tokens = new SessionTokens { Token = token, ExpiresAt = DateTimeOffset.UtcNow.AddHours(1), RefreshToken = refreshToken };
             return new CliConfig { Server = server, Login = new SessionLogin { Email = "a@b.test", Tokens = tokens } };
+        }
+
+        private void WriteConfig(string json)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Store.FilePath)!);
+            File.WriteAllText(Store.FilePath, json);
         }
 
         private ConfiguredClientSource Clients(Func<string, string?> variables)

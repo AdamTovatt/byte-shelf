@@ -28,12 +28,16 @@ function useInvalidateAccess() {
 
 /**
  * Every grant on each of `shelves`, by shelf: what a user's row on the users page reads. One request a
- * shelf, the same queries each shelf's settings use, so the event stream keeps both fresh.
+ * shelf, the same queries each shelf's settings use, so the event stream keeps both fresh. `error` is
+ * the first shelf's whose grants could not be loaded, which then read as none.
  */
 export function useGrantsByShelf(shelves: string[]) {
   return useQueries({
     queries: shelves.map((shelf) => ({ queryKey: queryKeys.shelfAccess.grants(shelf), queryFn: () => fetchGrants(shelf) })),
-    combine: (results) => new Map(shelves.map((shelf, index) => [shelf, results[index].data ?? []])),
+    combine: (results) => ({
+      byShelf: new Map(shelves.map((shelf, index) => [shelf, results[index].data ?? []])),
+      error: results.find((result) => result.error)?.error ?? null,
+    }),
   });
 }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -7,24 +7,16 @@ import { Notice } from '../components/Notice';
 import { AuthLayout } from '../components/layout/AuthLayout';
 import type { AuthResponse } from '../services/authTypes';
 import { AUTH_PATHS } from '../services/authPaths';
+import { ROUTES } from '../lib/routes';
 
+/** Signing in; App's route sends a signed-in user home instead. */
 export function LoginPage() {
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const { login, isAuthenticated } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      navigate('/', { replace: true });
-    }
-  }, [isAuthenticated, navigate]);
-
-  if (isAuthenticated) {
-    return null;
-  }
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
@@ -58,7 +50,7 @@ export function LoginPage() {
 
       const data: AuthResponse = await response.json();
       login(data);
-      navigate('/');
+      navigate(ROUTES.HOME);
     } catch {
       setError('Could not reach the server');
       setIsLoading(false);
@@ -110,7 +102,7 @@ export function LoginPage() {
         </Button>
 
         <Link
-          to="/forgot-password"
+          to={ROUTES.FORGOT_PASSWORD}
           className="text-body-md text-muted hover:text-fg hover:underline text-center"
         >
           Forgot your password?

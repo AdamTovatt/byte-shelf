@@ -50,7 +50,7 @@ namespace ByteShelf.Server.Tests.Client
             await UploadTextAsync("/a.txt", "a");
             await Shelf.DeleteFileAsync("/a.txt");
 
-            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => Shelf.CreateDownloadLinkAsync("/a.txt"));
+            ByteShelfException exception = await RefusalOf(Shelf.CreateDownloadLinkAsync("/a.txt"));
 
             Assert.Equal(ErrorCodes.NotFound, exception.Code);
         }

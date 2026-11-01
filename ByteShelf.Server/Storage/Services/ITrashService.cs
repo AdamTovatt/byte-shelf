@@ -36,8 +36,10 @@ namespace ByteShelf.Server.Storage.Services
 
         /// <summary>
         /// Removes everything in the shelf's trash for good, whatever is left of its window, and every
-        /// object only it pointed at. A deletion made while it runs is taken too. Answers how many files
-        /// were purged.
+        /// object only it pointed at. First, in one transaction, it puts all of it past its window, so none
+        /// of it can be restored from then on; then it purges in batches, and whatever a crash or
+        /// cancellation leaves is purged by maintenance's next pass. A deletion made while it purges is
+        /// kept. Answers how many files were purged.
         /// </summary>
         Task<int> EmptyAsync(Shelf shelf, CancellationToken cancellationToken);
     }

@@ -301,43 +301,6 @@
   transition: all 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
 }
 
-/* A `hideDividersBesideLitRows` CardList's divider hides beside a lit row — hovered, or holding a
-   selected `ListButton` (`data-active`) — so no line runs along the row's edge-to-edge fill. The lit
-   row is the list's child itself (a bare `ListButton`) or sits inside it (a drag wrapper); the
-   selectors are spelled out separately because one `:has()` may not sit inside another, and a browser
-   drops a rule that tries. Hover only where there is one, like every other hover here
-   (`hoverOnlyWhenSupported` in the preset). */
-[data-active] + .card-list-lit-row-divider,
-:has([data-active]) + .card-list-lit-row-divider,
-.card-list-lit-row-divider:has(+ [data-active]),
-.card-list-lit-row-divider:has(+ * [data-active]) {
-  visibility: hidden;
-}
-
-@media (hover: hover) {
-  .card-list-lit-row-divider:has(+ :hover),
-  :hover + .card-list-lit-row-divider {
-    visibility: hidden;
-  }
-}
-
-/* The divider takes no height of its own: it draws over the top pixel of the row below it. So when it
-   hides, the two rows beside it meet with no strip of the card between them, and hiding it moves
-   nothing. Raised above the row, whose own stacking context would otherwise paint over it. */
-.card-list-lit-row-divider {
-  position: relative;
-  z-index: 1;
-  margin-bottom: -1px;
-}
-
-/* A divider with no row on one side: a list child that renders nothing leaves its divider first,
-   last, or beside another divider. Taken out of the flow, so it leaves no gap either. */
-.card-list-lit-row-divider:first-child,
-.card-list-lit-row-divider:last-child,
-.card-list-lit-row-divider + .card-list-lit-row-divider {
-  display: none;
-}
-
 /* Hide the native scrollbar of anything that scrolls. A general utility applied by class name, and
    shared with the scroll containers further down that paint their own overlay track in its place. */
 .scrollbar-hidden,

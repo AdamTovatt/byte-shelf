@@ -1,5 +1,5 @@
 import { useEffect, useRef, type FormEvent, type ReactNode } from 'react';
-import { ActionRow, Button, Modal } from '../ui';
+import { ActionRow, Button, FormError, Modal } from '../ui';
 
 export interface FormDialogProps {
   open: boolean;
@@ -46,7 +46,7 @@ export function FormDialog({
     <Modal isOpen={open} onClose={onClose} title={title} className="max-w-md">
       <form ref={formRef} onSubmit={handleSubmit} className="space-y-4">
         {children}
-        {error && <p role="alert" className="text-body-md text-danger-11">{error}</p>}
+        <FormError message={error} />
         <ActionRow className="pt-1">
           <Button type="button" variant="secondary" onClick={onClose}>
             {onSubmit ? 'Cancel' : 'Close'}

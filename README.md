@@ -62,7 +62,9 @@ Vite dev server and forwards to it. A published server serves the UI's productio
 remote-claude's dev server button runs the same thing from `remote-claude.json`, so it needs
 `launchSettings.json` copied first too.
 
-The CLI runs from source the same way, against a running server:
+The CLI runs from source the same way, against a running server. With the `dotnet run` above the
+server is at `http://localhost:5000/` and the password is `change-me`; with `launchSettings.json`
+copied it is at `http://localhost:5190/` and the password is `changemenow`:
 
 ```bash
 dotnet run --project ByteShelf.Cli -- login http://localhost:5000/ --email admin@example.com
@@ -83,7 +85,7 @@ dotnet run --project ByteShelf.Cli -- shelves
 
 ## Documentation
 
-- [DEPLOYMENT.md](DEPLOYMENT.md): environment variables, reverse proxy, replicas, backups.
+- [DEPLOYMENT.md](DEPLOYMENT.md): installing, environment variables, reverse proxy, replicas, backups.
 - Server domains: [Storage](ByteShelf.Server/Storage/Storage.md), [Shelves](ByteShelf.Server/Storage/Shelves.md),
   [Access](ByteShelf.Server/Access/Access.md), [Change log](ByteShelf.Server/ChangeLog/ChangeLog.md),
   [Users](ByteShelf.Server/Users/Users.md),
@@ -92,7 +94,8 @@ dotnet run --project ByteShelf.Cli -- shelves
   [Replication](ByteShelf.Server/Replication/Replication.md), [Backup](ByteShelf.Server/Backup/Backup.md),
   [Mcp](ByteShelf.Server/Mcp/Mcp.md).
 - [ByteShelfCommon](ByteShelfCommon/README.md), [ByteShelfClient](ByteShelfClient/README.md),
-  [the CLI and MCP server](ByteShelf.Cli/README.md), [the web UI](byteshelf.client/README.md).
+  [the CLI and MCP server](ByteShelf.Cli/README.md), [the shared operations and MCP tools](ByteShelf.Tools/README.md),
+  [the web UI](byteshelf.client/README.md).
 
 ## License
 

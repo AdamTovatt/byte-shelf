@@ -24,10 +24,10 @@ namespace ByteShelfCommon
         /// <summary>The root directory of a shelf.</summary>
         public const string Root = "/";
 
-        /// <summary>The longest name a file or directory can have, in characters.</summary>
+        /// <summary>The longest name a file or directory can have, in characters once in form C, as it is stored.</summary>
         public const int MaxNameLength = 255;
 
-        /// <summary>The longest path, in characters.</summary>
+        /// <summary>The longest path, in characters once in form C, as it is stored.</summary>
         public const int MaxPathLength = 4096;
 
         /// <summary>
@@ -56,12 +56,8 @@ namespace ByteShelfCommon
                 return false;
             }
 
-            if (path.Length > MaxPathLength)
-            {
-                error = $"A path can be at most {MaxPathLength} characters long.";
-                return false;
-            }
-
+            // The lengths are checked on what is stored, form C, not on what was given: a path typed
+            // decomposed (as macOS writes names) is longer than the path it names.
             string trimmed = path;
             if (trimmed.Length > 1 && trimmed[^1] == Separator && trimmed[^2] != Separator)
             {
@@ -83,20 +79,13 @@ namespace ByteShelfCommon
             string[] names = trimmed.Split(Separator);
             for (int i = 0; i < names.Length; i++)
             {
-                if (!TryValidateName(names[i], out error))
+                if (!TryComposeName(names[i], out string? composed, out error))
                 {
                     error = $"The path '{path}' is not allowed: {error}";
                     return false;
                 }
 
-                // Form C lengthens a few characters (U+0958 becomes two), so the limits are checked on
-                // what is stored as well: a longer stored name could not be named again.
-                names[i] = names[i].Normalize(NormalizationForm.FormC);
-                if (names[i].Length > MaxNameLength)
-                {
-                    error = $"The path '{path}' is not allowed: a name can be at most {MaxNameLength} characters long.";
-                    return false;
-                }
+                names[i] = composed;
             }
 
             string result = Root + string.Join(Separator, names);
@@ -113,12 +102,19 @@ namespace ByteShelfCommon
 
         /// <summary>
         /// Whether <paramref name="name"/> can name a file or directory: not empty, not <c>.</c> or
-        /// <c>..</c>, at most <see cref="MaxNameLength"/> characters, well-formed UTF-16, and free of
-        /// separators, backslashes, control characters, and invisible formatting characters such as
-        /// zero-width spaces and direction overrides, which would let two names look alike.
+        /// <c>..</c>, at most <see cref="MaxNameLength"/> characters in form C, well-formed UTF-16, and
+        /// free of separators, backslashes, control characters, and invisible formatting characters such
+        /// as zero-width spaces and direction overrides, which would let two names look alike.
         /// </summary>
         public static bool TryValidateName(string? name, [NotNullWhen(false)] out string? error)
         {
+            return TryComposeName(name, out _, out error);
+        }
+
+        /// <summary><paramref name="name"/> in form C, as it is stored, when it passes <see cref="TryValidateName"/>.</summary>
+        private static bool TryComposeName(string? name, [NotNullWhen(true)] out string? composed, [NotNullWhen(false)] out string? error)
+        {
+            composed = null;
             if (string.IsNullOrEmpty(name))
             {
                 error = "a name cannot be empty.";
@@ -128,12 +124,6 @@ namespace ByteShelfCommon
             if (name == "." || name == "..")
             {
                 error = "'.' and '..' are not names.";
-                return false;
-            }
-
-            if (name.Length > MaxNameLength)
-            {
-                error = $"a name can be at most {MaxNameLength} characters long.";
                 return false;
             }
 
@@ -156,6 +146,17 @@ namespace ByteShelfCommon
                 index += consumed;
             }
 
+            // Measured in form C, which is what is stored: a name typed decomposed is longer than the name
+            // it stands for, and form C lengthens a few characters (U+0958 becomes two), so a name could
+            // otherwise be stored that no request could name again.
+            string normalized = name.Normalize(NormalizationForm.FormC);
+            if (normalized.Length > MaxNameLength)
+            {
+                error = $"a name can be at most {MaxNameLength} characters long.";
+                return false;
+            }
+
+            composed = normalized;
             error = null;
             return true;
         }

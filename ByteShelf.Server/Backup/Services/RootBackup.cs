@@ -236,6 +236,8 @@ namespace ByteShelf.Server.Backup.Services
             }
         }
 
+        // Compares the paths as written, without resolving symbolic links: only an admin running the
+        // backup can name a path through one, and the worst it does is put that one zip inside the root.
         private static bool IsInside(string path, string folder)
         {
             string relative = Path.GetRelativePath(folder, path);

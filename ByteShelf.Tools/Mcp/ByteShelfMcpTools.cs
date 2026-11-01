@@ -200,7 +200,7 @@ namespace ByteShelf.Tools.Mcp
                 IShelfClient shelfClient = client.Shelf(shelf);
                 return localPath == null
                     ? await Transfers.ReadTextAsync(shelfClient, path, MaxInlineBytes, cancellationToken)
-                    : $"Saved {await Transfers.DownloadToFileAsync(shelfClient, path, Absolute(localPath), overwrite, cancellationToken)}";
+                    : TextFormat.Saved(await Transfers.DownloadToFileAsync(shelfClient, path, Absolute(localPath), overwrite, cancellationToken));
             });
         }
 
@@ -290,7 +290,7 @@ namespace ByteShelf.Tools.Mcp
             [Description("Its new path.")] string toPath,
             CancellationToken cancellationToken)
         {
-            return RunAsync(cancellationToken, async client => $"Moved to {(await Entries.MoveAsync(client.Shelf(shelf), path, toPath, cancellationToken)).Path}");
+            return RunAsync(cancellationToken, async client => TextFormat.Moved(await Entries.MoveAsync(client.Shelf(shelf), path, toPath, cancellationToken)));
         }
 
         [McpServerTool(Name = "delete", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
@@ -301,7 +301,7 @@ namespace ByteShelf.Tools.Mcp
             [Description("The file's or directory's path.")] string path,
             CancellationToken cancellationToken)
         {
-            return RunAsync(cancellationToken, async client => $"Moved to the trash: {TextFormat.TrashEntry(await Entries.DeleteAsync(client.Shelf(shelf), path, cancellationToken))}");
+            return RunAsync(cancellationToken, async client => TextFormat.Trashed(await Entries.DeleteAsync(client.Shelf(shelf), path, cancellationToken)));
         }
 
         [McpServerTool(Name = "list_trash", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -325,7 +325,7 @@ namespace ByteShelf.Tools.Mcp
             return RunAsync(cancellationToken, async client =>
             {
                 await client.Shelf(shelf).RestoreAsync(deletionId, cancellationToken);
-                return "Restored.";
+                return TextFormat.Restored;
             });
         }
 
@@ -339,7 +339,7 @@ namespace ByteShelf.Tools.Mcp
             return RunAsync(cancellationToken, async client =>
             {
                 await client.Shelf(shelf).EmptyTrashAsync(cancellationToken);
-                return "Emptied the trash.";
+                return TextFormat.EmptiedTrash;
             });
         }
 

@@ -9,6 +9,9 @@ namespace ByteShelf.Server.Users.Repositories
         /// <summary>The user whose local login is <paramref name="email"/> (case-insensitive), with its password hash.</summary>
         Task<UserCredentials?> GetCredentialsByEmailAsync(string email, IDbSession? session = null);
 
+        /// <summary>The user <paramref name="userId"/> with their local login's password hash; null without either.</summary>
+        Task<UserCredentials?> GetCredentialsByUserIdAsync(Guid userId, IDbSession? session = null);
+
         Task CreateLoginAsync(Guid userId, string provider, string providerUserId, string? credential, DateTimeOffset createdAt, IDbSession session);
 
         /// <summary>Replaces the credential on a user's login row for <paramref name="provider"/>. False when there is none.</summary>

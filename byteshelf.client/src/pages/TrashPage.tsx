@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Button, Card, EmptyState, Icon, PageLayout, Spinner, getFileIcon, iconMap } from '../ui';
 import { FormDialog } from '../components/FormDialog';
+import { LoadError } from '../components/LoadError';
 import { ShelfHeader } from '../components/ShelfHeader';
 import { useEmptyTrash, useRestoreDeletion, useTrash } from '../hooks/useShelfQueries';
 import { formatBytes, formatDate } from '../lib/format';
@@ -14,7 +15,7 @@ import type { TrashEntry } from '../services/shelfService';
 /** What was deleted from a shelf and can still be restored, newest first. */
 export function TrashPage() {
   const shelf = useParams().shelf!;
-  const { data: trash, isLoading } = useTrash(shelf);
+  const { data: trash, isLoading, error } = useTrash(shelf);
   const restore = useRestoreDeletion(shelf);
   const [emptying, setEmptying] = useState(false);
 
@@ -30,6 +31,7 @@ export function TrashPage() {
       <ShelfHeader shelf={shelf} view="trash" />
 
       {isLoading && <Spinner />}
+      <LoadError error={error} failure="Could not load the trash" />
       {trash && trash.length === 0 && (
         <EmptyState message="The trash is empty. Deleted files and folders wait here until they are deleted for good, and can be restored until then." />
       )}

@@ -1,5 +1,6 @@
 using System.Data.Common;
 using ByteShelf.Server.ChangeLog.Models;
+using ByteShelf.Server.ChangeLog.Repositories;
 using EasyReasy.Database;
 using EasyReasy.Database.Mapping;
 
@@ -7,14 +8,6 @@ namespace ByteShelf.Server.Replication.Repositories
 {
     public class ReplicationCopyRepository : RepositoryBase, IReplicationCopyRepository
     {
-        private const string SelectColumns = $@"
-            sequence,
-            entity_type AS {nameof(CopyEntity.EntityType)},
-            entity_id AS {nameof(CopyEntity.EntityId)},
-            action,
-            payload,
-            created_at AS {nameof(CopyEntity.CreatedAt)}";
-
         public ReplicationCopyRepository(DbDataSource dataSource, IDbSessionFactory sessionFactory)
             : base(dataSource, sessionFactory)
         {
@@ -32,18 +25,25 @@ namespace ByteShelf.Server.Replication.Repositories
         /// <inheritdoc />
         public async Task AddAsync(IReadOnlyList<ChangeLogEntry> entries, IDbSession session)
         {
-            // An entity copied again on a later page (it changed meanwhile) keeps only its newer state.
-            string query = @"
-                DELETE FROM replication_copy WHERE entity_type = @EntityType AND entity_id = @EntityId;
+            // An entity copied again on a later page (it changed meanwhile) keeps only its newer state, and
+            // one removed meanwhile is dropped.
+            string deleteQuery = "DELETE FROM replication_copy WHERE entity_type = @EntityType AND entity_id = @EntityId";
+            string insertQuery = @"
                 INSERT INTO replication_copy (sequence, entity_type, entity_id, action, payload, created_at)
                 VALUES (@Sequence, @EntityType, @EntityId, @Action, @Payload, @CreatedAt)";
 
             foreach (ChangeLogEntry entry in entries)
             {
                 await session.Connection.ExecuteAsync(
-                    query,
-                    new { entry.Sequence, entry.EntityType, entry.EntityId, entry.Action, entry.Payload, entry.CreatedAt },
-                    transaction: session.Transaction);
+                    deleteQuery, new { entry.EntityType, entry.EntityId }, transaction: session.Transaction);
+
+                if (entry.Payload != null)
+                {
+                    await session.Connection.ExecuteAsync(
+                        insertQuery,
+                        new { entry.Sequence, entry.EntityType, entry.EntityId, entry.Action, entry.Payload, entry.CreatedAt },
+                        transaction: session.Transaction);
+                }
             }
         }
 
@@ -53,13 +53,13 @@ namespace ByteShelf.Server.Replication.Repositories
             return await UseSessionAsync(async (dbSession) =>
             {
                 string query = $@"
-                    SELECT {SelectColumns}
+                    SELECT {ChangeLogRepository.SelectColumns}
                     FROM replication_copy
                     WHERE sequence > @{nameof(afterSequence)}
                     ORDER BY sequence
                     LIMIT @{nameof(limit)}";
 
-                IEnumerable<CopyEntity> entities = await dbSession.Connection.QueryAsync<CopyEntity>(
+                IEnumerable<ChangeLogRepository.ChangeLogEntity> entities = await dbSession.Connection.QueryAsync<ChangeLogRepository.ChangeLogEntity>(
                     query, new { afterSequence, limit }, transaction: dbSession.Transaction);
 
                 return (IReadOnlyList<ChangeLogEntry>)entities.Select(entity => entity.ToDomain()).ToList();
@@ -74,29 +74,6 @@ namespace ByteShelf.Server.Replication.Repositories
                 WHERE id NOT IN (SELECT entity_id FROM replication_copy WHERE entity_type = @{nameof(entityType)})";
 
             return (await session.Connection.QueryAsync<Guid>(query, new { entityType }, transaction: session.Transaction)).ToList();
-        }
-
-        internal class CopyEntity
-        {
-            public long Sequence { get; set; }
-            public string EntityType { get; set; } = string.Empty;
-            public Guid EntityId { get; set; }
-            public string Action { get; set; } = string.Empty;
-            public string Payload { get; set; } = string.Empty;
-            public DateTimeOffset CreatedAt { get; set; }
-
-            public ChangeLogEntry ToDomain()
-            {
-                return new ChangeLogEntry
-                {
-                    Sequence = Sequence,
-                    EntityType = EntityType,
-                    EntityId = EntityId,
-                    Action = Action,
-                    Payload = Payload,
-                    CreatedAt = CreatedAt,
-                };
-            }
         }
     }
 }

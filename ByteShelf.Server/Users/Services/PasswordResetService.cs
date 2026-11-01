@@ -25,7 +25,7 @@ namespace ByteShelf.Server.Users.Services
         private readonly IPasswordResetTokenHandler _tokenHandler;
         private readonly IPasswordHasher _passwordHasher;
         private readonly ResetLinkOutbox _outbox;
-        private readonly IRefreshTokenStore _refreshTokenStore;
+        private readonly IUserService _userService;
         private readonly IDbSessionFactory _sessionFactory;
         private readonly TimeProvider _timeProvider;
         private readonly ILogger<PasswordResetService> _logger;
@@ -36,7 +36,7 @@ namespace ByteShelf.Server.Users.Services
             IPasswordResetTokenHandler tokenHandler,
             IPasswordHasher passwordHasher,
             ResetLinkOutbox outbox,
-            IRefreshTokenStore refreshTokenStore,
+            IUserService userService,
             IDbSessionFactory sessionFactory,
             TimeProvider timeProvider,
             ILogger<PasswordResetService> logger)
@@ -46,7 +46,7 @@ namespace ByteShelf.Server.Users.Services
             _tokenHandler = tokenHandler;
             _passwordHasher = passwordHasher;
             _outbox = outbox;
-            _refreshTokenStore = refreshTokenStore;
+            _userService = userService;
             _sessionFactory = sessionFactory;
             _timeProvider = timeProvider;
             _logger = logger;
@@ -115,10 +115,11 @@ namespace ByteShelf.Server.Users.Services
                 await session.CommitAsync();
             }
 
-            // A reset means the old password may have been compromised — revoke every live
-            // session so only the holder of the new password stays logged in. Runs after the
-            // commit: the password change must not be rolled back if revocation fails.
-            int revokedFamilies = await _refreshTokenStore.InvalidateAllFamiliesForUserAsync(record.UserId.ToString("D"));
+            // A reset means the old password may have been compromised: every session ends, so only the
+            // holder of the new password stays signed in. The new credential alone already refuses their
+            // refreshes (CredentialStamp); this also drops the stored tokens. Runs after the commit: the
+            // password change must not be rolled back if this fails.
+            int revokedFamilies = await _userService.EndSessionsAsync(record.UserId);
             if (revokedFamilies > 0)
             {
                 _logger.LogInformation("Password reset revoked {Count} active session(s) for user {UserId}.", revokedFamilies, record.UserId);

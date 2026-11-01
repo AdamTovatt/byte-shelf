@@ -16,5 +16,12 @@ namespace ByteShelfClient.Http
         /// <see cref="UploadLimits.MaxChunkBytes"/>. 8 MiB by default.
         /// </summary>
         public int ChunkBytes { get; init; } = 8 * 1024 * 1024;
+
+        /// <summary>
+        /// The address download links are made absolute against, ending in <c>/</c>, for a client that
+        /// reaches the server at another address than the people the links are for, such as the server
+        /// calling itself. The client's base address when left out.
+        /// </summary>
+        public Uri? LinkBaseAddress { get; init; }
     }
 }

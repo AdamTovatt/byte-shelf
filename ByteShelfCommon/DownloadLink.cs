@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace ByteShelfCommon
 {
     /// <summary>
@@ -39,7 +41,9 @@ namespace ByteShelfCommon
 
             if (lifetime.Value < MinLifetime || lifetime.Value > MaxLifetime || lifetime.Value.Ticks % TimeSpan.TicksPerMinute != 0)
             {
-                throw new ArgumentException("A link's lifetime must be whole minutes, from 1 minute to 7 days.", nameof(lifetime));
+                throw new ArgumentException(
+                    string.Create(CultureInfo.InvariantCulture, $"A link's lifetime must be whole minutes, from {MinLifetime.TotalMinutes} minute to {MaxLifetime.TotalDays} days."),
+                    nameof(lifetime));
             }
 
             return lifetime.Value;

@@ -22,10 +22,17 @@ namespace ByteShelf.Server.Shared.Concurrency
             }
         }
 
+        /// <summary>
+        /// Called with the key whenever a caller is about to wait for a key somebody else holds or waits
+        /// for; for tests that need a race to happen in a set order.
+        /// </summary>
+        internal Action<string>? WaitingStarted { get; set; }
+
         /// <summary>Waits for the lock on <paramref name="key"/>; dispose the answer to release it.</summary>
         public async Task<IDisposable> AcquireAsync(string key, CancellationToken cancellationToken = default)
         {
             Entry entry;
+            bool contended;
             lock (_entries)
             {
                 if (!_entries.TryGetValue(key, out Entry? existing))
@@ -35,7 +42,13 @@ namespace ByteShelf.Server.Shared.Concurrency
                 }
 
                 existing.Users++;
+                contended = existing.Users > 1;
                 entry = existing;
+            }
+
+            if (contended)
+            {
+                WaitingStarted?.Invoke(key);
             }
 
             try

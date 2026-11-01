@@ -1,16 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
-using ByteShelf.Server.Access;
 using ByteShelf.Server.Access.Services;
-using ByteShelf.Server.ChangeLog;
 using ByteShelf.Server.ChangeLog.Repositories;
-using ByteShelf.Server.Email;
-using ByteShelf.Server.Jobs;
 using ByteShelf.Server.Shared.Database;
-using ByteShelf.Server.Storage;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
-using ByteShelf.Server.Users;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Services;
 using ByteShelfCommon;
@@ -59,13 +53,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
             ServiceCollection services = new ServiceCollection();
             services.AddSingleton<TimeProvider>(Clock);
             services.AddLogging(builder => builder.SetMinimumLevel(LogLevel.Warning));
-            services.AddDatabaseServices(TestRoot.Root);
-            services.AddJobServices();
-            services.AddChangeLogServices();
-            services.AddStorageServices();
-            services.AddAccessServices();
-            services.AddEmailServices();
-            services.AddUserServices(TestRoot.Root, AppBaseUrl);
+            Program.AddDomainServices(services, TestRoot.Root, AppBaseUrl);
             ConfigureServices(services);
 
             // Not ValidateOnBuild: the auth registrations need routing, which only the web host adds.
@@ -114,7 +102,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
 
         protected static string Sha256Of(string text)
         {
-            return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+            return TestHashes.Sha256Of(text);
         }
     }
 }

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using ByteShelf.Server.Shared.StaticFiles;
 using ByteShelf.Server.Version.Models;
 
 namespace ByteShelf.Server.Version.Services
@@ -29,8 +30,8 @@ namespace ByteShelf.Server.Version.Services
             using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
             hash.AppendData(Encoding.UTF8.GetBytes(typeof(VersionService).Assembly.ManifestModule.ModuleVersionId.ToString("N")));
 
-            string? indexPath = string.IsNullOrEmpty(webRootPath) ? null : Path.Combine(webRootPath, "index.html");
-            if (indexPath != null && File.Exists(indexPath))
+            string? indexPath = StaticFileCachePolicy.FindIndexHtml(webRootPath);
+            if (indexPath != null)
             {
                 hash.AppendData(File.ReadAllBytes(indexPath));
             }

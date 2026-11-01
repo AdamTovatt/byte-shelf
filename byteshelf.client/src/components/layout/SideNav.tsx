@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useShelves } from '../../hooks/useShelfQueries';
 import { useCurrentUser, useIsAdmin } from '../../hooks/useUserQueries';
 import { shelfRoute } from '../../lib/shelfPaths';
+import { ROUTES } from '../../lib/routes';
 import {
   Avatar,
   Button,
@@ -70,7 +71,7 @@ export function SideNav() {
           {!isCollapsed && (
             <Button
               variant="text"
-              onClick={() => navigate('/')}
+              onClick={() => navigate(ROUTES.HOME)}
               className="!gap-2 text-heading-sm text-fg hover:opacity-80 transition-opacity"
               icon={<Logo className="h-6 w-6 rounded-md" />}
             >
@@ -90,7 +91,7 @@ export function SideNav() {
       </SidebarHeader>
 
       <SidebarSection scrollable padding="sm" className="space-y-1">
-        <SideNavItem label="Shelves" icon={iconMap.shelf} href="/" isActive={pathname === '/'} isCollapsed={isCollapsed} depth={0} />
+        <SideNavItem label="Shelves" icon={iconMap.shelf} href={ROUTES.HOME} isActive={pathname === ROUTES.HOME} isCollapsed={isCollapsed} depth={0} />
 
         {!isCollapsed && shelves?.map((shelf) => (
           <SideNavItem
@@ -105,12 +106,12 @@ export function SideNav() {
 
         {isAdmin && (
           <>
-            <SideNavItem label="Users" icon={iconMap.users} href="/users" isActive={isWithin(pathname, '/users')} isCollapsed={isCollapsed} depth={0} />
-            <SideNavItem label="Replication" icon={iconMap.replication} href="/replication" isActive={isWithin(pathname, '/replication')} isCollapsed={isCollapsed} depth={0} />
+            <SideNavItem label="Users" icon={iconMap.users} href={ROUTES.USERS} isActive={isWithin(pathname, ROUTES.USERS)} isCollapsed={isCollapsed} depth={0} />
+            <SideNavItem label="Replication" icon={iconMap.replication} href={ROUTES.REPLICATION} isActive={isWithin(pathname, ROUTES.REPLICATION)} isCollapsed={isCollapsed} depth={0} />
           </>
         )}
 
-        <SideNavItem label="Settings" icon={iconMap.settings} href="/settings" isActive={isWithin(pathname, '/settings')} isCollapsed={isCollapsed} depth={0} />
+        <SideNavItem label="Settings" icon={iconMap.settings} href={ROUTES.SETTINGS} isActive={isWithin(pathname, ROUTES.SETTINGS)} isCollapsed={isCollapsed} depth={0} />
       </SidebarSection>
 
       <SidebarFooter className="px-2 pb-2 pt-2">

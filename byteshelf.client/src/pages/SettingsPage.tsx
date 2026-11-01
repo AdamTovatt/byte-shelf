@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from 'react';
 import toast from 'react-hot-toast';
-import { Button, ButtonGroup, Icon, PageLayout, getErrorMessage, iconMap, useTheme } from '../ui';
+import { Button, ButtonGroup, Icon, PageLayout, iconMap, useTheme } from '../ui';
 import { PasswordInput } from '../components/PasswordInput';
 import { SectionTitle } from '../components/SectionTitle';
 import { useChangeOwnPassword } from '../hooks/useUserQueries';
-import { validatePassword } from '../lib/passwordValidation';
+import { useSubmit } from '../hooks/useSubmit';
+import { validateNewPassword } from '../lib/passwordValidation';
 
 /** The signed-in user's own settings: the theme and their password. Signing out is in the account menu. */
 export function SettingsPage() {
@@ -38,33 +39,23 @@ function ChangePasswordSection() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState<string | undefined>(undefined);
+  const { error, setError, submit } = useSubmit('Could not update the password');
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
 
-    const validationError = validatePassword(newPassword);
+    const validationError = validateNewPassword(newPassword, confirmPassword);
     if (validationError) {
       setError(validationError);
       return;
     }
 
-    if (newPassword !== confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-
-    setError(undefined);
-
-    try {
-      await changePassword.mutateAsync({ currentPassword, newPassword });
+    await submit(() => changePassword.mutateAsync({ currentPassword, newPassword }), () => {
       toast.success('Password updated');
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-    } catch (caught) {
-      setError(getErrorMessage(caught, 'Could not update the password'));
-    }
+    });
   };
 
   return (

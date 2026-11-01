@@ -19,3 +19,8 @@ export function installFakeWebLocks(): Map<string, number> {
   Object.defineProperty(navigator, 'locks', { value: locks, configurable: true });
   return requests;
 }
+
+/** Takes the Web Locks API away again, as a browser does outside a secure context (plain HTTP). */
+export function removeWebLocks(): void {
+  Object.defineProperty(navigator, 'locks', { value: undefined, configurable: true });
+}

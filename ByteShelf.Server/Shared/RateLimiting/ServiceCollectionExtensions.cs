@@ -1,4 +1,5 @@
 using System.Threading.RateLimiting;
+using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Json;
 using ByteShelfCommon;
 using Microsoft.AspNetCore.RateLimiting;
@@ -7,20 +8,24 @@ namespace ByteShelf.Server.Shared.RateLimiting
 {
     public static class ServiceCollectionExtensions
     {
-        /// <summary>Requests per caller per minute across the whole app.</summary>
-        private const int GlobalPermitsPerMinute = 1200;
-
         public static IServiceCollection AddRateLimitingServices(this IServiceCollection services)
         {
             services.AddRateLimiter(options =>
             {
                 // Every limiter is partitioned per caller (authenticated user, IP fallback): an
                 // unpartitioned one would be a single bucket a single caller could empty for everyone.
-                AddPartitionedPolicy(options, RateLimitPolicies.Strict, permitsPerMinute: 60);
-                AddPartitionedPolicy(options, RateLimitPolicies.VeryStrict, permitsPerMinute: 10);
+                AddPartitionedPolicy(options, RateLimitPolicies.Strict, RateLimitPolicies.StrictPermitsPerMinute);
+                AddPartitionedPolicy(options, RateLimitPolicies.VeryStrict, RateLimitPolicies.VeryStrictPermitsPerMinute);
 
-                options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
-                    PerMinute(httpContext, GlobalPermitsPerMinute));
+                // Signing in checks a password hash, which is slow on purpose, and the progressive delay
+                // starts over with every success; so sign-in and renewal share a strict bucket of their own.
+                options.GlobalLimiter = PartitionedRateLimiter.CreateChained(
+                    PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+                        PerMinute(httpContext, RateLimitPolicies.GlobalPermitsPerMinute)),
+                    PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+                        AuthSetup.IsSignIn(httpContext)
+                            ? PerMinute(httpContext, RateLimitPolicies.StrictPermitsPerMinute)
+                            : RateLimitPartition.GetNoLimiter(string.Empty)));
 
                 options.OnRejected = async (context, cancellationToken) =>
                 {

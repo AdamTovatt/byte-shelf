@@ -24,6 +24,42 @@ namespace ByteShelfClient.InMemory
 
         public DateTimeOffset Now => TimeProvider.GetUtcNow();
 
+        /// <summary>
+        /// Runs <paramref name="operation"/> under <see cref="Gate"/> and answers the task an HTTP call
+        /// would: a refusal and a cancellation come through it rather than being thrown from the call.
+        /// </summary>
+        public Task<T> RunAsync<T>(Func<T> operation, CancellationToken cancellationToken)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return Task.FromCanceled<T>(cancellationToken);
+            }
+
+            try
+            {
+                lock (Gate)
+                {
+                    return Task.FromResult(operation());
+                }
+            }
+            catch (Exception exception)
+            {
+                return Task.FromException<T>(exception);
+            }
+        }
+
+        /// <inheritdoc cref="RunAsync{T}(Func{T}, CancellationToken)"/>
+        public Task RunAsync(Action operation, CancellationToken cancellationToken)
+        {
+            return RunAsync(
+                () =>
+                {
+                    operation();
+                    return true;
+                },
+                cancellationToken);
+        }
+
         /// <summary>The shelf called <paramref name="name"/>, with anything past its restore window purged.</summary>
         public InMemoryShelf GetShelf(string name)
         {

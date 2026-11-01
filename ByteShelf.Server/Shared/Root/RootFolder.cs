@@ -57,7 +57,9 @@ namespace ByteShelf.Server.Shared.Root
         }
 
         /// <summary>
-        /// Opens the root at <paramref name="path"/>, creating it and its folders when they are missing.
+        /// Opens the root at <paramref name="path"/>, creating it and its folders when they are missing. The
+        /// root is made reachable by its owner only, an existing one too, so the database, the stored
+        /// objects and uploads in progress are private whatever the umask gave them.
         /// </summary>
         public static RootFolder Open(string path)
         {
@@ -65,6 +67,7 @@ namespace ByteShelf.Server.Shared.Root
             RootFolder root = new RootFolder(fullPath);
 
             Directory.CreateDirectory(root.Path);
+            OwnerOnly.RestrictDirectory(root.Path);
             Directory.CreateDirectory(root.ObjectsPath);
             Directory.CreateDirectory(root.StagingPath);
             Directory.CreateDirectory(root.KeysPath);

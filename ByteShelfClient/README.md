@@ -39,14 +39,18 @@ The server needs a file's size before it accepts any bytes. A stream that can se
 position to its end; any other stream is first copied to a temporary file. Files up to
 `ByteShelfHttpClientOptions.SingleRequestMaxBytes` (32 MiB) go in one request, larger ones as a
 resumable upload in chunks of `ChunkBytes` (8 MiB). A file with a description always goes as a
-resumable upload, since a single request has no body but the contents to carry it. A failed or
-cancelled chunk aborts the upload, so its reservation against the quota is released at once; the
-abort gets 10 seconds, and the failure it follows is the one thrown.
+resumable upload, since a single request has no body but the contents to carry it. A chunk
+interrupted on the way (the connection broke, the `HttpClient`'s timeout ran out, the server failed
+with a 5xx, or it holds a different count than the chunk assumed) is sent on from the offset the
+server reports, up to three times in a row. Any other failure, or a cancellation, aborts the
+upload, so its reservation against the quota is released at once; the abort gets 10 seconds, and
+the failure it follows is the one thrown. `HttpClient`'s default timeout of 100 seconds applies to
+each request; a program that sends large chunks over a slow line can raise it.
 
 ## Errors
 
-A path, content type, description, search, tree query or link lifetime the rules in ByteShelfCommon
-refuse throws `ArgumentException` before anything is sent. Anything the server refuses throws
+A shelf name, path, content type, description, search, tree query or link lifetime the rules in
+ByteShelfCommon refuse throws `ArgumentException` before anything is sent. Anything the server refuses throws
 `ByteShelfException`, whose `Code` is one of `ErrorCodes`: `not_found`, `conflict`,
 `permission_denied`, `quota_exceeded` and so on. A request that
 never reached the server throws what `HttpClient` throws.
@@ -64,8 +68,10 @@ time. Dispose a session when done with it; the `HttpClient` stays the caller's.
 `UserSession.Resume(http, tokens)` picks up kept `Tokens`, using the access token while it works.
 Processes that share one session open it with `UserSession.OpenSharedAsync(http, store)` instead:
 the `ISharedSessionStore` is locked for every renewal, which first takes up tokens another process
-renewed to and is then saved there, so no two renew with the same refresh token. The `byteshelf`
-CLI keeps its session that way, in its config file.
+renewed to and is then saved there, so no two renew with the same refresh token. Signing a shared
+session out also happens with the store locked, with the tokens it keeps then, and clears it. The
+`byteshelf` CLI keeps its session that way, in its config file. Once signed out, a session's
+requests fail with `unauthenticated` without being sent.
 
 ## Downloads
 
@@ -76,14 +82,18 @@ they do not match the file's SHA-256, so a file read whole is the file that was 
 
 `CreateDownloadLinkAsync` makes a link to one file that anyone holding it can open without signing
 in, for a day unless a lifetime in whole minutes up to 7 days is given. Making one is a read, so any
-key may. The HTTP client answers it absolute, against the `HttpClient`'s base address; the in-memory
-client's links name the file under the reserved `byteshelf.invalid` domain, which nothing serves.
+key may. The HTTP client answers it absolute, against the `HttpClient`'s base address, or against
+`ByteShelfHttpClientOptions.LinkBaseAddress` for a client that reaches the server at another address
+than the people the links are for. The in-memory client's links name the file under the reserved
+`byteshelf.invalid` domain, which nothing serves.
 
 ## In tests
 
 `InMemoryByteShelfClient` keeps everything in memory and follows the server's rules for paths,
 names, conflicts, quotas, the trash and users. It acts as a signed-in admin and does not model
-access, so nothing is refused for lack of permission. The admin is `CurrentUser`; pass `email` and
+access, so nothing is refused for lack of permission. As over HTTP, a refusal or a cancellation
+comes through the returned task; only an argument the rules refuse may throw from the call itself.
+The admin is `CurrentUser`; pass `email` and
 `password` to choose who it is (a test of `ChangePasswordAsync` needs the password), a
 `TimeProvider` to control timestamps and when the trash is purged, and `restoreWindow` to change
 the 30 days.

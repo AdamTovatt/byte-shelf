@@ -1,4 +1,4 @@
-using ByteShelf.Server.Replication.Repositories;
+using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared.Errors;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -12,11 +12,11 @@ namespace ByteShelf.Server.Replication.Controllers
     /// </summary>
     public sealed class ReplicaReadOnlyFilter : IAsyncActionFilter
     {
-        private readonly IReplicationSourceRepository _sourceRepository;
+        private readonly ReplicationState _replicationState;
 
-        public ReplicaReadOnlyFilter(IReplicationSourceRepository sourceRepository)
+        public ReplicaReadOnlyFilter(ReplicationState replicationState)
         {
-            _sourceRepository = sourceRepository;
+            _replicationState = replicationState;
         }
 
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
@@ -25,7 +25,7 @@ namespace ByteShelf.Server.Replication.Controllers
             bool reads = HttpMethods.IsGet(method) || HttpMethods.IsHead(method);
             bool allowed = context.ActionDescriptor.EndpointMetadata.OfType<AllowedOnReplicaAttribute>().Any();
 
-            if (!reads && !allowed && await _sourceRepository.GetAsync() != null)
+            if (!reads && !allowed && !await _replicationState.AllowsWritesAsync())
             {
                 throw new ReadOnlyReplicaException();
             }

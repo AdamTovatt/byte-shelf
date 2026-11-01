@@ -33,6 +33,20 @@ namespace ByteShelf.Server.Users.Repositories
             INSERT INTO user_login (id, user_id, provider, provider_user_id, credential, created_at)
             VALUES (@Id, @UserId, @Provider, @ProviderUserId, @Credential, @CreatedAt)";
 
+        /// <summary>A user with their local login's password hash; callers add the condition naming whose.</summary>
+        private const string SelectCredentials = $@"
+            SELECT
+                u.id,
+                u.email,
+                u.display_name AS {nameof(CredentialsEntity.DisplayName)},
+                u.roles AS {nameof(CredentialsEntity.RolesJson)},
+                u.created_at AS {nameof(CredentialsEntity.CreatedAt)},
+                u.updated_at AS {nameof(CredentialsEntity.UpdatedAt)},
+                ul.credential AS {nameof(CredentialsEntity.PasswordHash)}
+            FROM user_login ul
+            JOIN user_account u ON u.id = ul.user_id
+            WHERE ul.provider = '{LocalProvider}'";
+
         private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict(InsertSql);
 
         private readonly IChangeLogRepository _changeLog;
@@ -48,21 +62,24 @@ namespace ByteShelf.Server.Users.Repositories
         {
             return await UseSessionAsync(async (dbSession) =>
             {
-                string query = $@"
-                    SELECT
-                        u.id,
-                        u.email,
-                        u.display_name AS {nameof(CredentialsEntity.DisplayName)},
-                        u.roles AS {nameof(CredentialsEntity.RolesJson)},
-                        u.created_at AS {nameof(CredentialsEntity.CreatedAt)},
-                        u.updated_at AS {nameof(CredentialsEntity.UpdatedAt)},
-                        ul.credential AS {nameof(CredentialsEntity.PasswordHash)}
-                    FROM user_login ul
-                    JOIN user_account u ON u.id = ul.user_id
-                    WHERE ul.provider = '{LocalProvider}' AND LOWER(ul.provider_user_id) = LOWER(@{nameof(email)})";
+                string query = $"{SelectCredentials} AND LOWER(ul.provider_user_id) = LOWER(@{nameof(email)})";
 
                 CredentialsEntity? entity = await dbSession.Connection.QuerySingleOrDefaultAsync<CredentialsEntity>(
                     query, new { email }, transaction: dbSession.Transaction);
+
+                return entity?.ToDomain();
+            }, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<UserCredentials?> GetCredentialsByUserIdAsync(Guid userId, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string query = $"{SelectCredentials} AND ul.user_id = @{nameof(userId)}";
+
+                CredentialsEntity? entity = await dbSession.Connection.QuerySingleOrDefaultAsync<CredentialsEntity>(
+                    query, new { userId }, transaction: dbSession.Transaction);
 
                 return entity?.ToDomain();
             }, session);

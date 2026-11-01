@@ -95,7 +95,7 @@ namespace ByteShelf.Cli.Tests
         {
             CliRun run = await RunAsync(new[] { "put", "-", "docs:/notes/" }, input: "text");
 
-            Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.Equal((CliApp.Misused, "Standard input has no file name; end the path with one."), (run.ExitCode, run.Error));
             Assert.Empty((await Docs.ListAsync()).Files);
         }
 
@@ -107,7 +107,7 @@ namespace ByteShelf.Cli.Tests
 
             CliRun run = await RunAsync("get", "docs:/a.txt", _work.File("a.txt"));
 
-            Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.Equal((CliApp.Misused, $"{_work.File("a.txt")} exists already; ask to overwrite it."), (run.ExitCode, run.Error));
             Assert.Equal("local", await File.ReadAllTextAsync(_work.File("a.txt")));
         }
 
@@ -284,6 +284,7 @@ namespace ByteShelf.Cli.Tests
             CliRun run = await RunAsync("put", _work.File("link"), "docs");
 
             Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.Equal($"{_work.File("link")} is a symbolic link, which is never followed; give the folder it points at.", run.Error);
             Assert.Empty((await Docs.ListAsync()).Directories);
         }
 
@@ -294,7 +295,8 @@ namespace ByteShelf.Cli.Tests
 
             CliRun run = await RunAsync("put", _work.File("photos"), "docs:/", "--description", "Holiday");
 
-            Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.Equal((CliApp.Misused, "--type and --description are for one file, not a folder."), (run.ExitCode, run.Error));
+            Assert.Empty((await Docs.ListAsync()).Directories);
         }
 
         [Fact]
@@ -314,7 +316,7 @@ namespace ByteShelf.Cli.Tests
 
             CliRun run = await RunAsync("get", "docs:/r", "-");
 
-            Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.Equal((CliApp.Misused, "'docs:/r' is a directory; save it to a local folder, not to stdout."), (run.ExitCode, run.Error));
         }
 
         [Fact]
@@ -359,7 +361,8 @@ namespace ByteShelf.Cli.Tests
 
             CliRun run = await RunAsync("put", _work.File("photos"), "docs:/", "--type", "image/png");
 
-            Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.Equal((CliApp.Misused, "--type and --description are for one file, not a folder."), (run.ExitCode, run.Error));
+            Assert.Empty((await Docs.ListAsync()).Directories);
         }
 
         [Fact]
@@ -476,7 +479,7 @@ namespace ByteShelf.Cli.Tests
 
             CliRun run = await RunAsync(args.ToArray());
 
-            Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.Equal((CliApp.Misused, "Give the description's <text>, or --clear to remove it, one of them."), (run.ExitCode, run.Error));
             Assert.Equal("Kept", (await Docs.GetFileAsync("/a.txt")).Description);
         }
 
@@ -511,7 +514,7 @@ namespace ByteShelf.Cli.Tests
 
             CliRun run = await RunAsync("share", "docs:/a.txt", "--expires", "8d");
 
-            Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.Equal((CliApp.Misused, "'8d' is not how long a link may work: from 1 minute to 7 days."), (run.ExitCode, run.Error));
         }
 
         [Fact]
@@ -546,6 +549,8 @@ namespace ByteShelf.Cli.Tests
             CliRun run = await RunAsync("find", "docs", "--created-from", "yesterday");
 
             Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.StartsWith("--created-from takes a date or time such as ", run.Error, StringComparison.Ordinal);
+            Assert.EndsWith(", not 'yesterday'.", run.Error, StringComparison.Ordinal);
         }
 
         [Fact]

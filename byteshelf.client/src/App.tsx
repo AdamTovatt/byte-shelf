@@ -15,6 +15,7 @@ import { NewVersionBanner } from './components/NewVersionBanner';
 import { AppShell } from './components/layout/AppShell';
 import { useInvalidationStream } from './hooks/useInvalidationStream';
 import { SHELF_ROUTE_PATTERNS } from './lib/shelfPaths';
+import { ROUTES } from './lib/routes';
 import { useCurrentUser, useIsAdmin } from './hooks/useUserQueries';
 
 function ProtectedRoute() {
@@ -25,7 +26,7 @@ function ProtectedRoute() {
   useInvalidationStream(isAuthenticated);
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={ROUTES.LOGIN} replace />;
   }
 
   return (
@@ -40,7 +41,7 @@ function AdminRoute() {
   const { isLoading } = useCurrentUser();
   const isAdmin = useIsAdmin();
   if (isLoading) return null;
-  return isAdmin ? <Outlet /> : <Navigate to="/" replace />;
+  return isAdmin ? <Outlet /> : <Navigate to={ROUTES.HOME} replace />;
 }
 
 function AppRoutes() {
@@ -48,22 +49,22 @@ function AppRoutes() {
 
   return (
     <Routes>
-      <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path={ROUTES.LOGIN} element={isAuthenticated ? <Navigate to={ROUTES.HOME} replace /> : <LoginPage />} />
+      <Route path={ROUTES.FORGOT_PASSWORD} element={<ForgotPasswordPage />} />
+      <Route path={ROUTES.RESET_PASSWORD} element={<ResetPasswordPage />} />
       <Route element={<ProtectedRoute />}>
-        <Route path="/" element={<ShelvesPage />} />
+        <Route path={ROUTES.HOME} element={<ShelvesPage />} />
         <Route path={SHELF_ROUTE_PATTERNS.shelf} element={<ShelfPage />} />
         <Route path={SHELF_ROUTE_PATTERNS.files} element={<ShelfPage />} />
         <Route path={SHELF_ROUTE_PATTERNS.trash} element={<TrashPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
+        <Route path={ROUTES.SETTINGS} element={<SettingsPage />} />
         <Route element={<AdminRoute />}>
           <Route path={SHELF_ROUTE_PATTERNS.settings} element={<ShelfSettingsPage />} />
-          <Route path="/users" element={<UsersPage />} />
-          <Route path="/replication" element={<ReplicationPage />} />
+          <Route path={ROUTES.USERS} element={<UsersPage />} />
+          <Route path={ROUTES.REPLICATION} element={<ReplicationPage />} />
         </Route>
       </Route>
-      <Route path="*" element={<Navigate to={isAuthenticated ? '/' : '/login'} replace />} />
+      <Route path="*" element={<Navigate to={isAuthenticated ? ROUTES.HOME : ROUTES.LOGIN} replace />} />
     </Routes>
   );
 }

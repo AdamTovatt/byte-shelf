@@ -18,5 +18,8 @@ namespace ByteShelfClient.Http
 
         /// <summary>Keeps renewed tokens; called while the lock is held.</summary>
         Task SaveAsync(SessionTokens tokens, CancellationToken cancellationToken);
+
+        /// <summary>Stops keeping the session, once it has been signed out; called while the lock is held.</summary>
+        Task ClearAsync(CancellationToken cancellationToken);
     }
 }

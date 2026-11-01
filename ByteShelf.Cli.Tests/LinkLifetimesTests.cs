@@ -31,9 +31,9 @@ namespace ByteShelf.Cli.Tests
         [InlineData("8d")]
         [InlineData("10081m")]
         [InlineData("99999999999m")]
-        public void Parse_NotALifetimeALinkMayHave_ThrowsArgumentException(string text)
+        public void Parse_NotALifetimeALinkMayHave_ThrowsUsage(string text)
         {
-            Assert.Throws<ArgumentException>(() => LinkLifetimes.Parse(text));
+            Assert.Throws<UsageException>(() => LinkLifetimes.Parse(text));
         }
     }
 }

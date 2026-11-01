@@ -61,6 +61,14 @@ namespace ByteShelf.Server.Tests.TestUtilities
         }
 
         /// <summary>A client sending <paramref name="secret"/> as its shelf key on every request.</summary>
+        /// <summary>Creates a shelf as the admin and answers it.</summary>
+        public async Task<ShelfInfo> CreateShelfAsync(string name)
+        {
+            HttpResponseMessage response = await AdminClient.PostAsJsonAsync("/api/shelves", new CreateShelfRequest { Name = name });
+            response.EnsureSuccessStatusCode();
+            return (await response.Content.ReadFromJsonAsync<ShelfInfo>())!;
+        }
+
         public HttpClient CreateKeyClient(string secret)
         {
             HttpClient client = _app.GetTestClient();

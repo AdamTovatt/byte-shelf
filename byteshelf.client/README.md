@@ -16,7 +16,7 @@ pieces (the form dialog, the file button, the quota field) live in `src/componen
 
 ```bash
 npm ci
-npm run dev        # Vite on port 44903, forwarding /api to the server (ASPNETCORE_URLS, else :5190)
+npm run dev        # Vite on port 44903, forwarding /api, /mcp, /llms.txt and /swagger to the server (ASPNETCORE_URLS, else :5190)
 npm run lint
 npm test           # Vitest
 npm run test:e2e   # Playwright: builds the UI, starts the server on a root of its own, runs e2e/

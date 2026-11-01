@@ -280,6 +280,17 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<int> ExpireTrashAsync(Guid shelfId, DateTimeOffset deletedAt, IDbSession session)
+        {
+            string query = $@"
+                UPDATE file
+                SET deleted_at = @{nameof(deletedAt)}
+                WHERE shelf_id = @{nameof(shelfId)} AND deleted_at IS NOT NULL";
+
+            return await session.Connection.ExecuteAsync(query, new { shelfId, deletedAt }, transaction: session.Transaction);
+        }
+
+        /// <inheritdoc />
         public async Task<IReadOnlyList<FileRecord>> GetTrashedBeforeAsync(DateTimeOffset deletedBefore, Guid? shelfId, int limit, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>
@@ -317,14 +328,14 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
-        public async Task UpsertReplicatedAsync(FileRecord file, string action, DateTimeOffset at, IDbSession session)
+        public async Task UpsertReplicatedAsync(FileRecord file, string action, Guid displacedDeletionId, DateTimeOffset at, IDbSession session)
         {
             if (file.DeletedAt == null)
             {
                 FileRecord? holder = await GetLiveByNameAsync(file.DirectoryId, file.Name, session);
                 if (holder != null && holder.Id != file.Id)
                 {
-                    await SoftDeleteAsync(holder.Id, Guid.NewGuid(), at, session);
+                    await SoftDeleteAsync(holder.Id, displacedDeletionId, at, session);
                 }
             }
 
@@ -394,7 +405,7 @@ namespace ByteShelf.Server.Storage.Repositories
             };
         }
 
-        // The columns search compares (see v0006) are only ever written through these and Parameters, so
+        // The columns search compares (name_fold, description_fold, media_type) are only ever written through these and Parameters, so
         // each always holds what Common's rules make of the row's own name, description and type.
         private static string NameFold(string name)
         {

@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Button, ButtonGroup, Card, CopyField, Icon, IconButton, Input, PageLayout, iconMap } from '../ui';
+import { Button, ButtonGroup, Card, CopyField, Icon, IconButton, Input, PageLayout, getErrorMessage, iconMap } from '../ui';
 import { FormDialog } from '../components/FormDialog';
+import { LoadError } from '../components/LoadError';
 import { QuotaField } from '../components/QuotaField';
 import { SectionTitle } from '../components/SectionTitle';
 import { ShelfHeader } from '../components/ShelfHeader';
@@ -12,6 +13,7 @@ import { useUsers } from '../hooks/useUserQueries';
 import { formatQuota, formatTime, parseQuota, type QuotaUnit } from '../lib/format';
 import { ACCESS_OPTIONS, KEY_OPTIONS, keyPermissionLabel } from '../lib/access';
 import { shelfViewRoute } from '../lib/shelfPaths';
+import { ROUTES } from '../lib/routes';
 import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
 import type { CreatedShelfKey, ShelfAccessGrant, ShelfAccessPermission, ShelfKeyInfo, ShelfKeyPermission } from '../services/accessService';
@@ -33,9 +35,9 @@ export function ShelfSettingsPage() {
 }
 
 function SettingsSection({ shelf }: { shelf: string }) {
-  const { data: info } = useShelf(shelf);
+  const { data: info, error } = useShelf(shelf);
   // Keyed on what the server holds, so a change made elsewhere starts the form afresh.
-  return info ? <SettingsForm key={`${info.name}:${info.quotaBytes}`} info={info} /> : null;
+  return info ? <SettingsForm key={`${info.name}:${info.quotaBytes}`} info={info} /> : <LoadError error={error} failure="Could not load the shelf" />;
 }
 
 function SettingsForm({ info }: { info: ShelfInfo }) {
@@ -69,7 +71,7 @@ function SettingsForm({ info }: { info: ShelfInfo }) {
 }
 
 function GrantsSection({ shelf }: { shelf: string }) {
-  const { data: grants = [] } = useGrants(shelf);
+  const { data: grants = [], error } = useGrants(shelf);
   const setGrant = useSetGrant();
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<ShelfAccessGrant | null>(null);
@@ -82,6 +84,7 @@ function GrantsSection({ shelf }: { shelf: string }) {
       >
         Access
       </SectionTitle>
+      <LoadError error={error} failure="Could not load who has access" />
       {grants.length > 0 && (
         <Card variant="elevated" padding="none" className="divide-y divide-border">
           {grants.map((grant) => (
@@ -129,13 +132,19 @@ function RemoveGrantDialog({ shelf, grant, onClose }: { shelf: string; grant: Sh
 }
 
 function GiveAccessDialog({ shelf, grantedUserIds, onClose }: { shelf: string; grantedUserIds: string[]; onClose: () => void }) {
-  const { data: users = [] } = useUsers();
+  const { data: users, error: usersError } = useUsers();
   const setGrant = useSetGrant();
   const [email, setEmail] = useState('');
   const [permission, setPermission] = useState<ShelfAccessPermission>('read');
   const { error, setError, submit } = useSubmit('Could not give access');
 
   function give(): Promise<void> {
+    if (!users) {
+      // Not "no such user": the list to look them up in is not there.
+      setError(getErrorMessage(usersError, 'The users have not loaded yet; try again in a moment'));
+      return Promise.resolve();
+    }
+
     const user = users.find((candidate) => candidate.email.toLowerCase() === email.trim().toLowerCase());
     if (!user) {
       setError(`There is no user with the email ${email.trim()}`);
@@ -159,7 +168,7 @@ function GiveAccessDialog({ shelf, grantedUserIds, onClose }: { shelf: string; g
 }
 
 function KeysSection({ shelf }: { shelf: string }) {
-  const { data: keys = [] } = useKeys(shelf);
+  const { data: keys = [], error } = useKeys(shelf);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<ShelfKeyInfo | null>(null);
 
@@ -171,6 +180,7 @@ function KeysSection({ shelf }: { shelf: string }) {
       >
         Keys
       </SectionTitle>
+      <LoadError error={error} failure="Could not load the keys" />
       {keys.length > 0 && (
         <Card variant="elevated" padding="none" className="divide-y divide-border">
           {keys.map((key) => (
@@ -251,7 +261,7 @@ function DeleteSection({ shelf }: { shelf: string }) {
   function remove(): Promise<void> {
     return submit(() => deleteShelf.mutateAsync(), () => {
       toast.success(`Deleted ${shelf}`);
-      navigate('/', { replace: true });
+      navigate(ROUTES.HOME, { replace: true });
     });
   }
 

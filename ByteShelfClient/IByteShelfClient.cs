@@ -10,6 +10,7 @@ namespace ByteShelfClient
     public interface IByteShelfClient
     {
         /// <summary>The shelf called <paramref name="name"/>. Nothing is sent until it is used.</summary>
+        /// <exception cref="ArgumentException">It is not a shelf name, by <see cref="ShelfName"/>'s rules.</exception>
         IShelfClient Shelf(string name);
 
         /// <summary>Every shelf the caller can use, by name.</summary>

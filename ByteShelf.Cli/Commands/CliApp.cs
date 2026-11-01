@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -46,7 +47,7 @@ namespace ByteShelf.Cli.Commands
                 new Command(Section.Files, "put", "<local-file>|<local-folder>|- <shelf>:<path> [--overwrite] [--type <content-type>] [--description <text>]", "store a file, - for stdin, or a whole folder; a path ending in / keeps the local name", PutAsync),
                 new Command(Section.Files, "get", "<shelf>:<path> [<local-file>|<local-folder>|-] [--overwrite]", "save a file, - for stdout, or a whole directory", GetAsync),
                 new Command(Section.Files, "describe", "<shelf>:<path> <text> | --clear", "set a file's description, which find matches too", DescribeAsync),
-                new Command(Section.Files, "share", "<shelf>:<path> [--expires <30m|12h|7d>]", "a link to a file that works without signing in; 24 hours by default, at most 7 days", ShareAsync),
+                new Command(Section.Files, "share", "<shelf>:<path> [--expires <30m|12h|7d>]", string.Create(CultureInfo.InvariantCulture, $"a link to a file that works without signing in; {DownloadLink.DefaultLifetime.TotalHours} hours by default, at most {DownloadLink.MaxLifetime.TotalDays} days"), ShareAsync),
                 new Command(
                     Section.Files,
                     "find",
@@ -347,7 +348,7 @@ namespace ByteShelf.Cli.Commands
             }
 
             string saved = await Transfers.DownloadToFileAsync(shelf, location.Path, target ?? ShelfPath.GetName(location.Path), overwrite, cancellationToken);
-            Done($"Saved {saved}");
+            Done(TextFormat.Saved(saved));
         }
 
         private async Task DescribeAsync(ArgumentList arguments, CancellationToken cancellationToken)
@@ -446,7 +447,7 @@ namespace ByteShelf.Cli.Commands
             string toPath = arguments.Required(1, "new-path");
             arguments.EnsureAllUsed();
             Entry moved = await Entries.MoveAsync(await ShelfAsync(location.Shelf, cancellationToken), location.Path, toPath, cancellationToken);
-            PrintEntry(moved, entry => $"Moved to {entry.Path}");
+            PrintEntry(moved, TextFormat.Moved);
         }
 
         private async Task RemoveAsync(ArgumentList arguments, CancellationToken cancellationToken)
@@ -454,7 +455,7 @@ namespace ByteShelf.Cli.Commands
             ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
             arguments.EnsureAllUsed();
             TrashEntry deleted = await Entries.DeleteAsync(await ShelfAsync(location.Shelf, cancellationToken), location.Path, cancellationToken);
-            Print(deleted, ByteShelfJsonContext.Default.TrashEntry, entry => $"Moved to the trash: {TextFormat.TrashEntry(entry)}");
+            Print(deleted, ByteShelfJsonContext.Default.TrashEntry, TextFormat.Trashed);
         }
 
         private async Task TrashAsync(ArgumentList arguments, CancellationToken cancellationToken)
@@ -470,7 +471,7 @@ namespace ByteShelf.Cli.Commands
             Guid deletionId = Id(arguments.Required(1, "deletion-id"), $"a deletion id; 'byteshelf trash {shelf}' lists them");
             arguments.EnsureAllUsed();
             await (await ShelfAsync(shelf, cancellationToken)).RestoreAsync(deletionId, cancellationToken);
-            Done("Restored.");
+            Done(TextFormat.Restored);
         }
 
         private async Task EmptyTrashAsync(ArgumentList arguments, CancellationToken cancellationToken)
@@ -478,7 +479,7 @@ namespace ByteShelf.Cli.Commands
             string shelf = arguments.Required(0, "shelf");
             arguments.EnsureAllUsed();
             await (await ShelfAsync(shelf, cancellationToken)).EmptyTrashAsync(cancellationToken);
-            Done("Emptied the trash.");
+            Done(TextFormat.EmptiedTrash);
         }
 
         private async Task ChangePasswordAsync(ArgumentList arguments, CancellationToken cancellationToken)

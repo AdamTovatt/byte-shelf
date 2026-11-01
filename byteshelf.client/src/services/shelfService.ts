@@ -9,6 +9,9 @@ export type TrashEntry = components['schemas']['TrashEntry'];
 export type DownloadLink = components['schemas']['DownloadLink'];
 export type FileSearchResults = components['schemas']['FileSearchResults'];
 
+/** A directory or a file in a listing, as the shelf page and its dialogs act on it. */
+export type Entry = { kind: 'directory'; value: ShelfDirectory } | { kind: 'file'; value: ShelfFile };
+
 function shelfPath(shelf: string) {
   return { path: { shelf } };
 }

@@ -1,6 +1,6 @@
 import { type ReactNode, type RefObject, useState, useCallback } from 'react';
 import { Popover, type PopoverAlign, type MenuPopoverPosition } from './Popover';
-import { MENU_PANEL_CLASS, MENU_ROW_CLASS, MENU_ROW_HOVER_CLASS, MENU_SEPARATOR_CLASS } from './menuPanelStyles';
+import { MENU_PANEL_CLASS, MENU_ROW_CLASS, MENU_ROW_HOVER_CLASS } from './menuPanelStyles';
 import { DropdownCloseContext, useDropdownClose } from './dropdownClose';
 import { Icon } from './Icon';
 import { DisabledReasonMark, DEFAULT_DISABLED_REASON_TEST_ID } from './DisabledReasonMark';
@@ -110,20 +110,13 @@ export interface DropdownHeaderProps {
 }
 
 /** Small label rendered at the top of a dropdown panel. Use for short group titles
- *  like "Revert:" or "Filter by". Pair with `DropdownSeparator` to visually divide
- *  the header from the items below it. */
+ *  like "Revert:" or "Filter by". */
 export function DropdownHeader({ children }: DropdownHeaderProps) {
   return (
     <div className="px-3.5 py-1.5 text-body-sm text-muted">
       {children}
     </div>
   );
-}
-
-/** Thin horizontal rule between dropdown groups. It spans the panel's content box, so the
- *  panel's inset lines its ends up with the row pills' edges (`MENU_SEPARATOR_CLASS`). */
-export function DropdownSeparator() {
-  return <div role="separator" className={MENU_SEPARATOR_CLASS} />;
 }
 
 export interface DropdownItemProps {

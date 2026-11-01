@@ -109,12 +109,6 @@ export function menuRowClass({ selected = false, highlighted = false, canAct = t
 }
 
 /**
- * The rule between two groups of menu rows. It draws across the panel's CONTENT box, so the panel's
- * inset puts its ends exactly under the pills' edges — inset to match them, with no margin of its own.
- */
-export const MENU_SEPARATOR_CLASS = 'my-1 border-t border-border';
-
-/**
  * The horizontal half of the panel's inset, for a list that has to take it on its own box rather than
  * on the panel's: the assistant's `@` picker puts it on its list, so the legend beneath keeps a
  * full-width rule. The same step as {@link MENU_PANEL_INSET_CLASS}; prefer the panel's box wherever

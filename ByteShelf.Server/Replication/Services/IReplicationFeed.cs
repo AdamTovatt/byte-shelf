@@ -16,7 +16,10 @@ namespace ByteShelf.Server.Replication.Services
         /// </summary>
         Task<ChangeFeedPage> GetChangesAsync(Replica replica, long afterSequence, string? afterFingerprint, int limit);
 
-        /// <summary>A page of a whole copy: the newest state of every entity that exists, after <paramref name="afterSequence"/>.</summary>
+        /// <summary>
+        /// A page of a whole copy: the newest entry of every entity after <paramref name="afterSequence"/>,
+        /// its state, or its removal once it no longer exists.
+        /// </summary>
         Task<ChangeFeedPage> GetCopyAsync(long afterSequence, int limit);
 
         /// <summary>Where the bytes of a file (live or in the trash) are; null once it has been purged.</summary>

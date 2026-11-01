@@ -17,6 +17,8 @@ namespace ByteShelf.Cli.Config
         // Giving up after the timeout is not tested: it would take a timeout setting that only a test uses.
         private static readonly TimeSpan LockTimeout = TimeSpan.FromSeconds(30);
 
+        private static readonly TimeSpan MoveTimeout = TimeSpan.FromSeconds(2);
+
         public CliConfigStore(string path)
         {
             FilePath = Path.GetFullPath(path);
@@ -48,15 +50,32 @@ namespace ByteShelf.Cli.Config
                 return null;
             }
 
+            CliConfig? config;
             try
             {
-                using FileStream file = File.OpenRead(FilePath);
-                return JsonSerializer.Deserialize(file, CliJsonContext.Default.CliConfig);
+                // Shared for writing and deleting, so reading never stops another command from
+                // replacing or removing the file, which Windows would otherwise refuse.
+                using FileStream file = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                config = JsonSerializer.Deserialize(file, CliJsonContext.Default.CliConfig);
             }
-            catch (JsonException exception)
+            catch (FileNotFoundException)
             {
-                throw new UsageException($"{FilePath} is not a byteshelf config ({exception.Message}). Fix it, or remove it with 'byteshelf logout' and sign in again.", exception);
+                // Removed by a logout since the check above.
+                return null;
             }
+            catch (Exception exception) when (exception is JsonException or NotSupportedException)
+            {
+                // NotSupportedException: a login without a kind, which names no type to read it as.
+                throw Damaged(exception.Message, exception);
+            }
+
+            if (config != null
+                && (!Uri.TryCreate(config.Server, UriKind.Absolute, out Uri? server) || (server.Scheme != Uri.UriSchemeHttps && server.Scheme != Uri.UriSchemeHttp)))
+            {
+                throw Damaged($"'{config.Server}' is not a server address", innerException: null);
+            }
+
+            return config;
         }
 
         public void Save(CliConfig config)
@@ -78,7 +97,7 @@ namespace ByteShelf.Cli.Config
                     JsonSerializer.Serialize(file, config, CliJsonContext.Default.CliConfig);
                 }
 
-                File.Move(temporary, FilePath, overwrite: true);
+                MoveIntoPlace(temporary);
             }
             catch
             {
@@ -119,6 +138,36 @@ namespace ByteShelf.Cli.Config
                     throw new TimeoutException($"Another byteshelf command has held {FilePath} for {LockTimeout.TotalSeconds:0} seconds.", exception);
                 }
             }
+        }
+
+        /// <summary>
+        /// Replaces the config with <paramref name="temporary"/>. Windows refuses while another program
+        /// holds the config open without sharing its deletion (an older byteshelf, a virus scanner), so
+        /// the move is tried again for <see cref="MoveTimeout"/>: losing a renewed session's tokens here
+        /// would end the session.
+        /// </summary>
+        /// <remarks>Not tested: Linux and macOS replace a file that is open, so nothing there refuses.</remarks>
+        private void MoveIntoPlace(string temporary)
+        {
+            DateTime giveUpAt = DateTime.UtcNow + MoveTimeout;
+            while (true)
+            {
+                try
+                {
+                    File.Move(temporary, FilePath, overwrite: true);
+                    return;
+                }
+                catch (Exception exception) when ((exception is IOException or UnauthorizedAccessException) && DateTime.UtcNow < giveUpAt)
+                {
+                    Thread.Sleep(LockRetryDelay);
+                }
+            }
+        }
+
+        private UsageException Damaged(string why, Exception? innerException)
+        {
+            string message = $"{FilePath} is not a byteshelf config ({why}). Fix it, or remove it with 'byteshelf logout' and sign in again.";
+            return innerException == null ? new UsageException(message) : new UsageException(message, innerException);
         }
 
         private void EnsureFolder()

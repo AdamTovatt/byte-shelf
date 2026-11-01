@@ -35,124 +35,117 @@ namespace ByteShelfClient.InMemory
         /// <inheritdoc />
         public IShelfClient Shelf(string name)
         {
-            ArgumentException.ThrowIfNullOrWhiteSpace(name);
+            ArgumentNullException.ThrowIfNull(name);
+            ShelfName.Validate(name);
             return new InMemoryShelfClient(_store, name);
         }
 
         /// <inheritdoc />
         public Task<IReadOnlyList<ShelfInfo>> GetShelvesAsync(CancellationToken cancellationToken = default)
         {
-            lock (_store.Gate)
-            {
-                IReadOnlyList<ShelfInfo> shelves = _store.Shelves
+            return _store.RunAsync<IReadOnlyList<ShelfInfo>>(
+                () => _store.Shelves
                     .OrderBy(shelf => shelf.Name, StringComparer.Ordinal)
                     .Select(shelf => _store.GetShelf(shelf.Name).ToInfo())
-                    .ToList();
-
-                return Task.FromResult(shelves);
-            }
+                    .ToList(),
+                cancellationToken);
         }
 
         /// <inheritdoc />
         public Task<ShelfInfo> CreateShelfAsync(string name, long? quotaBytes = null, CancellationToken cancellationToken = default)
         {
-            lock (_store.Gate)
-            {
-                InMemoryErrors.Checked(() => ShelfSettings.Validate(name, quotaBytes));
-                if (_store.Shelves.Any(shelf => shelf.Name == name))
+            return _store.RunAsync(
+                () =>
                 {
-                    throw InMemoryErrors.Conflict($"A shelf called '{name}' already exists.");
-                }
+                    InMemoryErrors.Checked(() => ShelfSettings.Validate(name, quotaBytes));
+                    if (_store.Shelves.Any(shelf => shelf.Name == name))
+                    {
+                        throw InMemoryErrors.Conflict($"A shelf called '{name}' already exists.");
+                    }
 
-                InMemoryShelf created = new InMemoryShelf(name, quotaBytes, _store.Now);
-                _store.Shelves.Add(created);
-                return Task.FromResult(created.ToInfo());
-            }
+                    InMemoryShelf created = new InMemoryShelf(name, quotaBytes, _store.Now);
+                    _store.Shelves.Add(created);
+                    return created.ToInfo();
+                },
+                cancellationToken);
         }
 
         /// <inheritdoc />
         public Task<UserInfo> GetCurrentUserAsync(CancellationToken cancellationToken = default)
         {
-            lock (_store.Gate)
-            {
-                return Task.FromResult(_store.GetUser(CurrentUser.Id).ToInfo());
-            }
+            return _store.RunAsync(() => _store.GetUser(CurrentUser.Id).ToInfo(), cancellationToken);
         }
 
         /// <inheritdoc />
         public Task ChangePasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default)
         {
-            lock (_store.Gate)
-            {
-                InMemoryErrors.Checked(() => PasswordPolicy.Validate(newPassword));
-                InMemoryStore.UserRow user = _store.GetUser(CurrentUser.Id);
-                if (user.Password != currentPassword)
+            return _store.RunAsync(
+                () =>
                 {
-                    throw new ByteShelfException("The current password is incorrect.", ErrorCodes.InvalidCredentials);
-                }
+                    InMemoryErrors.Checked(() => PasswordPolicy.Validate(newPassword));
+                    InMemoryStore.UserRow user = _store.GetUser(CurrentUser.Id);
+                    if (user.Password != currentPassword)
+                    {
+                        throw new ByteShelfException("The current password is incorrect.", ErrorCodes.InvalidCredentials);
+                    }
 
-                user.Password = newPassword;
-                return Task.CompletedTask;
-            }
+                    user.Password = newPassword;
+                },
+                cancellationToken);
         }
 
         /// <inheritdoc />
         public Task<IReadOnlyList<UserInfo>> GetUsersAsync(CancellationToken cancellationToken = default)
         {
-            lock (_store.Gate)
-            {
-                IReadOnlyList<UserInfo> users = _store.Users.Select(user => user.ToInfo()).ToList();
-                return Task.FromResult(users);
-            }
+            return _store.RunAsync<IReadOnlyList<UserInfo>>(() => _store.Users.Select(user => user.ToInfo()).ToList(), cancellationToken);
         }
 
         /// <inheritdoc />
         public Task<UserInfo> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(request);
-            lock (_store.Gate)
-            {
-                return Task.FromResult(AddUser(request));
-            }
+            return _store.RunAsync(() => AddUser(request), cancellationToken);
         }
 
         /// <inheritdoc />
         public Task SetUserRolesAsync(Guid userId, IReadOnlyList<string> roles, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(roles);
-            lock (_store.Gate)
-            {
-                IReadOnlyList<string> distinct = InMemoryErrors.Checked(() => UserRoles.Normalize(roles));
-                InMemoryStore.UserRow user = _store.GetUser(userId);
-                if (user.Roles.Contains(UserRoles.Admin) && !distinct.Contains(UserRoles.Admin) && IsLastAdmin(user))
+            return _store.RunAsync(
+                () =>
                 {
-                    throw InMemoryErrors.Conflict("This is the only admin; make someone else an admin first.");
-                }
+                    IReadOnlyList<string> distinct = InMemoryErrors.Checked(() => UserRoles.Normalize(roles));
+                    InMemoryStore.UserRow user = _store.GetUser(userId);
+                    if (user.Roles.Contains(UserRoles.Admin) && !distinct.Contains(UserRoles.Admin) && IsLastAdmin(user))
+                    {
+                        throw InMemoryErrors.Conflict("This is the only admin; make someone else an admin first.");
+                    }
 
-                user.Roles = distinct;
-                return Task.CompletedTask;
-            }
+                    user.Roles = distinct;
+                },
+                cancellationToken);
         }
 
         /// <inheritdoc />
         public Task DeleteUserAsync(Guid userId, CancellationToken cancellationToken = default)
         {
-            lock (_store.Gate)
-            {
-                InMemoryStore.UserRow user = _store.GetUser(userId);
-                if (user.Roles.Contains(UserRoles.Admin) && IsLastAdmin(user))
+            return _store.RunAsync(
+                () =>
                 {
-                    throw InMemoryErrors.Conflict("This is the only admin; make someone else an admin first.");
-                }
+                    InMemoryStore.UserRow user = _store.GetUser(userId);
+                    if (user.Roles.Contains(UserRoles.Admin) && IsLastAdmin(user))
+                    {
+                        throw InMemoryErrors.Conflict("This is the only admin; make someone else an admin first.");
+                    }
 
-                foreach (InMemoryShelf shelf in _store.Shelves)
-                {
-                    shelf.Grants.RemoveAll(grant => grant.UserId == userId);
-                }
+                    foreach (InMemoryShelf shelf in _store.Shelves)
+                    {
+                        shelf.Grants.RemoveAll(grant => grant.UserId == userId);
+                    }
 
-                _store.Users.Remove(user);
-                return Task.CompletedTask;
-            }
+                    _store.Users.Remove(user);
+                },
+                cancellationToken);
         }
 
         private bool IsLastAdmin(InMemoryStore.UserRow user)

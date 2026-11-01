@@ -1,4 +1,4 @@
-namespace ByteShelf.Server.Replication.Services
+namespace ByteShelf.Server.Shared.IO
 {
     /// <summary>
     /// Reads another stream and calls <c>onRead</c> before each read, so a timeout that it restarts runs

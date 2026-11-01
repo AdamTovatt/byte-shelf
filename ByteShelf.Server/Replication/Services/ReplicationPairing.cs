@@ -16,6 +16,10 @@ namespace ByteShelf.Server.Replication.Services
     /// one-time secret, the replica presents the secret, and the primary answers with the credential
     /// the replica uses from then on.
     /// </summary>
+    /// <remarks>
+    /// Not done (review item 55, a taste call): Storage's naming, an interface and a <c>…Service</c>
+    /// name. Nothing substitutes this class, and renaming it would only move code around.
+    /// </remarks>
     public sealed class ReplicationPairing
     {
         private readonly IReplicaRepository _replicaRepository;
@@ -113,7 +117,7 @@ namespace ByteShelf.Server.Replication.Services
         /// <exception cref="NotFoundException">No unused, unexpired code has this secret.</exception>
         public async Task<AcceptPairingResponse> AcceptAsync(AcceptPairingRequest request)
         {
-            string name = DisplayText.Validate(request.Name, ReplicationOptions.MaxNameLength, "A replica's name");
+            string name = DisplayText.Validate(request.Name, PairWithPrimaryRequest.MaxNameLength, "A replica's name");
             string credential = RandomSecret.Generate(ReplicaCredentials.Prefix);
 
             await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
@@ -145,7 +149,7 @@ namespace ByteShelf.Server.Replication.Services
         /// </summary>
         public async Task<ReplicationStatus> PairAsync(PairWithPrimaryRequest request, CancellationToken cancellationToken)
         {
-            string name = DisplayText.Validate(request.Name, ReplicationOptions.MaxNameLength, "A replica's name");
+            string name = DisplayText.Validate(request.Name, PairWithPrimaryRequest.MaxNameLength, "A replica's name");
             PairingCode code = PairingCode.TryParse(request.Code)
                 ?? throw new ArgumentException("That is not a pairing code; make one on the primary.");
 
