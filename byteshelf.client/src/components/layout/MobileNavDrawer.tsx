@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useSidebar } from '../../contexts/SidebarContext';
 import { SideNav } from './SideNav';
-import { cn } from '../../lib/utils';
+import { cn } from '../../ui';
 
 export function MobileNavDrawer() {
   const { isMobileOpen, setIsMobileOpen } = useSidebar();

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { getErrorMessage } from '../lib/utils';
+import { getErrorMessage } from '../ui';
 
 /**
  * The submit step forms and dialogs share: `submit` runs an action, then `onDone` with its result; a

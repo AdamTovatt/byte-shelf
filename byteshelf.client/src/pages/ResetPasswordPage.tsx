@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Button, Banner, PasswordInput } from '../components/ui';
+import { Button } from '../ui';
+import { Notice } from '../components/Notice';
+import { PasswordInput } from '../components/PasswordInput';
 import { AuthLayout } from '../components/layout/AuthLayout';
 import { completePasswordReset } from '../services/passwordResetService';
 import { validatePassword } from '../lib/passwordValidation';
@@ -53,19 +55,19 @@ export function ResetPasswordPage() {
     <AuthLayout title="Choose a new password">
       {!token ? (
         <div className="flex flex-col gap-6">
-          <Banner variant="danger" inline>
+          <Notice variant="danger">
             This reset link is missing its token. Use the link from the email, or request a new one.
-          </Banner>
-          <Link to="/forgot-password" className="text-body-md text-brand-primary-light dark:text-brand-primary-dark hover:underline text-center">
+          </Notice>
+          <Link to="/forgot-password" className="text-body-md text-muted hover:text-fg hover:underline text-center">
             Request a new link
           </Link>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
           {error && (
-            <Banner variant="danger" inline>
+            <Notice variant="danger">
               {error}
-            </Banner>
+            </Notice>
           )}
 
           <PasswordInput
@@ -90,9 +92,9 @@ export function ResetPasswordPage() {
 
           <Button
             type="submit"
-            variant="brand"
-            size="md"
-            className="w-full h-12"
+            variant="main"
+            size="lg"
+            className="w-full"
             disabled={isLoading || !newPassword || !confirmPassword}
             loading={isLoading}
           >

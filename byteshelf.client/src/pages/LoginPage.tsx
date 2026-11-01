@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Button, Input, Banner } from '../components/ui';
+import { Button, Input } from '../ui';
+import { Notice } from '../components/Notice';
 import { AuthLayout } from '../components/layout/AuthLayout';
 import type { AuthResponse } from '../services/authTypes';
 import { AUTH_PATHS } from '../services/authPaths';
@@ -68,9 +69,9 @@ export function LoginPage() {
     <AuthLayout title="ByteShelf">
       <form onSubmit={handleSubmit} className="flex flex-col gap-6">
         {error && (
-          <Banner variant="danger" inline>
+          <Notice variant="danger">
             {error}
-          </Banner>
+          </Notice>
         )}
 
         <Input
@@ -99,9 +100,9 @@ export function LoginPage() {
 
         <Button
           type="submit"
-          variant="brand"
-          size="md"
-          className="w-full mt-2 h-12"
+          variant="main"
+          size="lg"
+          className="w-full mt-2"
           disabled={isLoading || !email.trim() || !password.trim()}
           loading={isLoading}
         >
@@ -110,7 +111,7 @@ export function LoginPage() {
 
         <Link
           to="/forgot-password"
-          className="text-body-md text-text-3-light dark:text-text-3-dark hover:underline text-center"
+          className="text-body-md text-muted hover:text-fg hover:underline text-center"
         >
           Forgot your password?
         </Link>

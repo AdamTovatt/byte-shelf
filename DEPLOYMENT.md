@@ -39,18 +39,18 @@ follows no redirects); nothing needs to reach the replica but its own admins and
 
 1. Start the replica on a new, empty root with its own initial admin, and create no shelves on it. Not
    a copy of the primary's root: that would be the same instance, and pairing would be refused.
-2. On the primary, as an admin, under Settings, Replication, make a pairing code. It works once, for
+2. On the primary, as an admin, on the Replication page, make a pairing code. It works once, for
    15 minutes.
-3. On the replica, as its admin, under Settings, Replication, choose Follow a primary, paste the code
+3. On the replica, as its admin, on the Replication page, choose Follow a primary, paste the code
    and give the replica a name, which the primary lists it by. The replica copies the primary, its
    users included: from then on its admins sign in with their accounts on the primary.
 
-The same section shows on the primary each replica and how far behind it is, and on a replica the
+The same page shows on the primary each replica and how far behind it is, and on a replica the
 primary it follows and the last error (`GET /api/replication` answers the same). A replica only reads.
 A file or directory purged on the primary stays in the replica's trash until the replica's own restore
 window has passed since it was deleted.
 
-To make a replica the primary, promote it in its Replication section, then point clients and
+To make a replica the primary, promote it on its Replication page, then point clients and
 `APP_BASE_URL` at it. Stop the old primary: other replicas keep following it, and pairing them with the
 new one needs servers without shelves, in practice new roots.
 

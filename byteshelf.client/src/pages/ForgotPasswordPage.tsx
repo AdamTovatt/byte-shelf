@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { Button, Banner, Input } from '../components/ui';
+import { Button, Input } from '../ui';
+import { Notice } from '../components/Notice';
 import { AuthLayout } from '../components/layout/AuthLayout';
 import { requestPasswordReset } from '../services/passwordResetService';
 
@@ -31,19 +32,19 @@ export function ForgotPasswordPage() {
     <AuthLayout title="Reset your password">
       {submitted ? (
         <div className="flex flex-col gap-6">
-          <Banner variant="info" inline>
+          <Notice variant="info">
             If an account exists for {email.trim()}, a reset link has been sent. Check your inbox.
-          </Banner>
-          <Link to="/login" className="text-body-md text-brand-primary-light dark:text-brand-primary-dark hover:underline text-center">
+          </Notice>
+          <Link to="/login" className="text-body-md text-muted hover:text-fg hover:underline text-center">
             Back to sign in
           </Link>
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
           {error && (
-            <Banner variant="danger" inline>
+            <Notice variant="danger">
               {error}
-            </Banner>
+            </Notice>
           )}
 
           <Input
@@ -59,16 +60,16 @@ export function ForgotPasswordPage() {
 
           <Button
             type="submit"
-            variant="brand"
-            size="md"
-            className="w-full h-12"
+            variant="main"
+            size="lg"
+            className="w-full"
             disabled={isLoading || !email.trim()}
             loading={isLoading}
           >
             Send reset link
           </Button>
 
-          <Link to="/login" className="text-body-md text-text-3-light dark:text-text-3-dark hover:underline text-center">
+          <Link to="/login" className="text-body-md text-muted hover:text-fg hover:underline text-center">
             Back to sign in
           </Link>
         </form>

@@ -10,6 +10,7 @@ import { TrashPage } from './pages/TrashPage';
 import { ShelfSettingsPage } from './pages/ShelfSettingsPage';
 import { UsersPage } from './pages/UsersPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ReplicationPage } from './pages/ReplicationPage';
 import { NewVersionBanner } from './components/NewVersionBanner';
 import { AppShell } from './components/layout/AppShell';
 import { useInvalidationStream } from './hooks/useInvalidationStream';
@@ -59,6 +60,7 @@ function AppRoutes() {
         <Route element={<AdminRoute />}>
           <Route path={SHELF_ROUTE_PATTERNS.settings} element={<ShelfSettingsPage />} />
           <Route path="/users" element={<UsersPage />} />
+          <Route path="/replication" element={<ReplicationPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to={isAuthenticated ? '/' : '/login'} replace />} />
@@ -71,7 +73,10 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <NewVersionBanner />
-        <Toaster position="bottom-right" />
+        <Toaster
+          position="bottom-right"
+          toastOptions={{ className: '!bg-panel !text-fg !border !border-border !text-body-md !shadow-brand-lg' }}
+        />
         <AppRoutes />
       </AuthProvider>
     </BrowserRouter>

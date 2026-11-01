@@ -1,22 +1,37 @@
 import { useState, type DragEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Button, CardList, Dialog, Dropdown, DropdownItem, FileButton, IconButton, Input, ListRow, Spinner } from '../components/ui';
-import { Icon } from '../components/ui/Icon';
+import {
+  Button,
+  Card,
+  Dropdown,
+  DropdownItem,
+  EmptyState,
+  Icon,
+  IconButton,
+  Input,
+  PageLayout,
+  Spinner,
+  cn,
+  getErrorMessage,
+  getFileIcon,
+  iconMap,
+} from '../ui';
+import { FileButton } from '../components/FileButton';
+import { FormDialog } from '../components/FormDialog';
+import { MoveDialog } from '../components/MoveDialog';
 import { ShelfHeader } from '../components/ShelfHeader';
-import { UploadList } from '../components/UploadList';
-import { useCreateDirectory, useDeleteEntry, useListing, useMoveEntry } from '../hooks/useShelfQueries';
+import { useCreateDirectory, useDeleteEntry, useListing, useMoveEntry, useRestoreDeletion } from '../hooks/useShelfQueries';
 import { useUploads } from '../hooks/useUploads';
-import { iconMap } from '../lib/iconMap';
 import { formatBytes, formatTime } from '../lib/format';
-import { joinPath, pathFromRoute, shelfRoute } from '../lib/shelfPaths';
-import { getErrorMessage, runOrToast } from '../lib/utils';
+import { joinPath, parentPath, pathFromRoute, shelfRoute } from '../lib/shelfPaths';
+import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
 import { createDownloadLink, type ShelfDirectory, type ShelfFile } from '../services/shelfService';
 
-type Entry = { kind: 'directory'; value: ShelfDirectory } | { kind: 'file'; value: ShelfFile };
+export type Entry = { kind: 'directory'; value: ShelfDirectory } | { kind: 'file'; value: ShelfFile };
 
-/** One directory on a shelf: what is in it, uploading into it, and moving and deleting what is there. */
+/** One directory on a shelf: what is in it, uploading into it, and renaming, moving and deleting what is there. */
 export function ShelfPage() {
   const params = useParams();
   const shelf = params.shelf!;
@@ -24,9 +39,11 @@ export function ShelfPage() {
   const navigate = useNavigate();
   const { data: listing, isLoading, error } = useListing(shelf, path);
   const uploads = useUploads(shelf);
+  const deleteEntry = useDeleteEntry(shelf);
+  const restore = useRestoreDeletion(shelf);
   const [creatingDirectory, setCreatingDirectory] = useState(false);
+  const [renaming, setRenaming] = useState<Entry | null>(null);
   const [moving, setMoving] = useState<Entry | null>(null);
-  const [deleting, setDeleting] = useState<Entry | null>(null);
   const [dragging, setDragging] = useState(false);
 
   function onDrop(event: DragEvent<HTMLDivElement>): void {
@@ -51,11 +68,39 @@ export function ShelfPage() {
         } else {
           window.location.assign(`${link.url}?download=true`);
         }
-      } catch (error) {
+      } catch (caught) {
         tab?.close();
-        throw error;
+        throw caught;
       }
     }, 'Could not open the file');
+  }
+
+  /** Moves an entry to the trash at once; the toast's Undo restores it. Emptying the trash is what cannot be undone. */
+  async function remove(entry: Entry): Promise<void> {
+    let deletionId: string;
+    try {
+      deletionId = (await deleteEntry.mutateAsync({ kind: entry.kind, id: entry.value.id })).deletionId;
+    } catch (caught) {
+      toast.error(getErrorMessage(caught, 'Could not delete it'));
+      return;
+    }
+
+    toast((t) => (
+      <span className="flex items-center gap-3">
+        <span>Moved {entry.value.name} to the trash</span>
+        <Button
+          size="sm"
+          variant="secondary"
+          icon={<Icon icon={iconMap.undo} size={14} />}
+          onClick={() => {
+            toast.dismiss(t.id);
+            void runOrToast(() => restore.mutateAsync(deletionId), `Could not restore ${entry.value.name}`);
+          }}
+        >
+          Undo
+        </Button>
+      </span>
+    ), { duration: 8000 });
   }
 
   const entries: Entry[] = listing
@@ -67,7 +112,7 @@ export function ShelfPage() {
 
   return (
     <div
-      className="p-6 md:p-8 min-h-full"
+      className="min-h-full"
       onDragOver={(event) => {
         event.preventDefault();
         setDragging(true);
@@ -75,46 +120,46 @@ export function ShelfPage() {
       onDragLeave={(event) => event.currentTarget === event.target && setDragging(false)}
       onDrop={onDrop}
     >
-      <div className="max-w-4xl mx-auto space-y-6">
+      <PageLayout className="space-y-6">
         <ShelfHeader shelf={shelf} view="files" path={path} />
 
         <div className="flex flex-wrap gap-2">
-          <FileButton variant="primary" icon={<Icon icon={iconMap.upload} size={18} />} onFiles={(files) => uploads.upload(files, path)}>
+          <FileButton variant="main" icon={<Icon icon={iconMap.upload} size={16} />} onFiles={(files) => uploads.upload(files, path)} aria-label="Upload files">
             Upload
           </FileButton>
-          <Button variant="secondary" icon={<Icon icon={iconMap.folder} size={18} />} onClick={() => setCreatingDirectory(true)}>
+          <Button variant="secondary" icon={<Icon icon={iconMap.folder} size={16} />} onClick={() => setCreatingDirectory(true)} aria-label="New folder">
             New folder
           </Button>
         </div>
 
-        <UploadList items={uploads.items} onReplace={uploads.replace} onDismiss={uploads.dismiss} onClearFinished={uploads.clearFinished} />
-
         {isLoading && <Spinner />}
-        {error && <p className="text-body-md text-danger-light dark:text-danger-dark">{getErrorMessage(error, 'Could not list this directory')}</p>}
+        {error && <p className="text-body-md text-danger-11">{getErrorMessage(error, 'Could not list this directory')}</p>}
         {listing && entries.length === 0 && (
-          <p className="text-body-lg text-text-3-light dark:text-text-3-dark">
-            {dragging ? 'Drop the files to upload them here.' : 'Nothing here yet. Upload files, or drop them on the page.'}
-          </p>
+          <EmptyState
+            message={dragging ? 'Drop to upload into this folder.' : 'Nothing here yet. Upload files, or drop them anywhere on the page.'}
+            className={cn('rounded-xl border-2 border-dashed', dragging ? 'border-brand-border' : 'border-transparent')}
+          />
         )}
         {entries.length > 0 && (
-          <CardList className={dragging ? 'ring-2 ring-brand-primary-light dark:ring-brand-primary-dark' : undefined}>
+          <Card variant="elevated" padding="none" className={cn('divide-y divide-border overflow-hidden', dragging && 'ring-2 ring-brand-border')}>
             {entries.map((entry) => (
               <EntryRow
                 key={entry.value.id}
                 entry={entry}
                 onOpen={() => (entry.kind === 'directory' ? navigate(shelfRoute(shelf, entry.value.path)) : void open(entry.value, false))}
                 onDownload={entry.kind === 'file' ? () => void open(entry.value, true) : undefined}
+                onRename={() => setRenaming(entry)}
                 onMove={() => setMoving(entry)}
-                onDelete={() => setDeleting(entry)}
+                onDelete={() => void remove(entry)}
               />
             ))}
-          </CardList>
+          </Card>
         )}
-      </div>
+      </PageLayout>
 
       <NewDirectoryDialog shelf={shelf} parent={path} open={creatingDirectory} onClose={() => setCreatingDirectory(false)} />
+      {renaming && <RenameDialog shelf={shelf} entry={renaming} onClose={() => setRenaming(null)} />}
       {moving && <MoveDialog shelf={shelf} entry={moving} onClose={() => setMoving(null)} />}
-      {deleting && <DeleteDialog shelf={shelf} entry={deleting} onClose={() => setDeleting(null)} />}
     </div>
   );
 }
@@ -123,30 +168,42 @@ interface EntryRowProps {
   entry: Entry;
   onOpen: () => void;
   onDownload?: () => void;
+  onRename: () => void;
   onMove: () => void;
   onDelete: () => void;
 }
 
-function EntryRow({ entry, onOpen, onDownload, onMove, onDelete }: EntryRowProps) {
-  const details = entry.kind === 'file' ? `${formatBytes(entry.value.sizeBytes)} · ${formatTime(entry.value.updatedAt)}` : '';
+function EntryRow({ entry, onOpen, onDownload, onRename, onMove, onDelete }: EntryRowProps) {
+  const isFile = entry.kind === 'file';
+  const name = entry.value.name;
 
   return (
-    <ListRow
-      icon={entry.kind === 'directory' ? iconMap.folder : iconMap.file}
-      onClick={onOpen}
-      actions={
-        <>
-          <span className="hidden sm:inline text-body-sm text-text-3-light dark:text-text-3-dark">{details}</span>
-          <Dropdown align="right" trigger={<IconButton variant="ghost" size="sm" icon={iconMap.more} aria-label={`Actions for ${entry.value.name}`} />}>
-            {onDownload && <DropdownItem icon={<Icon icon={iconMap.download} size={16} />} onClick={onDownload}>Download</DropdownItem>}
-            <DropdownItem icon={<Icon icon={iconMap.edit} size={16} />} onClick={onMove}>Move or rename</DropdownItem>
-            <DropdownItem icon={<Icon icon={iconMap.delete} size={16} />} variant="danger" onClick={onDelete}>Delete</DropdownItem>
-          </Dropdown>
-        </>
-      }
-    >
-      <span className="block truncate text-body-lg text-text-1-light dark:text-text-1-dark">{entry.value.name}</span>
-    </ListRow>
+    <div className="group flex items-center gap-2 px-2 py-1 transition-colors hover:bg-row-hover">
+      <button
+        type="button"
+        onClick={onOpen}
+        title={isFile ? 'Opens in a new tab' : undefined}
+        aria-label={isFile ? `Open ${name} in a new tab` : `Open the folder ${name}`}
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2 text-left"
+      >
+        <Icon icon={isFile ? getFileIcon(name) : iconMap.folder} size={18} className="shrink-0 text-muted" />
+        <span className="min-w-0 truncate text-body-md text-fg">{name}</span>
+        {isFile && (
+          <Icon icon={iconMap.externalLink} size={14} className="shrink-0 text-neutral-9 opacity-60 transition-opacity group-hover:opacity-100" />
+        )}
+      </button>
+      {isFile && (
+        <span className="hidden shrink-0 text-body-sm text-muted sm:inline">
+          {formatBytes(entry.value.sizeBytes)} · {formatTime(entry.value.updatedAt)}
+        </span>
+      )}
+      <Dropdown align="right" trigger={<IconButton variant="ghost" size="sm" icon={iconMap.more} aria-label={`Actions for ${name}`} />}>
+        {onDownload && <DropdownItem icon={<Icon icon={iconMap.download} size={16} />} onClick={onDownload}>Download</DropdownItem>}
+        <DropdownItem icon={<Icon icon={iconMap.rename} size={16} />} onClick={onRename}>Rename</DropdownItem>
+        <DropdownItem icon={<Icon icon={iconMap.move} size={16} />} onClick={onMove}>Move</DropdownItem>
+        <DropdownItem icon={<Icon icon={iconMap.delete} size={16} />} variant="danger" onClick={onDelete}>Delete</DropdownItem>
+      </Dropdown>
+    </div>
   );
 }
 
@@ -162,44 +219,38 @@ function NewDirectoryDialog({ shelf, parent, open, onClose }: { shelf: string; p
   }
 
   return (
-    <Dialog open={open} title="New folder" onClose={close} onSubmit={() => void submit(() => createDirectory.mutateAsync(joinPath(parent, name.trim())), close)} submitLabel="Create" submitting={createDirectory.isPending} error={error}>
+    <FormDialog open={open} title="New folder" onClose={close} onSubmit={() => void submit(() => createDirectory.mutateAsync(joinPath(parent, name.trim())), close)} submitLabel="Create" submitting={createDirectory.isPending} error={error}>
       <Input label="Name" value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" required />
-    </Dialog>
+    </FormDialog>
   );
 }
 
-function MoveDialog({ shelf, entry, onClose }: { shelf: string; entry: Entry; onClose: () => void }) {
+/** The part of a file name before its extension, which is what a rename usually changes. */
+function stemLength(name: string, kind: Entry['kind']): number {
+  const dot = name.lastIndexOf('.');
+  return kind === 'file' && dot > 0 ? dot : name.length;
+}
+
+function RenameDialog({ shelf, entry, onClose }: { shelf: string; entry: Entry; onClose: () => void }) {
   const moveEntry = useMoveEntry(shelf);
-  const [toPath, setToPath] = useState(entry.value.path);
-  const { error, submit } = useSubmit('Could not move it');
+  const [name, setName] = useState(entry.value.name);
+  const { error, submit } = useSubmit('Could not rename it');
 
-  function move(): Promise<void> {
-    return submit(() => moveEntry.mutateAsync({ kind: entry.kind, id: entry.value.id, toPath: toPath.trim() }), onClose);
+  function rename(): Promise<void> {
+    const toPath = joinPath(parentPath(entry.value.path), name.trim());
+    return submit(() => moveEntry.mutateAsync({ kind: entry.kind, id: entry.value.id, toPath }), onClose);
   }
 
   return (
-    <Dialog open title={`Move or rename ${entry.value.name}`} onClose={onClose} onSubmit={() => void move()} submitLabel="Move" submitting={moveEntry.isPending} error={error}>
-      <Input label="New path" value={toPath} onChange={(event) => setToPath(event.target.value)} autoComplete="off" required />
-      <p className="text-body-sm text-text-4-light dark:text-text-4-dark">Missing folders are created. Nothing already there is replaced.</p>
-    </Dialog>
-  );
-}
-
-function DeleteDialog({ shelf, entry, onClose }: { shelf: string; entry: Entry; onClose: () => void }) {
-  const deleteEntry = useDeleteEntry(shelf);
-  const { error, submit } = useSubmit('Could not delete it');
-
-  function remove(): Promise<void> {
-    return submit(() => deleteEntry.mutateAsync({ kind: entry.kind, id: entry.value.id }), () => {
-      toast.success(`Moved ${entry.value.name} to the trash`);
-      onClose();
-    });
-  }
-
-  const what = entry.kind === 'directory' ? 'This folder and everything in it go' : 'It goes';
-  return (
-    <Dialog open title={`Delete ${entry.value.name}?`} onClose={onClose} onSubmit={() => void remove()} submitLabel="Delete" submitVariant="danger" submitting={deleteEntry.isPending} error={error}>
-      <p className="text-body-md text-text-2-light dark:text-text-2-dark">{what} to the trash, where it can be restored until it is purged.</p>
-    </Dialog>
+    <FormDialog open title={`Rename ${entry.value.name}`} onClose={onClose} onSubmit={() => void rename()} submitLabel="Rename" submitting={moveEntry.isPending} error={error}>
+      <Input
+        label="Name"
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        onFocus={(event) => event.currentTarget.setSelectionRange(0, stemLength(event.currentTarget.value, entry.kind))}
+        autoComplete="off"
+        required
+      />
+    </FormDialog>
   );
 }

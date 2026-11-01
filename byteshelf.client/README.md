@@ -3,8 +3,13 @@
 The ByteShelf web UI: React, TypeScript, Vite, Tailwind and TanStack Query, built on the house
 template. Everyone browses the shelves they reach, uploads (dropping files on a directory works too),
 opens and downloads files, moves, renames and deletes them, and restores them from the trash. Admins
-also create shelves and users, set quotas, give access and make keys, and in Settings pair replicas,
-see how far behind each is, remove one, and promote a replica.
+also create shelves and users, set quotas, give access from a shelf or from a user, make keys, and on
+the Replication page pair replicas, see how far behind each is, remove one, and promote a replica.
+
+`src/ui` is the UI library: buttons, fields, cards, dialogs, menus, page layout and the sidebar, with
+the colour, type and icon systems and the Tailwind preset they need. It was copied from the house
+component library, trimmed to what ByteShelf uses; pages import from `src/ui`, and app-specific
+pieces (the form dialog, the file button, the quota field) live in `src/components`.
 
 ## Working on it
 
@@ -43,5 +48,5 @@ npm run codegen    # in a second terminal
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and
   refetches what each event makes stale (`lib/invalidationMap.ts`), so a change made elsewhere shows up
   within about a second. A test checks the map covers every resource the server publishes. The one
-  exception is replication's status in Settings, polled every 5 seconds: a replica's lag changes
+  exception is the Replication page's status, polled every 5 seconds: a replica's lag changes
   without anything being published.

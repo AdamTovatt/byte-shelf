@@ -12,9 +12,20 @@ export function formatBytes(bytes: number): string {
   return unit === 0 ? `${bytes} B` : `${Number(size.toFixed(1))} ${SIZE_UNITS[unit]}`;
 }
 
-/** An instant from the server, in the reader's own time zone. */
+function twoDigits(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+/** A day from the server in the reader's own time zone, the same in every locale: 2026-03-01. */
+export function formatDate(instant: string): string {
+  const date = new Date(instant);
+  return `${date.getFullYear()}-${twoDigits(date.getMonth() + 1)}-${twoDigits(date.getDate())}`;
+}
+
+/** An instant from the server in the reader's own time zone, on a 24-hour clock: 2026-03-01 14:05. */
 export function formatTime(instant: string): string {
-  return new Date(instant).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  const date = new Date(instant);
+  return `${formatDate(instant)} ${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}`;
 }
 
 const MEBIBYTE = 1024 * 1024;
@@ -30,24 +41,36 @@ export function describeUsage(shelf: { usedBytes: number; quotaBytes?: number | 
   return `${formatBytes(shelf.usedBytes)}${quota} used · ${shelf.fileCount} ${shelf.fileCount === 1 ? 'file' : 'files'}`;
 }
 
-/** A quota in MiB, as typed into a form; empty without a quota. The reverse of parseQuotaMegabytes. */
-export function formatQuotaMegabytes(quotaBytes: number | null | undefined): string {
-  return hasQuota(quotaBytes) ? String(quotaBytes / MEBIBYTE) : '';
+/** The units a quota is typed in. */
+export type QuotaUnit = 'MiB' | 'GiB';
+
+export const QUOTA_UNITS: QuotaUnit[] = ['MiB', 'GiB'];
+
+const QUOTA_UNIT_BYTES: Record<QuotaUnit, number> = { MiB: MEBIBYTE, GiB: 1024 * MEBIBYTE };
+
+/** A quota as typed into a form: in GiB when it is whole GiB, else in MiB; empty without a quota. */
+export function formatQuota(quotaBytes: number | null | undefined): { amount: string; unit: QuotaUnit } {
+  if (!hasQuota(quotaBytes)) {
+    return { amount: '', unit: 'GiB' };
+  }
+
+  const unit: QuotaUnit = quotaBytes > 0 && quotaBytes % QUOTA_UNIT_BYTES.GiB === 0 ? 'GiB' : 'MiB';
+  return { amount: String(quotaBytes / QUOTA_UNIT_BYTES[unit]), unit };
 }
 
-/** A quota typed in MiB, as bytes; null when left empty. */
-export function parseQuotaMegabytes(text: string): number | null {
-  const trimmed = text.trim();
+/** A quota typed as an amount of `unit`, as bytes; null when left empty. The reverse of formatQuota. */
+export function parseQuota(amount: string, unit: QuotaUnit): number | null {
+  const trimmed = amount.trim();
   if (trimmed === '') {
     return null;
   }
 
-  const megabytes = Number(trimmed);
-  if (!Number.isFinite(megabytes) || megabytes < 0) {
-    throw new Error('The quota is a number of MiB, or empty for no limit');
+  const value = Number(trimmed);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(`The quota is a number of ${unit}, or empty for no limit`);
   }
 
-  return Math.round(megabytes * MEBIBYTE);
+  return Math.round(value * QUOTA_UNIT_BYTES[unit]);
 }
 
 /** How much of a quota is used, 0 to 1; null without a quota. */

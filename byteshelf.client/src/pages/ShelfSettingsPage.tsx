@@ -1,45 +1,34 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Button, ButtonGroup, CardList, CardListItem, CopyableSecret, Dialog, IconButton, Input, SectionTitle } from '../components/ui';
-import { Icon } from '../components/ui/Icon';
+import { Button, ButtonGroup, Card, CopyField, Icon, IconButton, Input, PageLayout, iconMap } from '../ui';
+import { FormDialog } from '../components/FormDialog';
+import { QuotaField } from '../components/QuotaField';
+import { SectionTitle } from '../components/SectionTitle';
 import { ShelfHeader } from '../components/ShelfHeader';
 import { useCreateKey, useDeleteKey, useGrants, useKeys, useRemoveGrant, useSetGrant } from '../hooks/useAccessQueries';
 import { useDeleteShelf, useShelf, useUpdateShelf } from '../hooks/useShelfQueries';
 import { useUsers } from '../hooks/useUserQueries';
-import { iconMap } from '../lib/iconMap';
-import { formatQuotaMegabytes, formatTime, parseQuotaMegabytes } from '../lib/format';
+import { formatQuota, formatTime, parseQuota, type QuotaUnit } from '../lib/format';
+import { ACCESS_OPTIONS, KEY_OPTIONS, keyPermissionLabel } from '../lib/access';
 import { shelfViewRoute } from '../lib/shelfPaths';
 import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
 import type { CreatedShelfKey, ShelfAccessGrant, ShelfAccessPermission, ShelfKeyInfo, ShelfKeyPermission } from '../services/accessService';
 import type { ShelfInfo } from '../services/shelfService';
 
-const ACCESS_OPTIONS: { value: ShelfAccessPermission; label: string }[] = [
-  { value: 'read', label: 'Read' },
-  { value: 'readWrite', label: 'Read and write' },
-];
-
-const KEY_OPTIONS: { value: ShelfKeyPermission; label: string }[] = [
-  { value: 'read', label: 'Read' },
-  { value: 'addOnly', label: 'Add only' },
-  { value: 'readWrite', label: 'Read and write' },
-];
-
 /** An admin's view of one shelf: its name and quota, who may use it, its keys, and deleting it. */
 export function ShelfSettingsPage() {
   const shelf = useParams().shelf!;
 
   return (
-    <div className="p-6 md:p-8">
-      <div className="max-w-3xl mx-auto space-y-10">
-        <ShelfHeader shelf={shelf} view="settings" />
-        <SettingsSection shelf={shelf} />
-        <GrantsSection shelf={shelf} />
-        <KeysSection shelf={shelf} />
-        <DeleteSection shelf={shelf} />
-      </div>
-    </div>
+    <PageLayout className="space-y-10">
+      <ShelfHeader shelf={shelf} view="settings" />
+      <SettingsSection shelf={shelf} />
+      <GrantsSection shelf={shelf} />
+      <KeysSection shelf={shelf} />
+      <DeleteSection shelf={shelf} />
+    </PageLayout>
   );
 }
 
@@ -53,26 +42,27 @@ function SettingsForm({ info }: { info: ShelfInfo }) {
   const shelf = info.name;
   const updateShelf = useUpdateShelf(shelf);
   const navigate = useNavigate();
+  const initialQuota = formatQuota(info.quotaBytes);
   const [name, setName] = useState(info.name);
-  const [quota, setQuota] = useState(formatQuotaMegabytes(info.quotaBytes));
+  const [quota, setQuota] = useState(initialQuota.amount);
+  const [unit, setUnit] = useState<QuotaUnit>(initialQuota.unit);
   const { error, submit } = useSubmit('Could not save');
 
   function save(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
-    return submit(() => updateShelf.mutateAsync({ name: name.trim(), quotaBytes: parseQuotaMegabytes(quota) }), (updated) => {
+    return submit(() => updateShelf.mutateAsync({ name: name.trim(), quotaBytes: parseQuota(quota, unit) }), (updated) => {
       toast.success('Saved');
       if (updated.name !== shelf) navigate(shelfViewRoute(updated.name, 'settings'), { replace: true });
     });
   }
 
   return (
-    <section className="space-y-3">
-      <SectionTitle>Name and quota</SectionTitle>
-      <form onSubmit={(event) => void save(event)} className="space-y-3">
+    <section className="space-y-4">
+      <SectionTitle description="A new name changes the shelf's links. A quota below what it holds only stops new uploads.">Name and quota</SectionTitle>
+      <form onSubmit={(event) => void save(event)} className="space-y-4">
         <Input label="Name" value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" required />
-        <Input label="Quota in MiB" value={quota} onChange={(event) => setQuota(event.target.value)} placeholder="No limit" inputMode="decimal" autoComplete="off" error={error} />
-        <p className="text-body-sm text-text-4-light dark:text-text-4-dark">A new name changes the shelf's links. A quota below what it holds only stops new uploads.</p>
-        <Button type="submit" variant="primary" loading={updateShelf.isPending}>Save</Button>
+        <QuotaField amount={quota} unit={unit} onAmountChange={setQuota} onUnitChange={setUnit} error={error} />
+        <Button type="submit" variant="main" loading={updateShelf.isPending}>Save</Button>
       </form>
     </section>
   );
@@ -80,37 +70,37 @@ function SettingsForm({ info }: { info: ShelfInfo }) {
 
 function GrantsSection({ shelf }: { shelf: string }) {
   const { data: grants = [] } = useGrants(shelf);
-  const setGrant = useSetGrant(shelf);
+  const setGrant = useSetGrant();
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<ShelfAccessGrant | null>(null);
 
   return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between">
-        <SectionTitle>Access</SectionTitle>
-        <Button size="sm" variant="secondary" icon={<Icon icon={iconMap.add} size={16} />} onClick={() => setAdding(true)}>Give access</Button>
-      </div>
-      <p className="text-body-sm text-text-4-light dark:text-text-4-dark">Admins reach every shelf; everyone else only the ones they are given.</p>
+    <section className="space-y-4">
+      <SectionTitle
+        description="Admins reach every shelf; everyone else only the ones they are given."
+        actions={<Button size="sm" variant="secondary" icon={<Icon icon={iconMap.add} size={14} />} onClick={() => setAdding(true)}>Give access</Button>}
+      >
+        Access
+      </SectionTitle>
       {grants.length > 0 && (
-        <CardList>
+        <Card variant="elevated" padding="none" className="divide-y divide-border">
           {grants.map((grant) => (
-            <CardListItem key={grant.userId}>
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-body-lg text-text-1-light dark:text-text-1-dark">{grant.displayName}</div>
-                  <div className="truncate text-body-sm text-text-3-light dark:text-text-3-dark">{grant.email}</div>
-                </div>
-                <ButtonGroup
-                  size="sm"
-                  options={ACCESS_OPTIONS}
-                  value={grant.permission}
-                  onChange={(permission) => void runOrToast(() => setGrant.mutateAsync({ userId: grant.userId, permission }), 'Could not change the access')}
-                />
-                <IconButton variant="ghost" size="sm" icon={iconMap.delete} aria-label={`Take ${grant.email}'s access away`} onClick={() => setRemoving(grant)} />
+            <div key={grant.userId} className="flex flex-wrap items-center gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-body-md text-fg">{grant.displayName}</div>
+                <div className="truncate text-body-sm text-muted">{grant.email}</div>
               </div>
-            </CardListItem>
+              <ButtonGroup
+                size="sm"
+                options={ACCESS_OPTIONS}
+                value={grant.permission}
+                ariaLabel={`${grant.email}'s access`}
+                onChange={(permission) => void runOrToast(() => setGrant.mutateAsync({ shelf, userId: grant.userId, permission }), 'Could not change the access')}
+              />
+              <IconButton variant="ghost" size="sm" icon={iconMap.delete} aria-label={`Take ${grant.email}'s access away`} onClick={() => setRemoving(grant)} />
+            </div>
           ))}
-        </CardList>
+        </Card>
       )}
       {adding && <GiveAccessDialog shelf={shelf} grantedUserIds={grants.map((grant) => grant.userId)} onClose={() => setAdding(false)} />}
       {removing && <RemoveGrantDialog shelf={shelf} grant={removing} onClose={() => setRemoving(null)} />}
@@ -119,28 +109,28 @@ function GrantsSection({ shelf }: { shelf: string }) {
 }
 
 function RemoveGrantDialog({ shelf, grant, onClose }: { shelf: string; grant: ShelfAccessGrant; onClose: () => void }) {
-  const removeGrant = useRemoveGrant(shelf);
+  const removeGrant = useRemoveGrant();
   const { error, submit } = useSubmit('Could not take the access away');
 
   return (
-    <Dialog
+    <FormDialog
       open
       title={`Take ${grant.email}'s access away?`}
       onClose={onClose}
-      onSubmit={() => void submit(() => removeGrant.mutateAsync(grant.userId), onClose)}
+      onSubmit={() => void submit(() => removeGrant.mutateAsync({ shelf, userId: grant.userId }), onClose)}
       submitLabel="Take away"
       submitVariant="danger"
       submitting={removeGrant.isPending}
       error={error}
     >
-      <p className="text-body-md text-text-2-light dark:text-text-2-dark">They no longer see {shelf}. What they stored stays on it.</p>
-    </Dialog>
+      <p className="text-body-md text-fg">They no longer see {shelf}. What they stored stays on it.</p>
+    </FormDialog>
   );
 }
 
 function GiveAccessDialog({ shelf, grantedUserIds, onClose }: { shelf: string; grantedUserIds: string[]; onClose: () => void }) {
   const { data: users = [] } = useUsers();
-  const setGrant = useSetGrant(shelf);
+  const setGrant = useSetGrant();
   const [email, setEmail] = useState('');
   const [permission, setPermission] = useState<ShelfAccessPermission>('read');
   const { error, setError, submit } = useSubmit('Could not give access');
@@ -157,14 +147,14 @@ function GiveAccessDialog({ shelf, grantedUserIds, onClose }: { shelf: string; g
       return Promise.resolve();
     }
 
-    return submit(() => setGrant.mutateAsync({ userId: user.id, permission }), onClose);
+    return submit(() => setGrant.mutateAsync({ shelf, userId: user.id, permission }), onClose);
   }
 
   return (
-    <Dialog open title="Give access" onClose={onClose} onSubmit={() => void give()} submitLabel="Give access" submitting={setGrant.isPending} error={error}>
+    <FormDialog open title="Give access" onClose={onClose} onSubmit={() => void give()} submitLabel="Give access" submitting={setGrant.isPending} error={error}>
       <Input label="User's email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="off" required />
-      <ButtonGroup options={ACCESS_OPTIONS} value={permission} onChange={setPermission} />
-    </Dialog>
+      <ButtonGroup options={ACCESS_OPTIONS} value={permission} onChange={setPermission} ariaLabel="Access" />
+    </FormDialog>
   );
 }
 
@@ -174,28 +164,25 @@ function KeysSection({ shelf }: { shelf: string }) {
   const [deleting, setDeleting] = useState<ShelfKeyInfo | null>(null);
 
   return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between">
-        <SectionTitle>Keys</SectionTitle>
-        <Button size="sm" variant="secondary" icon={<Icon icon={iconMap.key} size={16} />} onClick={() => setCreating(true)}>New key</Button>
-      </div>
-      <p className="text-body-sm text-text-4-light dark:text-text-4-dark">A key lets a program use this shelf, and only this shelf. Deleting it stops it at once.</p>
+    <section className="space-y-4">
+      <SectionTitle
+        description="A key lets a program use this shelf, and only this shelf. Deleting it stops it at once."
+        actions={<Button size="sm" variant="secondary" icon={<Icon icon={iconMap.key} size={14} />} onClick={() => setCreating(true)}>New key</Button>}
+      >
+        Keys
+      </SectionTitle>
       {keys.length > 0 && (
-        <CardList>
+        <Card variant="elevated" padding="none" className="divide-y divide-border">
           {keys.map((key) => (
-            <CardListItem key={key.id}>
-              <div className="flex items-center gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-body-lg text-text-1-light dark:text-text-1-dark">{key.name}</div>
-                  <div className="text-body-sm text-text-3-light dark:text-text-3-dark">
-                    {KEY_OPTIONS.find((option) => option.value === key.permission)?.label} · created {formatTime(key.createdAt)}
-                  </div>
-                </div>
-                <IconButton variant="ghost" size="sm" icon={iconMap.delete} aria-label={`Delete the key ${key.name}`} onClick={() => setDeleting(key)} />
+            <div key={key.id} className="flex items-center gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-body-md text-fg">{key.name}</div>
+                <div className="text-body-sm text-muted">{keyPermissionLabel(key.permission)} · created {formatTime(key.createdAt)}</div>
               </div>
-            </CardListItem>
+              <IconButton variant="ghost" size="sm" icon={iconMap.delete} aria-label={`Delete the key ${key.name}`} onClick={() => setDeleting(key)} />
+            </div>
           ))}
-        </CardList>
+        </Card>
       )}
       {creating && <CreateKeyDialog shelf={shelf} onClose={() => setCreating(false)} />}
       {deleting && <DeleteKeyDialog shelf={shelf} shelfKey={deleting} onClose={() => setDeleting(null)} />}
@@ -208,7 +195,7 @@ function DeleteKeyDialog({ shelf, shelfKey, onClose }: { shelf: string; shelfKey
   const { error, submit } = useSubmit('Could not delete the key');
 
   return (
-    <Dialog
+    <FormDialog
       open
       title={`Delete the key ${shelfKey.name}?`}
       onClose={onClose}
@@ -218,8 +205,8 @@ function DeleteKeyDialog({ shelf, shelfKey, onClose }: { shelf: string; shelfKey
       submitting={deleteKey.isPending}
       error={error}
     >
-      <p className="text-body-md text-text-2-light dark:text-text-2-dark">Whatever uses it stops working at once. It cannot be undone.</p>
-    </Dialog>
+      <p className="text-body-md text-fg">Whatever uses it stops working at once. It cannot be undone.</p>
+    </FormDialog>
   );
 }
 
@@ -236,19 +223,22 @@ function CreateKeyDialog({ shelf, onClose }: { shelf: string; onClose: () => voi
 
   if (created) {
     return (
-      <Dialog open title={`Key "${created.key.name}"`} onClose={onClose}>
-        <p className="text-body-md text-text-2-light dark:text-text-2-dark">Copy the secret now: it is shown this once.</p>
-        <CopyableSecret value={created.secret} />
-      </Dialog>
+      <FormDialog open title={`Key "${created.key.name}"`} onClose={onClose}>
+        <p className="text-body-md text-fg">Copy the key now: it is shown this once. A program, the byteshelf command line among them, takes these two settings:</p>
+        <CopyField label="BYTESHELF_URL" value={`${window.location.origin}/`} copyButtonAriaLabel="Copy the server's address" />
+        <CopyField label="BYTESHELF_KEY" value={created.secret} copyButtonAriaLabel="Copy the key" />
+      </FormDialog>
     );
   }
 
   return (
-    <Dialog open title="New key" onClose={onClose} onSubmit={() => void create()} submitLabel="Create" submitting={createKey.isPending} error={error}>
+    <FormDialog open title="New key" onClose={onClose} onSubmit={() => void create()} submitLabel="Create" submitting={createKey.isPending} error={error}>
       <Input label="Name" value={name} onChange={(event) => setName(event.target.value)} placeholder="What uses it, such as backup job" autoComplete="off" required />
-      <ButtonGroup options={KEY_OPTIONS} value={permission} onChange={setPermission} />
-      <p className="text-body-sm text-text-4-light dark:text-text-4-dark">Add only stores new files and never replaces or deletes one.</p>
-    </Dialog>
+      <div className="space-y-1.5">
+        <ButtonGroup options={KEY_OPTIONS} value={permission} onChange={setPermission} ariaLabel="What the key may do" className="w-full" />
+        <p className="text-body-sm text-muted">Add only stores new files and never replaces or deletes one.</p>
+      </div>
+    </FormDialog>
   );
 }
 
@@ -266,11 +256,10 @@ function DeleteSection({ shelf }: { shelf: string }) {
   }
 
   return (
-    <section className="space-y-3">
-      <SectionTitle>Delete the shelf</SectionTitle>
-      <p className="text-body-sm text-text-4-light dark:text-text-4-dark">Only an empty shelf can be deleted: delete what it holds and empty its trash first.</p>
+    <section className="space-y-4">
+      <SectionTitle description="Only an empty shelf can be deleted: delete what it holds and empty its trash first.">Delete the shelf</SectionTitle>
       <Button variant="outlineDanger" onClick={() => setConfirming(true)}>Delete shelf</Button>
-      <Dialog
+      <FormDialog
         open={confirming}
         title={`Delete ${shelf}?`}
         onClose={() => {
@@ -283,8 +272,8 @@ function DeleteSection({ shelf }: { shelf: string }) {
         submitting={deleteShelf.isPending}
         error={error}
       >
-        <p className="text-body-md text-text-2-light dark:text-text-2-dark">Its access grants and keys are deleted with it.</p>
-      </Dialog>
+        <p className="text-body-md text-fg">Its access grants and keys are deleted with it.</p>
+      </FormDialog>
     </section>
   );
 }

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react';
 import { readStoredValue, writeStoredValue } from '../lib/storage';
+import { SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from '../ui';
 
 interface SidebarContextValue {
   isCollapsed: boolean;
@@ -15,11 +16,6 @@ const SidebarContext = createContext<SidebarContextValue | undefined>(undefined)
 
 const COLLAPSED_STORAGE_KEY = 'sidebar-collapsed';
 const WIDTH_STORAGE_KEY = 'sidebar-width';
-
-export const SIDEBAR_MIN_WIDTH = 180;
-export const SIDEBAR_MAX_WIDTH = 400;
-export const SIDEBAR_COLLAPSED_WIDTH = 64;
-export const SIDEBAR_DEFAULT_WIDTH = 240;
 
 function getInitialCollapsed(): boolean {
   return readStoredValue(COLLAPSED_STORAGE_KEY) === 'true';

@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../lib/queryKeys';
 import {
   createKey,
@@ -26,17 +26,30 @@ function useInvalidateAccess() {
   };
 }
 
-export function useSetGrant(shelf: string) {
+/**
+ * Every grant on each of `shelves`, by shelf: what a user's row on the users page reads. One request a
+ * shelf, the same queries each shelf's settings use, so the event stream keeps both fresh.
+ */
+export function useGrantsByShelf(shelves: string[]) {
+  return useQueries({
+    queries: shelves.map((shelf) => ({ queryKey: queryKeys.shelfAccess.grants(shelf), queryFn: () => fetchGrants(shelf) })),
+    combine: (results) => new Map(shelves.map((shelf, index) => [shelf, results[index].data ?? []])),
+  });
+}
+
+/** Gives a user access to a shelf, or changes it. */
+export function useSetGrant() {
   const invalidate = useInvalidateAccess();
   return useMutation({
-    mutationFn: ({ userId, permission }: { userId: string; permission: ShelfAccessPermission }) => setGrant(shelf, userId, permission),
+    mutationFn: ({ shelf, userId, permission }: { shelf: string; userId: string; permission: ShelfAccessPermission }) => setGrant(shelf, userId, permission),
     onSuccess: invalidate,
   });
 }
 
-export function useRemoveGrant(shelf: string) {
+/** Takes a user's access to a shelf away. */
+export function useRemoveGrant() {
   const invalidate = useInvalidateAccess();
-  return useMutation({ mutationFn: (userId: string) => removeGrant(shelf, userId), onSuccess: invalidate });
+  return useMutation({ mutationFn: ({ shelf, userId }: { shelf: string; userId: string }) => removeGrant(shelf, userId), onSuccess: invalidate });
 }
 
 export function useCreateKey(shelf: string) {

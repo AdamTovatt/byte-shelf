@@ -1,78 +1,67 @@
-import { useCallback, useRef, useState } from 'react';
+import { useMemo, useRef } from 'react';
 import { ApiError } from '../services/apiClient';
 import { ERROR_CODES } from '../services/errorCodes';
 import { uploadFile } from '../services/uploadService';
 import { joinPath } from '../lib/shelfPaths';
-import { getErrorMessage } from '../lib/utils';
+import { getErrorMessage } from '../ui';
+import { reportUpload } from '../components/uploadToasts';
 import { useInvalidateShelf } from './useShelfQueries';
 
-export type UploadStatus = 'waiting' | 'uploading' | 'done' | 'failed' | 'taken';
-
-export interface UploadItem {
+export interface Upload {
   id: number;
   file: File;
   path: string;
-  sentBytes: number;
-  status: UploadStatus;
-  error?: string;
 }
 
+/** Where an upload is: told to the reporter each time it changes. */
+export type UploadState =
+  | { status: 'uploading'; sentBytes: number }
+  | { status: 'done' }
+  | { status: 'taken'; error: string; replace: () => void }
+  | { status: 'failed'; error: string };
+
+export type UploadReporter = (upload: Upload, state: UploadState) => void;
+
 /**
- * Uploads files to a shelf one at a time, keeping each one's progress. A file whose name is taken
- * waits as 'taken' until it is replaced or dismissed; nothing is ever overwritten unasked.
+ * Uploads files to a shelf one at a time, telling `report` (toasts, by default) how each one goes. A
+ * file whose name is taken is offered for replacing; nothing is ever overwritten unasked.
  */
-export function useUploads(shelf: string) {
-  const [items, setItems] = useState<UploadItem[]>([]);
+export function useUploads(shelf: string, report: UploadReporter = reportUpload) {
   const nextId = useRef(1);
   const queue = useRef<Promise<void>>(Promise.resolve());
   const invalidate = useInvalidateShelf();
 
-  const update = useCallback((id: number, change: Partial<UploadItem>) => {
-    setItems((current) => current.map((item) => (item.id === id ? { ...item, ...change } : item)));
-  }, []);
+  return useMemo(() => {
+    // A declaration rather than a callback, so a taken name's Replace can queue the same upload again.
+    function run(upload: Upload, overwrite: boolean): void {
+      queue.current = queue.current.then(async () => {
+        report(upload, { status: 'uploading', sentBytes: 0 });
+        try {
+          await uploadFile({
+            shelf,
+            path: upload.path,
+            file: upload.file,
+            overwrite,
+            onProgress: (sentBytes) => report(upload, { status: 'uploading', sentBytes }),
+          });
+          report(upload, { status: 'done' });
+          invalidate();
+        } catch (caught) {
+          const error = getErrorMessage(caught, 'The upload failed');
+          if (caught instanceof ApiError && caught.code === ERROR_CODES.conflict && !overwrite) {
+            report(upload, { status: 'taken', error, replace: () => run(upload, true) });
+          } else {
+            report(upload, { status: 'failed', error });
+          }
+        }
+      });
+    }
 
-  const run = useCallback((item: UploadItem, overwrite: boolean) => {
-    queue.current = queue.current.then(async () => {
-      update(item.id, { status: 'uploading', sentBytes: 0, error: undefined });
-      try {
-        await uploadFile({
-          shelf,
-          path: item.path,
-          file: item.file,
-          overwrite,
-          onProgress: (sentBytes) => update(item.id, { sentBytes }),
-        });
-        update(item.id, { status: 'done', sentBytes: item.file.size });
-        invalidate();
-      } catch (caught) {
-        const taken = caught instanceof ApiError && caught.code === ERROR_CODES.conflict && !overwrite;
-        update(item.id, { status: taken ? 'taken' : 'failed', error: getErrorMessage(caught, 'The upload failed') });
-      }
-    });
-  }, [shelf, update, invalidate]);
-
-  /** Uploads `files` into the directory at `directory`, each under its own name. */
-  const upload = useCallback((files: File[], directory: string) => {
-    const added = files.map((file): UploadItem => ({
-      id: nextId.current++,
-      file,
-      path: joinPath(directory, file.name),
-      sentBytes: 0,
-      status: 'waiting',
-    }));
-    setItems((current) => [...current, ...added]);
-    for (const item of added) run(item, false);
-  }, [run]);
-
-  const replace = useCallback((item: UploadItem) => run(item, true), [run]);
-
-  const dismiss = useCallback((id: number) => {
-    setItems((current) => current.filter((item) => item.id !== id));
-  }, []);
-
-  const clearFinished = useCallback(() => {
-    setItems((current) => current.filter((item) => item.status !== 'done'));
-  }, []);
-
-  return { items, upload, replace, dismiss, clearFinished };
+    return {
+      /** Uploads `files` into the directory at `directory`, each under its own name. */
+      upload(files: File[], directory: string): void {
+        for (const file of files) run({ id: nextId.current++, file, path: joinPath(directory, file.name) }, false);
+      },
+    };
+  }, [shelf, report, invalidate]);
 }

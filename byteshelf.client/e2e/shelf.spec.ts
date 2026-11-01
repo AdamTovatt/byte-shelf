@@ -26,19 +26,19 @@ test('a file uploaded in one tab appears in another and downloads intact', async
   await expect(uploader).toHaveURL('/shelves/e2e');
 
   await watcher.goto('/shelves/e2e');
-  await expect(watcher.getByText('Nothing here yet')).toBeVisible();
+  await expect(watcher.getByText('Nothing here yet', { exact: false })).toBeVisible();
 
   // Creating the shelf makes its contents stale too, and that news may reach the watcher just after
   // the first upload and bring it in. Once the first file shows, no earlier news is left, so only
   // the second upload's own can bring the second file in.
-  async function upload(name: string, text: string, stored: number): Promise<void> {
+  async function upload(name: string, text: string): Promise<void> {
     await uploader.getByTestId('file-input').setInputFiles({ name, mimeType: 'text/plain', buffer: Buffer.from(text) });
-    await expect(uploader.getByText('Stored')).toHaveCount(stored);
-    await expect(watcher.getByRole('button', { name, exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(uploader.getByText(`Uploaded ${name}`)).toBeVisible();
+    await expect(watcher.getByRole('button', { name: `Open ${name} in a new tab`, exact: true })).toBeVisible({ timeout: 15_000 });
   }
 
-  await upload('first.txt', 'the first file', 1);
-  await upload('hello.txt', 'hello from the browser test', 2);
+  await upload('first.txt', 'the first file');
+  await upload('hello.txt', 'hello from the browser test');
 
   const download = watcher.waitForEvent('download');
   await watcher.getByRole('button', { name: 'Actions for hello.txt' }).click();

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Button, ButtonGroup } from './ui';
+import { Breadcrumbs, ButtonGroup, iconMap, type BreadcrumbItem } from '../ui';
 import { useShelf } from '../hooks/useShelfQueries';
 import { useIsAdmin } from '../hooks/useUserQueries';
 import { describeUsage } from '../lib/format';
@@ -12,41 +12,37 @@ interface ShelfHeaderProps {
   path?: string;
 }
 
+const VIEW_LABELS: Record<ShelfView, string> = { files: 'Files', trash: 'Trash', settings: 'Settings' };
+
 /** A shelf's name, where in it the page is, its usage, and its files, trash and (for admins) settings. */
 export function ShelfHeader({ shelf, view, path = ROOT_PATH }: ShelfHeaderProps) {
   const navigate = useNavigate();
   const isAdmin = useIsAdmin();
   const { data: info } = useShelf(shelf);
 
-  const views = [
-    { value: 'files', label: 'Files' },
-    { value: 'trash', label: 'Trash' },
-    ...(isAdmin ? [{ value: 'settings', label: 'Settings' }] : []),
+  const views: ShelfView[] = isAdmin ? ['files', 'trash', 'settings'] : ['files', 'trash'];
+  const crumbs: BreadcrumbItem[] = [
+    { key: 'shelves', label: 'Shelves', to: '/' },
+    { key: shelf, label: shelf, to: shelfRoute(shelf), icon: iconMap.shelf },
+    ...(view === 'files'
+      ? pathSegments(path).map((segment): BreadcrumbItem => ({ key: segment.path, label: segment.name, to: shelfRoute(shelf, segment.path) }))
+      : [{ key: view, label: VIEW_LABELS[view], to: null }]),
   ];
-
-  function open(next: string): void {
-    navigate(shelfViewRoute(shelf, next as ShelfView));
-  }
 
   return (
     <div className="space-y-3">
+      <Breadcrumbs items={crumbs} />
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <nav aria-label="Breadcrumbs" className="flex flex-wrap items-center gap-1 text-heading-sm">
-          <Button variant="text" onClick={() => navigate(shelfRoute(shelf))} className="!px-1 text-heading-sm text-text-1-light dark:text-text-1-dark">
-            {shelf}
-          </Button>
-          {view === 'files' && pathSegments(path).map((segment) => (
-            <span key={segment.path} className="flex items-center gap-1">
-              <span className="text-text-4-light dark:text-text-4-dark">/</span>
-              <Button variant="text" onClick={() => navigate(shelfRoute(shelf, segment.path))} className="!px-1 text-heading-sm text-text-1-light dark:text-text-1-dark">
-                {segment.name}
-              </Button>
-            </span>
-          ))}
-        </nav>
-        <ButtonGroup options={views} value={view} onChange={open} size="sm" />
+        <ButtonGroup
+          options={views.map((value) => ({ value, label: VIEW_LABELS[value] }))}
+          value={view}
+          onChange={(next) => navigate(shelfViewRoute(shelf, next))}
+          size="sm"
+          ariaTablist
+          ariaLabel={`${shelf} views`}
+        />
+        {info && <p className="text-body-md text-muted">{describeUsage(info)}</p>}
       </div>
-      {info && <p className="text-body-md text-text-3-light dark:text-text-3-dark">{describeUsage(info)}</p>}
     </div>
   );
 }

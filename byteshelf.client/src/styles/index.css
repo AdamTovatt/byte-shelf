@@ -1,42 +1,25 @@
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=Space+Grotesk:wght@500;600;700&display=swap');
+/* Inter as one variable font, bundled rather than fetched from a font service, so a self-hosted
+   server's pages need nothing from elsewhere. */
+@import '@fontsource-variable/inter';
+@import '../ui/typography.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@layer components {
-  .text-heading-lg { font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 2.5rem; font-weight: 700; line-height: 1.1; letter-spacing: -0.03em; }
-  .text-heading-md { font-family: 'Space Grotesk', system-ui, sans-serif; font-size: 1.35rem; font-weight: 700; line-height: 1.3; letter-spacing: -0.02em; }
-  .text-heading-sm { font-family: 'Geist', system-ui, sans-serif; font-size: 1rem; font-weight: 600; line-height: 1.5; letter-spacing: 0.01em; }
-  .text-body-lg { font-family: 'Geist', system-ui, sans-serif; font-size: 0.875rem; font-weight: 400; line-height: 1.25rem; letter-spacing: 0.01em; }
-  .text-body-md { font-family: 'Geist', system-ui, sans-serif; font-size: 0.75rem; font-weight: 500; line-height: 1rem; letter-spacing: 0.01em; }
-  .text-body-sm { font-family: 'Geist', system-ui, sans-serif; font-size: 0.625rem; font-weight: 500; line-height: 0.875rem; letter-spacing: 0.01em; }
-}
-
 @layer base {
-  :root {
-    font-family: 'Geist', system-ui, Avenir, Helvetica, Arial, sans-serif;
-    line-height: 1.5;
-    font-weight: 400;
-
-    font-synthesis: none;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-  }
-
   html {
-    @apply bg-elevation-1-light dark:bg-elevation-1-dark;
+    @apply bg-canvas;
   }
 
   body {
     margin: 0;
     min-width: 320px;
     min-height: 100vh;
-    @apply bg-elevation-1-light dark:bg-elevation-1-dark text-text-1-light dark:text-text-1-dark;
+    @apply bg-canvas text-fg;
   }
 
-  /* Prevent browser default outline on form elements — they use ring styling instead */
+  /* Form controls draw their own focus styling. */
   input,
   textarea,
   select {
@@ -52,22 +35,13 @@
     outline: none !important;
   }
 
-  /* Prevent white flash on input autofill */
+  /* Autofill keeps the field's own colours rather than the browser's yellow, in both themes. */
   input:-webkit-autofill,
   input:-webkit-autofill:hover,
   input:-webkit-autofill:focus,
   input:-webkit-autofill:active {
-    -webkit-box-shadow: 0 0 0 30px #E3E3E5 inset !important; /* colors.elevation[3].light */
-    -webkit-text-fill-color: #1A1A1A !important; /* colors.text[1].light */
-    transition: background-color 5000s ease-in-out 0s;
-  }
-
-  .dark input:-webkit-autofill,
-  .dark input:-webkit-autofill:hover,
-  .dark input:-webkit-autofill:focus,
-  .dark input:-webkit-autofill:active {
-    -webkit-box-shadow: 0 0 0 30px #313344 inset !important; /* colors.elevation[3].dark */
-    -webkit-text-fill-color: #F0F1F5 !important; /* colors.text[1].dark */
+    -webkit-box-shadow: 0 0 0 30px rgb(var(--field)) inset !important;
+    -webkit-text-fill-color: rgb(var(--fg)) !important;
     transition: background-color 5000s ease-in-out 0s;
   }
 }

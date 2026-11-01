@@ -1,44 +1,80 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
-import { Button, ButtonGroup, CardList, CardListItem, Dialog, Dropdown, DropdownItem, IconButton, Input, PasswordInput, Spinner } from '../components/ui';
-import { Icon } from '../components/ui/Icon';
+import { Button, ButtonGroup, Card, Dropdown, DropdownItem, Icon, IconButton, Input, PageLayout, Spinner, iconMap } from '../ui';
+import { FormDialog } from '../components/FormDialog';
+import { PasswordInput } from '../components/PasswordInput';
 import { useCreateUser, useCurrentUser, useDeleteUser, useSetRoles, useUsers } from '../hooks/useUserQueries';
-import { iconMap } from '../lib/iconMap';
+import { useGrantsByShelf, useRemoveGrant, useSetGrant } from '../hooks/useAccessQueries';
+import { useShelves } from '../hooks/useShelfQueries';
+import { ACCESS_OPTIONS } from '../lib/access';
 import { validatePassword } from '../lib/passwordValidation';
 import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
 import { ADMIN_ROLE, isAdmin, type UserInfo } from '../services/userService';
+import type { ShelfAccessPermission } from '../services/accessService';
 
-/** Every user, for an admin: creating them, making them admins, and deleting them. */
+/** A user's access to one shelf, as the users page shows it. */
+interface UserShelf {
+  shelf: string;
+  permission: ShelfAccessPermission;
+}
+
+/** Every user, for an admin: creating them, which shelves they reach, making them admins, and deleting them. */
 export function UsersPage() {
   const { data: users, isLoading } = useUsers();
+  const { data: shelves = [] } = useShelves();
+  const shelfNames = shelves.map((shelf) => shelf.name);
+  const grantsByShelf = useGrantsByShelf(shelfNames);
   const [creating, setCreating] = useState(false);
+  const [editingAccess, setEditingAccess] = useState<UserInfo | null>(null);
   const [deleting, setDeleting] = useState<UserInfo | null>(null);
 
-  return (
-    <div className="p-6 md:p-8">
-      <div className="max-w-3xl mx-auto space-y-6">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-heading-md text-text-1-light dark:text-text-1-dark">Users</h1>
-          <Button variant="primary" icon={<Icon icon={iconMap.add} size={18} />} onClick={() => setCreating(true)}>New user</Button>
-        </div>
-        <p className="text-body-sm text-text-4-light dark:text-text-4-dark">Admins create shelves and users and reach every shelf. Give everyone else access shelf by shelf, in a shelf's settings.</p>
+  function shelvesOf(user: UserInfo): UserShelf[] {
+    return shelfNames.flatMap((shelf) => {
+      const grant = grantsByShelf.get(shelf)?.find((candidate) => candidate.userId === user.id);
+      return grant ? [{ shelf, permission: grant.permission }] : [];
+    });
+  }
 
-        {isLoading && <Spinner />}
-        {users && (
-          <CardList>
-            {users.map((user) => <UserRow key={user.id} user={user} onDelete={() => setDeleting(user)} />)}
-          </CardList>
-        )}
+  return (
+    <PageLayout className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-heading-md text-fg">Users</h1>
+          <p className="text-body-md text-muted">Admins create shelves and users and reach every shelf. Everyone else reaches the shelves they are given.</p>
+        </div>
+        <Button variant="main" icon={<Icon icon={iconMap.add} size={16} />} onClick={() => setCreating(true)}>New user</Button>
       </div>
 
+      {isLoading && <Spinner />}
+      {users && (
+        <Card variant="elevated" padding="none" className="divide-y divide-border">
+          {users.map((user) => (
+            <UserRow
+              key={user.id}
+              user={user}
+              shelves={shelvesOf(user)}
+              onEditAccess={() => setEditingAccess(user)}
+              onDelete={() => setDeleting(user)}
+            />
+          ))}
+        </Card>
+      )}
+
       {creating && <CreateUserDialog onClose={() => setCreating(false)} />}
+      {editingAccess && <UserAccessDialog user={editingAccess} shelves={shelfNames} access={shelvesOf(editingAccess)} onClose={() => setEditingAccess(null)} />}
       {deleting && <DeleteUserDialog user={deleting} onClose={() => setDeleting(null)} />}
-    </div>
+    </PageLayout>
   );
 }
 
-function UserRow({ user, onDelete }: { user: UserInfo; onDelete: () => void }) {
+function describeShelves(user: UserInfo, shelves: UserShelf[]): string {
+  if (isAdmin(user)) return 'Every shelf, as an admin';
+  if (shelves.length === 0) return 'No shelves yet';
+  return shelves.map(({ shelf, permission }) => `${shelf} (${permission === 'readWrite' ? 'read and write' : 'read'})`).join(', ');
+}
+
+function UserRow({ user, shelves, onEditAccess, onDelete }: { user: UserInfo; shelves: UserShelf[]; onEditAccess: () => void; onDelete: () => void }) {
   const { data: me } = useCurrentUser();
   const setRoles = useSetRoles();
   const admin = isAdmin(user);
@@ -49,23 +85,64 @@ function UserRow({ user, onDelete }: { user: UserInfo; onDelete: () => void }) {
   }
 
   return (
-    <CardListItem>
-      <div className="flex items-center gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-body-lg text-text-1-light dark:text-text-1-dark">
-            {user.displayName}
-            {me?.id === user.id && <span className="ml-2 text-body-md text-text-3-light dark:text-text-3-dark">(you)</span>}
-          </div>
-          <div className="truncate text-body-sm text-text-3-light dark:text-text-3-dark">
-            {user.email}{admin && ' · admin'}
-          </div>
+    <div className="flex items-start gap-3 px-4 py-3">
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="truncate text-body-md font-medium text-fg">
+          {user.displayName}
+          {me?.id === user.id && <span className="ml-2 font-normal text-muted">(you)</span>}
         </div>
-        <Dropdown align="right" trigger={<IconButton variant="ghost" size="sm" icon={iconMap.more} aria-label={`Actions for ${user.email}`} />}>
-          <DropdownItem onClick={() => void toggleAdmin()}>{admin ? 'Make a user' : 'Make an admin'}</DropdownItem>
-          <DropdownItem icon={<Icon icon={iconMap.delete} size={16} />} variant="danger" onClick={onDelete}>Delete</DropdownItem>
-        </Dropdown>
+        <div className="truncate text-body-sm text-muted">{user.email}{admin && ' · admin'}</div>
+        <div className="text-body-sm text-muted">{describeShelves(user, shelves)}</div>
       </div>
-    </CardListItem>
+      {!admin && (
+        <Button size="sm" variant="secondary" onClick={onEditAccess} aria-label={`Change ${user.email}'s shelves`}>
+          Shelves
+        </Button>
+      )}
+      <Dropdown align="right" trigger={<IconButton variant="ghost" size="sm" icon={iconMap.more} aria-label={`Actions for ${user.email}`} />}>
+        <DropdownItem icon={<Icon icon={iconMap.admin} size={16} />} onClick={() => void toggleAdmin()}>{admin ? 'Make a user' : 'Make an admin'}</DropdownItem>
+        <DropdownItem icon={<Icon icon={iconMap.delete} size={16} />} variant="danger" onClick={onDelete}>Delete</DropdownItem>
+      </Dropdown>
+    </div>
+  );
+}
+
+const NO_ACCESS = 'none';
+type AccessChoice = ShelfAccessPermission | typeof NO_ACCESS;
+const ACCESS_CHOICES: { value: AccessChoice; label: string }[] = [{ value: NO_ACCESS, label: 'None' }, ...ACCESS_OPTIONS];
+
+/** One user's access on every shelf, each changed as it is picked, the same change a shelf's settings make. */
+function UserAccessDialog({ user, shelves, access, onClose }: { user: UserInfo; shelves: string[]; access: UserShelf[]; onClose: () => void }) {
+  const setGrant = useSetGrant();
+  const removeGrant = useRemoveGrant();
+
+  function change(shelf: string, choice: AccessChoice): Promise<void> {
+    return runOrToast(
+      () => (choice === NO_ACCESS
+        ? removeGrant.mutateAsync({ shelf, userId: user.id })
+        : setGrant.mutateAsync({ shelf, userId: user.id, permission: choice })),
+      `Could not change ${user.email}'s access to ${shelf}`,
+    );
+  }
+
+  return (
+    <FormDialog open title={`${user.displayName}'s shelves`} onClose={onClose}>
+      {shelves.length === 0 && <p className="text-body-md text-muted">There are no shelves yet.</p>}
+      <div className="divide-y divide-border">
+        {shelves.map((shelf) => (
+          <div key={shelf} className="flex flex-wrap items-center justify-between gap-3 py-2">
+            <span className="min-w-0 truncate text-body-md text-fg">{shelf}</span>
+            <ButtonGroup
+              size="sm"
+              options={ACCESS_CHOICES}
+              value={access.find((candidate) => candidate.shelf === shelf)?.permission ?? NO_ACCESS}
+              onChange={(choice) => void change(shelf, choice)}
+              ariaLabel={`Access to ${shelf}`}
+            />
+          </div>
+        ))}
+      </div>
+    </FormDialog>
   );
 }
 
@@ -97,7 +174,7 @@ function CreateUserDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <Dialog open title="New user" onClose={onClose} onSubmit={() => void create()} submitLabel="Create" submitting={createUser.isPending} error={error}>
+    <FormDialog open title="New user" onClose={onClose} onSubmit={() => void create()} submitLabel="Create" submitting={createUser.isPending} error={error}>
       <Input label="Email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="off" required />
       <Input label="Display name" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="The email's first part when left empty" autoComplete="off" />
       <PasswordInput label="Password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" required />
@@ -108,8 +185,9 @@ function CreateUserDialog({ onClose }: { onClose: () => void }) {
         ]}
         value={role}
         onChange={setRole}
+        ariaLabel="Role"
       />
-    </Dialog>
+    </FormDialog>
   );
 }
 
@@ -125,8 +203,8 @@ function DeleteUserDialog({ user, onClose }: { user: UserInfo; onClose: () => vo
   }
 
   return (
-    <Dialog open title={`Delete ${user.email}?`} onClose={onClose} onSubmit={() => void remove()} submitLabel="Delete" submitVariant="danger" submitting={deleteUser.isPending} error={error}>
-      <p className="text-body-md text-text-2-light dark:text-text-2-dark">Their access to every shelf ends at once, and so do their sessions. What they stored stays on the shelves.</p>
-    </Dialog>
+    <FormDialog open title={`Delete ${user.email}?`} onClose={onClose} onSubmit={() => void remove()} submitLabel="Delete" submitVariant="danger" submitting={deleteUser.isPending} error={error}>
+      <p className="text-body-md text-fg">Their access to every shelf ends at once, and so do their sessions. What they stored stays on the shelves.</p>
+    </FormDialog>
   );
 }

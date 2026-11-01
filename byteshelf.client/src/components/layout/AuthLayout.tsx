@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react';
-import { Card, Logo } from '../ui';
+import { Card } from '../../ui';
+import { Logo } from '../Logo';
 
 interface AuthLayoutProps {
   /** The heading shown under the logo, e.g. the app name or the flow's purpose. */
@@ -13,14 +14,14 @@ interface AuthLayoutProps {
  */
 export function AuthLayout({ title, children }: AuthLayoutProps) {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-elevation-1-light dark:bg-elevation-1-dark text-text-1-light dark:text-text-1-dark p-8">
+    <div className="min-h-screen flex items-center justify-center bg-canvas text-fg p-6 sm:p-8">
       <div className="w-full max-w-md">
-        <div className="flex flex-col items-center gap-4 mb-8 animate-text-reveal">
+        <div className="flex flex-col items-center gap-4 mb-8">
           <Logo alt="ByteShelf" className="h-20 w-20 rounded-2xl shadow-lg" />
-          <h1 className="text-heading-lg text-text-1-light dark:text-text-1-dark">{title}</h1>
+          <h1 className="text-heading-lg text-fg">{title}</h1>
         </div>
 
-        <Card padding="lg" className="animate-scale-in">
+        <Card variant="elevated" padding="lg" className="animate-scale-in">
           {children}
         </Card>
       </div>

@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
-import { iconMap } from '../../lib/iconMap';
-import { IconButton } from '../ui/IconButton';
+import { IconButton, iconMap } from '../../ui';
 import { SideNav } from './SideNav';
 import { MobileNavDrawer } from './MobileNavDrawer';
 import { SidebarProvider, useSidebar } from '../../contexts/SidebarContext';
@@ -13,7 +12,7 @@ function AppShellContent({ children }: AppShellProps) {
   const { setIsMobileOpen } = useSidebar();
 
   return (
-    <div className="h-screen flex bg-elevation-1-light dark:bg-elevation-1-dark">
+    <div className="h-screen flex bg-canvas">
       <div className="hidden md:block">
         <SideNav />
       </div>
@@ -21,21 +20,19 @@ function AppShellContent({ children }: AppShellProps) {
       <MobileNavDrawer />
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="md:hidden h-14 flex items-center justify-between px-4 border-b border-border-light dark:border-border-dark bg-elevation-2-light dark:bg-elevation-2-dark shrink-0">
+        <header className="md:hidden h-14 flex items-center justify-between px-4 border-b border-border bg-panel shrink-0">
           <IconButton
             variant="ghost"
             icon={iconMap.menu}
             onClick={() => setIsMobileOpen(true)}
             aria-label="Open navigation menu"
           />
-          <span className="text-heading-sm text-text-1-light dark:text-text-1-dark">ByteShelf</span>
+          <span className="text-heading-sm text-fg">ByteShelf</span>
           <div className="w-9" />
         </header>
 
-        <main className="flex-1 min-h-0 flex flex-col overflow-y-auto">
-          <div className="w-full max-w-[80rem] mx-auto flex-1 min-h-0 flex flex-col">
-            {children}
-          </div>
+        <main className="flex-1 min-h-0 overflow-y-auto">
+          {children}
         </main>
       </div>
     </div>
