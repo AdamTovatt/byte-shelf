@@ -10,7 +10,7 @@
     <Title>ByteShelf CLI</Title>
     <Authors>Adam Tovatt</Authors>
     <PackageIcon>ByteShelfIcon256.png</PackageIcon>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/AdamTovatt/byte-shelf</PackageProjectUrl>
     <RepositoryUrl>https://github.com/AdamTovatt/byte-shelf</RepositoryUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
