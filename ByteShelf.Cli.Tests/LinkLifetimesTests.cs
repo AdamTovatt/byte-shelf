@@ -1,4 +1,4 @@
-using ByteShelf.Cli.Shared;
+using ByteShelf.Tools;
 
 namespace ByteShelf.Cli.Tests
 {

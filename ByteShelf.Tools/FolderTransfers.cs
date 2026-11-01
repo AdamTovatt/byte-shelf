@@ -1,7 +1,7 @@
 using ByteShelfClient;
 using ByteShelfCommon;
 
-namespace ByteShelf.Cli.Shared
+namespace ByteShelf.Tools
 {
     /// <summary>What a folder transfer did: the files it moved, what it left out and why, and what stopped it early, if anything did.</summary>
     internal sealed class FolderTransferResult

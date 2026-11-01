@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The file operations the CLI's commands and the MCP tools share (the text they answer in, file
+    transfers, places on a shelf), and the MCP tools themselves (ByteShelf.Tools.Mcp). The byteshelf
+    tool runs its commands on them and serves the tools over stdio; the server serves the tools over
+    HTTP at /mcp, from this one copy. Shipped inside both, not as a package of its own.
+  -->
+  <PropertyGroup>
+    <RootNamespace>ByteShelf.Tools</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ByteShelf.Cli" />
+    <InternalsVisibleTo Include="ByteShelf.Cli.Tests" />
+    <InternalsVisibleTo Include="ByteShelf.Server" />
+    <InternalsVisibleTo Include="ByteShelf.Server.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol.Core" Version="2.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ByteShelfClient\ByteShelfClient.csproj" />
+  </ItemGroup>
+
+</Project>

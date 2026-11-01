@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using ByteShelf.Cli.Config;
+using ByteShelf.Tools;
 using ByteShelfClient;
 using ByteShelfClient.Http;
 using ByteShelfCommon;

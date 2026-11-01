@@ -32,6 +32,17 @@ once, and a new secret is generated.
 - Do not buffer requests or responses, so uploads stream to disk and the live-update stream stays
   open. For nginx: `proxy_request_buffering off; proxy_buffering off;`. The live-update stream also
   sends `X-Accel-Buffering: no`.
+- Pass `Authorization` through for `/mcp` and `/api` (nginx does by default): MCP clients send their
+  shelf key there.
+
+## MCP
+
+`/mcp` serves agents with a shelf key and needs no setting. Its tools call the server's own API at
+the first plain-HTTP address Kestrel is bound to (from `ASPNETCORE_URLS`, `--urls` or Kestrel's own
+settings), as bound: a server bound to a single interface's address calls itself there, and one on
+all interfaces, such as `http://+:5000`, at `127.0.0.1`. So the server must listen on plain HTTP
+somewhere; one on HTTPS or a Unix socket alone cannot run them. Those calls count against the key's
+rate limit beside the MCP request itself.
 
 ## Replicas
 

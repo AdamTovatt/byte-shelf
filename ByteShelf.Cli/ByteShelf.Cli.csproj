@@ -42,7 +42,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ByteShelfClient\ByteShelfClient.csproj" />
+    <ProjectReference Include="..\ByteShelf.Tools\ByteShelf.Tools.csproj" />
   </ItemGroup>
 
 </Project>

@@ -9,19 +9,22 @@ Shelves themselves are in [Shelves.md](../Storage/Shelves.md), users in [Users.m
 - A **user** may use the shelves they hold a grant on (`shelf_grant`): `read`, or `readWrite`. A
   user without a grant on a shelf is told it does not exist.
 - A **key** works on exactly one shelf, with `read`, `addOnly` or `readWrite`. A program sends its
-  secret in the `X-Api-Key` header (`ByteShelfCommon.ShelfKeys.HeaderName`) on every request; the key
-  is looked up each time, so deleting it stops it at once. Only the SHA-256 of the secret is stored.
-  Keys are accepted on the shelf endpoints only, never on the user endpoints.
+  secret on every request, in the `X-Api-Key` header (`ByteShelfCommon.ShelfKeys.HeaderName`) or as
+  the bearer token (`Authorization: Bearer bsk_...`, which MCP clients send); a bearer token is a key
+  only when it starts with `bsk_`, which no session token does. The key is looked up each time, so
+  deleting it stops it at once. Only the SHA-256 of the secret is stored. Keys are accepted on the
+  shelf endpoints and `/mcp` only, never on the user endpoints.
 
 A request carrying a key acts as the key, even with a user's token beside it. A key that does not
-check out answers 401 rather than falling back to the token, and so does an empty `X-Api-Key` header
-or one sent more than once.
+check out answers 401 rather than falling back to the token, and so does an empty `X-Api-Key` header,
+one sent more than once, or a key sent both ways at once.
 
 ## What each endpoint needs
 
 Every action on `api/shelves/{shelf}/...` carries `[ShelfAccess(operation)]`, which requires a
 signed-in user or a key, resolves the shelf, and asks `ShelfAccessResolver` (the one place the rule
-lives) whether the caller may do the operation there. No access answers 404, too little 403.
+lives) whether the caller may do the operation there. No access answers 404, too little 403. `/mcp`
+asks the same resolver which tools to offer a key ([Mcp](../Mcp/Mcp.md)).
 `ShelfAccessCoverageTests` holds the same table per action.
 
 | Operation | Endpoints | Who may |

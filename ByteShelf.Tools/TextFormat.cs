@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using ByteShelfCommon;
 
-namespace ByteShelf.Cli.Shared
+namespace ByteShelf.Tools
 {
     /// <summary>How results read as text, the same in the terminal and in answers to an agent.</summary>
     internal static class TextFormat

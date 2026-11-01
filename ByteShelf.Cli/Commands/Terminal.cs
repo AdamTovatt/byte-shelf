@@ -1,4 +1,5 @@
 using System.Text;
+using ByteShelf.Tools;
 
 namespace ByteShelf.Cli.Commands
 {

@@ -1,7 +1,7 @@
 using ByteShelfClient;
 using ByteShelfCommon;
 
-namespace ByteShelf.Cli.Shared
+namespace ByteShelf.Tools
 {
     /// <summary>A file or a directory, whichever a path named.</summary>
     internal sealed class Entry

@@ -5,6 +5,7 @@ using ByteShelf.Server.ChangeLog;
 using ByteShelf.Server.Email;
 using ByteShelf.Server.Invalidation;
 using ByteShelf.Server.Jobs;
+using ByteShelf.Server.Mcp;
 using ByteShelf.Server.Replication;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Database;
@@ -138,6 +139,7 @@ namespace ByteShelf.Server
             builder.Services.AddStorageServices();
             builder.Services.AddAccessServices();
             builder.Services.AddReplicationServices(appBaseUrl);
+            builder.Services.AddMcpServices();
             builder.Services.AddRateLimitingServices();
             configureForTests?.Invoke(builder);
 
@@ -173,6 +175,8 @@ namespace ByteShelf.Server
             AuthSetup.MapAuthEndpoints(app);
 
             app.MapControllers();
+
+            app.MapAgentEndpoints();
 
             StaticFileCachePolicy.MapSpaFallback(app);
 

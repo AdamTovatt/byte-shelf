@@ -2,7 +2,7 @@ using System.Text;
 using ByteShelfClient;
 using ByteShelfCommon;
 
-namespace ByteShelf.Cli.Shared
+namespace ByteShelf.Tools
 {
     /// <summary>Moving bytes between local files, streams and a shelf.</summary>
     internal static class Transfers

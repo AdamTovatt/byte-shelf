@@ -2,7 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using ByteShelf.Cli.Connection;
-using ByteShelf.Cli.Shared;
+using ByteShelf.Tools;
 using ByteShelfClient;
 using ByteShelfCommon;
 using ByteShelfCommon.Serialization;

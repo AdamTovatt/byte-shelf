@@ -1,5 +1,5 @@
 using ByteShelf.Cli.Commands;
-using ByteShelf.Cli.Shared;
+using ByteShelf.Tools;
 
 namespace ByteShelf.Cli.Tests
 {

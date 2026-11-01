@@ -1,0 +1,36 @@
+# ByteShelf
+
+> A self-hosted file store. Files live on shelves: each shelf is its own tree of directories and
+> files, with its own trash, quota, users' access and keys. This server answers an agent three ways:
+> MCP at /mcp, the byteshelf command line, and its REST API under /api.
+
+Paths on a shelf start with `/`, the shelf's root. A program reaches one shelf with a shelf key (a
+secret starting `bsk_`) that an admin makes in the web UI's shelf settings, with one of three
+permissions: read, add-only (read, and store new files, never replace or remove) or read-write.
+
+## MCP
+
+- `/mcp` on this server: MCP over Streamable HTTP. Send the key as `Authorization: Bearer <key>` (or
+  in `X-Api-Key`). It reaches the key's own shelf, and offers only the tools the key's permission
+  allows (only reading ones on a replica). The server tells the agent the shelf's name when it
+  connects. It cannot read or write the agent's own files: upload text or base64 (up to 256 KiB),
+  read text of up to 256 KiB, and use share_file for a link to anything larger or binary.
+- `byteshelf --mcp`: the same tools over stdio on the agent's own machine, signed in as the CLI is,
+  plus moving local files and whole folders. Add it with `claude mcp add byteshelf -- byteshelf --mcp`.
+
+## Command line
+
+- Install with `dotnet tool install -g ByteShelf.Cli`. With `BYTESHELF_URL` and `BYTESHELF_KEY` set it
+  needs no login.
+- `byteshelf ls`, `tree`, `find`, `stat`, `get`, `put`, `describe`, `share`, `mv`, `rm`, `trash`,
+  `restore`; `--json` prints the server's JSON. A place is written `shelf:/path`.
+- [The CLI's guide](https://github.com/AdamTovatt/byte-shelf/blob/master/ByteShelf.Cli/README.md)
+- [A skill for agents using it](https://github.com/AdamTovatt/byte-shelf/blob/master/skills/byteshelf/SKILL.md)
+
+## REST API
+
+- Shelf endpoints are under `/api/shelves/{shelf}` and take the key in `X-Api-Key` or as a bearer
+  token. Errors answer `{ "code": ..., "message": ... }` with a code such as `not_found`.
+- [Storage endpoints](https://github.com/AdamTovatt/byte-shelf/blob/master/ByteShelf.Server/Storage/Storage.md)
+- [Who may do what](https://github.com/AdamTovatt/byte-shelf/blob/master/ByteShelf.Server/Access/Access.md)
+- [ByteShelfClient, the .NET client](https://github.com/AdamTovatt/byte-shelf/blob/master/ByteShelfClient/README.md)

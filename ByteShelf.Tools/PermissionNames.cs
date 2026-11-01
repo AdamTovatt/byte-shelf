@@ -1,6 +1,6 @@
 using ByteShelfCommon;
 
-namespace ByteShelf.Cli.Shared
+namespace ByteShelf.Tools
 {
     /// <summary>The words for access and key permissions, read and printed the same way.</summary>
     internal static class PermissionNames

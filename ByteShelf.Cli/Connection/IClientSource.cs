@@ -1,17 +1,14 @@
-using ByteShelfClient;
+using ByteShelf.Tools;
 
 namespace ByteShelf.Cli.Connection
 {
-    /// <summary>Where commands get their client, and how signing in and out changes it.</summary>
-    internal interface IClientSource
+    /// <summary>
+    /// Where commands and the stdio MCP tools get their client, and how signing in and out changes it.
+    /// <see cref="IShelfClientSource.OpenAsync"/> answers the client for the login in effect now: the
+    /// same one while the login stays the same, a new one after a login or logout made elsewhere.
+    /// </summary>
+    internal interface IClientSource : IShelfClientSource
     {
-        /// <summary>
-        /// The client for the login in effect now: the same one while the login stays the same, a new
-        /// one after a login or logout made elsewhere.
-        /// </summary>
-        /// <exception cref="UsageException">Nothing says which server or credentials to use.</exception>
-        Task<IByteShelfClient> OpenAsync(CancellationToken cancellationToken);
-
         /// <summary>Signs a user in and keeps the session for later commands.</summary>
         Task SignInAsync(string server, string email, string password, CancellationToken cancellationToken);
 

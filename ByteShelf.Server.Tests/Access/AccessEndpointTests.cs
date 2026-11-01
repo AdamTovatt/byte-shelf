@@ -43,6 +43,30 @@ namespace ByteShelf.Server.Tests.Access
         }
 
         [Fact]
+        public async Task KeyAsBearerToken_ListsTheShelf()
+        {
+            string secret = (await CreateKeyAsync("docs", ShelfKeyPermission.Read)).Secret;
+            using HttpClient client = _host.CreateClient();
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secret);
+
+            HttpResponseMessage response = await client.GetAsync("/api/shelves/docs/entries");
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        [Fact]
+        public async Task KeyAsHeaderAndBearerTokenBoth_Returns401()
+        {
+            string secret = (await CreateKeyAsync("docs", ShelfKeyPermission.Read)).Secret;
+            using HttpClient client = _host.CreateKeyClient(secret);
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secret);
+
+            HttpResponseMessage response = await client.GetAsync("/api/shelves/docs/entries");
+
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        [Fact]
         public async Task ReadKey_PutContent_Returns403()
         {
             using HttpClient key = await CreateKeyClientAsync("docs", ShelfKeyPermission.Read);
@@ -161,6 +185,18 @@ namespace ByteShelf.Server.Tests.Access
             using HttpClient key = await CreateKeyClientAsync("docs", ShelfKeyPermission.ReadWrite);
 
             HttpResponseMessage response = await key.GetAsync("/api/users/me");
+
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        [Fact]
+        public async Task KeyAsBearerToken_UserEndpoint_Returns401()
+        {
+            string secret = (await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite)).Secret;
+            using HttpClient client = _host.CreateClient();
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secret);
+
+            HttpResponseMessage response = await client.GetAsync("/api/users/me");
 
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         }

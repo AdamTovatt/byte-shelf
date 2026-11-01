@@ -13,6 +13,7 @@ in the web UI.
 | `ByteShelfClient` | The client library (net8.0, AOT-compatible): `IByteShelfClient` over HTTP, and in memory for an app's tests. Published as the `ByteShelfClient` NuGet package. |
 | `byteshelf.client` | The web UI (React, TypeScript, Vite): browse and upload to the shelves you reach; for admins, shelves, users, access, keys and replication. The server serves its build. |
 | `ByteShelf.Cli` | The `byteshelf` dotnet tool (net10.0): the command line, and with `--mcp` an MCP server for agents. |
+| `ByteShelf.Tools` | The file operations the CLI's commands and the MCP tools share, and the MCP tools themselves (net10.0), one copy for both MCP servers: the CLI's over stdio and the server's at `/mcp`. Built into both, not published on its own. |
 | `ByteShelf.Server.Tests`, `ByteShelfCommon.Tests`, `ByteShelfClient.Tests`, `ByteShelf.Cli.Tests` | xUnit tests; the server's include the client contract, run against both clients, and the CLI's login against the server. |
 
 ## The root folder
@@ -37,7 +38,7 @@ SHA-256, so `sha256sum` verifies it, and identical contents are stored once.
 - A **user** signs in with email and password and is given read or read-write access to shelves.
   Admins create shelves and users and reach every shelf.
 - A **key** lets a program use one shelf: read, add-only (store new files, never overwrite or
-  delete) or read-write. It is sent in the `X-Api-Key` header.
+  delete) or read-write. It is sent in the `X-Api-Key` header or as a bearer token.
 - Files live in real **directories** and are addressed by path (`/invoices/2026/march.pdf`) or id.
 - A delete moves things to the **trash**, restorable for 30 days by default, then purged; anyone
   with write access can empty a shelf's trash sooner.
@@ -68,6 +69,18 @@ dotnet run --project ByteShelf.Cli -- login http://localhost:5000/ --email admin
 dotnet run --project ByteShelf.Cli -- shelves
 ```
 
+## For agents
+
+- **MCP on the server**: `https://<server>/mcp`, Streamable HTTP, with a shelf key as the bearer
+  token. It offers the key's shelf and only the tools its permission allows
+  ([Mcp](ByteShelf.Server/Mcp/Mcp.md)). For example, `claude mcp add --transport http byteshelf
+  https://files.example.com/mcp --header "Authorization: Bearer bsk_..."`.
+- **MCP on the agent's machine**: `byteshelf --mcp`, the same tools over stdio, plus local files and
+  folders ([the CLI](ByteShelf.Cli/README.md)).
+- **`/llms.txt`** on every server says what ByteShelf is and how to reach it.
+- **[skills/byteshelf/SKILL.md](skills/byteshelf/SKILL.md)** teaches an agent the `byteshelf` command
+  line.
+
 ## Documentation
 
 - [DEPLOYMENT.md](DEPLOYMENT.md): environment variables, reverse proxy, replicas, backups.
@@ -76,12 +89,13 @@ dotnet run --project ByteShelf.Cli -- shelves
   [Users](ByteShelf.Server/Users/Users.md),
   [Jobs](ByteShelf.Server/Jobs/Jobs.md), [Email](ByteShelf.Server/Email/Email.md),
   [Invalidation](ByteShelf.Server/Invalidation/Invalidation.md), [Version](ByteShelf.Server/Version/Version.md),
-  [Replication](ByteShelf.Server/Replication/Replication.md), [Backup](ByteShelf.Server/Backup/Backup.md).
+  [Replication](ByteShelf.Server/Replication/Replication.md), [Backup](ByteShelf.Server/Backup/Backup.md),
+  [Mcp](ByteShelf.Server/Mcp/Mcp.md).
 - [ByteShelfCommon](ByteShelfCommon/README.md), [ByteShelfClient](ByteShelfClient/README.md),
   [the CLI and MCP server](ByteShelf.Cli/README.md), [the web UI](byteshelf.client/README.md).
 
 ## License
 
-The server, the CLI and the web UI are GPL-3.0-only ([LICENSE](LICENSE)). The libraries an app
+The server, the CLI, the MCP tools and the web UI are GPL-3.0-only ([LICENSE](LICENSE)). The libraries an app
 builds against, ByteShelfClient and ByteShelfCommon, are MIT
 ([ByteShelfClient/LICENSE](ByteShelfClient/LICENSE), [ByteShelfCommon/LICENSE](ByteShelfCommon/LICENSE)).

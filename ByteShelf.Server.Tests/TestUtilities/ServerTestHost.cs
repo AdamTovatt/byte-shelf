@@ -1,11 +1,13 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using ByteShelf.Server.Mcp;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Users.Services;
 using ByteShelfCommon;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -79,6 +81,10 @@ namespace ByteShelf.Server.Tests.TestUtilities
                 {
                     builder.WebHost.UseTestServer();
                     builder.Logging.SetMinimumLevel(LogLevel.Warning);
+
+                    // The MCP tools call the server's own API; in memory, the in-memory server is that.
+                    builder.Services.AddHttpClient(SelfApi.HttpClientName, client => client.BaseAddress = new Uri("http://localhost/"))
+                        .ConfigurePrimaryHttpMessageHandler(services => ((TestServer)services.GetRequiredService<IServer>()).CreateHandler());
                     configureServices?.Invoke(builder.Services);
                 });
 

@@ -1,7 +1,7 @@
 using ByteShelfClient;
 using ByteShelfCommon;
 
-namespace ByteShelf.Cli.Shared
+namespace ByteShelf.Tools
 {
     /// <summary>What to tell a person or an agent when a command or a tool call fails.</summary>
     internal sealed class Failure

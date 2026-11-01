@@ -59,11 +59,16 @@ follows a login or logout made elsewhere.
 claude mcp add byteshelf -- byteshelf --mcp
 ```
 
+The tools are the same ones the server serves at `/mcp` to a shelf key (see the root README); this
+server runs them on the agent's own machine, so they can also move local files and folders. Both
+send instructions saying what ByteShelf is and how the tools fit together.
+
 It signs in as the CLI does, and its tools cover shelves, files, directories and the trash: listing a
-directory or its whole tree, searching, uploading a local file or text given in the call or a whole
-local folder, describing a file, sharing one by a link (not marked read-only, so a host asks first:
-the link hands the file on), downloading a file to a local file or as text (UTF-8, up to 256 KiB) or
-a whole directory to a local folder, moving, deleting, restoring and emptying the trash. Local paths
+directory or its whole tree, searching, uploading a local file, text or base64 (up to 256 KiB) given
+in the call, or a whole local folder, describing a file, sharing one by a link (not marked
+read-only, so a host asks first: the link hands the file on), downloading a file to a local file or
+as text (UTF-8, up to 256 KiB) or a whole directory to a local folder, moving, deleting, restoring
+and emptying the trash. Local paths
 must be absolute, since the server's working folder is not the agent's. Signing in, users, grants
 and keys stay on the command line, since they carry passwords and secrets an agent's transcript
 should not hold.

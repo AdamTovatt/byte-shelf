@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ByteShelf.Tools;
 
 namespace ByteShelf.Cli.Config
 {

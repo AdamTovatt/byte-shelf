@@ -1,10 +1,13 @@
 using System.ComponentModel;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using ByteShelf.Cli.Config;
 using ByteShelf.Cli.Connection;
 using ByteShelf.Cli.Mcp;
 using ByteShelf.Cli.Tests.TestUtilities;
+using ByteShelf.Tools;
+using ByteShelf.Tools.Mcp;
 using ByteShelfClient;
 using ByteShelfCommon;
 using ModelContextProtocol;
@@ -24,7 +27,7 @@ namespace ByteShelf.Cli.Tests
         public async Task InitializeAsync()
         {
             await _clients.Client.CreateShelfAsync("docs");
-            _tools = new ByteShelfMcpTools(_clients);
+            _tools = new ByteShelfMcpTools(_clients, ToolHost.Local);
         }
 
         public Task DisposeAsync()
@@ -47,6 +50,16 @@ namespace ByteShelf.Cli.Tests
             Assert.NotEmpty(tools);
             Assert.All(tools, tool => Assert.False(string.IsNullOrWhiteSpace(tool.GetCustomAttribute<DescriptionAttribute>()?.Description)));
             Assert.Equal(tools.Count, tools.Select(tool => tool.GetCustomAttribute<McpServerToolAttribute>()!.Name).Distinct().Count());
+        }
+
+        [Fact]
+        public void Instructions_NameEveryToolButTheAdminOnes()
+        {
+            IEnumerable<string> named = typeof(ByteShelfMcpTools).GetMethods()
+                .Where(method => method.GetCustomAttribute<ToolNeedsAttribute>()?.Need is ToolNeed need && need != ToolNeed.Admin)
+                .Select(method => method.GetCustomAttribute<McpServerToolAttribute>()!.Name!);
+
+            Assert.All(named, tool => Assert.Matches($@"(?<!\w){Regex.Escape(tool)}(?!\w)", McpServerRunner.Instructions));
         }
 
         [Fact]
@@ -89,13 +102,56 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Theory]
-        [InlineData(null, null)]
-        [InlineData("/local.txt", "text")]
-        public async Task Upload_NotExactlyOneSource_IsAnError(string? localPath, string? text)
+        [InlineData(null, null, null)]
+        [InlineData("/local.txt", "text", null)]
+        [InlineData(null, "text", "dGV4dA==")]
+        public async Task Upload_NotExactlyOneSource_IsAnError(string? localPath, string? text, string? base64)
         {
-            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("docs", "/a.txt", localPath, text));
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("docs", "/a.txt", localPath, text, base64));
 
-            Assert.Contains("one of them", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("Give one of localPath, text or base64", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Upload_Base64_StoresTheBytes()
+        {
+            await _tools.UploadFileAsync("docs", "/a.bin", base64: "AP8K");
+
+            await using Stream stored = await Docs.OpenReadAsync("/a.bin");
+            using MemoryStream bytes = new MemoryStream();
+            await stored.CopyToAsync(bytes);
+            Assert.Equal(new byte[] { 0x00, 0xFF, 0x0A }, bytes.ToArray());
+        }
+
+        [Fact]
+        public async Task Upload_TextOverTheCapInUtf8_IsAnErrorAndStoresNothing()
+        {
+            // Fewer characters than the cap, but two bytes each in UTF-8.
+            string text = new string('ö', (ByteShelfMcpTools.MaxInlineBytes / 2) + 1);
+
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("docs", "/a.txt", text: text));
+
+            Assert.StartsWith($"text holds more than the {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)}", exception.Message, StringComparison.Ordinal);
+            await Assert.ThrowsAsync<ByteShelfException>(() => Docs.GetFileAsync("/a.txt"));
+        }
+
+        [Fact]
+        public async Task Upload_Base64FarOverTheCap_IsRefusedWithoutDecoding()
+        {
+            // Not base64 at all, so only a refusal by length says it is too large.
+            string base64 = new string('!', (2 * ByteShelfMcpTools.MaxInlineBytes) + 1);
+
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("docs", "/a.bin", base64: base64));
+
+            Assert.StartsWith("base64 holds more than the", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Upload_NotBase64_IsAnError()
+        {
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("docs", "/a.bin", base64: "not base64!"));
+
+            Assert.StartsWith("base64 is not valid base64", exception.Message, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -347,7 +403,7 @@ namespace ByteShelf.Cli.Tests
             store.Save(new CliConfig { Server = "https://files.test/", Login = new KeyLogin { Key = "bsk_key" } });
             using ConfiguredClientSource clients = new ConfiguredClientSource(store, _ => null, unreachable);
 
-            McpException exception = await Assert.ThrowsAsync<McpException>(() => new ByteShelfMcpTools(clients).ListShelvesAsync(CancellationToken.None));
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => new ByteShelfMcpTools(clients, ToolHost.Local).ListShelvesAsync(CancellationToken.None));
 
             Assert.Equal("Could not reach the server: No route to host.", exception.Message);
         }

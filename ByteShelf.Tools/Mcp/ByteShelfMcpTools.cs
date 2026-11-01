@@ -1,18 +1,18 @@
 using System.ComponentModel;
 using System.Text;
-using ByteShelf.Cli.Connection;
-using ByteShelf.Cli.Shared;
 using ByteShelfClient;
 using ByteShelfCommon;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
-namespace ByteShelf.Cli.Mcp
+namespace ByteShelf.Tools.Mcp
 {
     /// <summary>
-    /// <c>byteshelf --mcp</c>'s tools: shelves, files, directories and the trash, signed in as the CLI
-    /// is, answering in the CLI's words. Signing in and users, grants and keys stay on the command line,
-    /// since they carry passwords and secrets an agent's transcript should not hold.
+    /// The MCP tools, one copy for both servers: <c>byteshelf --mcp</c> serves them over stdio, signed in
+    /// as the CLI is, and the ByteShelf server at <c>/mcp</c> serves them to a shelf key, offering only
+    /// those its <see cref="ToolNeedsAttribute"/> allows. They cover shelves, files, directories and the
+    /// trash, answering in the CLI's words. Signing in and users, grants and keys stay on the command
+    /// line, since they carry passwords and secrets an agent's transcript should not hold.
     /// </summary>
     /// <remarks>
     /// A failure becomes an <see cref="McpException"/>, which the SDK hands the model as the tool's
@@ -21,17 +21,20 @@ namespace ByteShelf.Cli.Mcp
     [McpServerToolType]
     internal sealed class ByteShelfMcpTools
     {
-        /// <summary>The largest file download_file answers inline.</summary>
+        /// <summary>The largest file download_file answers inline, and upload_file takes as text or base64.</summary>
         public const int MaxInlineBytes = 256 * 1024;
 
-        private readonly IClientSource _clients;
+        private readonly IShelfClientSource _clients;
+        private readonly ToolHost _host;
 
-        public ByteShelfMcpTools(IClientSource clients)
+        public ByteShelfMcpTools(IShelfClientSource clients, ToolHost host)
         {
             _clients = clients;
+            _host = host;
         }
 
         [McpServerTool(Name = "list_shelves", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Read)]
         [Description("The shelves you can reach, each with its usage and quota. A shelf is one storage place with its own directories, made per purpose.")]
         public Task<string> ListShelvesAsync(CancellationToken cancellationToken)
         {
@@ -39,6 +42,7 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "shelf_info", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Read)]
         [Description("One shelf's usage, quota and file count.")]
         public Task<string> ShelfInfoAsync(
             [Description("The shelf's name.")] string shelf,
@@ -48,6 +52,7 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "create_shelf", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Admin)]
         [Description("Creates a shelf (admins only). Names are 1 to 63 lowercase letters, digits, '-', '_' and '.'.")]
         public Task<string> CreateShelfAsync(
             [Description("The new shelf's name.")] string shelf,
@@ -58,6 +63,7 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "list_directory", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Read)]
         [Description("The directories and files in a directory on a shelf.")]
         public Task<string> ListDirectoryAsync(
             [Description("The shelf's name.")] string shelf,
@@ -68,6 +74,7 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "get_info", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Read)]
         [Description("A file's record (id, size, content type, SHA-256, times), or a directory's id.")]
         public Task<string> GetInfoAsync(
             [Description("The shelf's name.")] string shelf,
@@ -78,12 +85,14 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "upload_file", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
-        [Description("Stores a file on a shelf, from a local file or from text given here; give exactly one. Missing directories are created. A path that is taken is refused unless overwrite is true, and then the old file goes to the trash.")]
+        [ToolNeeds(ToolNeed.Add)]
+        [Description("Stores a file on a shelf, from a local file, from text, or from base64 contents given here; give exactly one. Missing directories are created. A path that is taken is refused unless overwrite is true (which needs write access), and then the old file goes to the trash.")]
         public Task<string> UploadFileAsync(
             [Description("The shelf's name.")] string shelf,
             [Description("Where to store it, such as /reports/q3.pdf; a path ending in / keeps the local file's name.")] string path,
-            [Description("An absolute path to a local file to upload.")] string? localPath = null,
-            [Description("Text to store, as UTF-8.")] string? text = null,
+            [Description("An absolute path to a local file to upload; only the byteshelf CLI's MCP server, on your own machine, can read one.")] string? localPath = null,
+            [Description("Text to store, as UTF-8; at most 256 KiB.")] string? text = null,
+            [Description("The contents as base64, for a binary file; at most 256 KiB once decoded.")] string? base64 = null,
             [Description("Replace a file already at the path.")] bool overwrite = false,
             [Description("The media type, such as application/pdf; by default from the file name's extension.")] string? contentType = null,
             [Description("What the file is, in up to 2000 characters, for people and for search_files to find it by.")] string? description = null,
@@ -91,9 +100,9 @@ namespace ByteShelf.Cli.Mcp
         {
             return RunAsync(cancellationToken, async client =>
             {
-                if ((localPath == null) == (text == null))
+                if (new[] { localPath, text, base64 }.Count(source => source != null) != 1)
                 {
-                    throw new UsageException("Give either localPath or text, one of them.");
+                    throw new UsageException("Give one of localPath, text or base64.");
                 }
 
                 ShelfLocation location = ShelfLocation.Of(shelf, path);
@@ -104,14 +113,15 @@ namespace ByteShelf.Cli.Mcp
                     return TextFormat.Stored(await Transfers.UploadFileAsync(shelfClient, Absolute(localPath), location, options, cancellationToken));
                 }
 
-                using MemoryStream content = new MemoryStream(Encoding.UTF8.GetBytes(text!));
-                return TextFormat.Stored(await Transfers.UploadStreamAsync(shelfClient, location, content, "Text", options, cancellationToken));
+                using MemoryStream content = new MemoryStream(text != null ? EncodeText(text) : DecodeBase64(base64!));
+                return TextFormat.Stored(await Transfers.UploadStreamAsync(shelfClient, location, content, text != null ? "Text" : "base64", options, cancellationToken));
             });
         }
 
         // Not marked read-only, though the shelf does not change: a link hands the file to anyone who gets
         // it, so a host that runs read-only tools unasked should still ask before this one.
         [McpServerTool(Name = "share_file", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Read)]
         [Description("Makes a link to one file that anyone who has it can open without signing in, until it runs out. Nothing takes a link back sooner. A file stored over the linked one is a new file the link does not reach; a file in the trash is not found by it until restored.")]
         public Task<string> ShareFileAsync(
             [Description("The shelf's name.")] string shelf,
@@ -124,6 +134,7 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "set_description", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Write)]
         [Description("Sets what a file is, in up to 2000 characters of free text, shown with the file and matched by search_files. Omit description to remove it.")]
         public Task<string> SetDescriptionAsync(
             [Description("The shelf's name.")] string shelf,
@@ -135,6 +146,7 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "search_files", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Read)]
         [Description("Finds files on a shelf, under a directory at any depth, that meet every criterion given; none given lists every file. Answers a page of paths by path order, with a cursor when more follow.")]
         public Task<string> SearchFilesAsync(
             [Description("The shelf's name.")] string shelf,
@@ -174,11 +186,12 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "download_file", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
-        [Description("Reads a file from a shelf: saved to localPath when given (into it when it is a directory), else answered here as text when it is UTF-8 and at most 256 KiB.")]
+        [ToolNeeds(ToolNeed.Read)]
+        [Description("Reads a file from a shelf: saved to localPath when given (into it when it is a directory), else answered here as text when it is UTF-8 and at most 256 KiB. For a larger or binary file over the server's MCP, make a link with share_file instead.")]
         public Task<string> DownloadFileAsync(
             [Description("The shelf's name.")] string shelf,
             [Description("The file's path.")] string path,
-            [Description("An absolute path to save it to; omit to have the text answered here.")] string? localPath = null,
+            [Description("An absolute path to save it to; omit to have the text answered here. Only the byteshelf CLI's MCP server, on your own machine, can save one.")] string? localPath = null,
             [Description("Replace a local file already there.")] bool overwrite = false,
             CancellationToken cancellationToken = default)
         {
@@ -192,6 +205,7 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "list_tree", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Read)]
         [Description("Everything under a directory on a shelf, at any depth or down to depth levels: one line per directory (ending in /) and file (with its size), by path, a page at a time with a cursor when more follow.")]
         public Task<string> ListTreeAsync(
             [Description("The shelf's name.")] string shelf,
@@ -208,6 +222,7 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "upload_folder", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Add, LocalFilesOnly = true)]
         [Description("Stores a local folder and everything in it on a shelf, keeping its structure and empty folders; symbolic links are not followed. A file whose path is taken is left out and reported unless overwrite is true, and then the old file goes to the trash.")]
         public Task<string> UploadFolderAsync(
             [Description("The shelf's name.")] string shelf,
@@ -224,6 +239,7 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "download_directory", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Read, LocalFilesOnly = true)]
         [Description("Saves a directory from a shelf and everything under it as a local folder, keeping its structure and empty directories. A local file already there is left out and reported unless overwrite is true.")]
         public Task<string> DownloadDirectoryAsync(
             [Description("The shelf's name.")] string shelf,
@@ -255,6 +271,7 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "create_directory", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Add)]
         [Description("Creates a directory on a shelf, with any missing parents; an existing one is answered as it is.")]
         public Task<string> CreateDirectoryAsync(
             [Description("The shelf's name.")] string shelf,
@@ -265,6 +282,7 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "move", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Write)]
         [Description("Moves or renames a file or a directory (with everything in it) within its shelf. Never overwrites; missing parent directories are created.")]
         public Task<string> MoveAsync(
             [Description("The shelf's name.")] string shelf,
@@ -276,6 +294,7 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "delete", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Write)]
         [Description("Moves a file, or a directory with everything in it, to the shelf's trash, restorable with restore until the restore window passes.")]
         public Task<string> DeleteAsync(
             [Description("The shelf's name.")] string shelf,
@@ -286,6 +305,7 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "list_trash", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Read)]
         [Description("What a shelf's trash holds: each deletion's id, path, size, and when it will be purged.")]
         public Task<string> ListTrashAsync(
             [Description("The shelf's name.")] string shelf,
@@ -295,6 +315,7 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "restore", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Write)]
         [Description("Puts back everything one deletion took, where it was. Refused when its name has been taken meanwhile or its directory is itself in the trash.")]
         public Task<string> RestoreAsync(
             [Description("The shelf's name.")] string shelf,
@@ -309,6 +330,7 @@ namespace ByteShelf.Cli.Mcp
         }
 
         [McpServerTool(Name = "empty_trash", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Write)]
         [Description("Deletes everything in a shelf's trash for good. It cannot be restored afterwards.")]
         public Task<string> EmptyTrashAsync(
             [Description("The shelf's name.")] string shelf,
@@ -322,12 +344,62 @@ namespace ByteShelf.Cli.Mcp
         }
 
         /// <summary>
-        /// <paramref name="localPath"/> when it is absolute. A relative one would be taken from the MCP
-        /// server's working folder, which is not the agent's.
+        /// <paramref name="text"/> as UTF-8. Capped, as base64 is, at what an agent can sensibly carry in
+        /// its own context; anything larger is for a local file or the API.
         /// </summary>
-        /// <exception cref="UsageException">It is relative.</exception>
-        private static string Absolute(string localPath)
+        /// <exception cref="UsageException">It holds more than <see cref="MaxInlineBytes"/>.</exception>
+        private byte[] EncodeText(string text)
         {
+            return Encoding.UTF8.GetByteCount(text) <= MaxInlineBytes ? Encoding.UTF8.GetBytes(text) : throw TooLarge("text");
+        }
+
+        /// <summary>
+        /// The bytes <paramref name="base64"/> holds, capped as <see cref="EncodeText"/> is. A string past
+        /// twice the cap is refused before decoding: base64 of the cap is 4/3 of it, so twice still
+        /// leaves room for line breaks.
+        /// </summary>
+        /// <exception cref="UsageException">It is not base64, or holds more than <see cref="MaxInlineBytes"/>.</exception>
+        private byte[] DecodeBase64(string base64)
+        {
+            if (base64.Length > 2 * MaxInlineBytes)
+            {
+                throw TooLarge("base64");
+            }
+
+            byte[] bytes;
+            try
+            {
+                bytes = Convert.FromBase64String(base64);
+            }
+            catch (FormatException)
+            {
+                throw new UsageException("base64 is not valid base64.");
+            }
+
+            return bytes.Length <= MaxInlineBytes ? bytes : throw TooLarge("base64");
+        }
+
+        private UsageException TooLarge(string parameter)
+        {
+            string larger = _host.ReachesLocalFiles
+                ? "give a larger file as localPath"
+                : "store a larger file with the byteshelf CLI or the API";
+            return new UsageException($"{parameter} holds more than the {TextFormat.Size(MaxInlineBytes)} a call takes; {larger}.");
+        }
+
+        /// <summary>
+        /// <paramref name="localPath"/> when it is absolute and these tools run where the agent's files
+        /// are. A relative one would be taken from the MCP server's working folder, which is not the
+        /// agent's, and on the ByteShelf server no local path is the agent's.
+        /// </summary>
+        /// <exception cref="UsageException">It is relative, or the tools run on the ByteShelf server.</exception>
+        private string Absolute(string localPath)
+        {
+            if (!_host.ReachesLocalFiles)
+            {
+                throw new UsageException("This MCP server runs on the ByteShelf server, which cannot reach your files: give the contents as text or base64, or use the byteshelf CLI's MCP server (byteshelf --mcp) on your own machine.");
+            }
+
             return Path.IsPathFullyQualified(localPath)
                 ? localPath
                 : throw new UsageException($"'{localPath}' is relative; give an absolute local path.");

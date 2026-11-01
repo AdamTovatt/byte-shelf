@@ -1,7 +1,7 @@
 using System.Globalization;
 using ByteShelfCommon;
 
-namespace ByteShelf.Cli.Shared
+namespace ByteShelf.Tools
 {
     /// <summary>How long a shared link works, written as a person or an agent would: 30m, 12h, 7d.</summary>
     internal static class LinkLifetimes

@@ -1,0 +1,36 @@
+namespace ByteShelf.Tools.Mcp
+{
+    /// <summary>What both MCP servers tell an agent ByteShelf is and how its tools fit together, sent when it connects.</summary>
+    internal static class ToolInstructions
+    {
+        public const string Text = """
+            ByteShelf is a self-hosted file store. Files live on shelves: each shelf is its own tree of
+            directories and files, with its own trash and quota. Every tool names the shelf it works on
+            and takes paths that start with / (the shelf's root is /). list_shelves shows the shelves
+            you can reach, and shelf_info one shelf's usage and quota.
+
+            Looking around: list_directory shows one directory, list_tree everything under one (down to
+            a depth if you give one), search_files finds files under a directory by text in the name or
+            description, media type (image/* for a family), size, times or SHA-256. get_info answers
+            one file's or directory's record. A long answer comes a page at a time and ends with
+            "More follow: call again with after = <cursor>"; pass that cursor as after for the next
+            page.
+
+            Reading: download_file answers a UTF-8 file of up to 256 KiB as text. share_file makes a
+            link anyone can open without signing in, for 24 hours or the time asked for (at most 7
+            days); use it to hand a person a file, or to fetch a large or binary one.
+
+            Storing: upload_file stores text, or a binary file's contents as base64, each up to 256 KiB,
+            creating missing directories. It never replaces a file unless overwrite is true, and then
+            the old one goes to the trash. create_directory makes an empty directory. Describe a file
+            with set_description (or upload_file's description) so it can be found later.
+
+            Changing: move renames or moves a file or directory and never overwrites. delete moves it
+            to the trash; list_trash shows what can come back, restore brings a deletion back, and
+            empty_trash deletes the trash for good.
+
+            A refusal ends with its code in parentheses, such as (not_found), (conflict) or
+            (permission_denied).
+            """;
+    }
+}

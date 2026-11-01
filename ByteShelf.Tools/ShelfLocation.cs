@@ -1,6 +1,6 @@
 using ByteShelfCommon;
 
-namespace ByteShelf.Cli.Shared
+namespace ByteShelf.Tools
 {
     /// <summary>A place on a shelf: written <c>shelf:/path</c> on the command line, or <c>shelf</c> alone for its root.</summary>
     internal sealed class ShelfLocation

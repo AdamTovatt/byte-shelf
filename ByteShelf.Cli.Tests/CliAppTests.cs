@@ -4,7 +4,7 @@ using System.Text.Json;
 using ByteShelf.Cli.Commands;
 using ByteShelf.Cli.Config;
 using ByteShelf.Cli.Connection;
-using ByteShelf.Cli.Shared;
+using ByteShelf.Tools;
 using ByteShelf.Cli.Tests.TestUtilities;
 using ByteShelfClient;
 using ByteShelfCommon;

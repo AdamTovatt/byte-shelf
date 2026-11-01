@@ -2,6 +2,7 @@ using System.Net;
 using ByteShelf.Cli.Config;
 using ByteShelf.Cli.Connection;
 using ByteShelf.Cli.Tests.TestUtilities;
+using ByteShelf.Tools;
 using ByteShelfClient;
 using ByteShelfCommon;
 
