@@ -42,6 +42,14 @@ namespace ByteShelf.Server.Storage.Repositories
         /// </summary>
         Task<IReadOnlyList<(FileRecord File, string Path)>> SearchAsync(Guid directoryId, string directoryPath, FileSearch search, int maxRows, IDbSession? session = null);
 
+        /// <summary>
+        /// The live files under <paramref name="directoryId"/>, down to <paramref name="maxDepth"/> levels
+        /// when set (1: only those directly in it), whose full path comes after <paramref name="after"/>;
+        /// by full path, each with that path, at most <paramref name="maxRows"/> of them.
+        /// <paramref name="directoryPath"/> is the directory's own path.
+        /// </summary>
+        Task<IReadOnlyList<(FileRecord File, string Path)>> GetLiveSubtreeAsync(Guid directoryId, string directoryPath, int? maxDepth, string? after, int maxRows, IDbSession? session = null);
+
         /// <summary>Brings back every file of a deletion; answers how many.</summary>
         Task<int> RestoreDeletionAsync(Guid deletionId, DateTimeOffset restoredAt, IDbSession session);
 

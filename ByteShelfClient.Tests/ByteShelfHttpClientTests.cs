@@ -34,6 +34,19 @@ namespace ByteShelfClient.Tests
         }
 
         [Fact]
+        public async Task CreateDownloadLinkAsync_ServerBehindAPathPrefix_AnswersTheLinkUnderThePrefix()
+        {
+            using ScriptedServer server = new ScriptedServer(_ => ScriptedServer.Json("{\"url\":\"/api/downloads/abc\",\"expiresAt\":\"2026-11-02T12:00:00+00:00\"}"));
+            using HttpClient http = server.CreateClient();
+            http.BaseAddress = new Uri("http://shelf.test/files/");
+
+            DownloadLink link = await new ByteShelfHttpClient(http, new ShelfKeyCredentials("secret")).Shelf("docs").CreateDownloadLinkAsync("/a.txt", TimeSpan.FromHours(2));
+
+            Assert.Equal("http://shelf.test/files/api/downloads/abc", link.Url);
+            Assert.Equal("POST /files/api/shelves/docs/download-link?path=%2Fa.txt&expiresInMinutes=120", Assert.Single(server.Requests));
+        }
+
+        [Fact]
         public async Task SendAsync_TwoRequestsNeedRenewing_RenewsOnce()
         {
             TaskCompletionSource refreshArrived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

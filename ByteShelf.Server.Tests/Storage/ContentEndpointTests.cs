@@ -51,6 +51,27 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
+        public async Task Tree_QueryInTheQueryString_BindsByCamelCaseNames()
+        {
+            await PutAsync("/reports/2026/q3.txt", "abc", "text/plain");
+            await PutAsync("/reports/q2.txt", "abc", "text/plain");
+
+            DirectoryTree? tree = await _host.AdminClient.GetFromJsonAsync<DirectoryTree>("/api/shelves/docs/tree?under=%2Freports&depth=1&limit=1");
+
+            Assert.Equal(("/reports/2026", "/reports/2026"), (Assert.Single(tree!.Directories).Path, tree.NextCursor));
+            Assert.Empty(tree.Files);
+        }
+
+        [Fact]
+        public async Task Tree_DepthNotAllowed_Returns400()
+        {
+            HttpResponseMessage response = await _host.AdminClient.GetAsync("/api/shelves/docs/tree?depth=0");
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal(ErrorCodes.InvalidRequest, (await response.Content.ReadFromJsonAsync<ErrorResponse>())?.Code);
+        }
+
+        [Fact]
         public async Task Search_CriterionNotAllowed_Returns400()
         {
             HttpResponseMessage response = await _host.AdminClient.GetAsync("/api/shelves/docs/search?limit=0");

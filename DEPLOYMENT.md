@@ -18,8 +18,11 @@ root, and nothing else on disk.
 | `ASPNETCORE_URLS` | no | Where Kestrel listens. |
 
 Two secrets are generated into `keys/` on first start, readable by the owner only: `jwt-secret`
-signs sign-ins, `download-link-secret` signs the web UI's short-lived download links. They travel
-with the root, so a copied or restored root keeps its sign-ins and links.
+signs sign-ins, `download-link-secret` signs download links: the web UI's five-minute ones and the
+share links any key or user with read access can make for up to 7 days. They travel with the root,
+so a copied or restored root keeps its sign-ins and its unexpired links, share links included. A
+single link cannot be taken back; deleting `download-link-secret` and restarting ends every link at
+once, and a new secret is generated.
 
 ## Behind a reverse proxy
 

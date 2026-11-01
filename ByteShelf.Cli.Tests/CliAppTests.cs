@@ -4,6 +4,7 @@ using System.Text.Json;
 using ByteShelf.Cli.Commands;
 using ByteShelf.Cli.Config;
 using ByteShelf.Cli.Connection;
+using ByteShelf.Cli.Shared;
 using ByteShelf.Cli.Tests.TestUtilities;
 using ByteShelfClient;
 using ByteShelfCommon;
@@ -145,19 +146,268 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
-        public async Task Get_TheShelfsRoot_FailsAsMisuse()
+        public async Task Get_ADirectory_SavesItsTreeAsTheFolderWithEmptyOnes()
         {
-            CliRun run = await RunAsync("get", "docs");
+            await UploadAsync("/reports/q3.txt", "q3");
+            await UploadAsync("/reports/2026/q4.txt", "q4");
+            await Docs.CreateDirectoryAsync("/reports/empty");
+            await UploadAsync("/elsewhere.txt", "no");
+
+            CliRun run = await RunAsync("get", "docs:/reports", _work.File("out"));
+
+            Assert.Equal(CliApp.Succeeded, run.ExitCode);
+            Assert.StartsWith($"Saved 2 files (4 B) to {_work.File("out")}.", run.Output, StringComparison.Ordinal);
+            Assert.Equal(("q3", "q4"), (await File.ReadAllTextAsync(_work.File("out/q3.txt")), await File.ReadAllTextAsync(_work.File("out/2026/q4.txt"))));
+            Assert.True(Directory.Exists(_work.File("out/empty")));
+            Assert.Equal(2, Directory.GetFiles(_work.File("out"), "*", SearchOption.AllDirectories).Length);
+        }
+
+        [Fact]
+        public async Task Get_TheShelfsRootIntoAFolderThatExists_SavesTheShelfUnderItsName()
+        {
+            await UploadAsync("/a/b.txt", "b");
+
+            CliRun run = await RunAsync("get", "docs", _work.Path);
+
+            Assert.Equal(CliApp.Succeeded, run.ExitCode);
+            Assert.Equal("b", await File.ReadAllTextAsync(_work.File("docs/a/b.txt")));
+        }
+
+        [Fact]
+        public async Task Get_ADirectoryOverALocalFile_LeavesThatFileOutSavesTheRestAndFails()
+        {
+            await UploadAsync("/r/a.txt", "from the shelf");
+            await UploadAsync("/r/b.txt", "b");
+            Directory.CreateDirectory(_work.File("r"));
+            await File.WriteAllTextAsync(_work.File("r/a.txt"), "local");
+
+            // Into the folder that exists, so as r inside it: the same folder again.
+            CliRun run = await RunAsync("get", "docs:/r", _work.Path);
+
+            Assert.Equal(CliApp.Failed, run.ExitCode);
+            Assert.Contains("/r/a.txt: ", run.Output, StringComparison.Ordinal);
+            Assert.Equal(("local", "b"), (await File.ReadAllTextAsync(_work.File("r/a.txt")), await File.ReadAllTextAsync(_work.File("r/b.txt"))));
+        }
+
+        [Fact]
+        public async Task DownloadAsync_DirectoryOfMoreThanOnePage_SavesEveryEntry()
+        {
+            await UploadAsync("/many/a/1.txt", "1");
+            await UploadAsync("/many/2.txt", "2");
+            await UploadAsync("/many/3.txt", "3");
+
+            FolderTransferResult result = await FolderTransfers.DownloadAsync(Docs, ShelfLocation.Parse("docs:/many"), _work.File("out"), overwrite: false, CancellationToken.None, pageSize: 2);
+
+            Assert.Equal((3, true), (result.Files, result.IsComplete));
+            Assert.Equal(new[] { "1.txt", "2.txt", "3.txt" }, Directory.GetFiles(_work.File("out"), "*", SearchOption.AllDirectories).Select(Path.GetFileName).Order());
+        }
+
+        // Not tested: get with no local target, which saves into the working folder. The tests run in
+        // parallel in one process, so none may change the working folder; the default is the same
+        // "the entry's own name" a single-file get has always used.
+
+        [Fact]
+        public async Task Get_ADirectoryOverwriting_ReplacesTheLocalFiles()
+        {
+            await UploadAsync("/r/a.txt", "from the shelf");
+            Directory.CreateDirectory(_work.File("r"));
+            await File.WriteAllTextAsync(_work.File("r/a.txt"), "local");
+
+            CliRun run = await RunAsync("get", "docs:/r", _work.Path, "--overwrite");
+
+            Assert.Equal(CliApp.Succeeded, run.ExitCode);
+            Assert.Equal("from the shelf", await File.ReadAllTextAsync(_work.File("r/a.txt")));
+        }
+
+        [Fact]
+        public async Task Get_ADirectoryWithALocalFolderWhereAFileGoes_LeavesThatFileOut()
+        {
+            await UploadAsync("/r/a.txt", "a");
+            Directory.CreateDirectory(_work.File("r/a.txt"));
+
+            CliRun run = await RunAsync("get", "docs:/r", _work.Path);
+
+            Assert.Equal(CliApp.Failed, run.ExitCode);
+            Assert.Contains("/r/a.txt: a local folder of that name is in the way.", run.Output, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Put_AFolderOverTheQuota_StopsAndSaysWhatItStoredFirst()
+        {
+            await _clients.Client.CreateShelfAsync("small", quotaBytes: 4);
+            Directory.CreateDirectory(_work.File("photos"));
+            await File.WriteAllTextAsync(_work.File("photos/a.txt"), "aaa");
+            await File.WriteAllTextAsync(_work.File("photos/b.txt"), "bbb");
+            await File.WriteAllTextAsync(_work.File("photos/c.txt"), "c");
+
+            CliRun run = await RunAsync("put", _work.File("photos"), "small");
+
+            Assert.Equal(CliApp.Failed, run.ExitCode);
+            string[] lines = run.Output.TrimEnd().Split(Environment.NewLine);
+            Assert.Equal("Uploaded 1 file (3 B) to small:/photos.", lines[0]);
+            Assert.StartsWith("Stopped before the end: ", lines[1], StringComparison.Ordinal);
+            Assert.Contains(ErrorCodes.QuotaExceeded, lines[1], StringComparison.Ordinal);
+            Assert.Equal(new[] { "/photos/a.txt" }, (await _clients.Client.Shelf("small").ListAsync("/photos")).Files.Select(file => file.Path));
+        }
+
+        [Fact]
+        public async Task Put_AFolderOverwriting_ReplacesTheFilesOnTheShelf()
+        {
+            await UploadAsync("/photos/a.txt", "on the shelf");
+            Directory.CreateDirectory(_work.File("photos"));
+            await File.WriteAllTextAsync(_work.File("photos/a.txt"), "local");
+
+            CliRun run = await RunAsync("put", _work.File("photos"), "docs", "--overwrite");
+
+            Assert.Equal(CliApp.Succeeded, run.ExitCode);
+            Assert.Equal("local", await ReadAsync("/photos/a.txt"));
+        }
+
+        [Fact]
+        public async Task Put_AFolderToAPathNotEndingInASlash_StoresItAsThatDirectory()
+        {
+            Directory.CreateDirectory(_work.File("photos"));
+            await File.WriteAllTextAsync(_work.File("photos/a.txt"), "a");
+
+            await RunAsync("put", _work.File("photos"), "docs:/2026/holiday");
+
+            Assert.Equal("a", await ReadAsync("/2026/holiday/a.txt"));
+        }
+
+        [Fact]
+        public async Task Put_AFolderThatIsASymbolicLink_FailsAsMisuseAndStoresNothing()
+        {
+            Directory.CreateDirectory(_work.File("real"));
+            await File.WriteAllTextAsync(_work.File("real/a.txt"), "a");
+            Directory.CreateSymbolicLink(_work.File("link"), _work.File("real"));
+
+            CliRun run = await RunAsync("put", _work.File("link"), "docs");
 
             Assert.Equal(CliApp.Misused, run.ExitCode);
-            Assert.Contains("name a file", run.Error, StringComparison.Ordinal);
+            Assert.Empty((await Docs.ListAsync()).Directories);
+        }
+
+        [Fact]
+        public async Task Put_AFolderWithADescription_FailsAsMisuse()
+        {
+            Directory.CreateDirectory(_work.File("photos"));
+
+            CliRun run = await RunAsync("put", _work.File("photos"), "docs:/", "--description", "Holiday");
+
+            Assert.Equal(CliApp.Misused, run.ExitCode);
+        }
+
+        [Fact]
+        public async Task Tree_EmptyDirectory_SaysNothingIsUnderIt()
+        {
+            await Docs.CreateDirectoryAsync("/empty");
+
+            CliRun run = await RunAsync("tree", "docs:/empty");
+
+            Assert.Equal("Nothing under it.", run.Output.TrimEnd());
+        }
+
+        [Fact]
+        public async Task Get_ADirectoryToStandardOutput_FailsAsMisuse()
+        {
+            await Docs.CreateDirectoryAsync("/r");
+
+            CliRun run = await RunAsync("get", "docs:/r", "-");
+
+            Assert.Equal(CliApp.Misused, run.ExitCode);
+        }
+
+        [Fact]
+        public async Task Put_AFolder_StoresItsTreeWithEmptyFoldersUnderItsName()
+        {
+            Directory.CreateDirectory(_work.File("photos/sub"));
+            Directory.CreateDirectory(_work.File("photos/empty"));
+            await File.WriteAllTextAsync(_work.File("photos/a.jpg"), "a");
+            await File.WriteAllTextAsync(_work.File("photos/sub/b.txt"), "bb");
+
+            CliRun run = await RunAsync("put", _work.File("photos"), "docs:/2026/");
+
+            Assert.Equal(CliApp.Succeeded, run.ExitCode);
+            Assert.StartsWith("Uploaded 2 files (3 B) to docs:/2026/photos.", run.Output, StringComparison.Ordinal);
+            DirectoryTree tree = await Docs.ListTreeAsync(new TreeQuery { Under = "/2026/photos" });
+            Assert.Equal(new[] { "/2026/photos/empty", "/2026/photos/sub" }, tree.Directories.Select(directory => directory.Path));
+            Assert.Equal(new[] { ("/2026/photos/a.jpg", "image/jpeg"), ("/2026/photos/sub/b.txt", "text/plain") }, tree.Files.Select(file => (file.Path, file.ContentType)));
+        }
+
+        [Fact]
+        public async Task Put_AFolderWithATakenPathAndALink_LeavesThemOutStoresTheRestAndFails()
+        {
+            await UploadAsync("/photos/a.txt", "on the shelf");
+            Directory.CreateDirectory(_work.File("photos"));
+            await File.WriteAllTextAsync(_work.File("photos/a.txt"), "local");
+            await File.WriteAllTextAsync(_work.File("photos/b.txt"), "b");
+            File.CreateSymbolicLink(_work.File("photos/link.txt"), _work.File("photos/b.txt"));
+
+            CliRun run = await RunAsync("put", _work.File("photos"), "docs");
+
+            Assert.Equal(CliApp.Failed, run.ExitCode);
+            Assert.Contains($"{_work.File("photos/a.txt")}: ", run.Output, StringComparison.Ordinal);
+            Assert.Contains($"{_work.File("photos/link.txt")}: a symbolic link", run.Output, StringComparison.Ordinal);
+            Assert.Equal(new[] { "/photos/a.txt", "/photos/b.txt" }, (await Docs.ListAsync("/photos")).Files.Select(file => file.Path));
+            Assert.Equal("on the shelf", await ReadAsync("/photos/a.txt"));
+        }
+
+        [Fact]
+        public async Task Put_AFolderWithAType_FailsAsMisuse()
+        {
+            Directory.CreateDirectory(_work.File("photos"));
+
+            CliRun run = await RunAsync("put", _work.File("photos"), "docs:/", "--type", "image/png");
+
+            Assert.Equal(CliApp.Misused, run.ExitCode);
+        }
+
+        [Fact]
+        public async Task Tree_WithADepthAndALimit_ListsByPathAndHowToGetTheNextPage()
+        {
+            await UploadAsync("/a/b/deep.txt", "1");
+            await UploadAsync("/a/one.txt", "22");
+            await UploadAsync("/z.txt", "3");
+
+            CliRun run = await RunAsync("tree", "docs:/a", "--depth", "1", "--limit", "1");
+
+            Assert.Equal(new[] { "/a/b/", "More: add --after '/a/b'" }, run.Output.TrimEnd().Split(Environment.NewLine));
+        }
+
+        [Fact]
+        public async Task Tree_WholeShelf_MarksDirectoriesAndSizesFiles()
+        {
+            await UploadAsync("/a/one.txt", "22");
+
+            CliRun run = await RunAsync("tree", "docs");
+
+            Assert.Equal(new[] { "/a/", "/a/one.txt  2 B" }, run.Output.TrimEnd().Split(Environment.NewLine));
         }
 
         [Fact]
         public async Task Get_DownloadDoesNotMatchItsHash_FailsAndLeavesNoFile()
         {
-            using ScriptedHandler server = new ScriptedHandler(_ =>
+            using ScriptedHandler server = new ScriptedHandler(request =>
             {
+                // get first asks whether the path is a file or a directory.
+                if (request.RequestUri!.AbsolutePath.EndsWith("/files", StringComparison.Ordinal))
+                {
+                    ShelfFile record = new ShelfFile
+                    {
+                        Id = Guid.NewGuid(),
+                        ShelfId = Guid.NewGuid(),
+                        DirectoryId = Guid.NewGuid(),
+                        Path = "/a.txt",
+                        Name = "a.txt",
+                        ContentType = "text/plain",
+                        SizeBytes = 8,
+                        Sha256 = new string('0', 64),
+                        CreatedAt = DateTimeOffset.UtcNow,
+                        UpdatedAt = DateTimeOffset.UtcNow,
+                    };
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(record, ByteShelfJsonContext.Default.ShelfFile), Encoding.UTF8, "application/json") };
+                }
+
                 HttpResponseMessage response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("tampered") };
                 response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue($"\"{new string('0', 64)}\"");
                 return response;
@@ -228,6 +478,40 @@ namespace ByteShelf.Cli.Tests
 
             Assert.Equal(CliApp.Misused, run.ExitCode);
             Assert.Equal("Kept", (await Docs.GetFileAsync("/a.txt")).Description);
+        }
+
+        [Fact]
+        public async Task Share_WithExpires_PrintsTheLinkThenWhenItRunsOut()
+        {
+            await UploadAsync("/a.txt", "a");
+            DateTimeOffset before = DateTimeOffset.UtcNow;
+
+            CliRun run = await RunAsync("share", "docs:/a.txt", "--expires", "2h", "--json");
+
+            DownloadLink link = JsonSerializer.Deserialize(run.Output, ByteShelfJsonContext.Default.DownloadLink)!;
+            Assert.InRange(link.ExpiresAt, before.AddHours(2), DateTimeOffset.UtcNow.AddHours(2));
+        }
+
+        [Fact]
+        public async Task Share_AsText_PrintsTheLinkAloneOnItsFirstLineThenWhenItRunsOut()
+        {
+            await UploadAsync("/a.txt", "a");
+
+            CliRun run = await RunAsync("share", "docs:/a.txt");
+
+            string[] lines = run.Output.TrimEnd().Split(Environment.NewLine);
+            Assert.Matches("^https?://[^ ]+$", lines[0]);
+            Assert.StartsWith("Works for anyone who has it until ", lines[1], StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Share_ExpiresNotALifetime_FailsAsMisuse()
+        {
+            await UploadAsync("/a.txt", "a");
+
+            CliRun run = await RunAsync("share", "docs:/a.txt", "--expires", "8d");
+
+            Assert.Equal(CliApp.Misused, run.ExitCode);
         }
 
         [Fact]

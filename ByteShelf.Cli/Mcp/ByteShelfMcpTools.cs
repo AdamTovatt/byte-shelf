@@ -109,6 +109,20 @@ namespace ByteShelf.Cli.Mcp
             });
         }
 
+        // Not marked read-only, though the shelf does not change: a link hands the file to anyone who gets
+        // it, so a host that runs read-only tools unasked should still ask before this one.
+        [McpServerTool(Name = "share_file", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+        [Description("Makes a link to one file that anyone who has it can open without signing in, until it runs out. Nothing takes a link back sooner. A file stored over the linked one is a new file the link does not reach; a file in the trash is not found by it until restored.")]
+        public Task<string> ShareFileAsync(
+            [Description("The shelf's name.")] string shelf,
+            [Description("The file's path.")] string path,
+            [Description("How long the link works, in " + LinkLifetimes.Examples + "; 24h by default, at most 7d.")] string? expiresIn = null,
+            CancellationToken cancellationToken = default)
+        {
+            return RunAsync(cancellationToken, async client => TextFormat.Link(
+                await client.Shelf(shelf).CreateDownloadLinkAsync(path, LinkLifetimes.Parse(expiresIn), cancellationToken)));
+        }
+
         [McpServerTool(Name = "set_description", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
         [Description("Sets what a file is, in up to 2000 characters of free text, shown with the file and matched by search_files. Omit description to remove it.")]
         public Task<string> SetDescriptionAsync(
@@ -156,7 +170,7 @@ namespace ByteShelf.Cli.Mcp
 
             return RunAsync(cancellationToken, async client => TextFormat.SearchResults(
                 await client.Shelf(shelf).SearchAsync(search, cancellationToken),
-                cursor => $"More files follow: call again with after = {cursor}"));
+                MoreAfter));
         }
 
         [McpServerTool(Name = "download_file", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -175,6 +189,69 @@ namespace ByteShelf.Cli.Mcp
                     ? await Transfers.ReadTextAsync(shelfClient, path, MaxInlineBytes, cancellationToken)
                     : $"Saved {await Transfers.DownloadToFileAsync(shelfClient, path, Absolute(localPath), overwrite, cancellationToken)}";
             });
+        }
+
+        [McpServerTool(Name = "list_tree", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [Description("Everything under a directory on a shelf, at any depth or down to depth levels: one line per directory (ending in /) and file (with its size), by path, a page at a time with a cursor when more follow.")]
+        public Task<string> ListTreeAsync(
+            [Description("The shelf's name.")] string shelf,
+            [Description("The directory's path; / (the default) for the whole shelf.")] string path = ShelfPath.Root,
+            [Description("How many levels down to list: 1 is what the directory holds directly; omit for every level.")] int? depth = null,
+            [Description("Entries per page, 1 to 1000; 100 by default.")] int? limit = null,
+            [Description("The cursor a previous page ended with, for the page after it.")] string? after = null,
+            CancellationToken cancellationToken = default)
+        {
+            TreeQuery query = new TreeQuery { Under = path, Depth = depth, Limit = limit, After = after };
+            return RunAsync(cancellationToken, async client => TextFormat.Tree(
+                await client.Shelf(shelf).ListTreeAsync(query, cancellationToken),
+                MoreAfter));
+        }
+
+        [McpServerTool(Name = "upload_folder", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+        [Description("Stores a local folder and everything in it on a shelf, keeping its structure and empty folders; symbolic links are not followed. A file whose path is taken is left out and reported unless overwrite is true, and then the old file goes to the trash.")]
+        public Task<string> UploadFolderAsync(
+            [Description("The shelf's name.")] string shelf,
+            [Description("The directory to store it as, such as /projects/site; a path ending in / keeps the local folder's name.")] string path,
+            [Description("An absolute path to the local folder.")] string localPath,
+            [Description("Replace files already at their paths.")] bool overwrite = false,
+            CancellationToken cancellationToken = default)
+        {
+            return RunAsync(cancellationToken, async client =>
+            {
+                ShelfLocation location = ShelfLocation.Of(shelf, path);
+                return FolderAnswer(await FolderTransfers.UploadAsync(client.Shelf(location.Shelf), Absolute(localPath), location, overwrite, cancellationToken), "Uploaded");
+            });
+        }
+
+        [McpServerTool(Name = "download_directory", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [Description("Saves a directory from a shelf and everything under it as a local folder, keeping its structure and empty directories. A local file already there is left out and reported unless overwrite is true.")]
+        public Task<string> DownloadDirectoryAsync(
+            [Description("The shelf's name.")] string shelf,
+            [Description("The directory's path; / for the whole shelf.")] string path,
+            [Description("An absolute local path: a folder that exists gets the directory inside it under its own name, as download_file does with a file; any other path becomes the folder.")] string localPath,
+            [Description("Replace local files already there.")] bool overwrite = false,
+            CancellationToken cancellationToken = default)
+        {
+            return RunAsync(cancellationToken, async client =>
+            {
+                ShelfLocation location = ShelfLocation.Of(shelf, path);
+                return FolderAnswer(await FolderTransfers.DownloadAsync(client.Shelf(location.Shelf), location, Absolute(localPath), overwrite, cancellationToken), "Saved");
+            });
+        }
+
+        /// <summary>
+        /// What a folder transfer did. One that stopped early is an error, still saying what it did first;
+        /// one that left some entries out answers which, since the rest did move.
+        /// </summary>
+        private static string FolderAnswer(FolderTransferResult result, string verb)
+        {
+            string answer = TextFormat.FolderTransfer(result, verb);
+            return result.StoppedBy == null ? answer : throw new McpException(answer, result.StoppedBy);
+        }
+
+        private static string MoreAfter(string cursor)
+        {
+            return $"More follow: call again with after = {cursor}";
         }
 
         [McpServerTool(Name = "create_directory", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]

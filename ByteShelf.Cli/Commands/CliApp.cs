@@ -42,9 +42,11 @@ namespace ByteShelf.Cli.Commands
 
                 new Command(Section.Files, "ls", "<shelf>[:<path>]", "what a directory holds", ListAsync),
                 new Command(Section.Files, "stat", "<shelf>:<path>", "a file's record, or a directory's", StatAsync),
-                new Command(Section.Files, "put", "<local-file>|- <shelf>:<path> [--overwrite] [--type <content-type>] [--description <text>]", "store a file, - for stdin; a path ending in / keeps the file's name", PutAsync),
-                new Command(Section.Files, "get", "<shelf>:<path> [<local-file>|<local-dir>|-] [--overwrite]", "save a file, - for stdout", GetAsync),
+                new Command(Section.Files, "tree", "<shelf>[:<path>] [--depth <n>] [--limit <n>] [--after <cursor>]", "everything under a directory, by path, at any depth or down to --depth levels", TreeAsync),
+                new Command(Section.Files, "put", "<local-file>|<local-folder>|- <shelf>:<path> [--overwrite] [--type <content-type>] [--description <text>]", "store a file, - for stdin, or a whole folder; a path ending in / keeps the local name", PutAsync),
+                new Command(Section.Files, "get", "<shelf>:<path> [<local-file>|<local-folder>|-] [--overwrite]", "save a file, - for stdout, or a whole directory", GetAsync),
                 new Command(Section.Files, "describe", "<shelf>:<path> <text> | --clear", "set a file's description, which find matches too", DescribeAsync),
+                new Command(Section.Files, "share", "<shelf>:<path> [--expires <30m|12h|7d>]", "a link to a file that works without signing in; 24 hours by default, at most 7 days", ShareAsync),
                 new Command(
                     Section.Files,
                     "find",
@@ -292,6 +294,17 @@ namespace ByteShelf.Cli.Commands
             arguments.EnsureAllUsed();
             IShelfClient shelf = await ShelfAsync(location.Shelf, cancellationToken);
 
+            if (source != "-" && Directory.Exists(source))
+            {
+                if (options.ContentType != null || options.Description != null)
+                {
+                    throw new UsageException("--type and --description are for one file, not a folder.");
+                }
+
+                FolderDone(await FolderTransfers.UploadAsync(shelf, source, location, options.Overwrite, cancellationToken), "Uploaded");
+                return;
+            }
+
             ShelfFile stored;
             if (source == "-")
             {
@@ -312,12 +325,19 @@ namespace ByteShelf.Cli.Commands
             string? target = arguments.Optional(1);
             bool overwrite = arguments.Flag("--overwrite");
             arguments.EnsureAllUsed();
-            if (location.Path == ShelfPath.Root)
+            IShelfClient shelf = await ShelfAsync(location.Shelf, cancellationToken);
+
+            if (location.Path == ShelfPath.Root || (await Entries.GetAsync(shelf, location.Path, cancellationToken)).Directory != null)
             {
-                throw new UsageException($"'{location}' is the shelf's root; name a file, as {location.Shelf}:/path.");
+                if (target == "-")
+                {
+                    throw new UsageException($"'{location}' is a directory; save it to a local folder, not to stdout.");
+                }
+
+                FolderDone(await FolderTransfers.DownloadAsync(shelf, location, target, overwrite, cancellationToken), "Saved");
+                return;
             }
 
-            IShelfClient shelf = await ShelfAsync(location.Shelf, cancellationToken);
             if (target == "-")
             {
                 await using Stream content = await shelf.OpenReadAsync(location.Path, cancellationToken);
@@ -345,6 +365,16 @@ namespace ByteShelf.Cli.Commands
             Print(described, ByteShelfJsonContext.Default.ShelfFile, TextFormat.File);
         }
 
+        private async Task ShareAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
+            TimeSpan? lifetime = LinkLifetimes.Parse(arguments.Value("--expires"));
+            arguments.EnsureAllUsed();
+
+            DownloadLink link = await (await ShelfAsync(location.Shelf, cancellationToken)).CreateDownloadLinkAsync(location.Path, lifetime, cancellationToken);
+            Print(link, ByteShelfJsonContext.Default.DownloadLink, TextFormat.Link);
+        }
+
         private async Task FindAsync(ArgumentList arguments, CancellationToken cancellationToken)
         {
             ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
@@ -366,9 +396,40 @@ namespace ByteShelf.Cli.Commands
             arguments.EnsureAllUsed();
 
             FileSearchResults found = await (await ShelfAsync(location.Shelf, cancellationToken)).SearchAsync(search, cancellationToken);
-            Print(found, ByteShelfJsonContext.Default.FileSearchResults, results => TextFormat.SearchResults(
-                results,
-                cursor => $"More: add --after '{cursor.Replace("'", "'\\''", StringComparison.Ordinal)}'"));
+            Print(found, ByteShelfJsonContext.Default.FileSearchResults, results => TextFormat.SearchResults(results, MoreAfter));
+        }
+
+        private async Task TreeAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
+            TreeQuery query = new TreeQuery
+            {
+                Under = location.Path,
+                Depth = arguments.Count("--depth"),
+                Limit = arguments.Count("--limit"),
+                After = arguments.Value("--after"),
+            };
+            arguments.EnsureAllUsed();
+
+            DirectoryTree tree = await (await ShelfAsync(location.Shelf, cancellationToken)).ListTreeAsync(query, cancellationToken);
+            Print(tree, ByteShelfJsonContext.Default.DirectoryTree, page => TextFormat.Tree(page, MoreAfter));
+        }
+
+        /// <summary>How to ask for the page after <paramref name="cursor"/>, quoted for a POSIX shell.</summary>
+        private static string MoreAfter(string cursor)
+        {
+            return $"More: add --after '{cursor.Replace("'", "'\\''", StringComparison.Ordinal)}'";
+        }
+
+        /// <summary>Prints what a folder transfer did; one that did not reach everything fails, so a script sees it.</summary>
+        /// <exception cref="IOException">Something was left out, or the transfer stopped early.</exception>
+        private void FolderDone(FolderTransferResult result, string verb)
+        {
+            Done(TextFormat.FolderTransfer(result, verb));
+            if (!result.IsComplete)
+            {
+                throw new IOException(TextFormat.FolderTransferFailure(result));
+            }
         }
 
         private async Task MakeDirectoryAsync(ArgumentList arguments, CancellationToken cancellationToken)

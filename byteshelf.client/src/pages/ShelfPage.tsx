@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import {
   Button,
   Card,
+  CopyField,
   Dropdown,
   DropdownItem,
   EmptyState,
@@ -27,6 +28,7 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useUploads } from '../hooks/useUploads';
 import { formatBytes, formatTime } from '../lib/format';
 import { joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../lib/shelfPaths';
+import { copyWhenReady } from '../lib/clipboard';
 import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
 import { createDownloadLink, type FileSearchResults, type ShelfDirectory, type ShelfFile } from '../services/shelfService';
@@ -63,15 +65,15 @@ export function ShelfPage() {
   }
 
   /**
-   * Opens a file in a new tab or saves it, through a short-lived link: a plain link cannot carry the
-   * session's token. The tab is opened before the request, while the click still counts as the
-   * user's, or the browser would block it as a popup.
+   * Opens a file in a new tab or saves it, through a link that works only for the few minutes a
+   * browser needs to start: a plain link cannot carry the session's token. The tab is opened before
+   * the request, while the click still counts as the user's, or the browser would block it as a popup.
    */
   async function open(file: ShelfFile, download: boolean): Promise<void> {
     const tab = download ? null : window.open('', '_blank');
     await runOrToast(async () => {
       try {
-        const link = await createDownloadLink(shelf, file.id);
+        const link = await createDownloadLink(shelf, file.id, OPEN_LINK_MINUTES);
         if (tab) {
           tab.location.href = link.url;
         } else {
@@ -82,6 +84,31 @@ export function ShelfPage() {
         throw caught;
       }
     }, 'Could not open the file');
+  }
+
+  /**
+   * Copies a link that lets anyone open the file without signing in, for the server's default of a
+   * day. Where it cannot be copied at once (plain HTTP), the toast holds it in a field to copy from.
+   */
+  async function copyLink(file: ShelfFile): Promise<void> {
+    const link = createDownloadLink(shelf, file.id).then((created) => ({ ...created, url: new URL(created.url, window.location.origin).href }));
+    const copied = copyWhenReady(link.then((created) => created.url));
+
+    await runOrToast(async () => {
+      const { url, expiresAt } = await link;
+      const until = `Anyone with it can open ${file.name} until ${formatTime(expiresAt)}.`;
+      if (await copied) {
+        toast.success(`Link copied. ${until}`);
+      } else {
+        toast((t) => (
+          <span className="flex min-w-0 flex-col gap-2">
+            <span>{until}</span>
+            <CopyField value={url} copyButtonAriaLabel="Copy the link" />
+            <Button size="sm" variant="secondary" className="self-start" onClick={() => toast.dismiss(t.id)}>Dismiss</Button>
+          </span>
+        ), { duration: Infinity });
+      }
+    }, 'Could not make a link');
   }
 
   /** Moves an entry to the trash at once; the toast's Undo restores it. Emptying the trash is what cannot be undone. */
@@ -128,6 +155,7 @@ export function ShelfPage() {
         onOpen={() => (entry.kind === 'directory' ? navigate(shelfRoute(shelf, entry.value.path)) : void open(entry.value, false))}
         onDownload={entry.kind === 'file' ? () => void open(entry.value, true) : undefined}
         onDescribe={entry.kind === 'file' ? () => setDescribing(entry.value) : undefined}
+        onCopyLink={entry.kind === 'file' ? () => void copyLink(entry.value) : undefined}
         onRename={() => setRenaming(entry)}
         onMove={() => setMoving(entry)}
         onDelete={() => void remove(entry)}
@@ -204,6 +232,9 @@ export function ShelfPage() {
 /** How long typing must pause before a search is sent. */
 const SEARCH_DELAY_MS = 250;
 
+/** How long a link to open or save a file works: enough for a browser to start, or a viewer to fetch ranges. */
+const OPEN_LINK_MINUTES = 5;
+
 interface SearchResultsProps {
   results: FileSearchResults | undefined;
   isLoading: boolean;
@@ -234,12 +265,13 @@ interface EntryRowProps {
   onOpen: () => void;
   onDownload?: () => void;
   onDescribe?: () => void;
+  onCopyLink?: () => void;
   onRename: () => void;
   onMove: () => void;
   onDelete: () => void;
 }
 
-function EntryRow({ entry, label, onOpen, onDownload, onDescribe, onRename, onMove, onDelete }: EntryRowProps) {
+function EntryRow({ entry, label, onOpen, onDownload, onDescribe, onCopyLink, onRename, onMove, onDelete }: EntryRowProps) {
   const isFile = entry.kind === 'file';
   const name = entry.value.name;
   const description = isFile ? entry.value.description : null;
@@ -269,6 +301,7 @@ function EntryRow({ entry, label, onOpen, onDownload, onDescribe, onRename, onMo
       )}
       <Dropdown align="right" trigger={<IconButton variant="ghost" size="sm" icon={iconMap.more} aria-label={`Actions for ${name}`} />}>
         {onDownload && <DropdownItem icon={<Icon icon={iconMap.download} size={16} />} onClick={onDownload}>Download</DropdownItem>}
+        {onCopyLink && <DropdownItem icon={<Icon icon={iconMap.copy} size={16} />} onClick={onCopyLink}>Copy link</DropdownItem>}
         {onDescribe && <DropdownItem icon={<Icon icon={iconMap.edit} size={16} />} onClick={onDescribe}>Description</DropdownItem>}
         <DropdownItem icon={<Icon icon={iconMap.rename} size={16} />} onClick={onRename}>Rename</DropdownItem>
         <DropdownItem icon={<Icon icon={iconMap.move} size={16} />} onClick={onMove}>Move</DropdownItem>

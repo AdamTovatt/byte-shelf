@@ -484,6 +484,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shelves/{shelf}/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    under?: string;
+                    depth?: number;
+                    limit?: number;
+                    after?: string;
+                };
+                header?: never;
+                path: {
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["DirectoryTree"];
+                        "application/json": components["schemas"]["DirectoryTree"];
+                        "text/json": components["schemas"]["DirectoryTree"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/shelves/{shelf}/files": {
         parameters: {
             query?: never;
@@ -989,6 +1055,7 @@ export interface paths {
                 query?: {
                     path?: string;
                     id?: string;
+                    expiresInMinutes?: number;
                 };
                 header?: never;
                 path: {
@@ -1007,6 +1074,17 @@ export interface paths {
                         "text/plain": components["schemas"]["DownloadLink"];
                         "application/json": components["schemas"]["DownloadLink"];
                         "text/json": components["schemas"]["DownloadLink"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
                     };
                 };
                 /** @description Not Found */
@@ -2828,6 +2906,12 @@ export interface components {
             directory: components["schemas"]["ShelfDirectory"];
             directories: components["schemas"]["ShelfDirectory"][];
             files: components["schemas"]["ShelfFile"][];
+        };
+        DirectoryTree: {
+            directory: components["schemas"]["ShelfDirectory"];
+            directories: components["schemas"]["ShelfDirectory"][];
+            files: components["schemas"]["ShelfFile"][];
+            nextCursor?: string | null;
         };
         DownloadLink: {
             url: string;

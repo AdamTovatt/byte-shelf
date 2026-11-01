@@ -1,6 +1,7 @@
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfClient;
 using ByteShelfClient.Http;
+using ByteShelfCommon;
 
 namespace ByteShelf.Server.Tests.Client
 {
@@ -23,6 +24,17 @@ namespace ByteShelf.Server.Tests.Client
             _http.Dispose();
             await _host.DisposeAsync();
             await base.DisposeAsync();
+        }
+
+        [Fact]
+        public async Task CreateDownloadLinkAsync_Link_ServesTheFileWithoutSigningIn()
+        {
+            await UploadTextAsync("/a.txt", "shared");
+
+            DownloadLink link = await Shelf.CreateDownloadLinkAsync("/a.txt");
+
+            Assert.StartsWith(_http.BaseAddress!.AbsoluteUri, link.Url, StringComparison.Ordinal);
+            Assert.Equal("shared", await _host.AnonymousClient.GetStringAsync(new Uri(link.Url)));
         }
 
         protected override async Task<IByteShelfClient> CreateAdminClientAsync()

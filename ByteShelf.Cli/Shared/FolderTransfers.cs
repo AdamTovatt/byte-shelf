@@ -1,0 +1,270 @@
+using ByteShelfClient;
+using ByteShelfCommon;
+
+namespace ByteShelf.Cli.Shared
+{
+    /// <summary>What a folder transfer did: the files it moved, what it left out and why, and what stopped it early, if anything did.</summary>
+    internal sealed class FolderTransferResult
+    {
+        private readonly List<string> _leftOut = new List<string>();
+
+        public FolderTransferResult(string target)
+        {
+            Target = target;
+        }
+
+        /// <summary>Where the files went: a directory on the shelf or a local folder.</summary>
+        public string Target { get; }
+
+        public int Files { get; private set; }
+
+        public long Bytes { get; private set; }
+
+        /// <summary>Each file or folder left out, as "what: why"; a folder left out takes everything in it along.</summary>
+        public IReadOnlyList<string> LeftOut => _leftOut;
+
+        /// <summary>The failure that ended the transfer before it reached everything; null when it went to the end.</summary>
+        public Exception? StoppedBy { get; private set; }
+
+        /// <summary>Whether everything was moved.</summary>
+        public bool IsComplete => _leftOut.Count == 0 && StoppedBy == null;
+
+        public void Add(long bytes)
+        {
+            Files++;
+            Bytes += bytes;
+        }
+
+        public void LeaveOut(string what, string why)
+        {
+            _leftOut.Add($"{what}: {why}");
+        }
+
+        public void Stop(Exception exception)
+        {
+            StoppedBy = exception;
+        }
+    }
+
+    /// <summary>
+    /// A whole local folder to a shelf, and a whole directory from one, keeping the structure, empty
+    /// folders included, and placed as <see cref="Transfers"/> places one file. A file or folder that
+    /// cannot be moved is left out and reported, and the rest go on; a failure that would stop every
+    /// file alike (signed out, no permission, the quota, a read-only replica, the server out of reach)
+    /// stops the transfer, and the result still says what was done before it.
+    /// </summary>
+    internal static class FolderTransfers
+    {
+        /// <summary>
+        /// Stores the local folder <paramref name="localFolder"/> and everything in it at
+        /// <paramref name="location"/>, under the folder's own name when that names a directory.
+        /// </summary>
+        /// <exception cref="UsageException">There is no such local folder, or it is a symbolic link.</exception>
+        public static async Task<FolderTransferResult> UploadAsync(IShelfClient shelf, string localFolder, ShelfLocation location, bool overwrite, CancellationToken cancellationToken)
+        {
+            DirectoryInfo folder = new DirectoryInfo(Path.TrimEndingDirectorySeparator(Path.GetFullPath(localFolder)));
+            if (!folder.Exists)
+            {
+                throw new UsageException($"There is no folder {folder.FullName}.");
+            }
+
+            if (folder.LinkTarget != null)
+            {
+                throw new UsageException($"{folder.FullName} is a symbolic link, which is never followed; give the folder it points at.");
+            }
+
+            string path = location.FilePathFor(folder.Name);
+            FolderTransferResult result = new FolderTransferResult($"{location.Shelf}:{path}");
+            await StopOnAsync(result, cancellationToken, async () =>
+            {
+                await shelf.CreateDirectoryAsync(path, cancellationToken);
+                await UploadFolderAsync(shelf, folder, path, overwrite, result, cancellationToken);
+            });
+
+            return result;
+        }
+
+        /// <summary>
+        /// Saves the directory at <paramref name="location"/> (the whole shelf for its root) and everything
+        /// under it as a local folder: <paramref name="localTarget"/>, or inside it under the directory's
+        /// name when it is a folder that exists, or that name in the working folder when null.
+        /// </summary>
+        /// <param name="pageSize">How many entries to ask for at a time; tests make it small to page over few files.</param>
+        public static async Task<FolderTransferResult> DownloadAsync(
+            IShelfClient shelf,
+            ShelfLocation location,
+            string? localTarget,
+            bool overwrite,
+            CancellationToken cancellationToken,
+            int pageSize = TreeQuery.MaxLimit)
+        {
+            string name = location.Path == ShelfPath.Root ? location.Shelf : ShelfPath.GetName(location.Path);
+            string root = Path.GetFullPath(localTarget == null ? name : Directory.Exists(localTarget) ? Path.Combine(localTarget, name) : localTarget);
+            FolderTransferResult result = new FolderTransferResult(root);
+            LocalNames names = new LocalNames(root, location.Path);
+
+            await StopOnAsync(result, cancellationToken, async () =>
+            {
+                Directory.CreateDirectory(root);
+                string? after = null;
+                do
+                {
+                    DirectoryTree page = await shelf.ListTreeAsync(new TreeQuery { Under = location.Path, Limit = pageSize, After = after }, cancellationToken);
+                    foreach (TreeEntry entry in page.InOrder())
+                    {
+                        await RunAsync(entry.Path, result, () => entry.File == null
+                            ? SaveDirectoryAsync(entry.Path, names)
+                            : SaveFileAsync(shelf, entry.File, names, overwrite, result, cancellationToken));
+                    }
+
+                    after = page.NextCursor;
+                }
+                while (after != null);
+            });
+
+            return result;
+        }
+
+        private static Task SaveDirectoryAsync(string path, LocalNames names)
+        {
+            Directory.CreateDirectory(names.Claim(path, isDirectory: true));
+            return Task.CompletedTask;
+        }
+
+        private static async Task SaveFileAsync(IShelfClient shelf, ShelfFile file, LocalNames names, bool overwrite, FolderTransferResult result, CancellationToken cancellationToken)
+        {
+            string target = names.Claim(file.Path, isDirectory: false);
+            if (Directory.Exists(target))
+            {
+                throw new UsageException("a local folder of that name is in the way.");
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            await Transfers.DownloadToFileAsync(shelf, file.Path, target, overwrite, cancellationToken);
+            result.Add(file.SizeBytes);
+        }
+
+        private static async Task UploadFolderAsync(IShelfClient shelf, DirectoryInfo folder, string shelfPath, bool overwrite, FolderTransferResult result, CancellationToken cancellationToken)
+        {
+            foreach (FileSystemInfo entry in folder.EnumerateFileSystemInfos().OrderBy(entry => entry.Name, StringComparer.Ordinal))
+            {
+                await RunAsync(entry.FullName, result, async () =>
+                {
+                    if (entry.LinkTarget != null)
+                    {
+                        throw new UsageException("a symbolic link, which is never followed.");
+                    }
+
+                    string path = ShelfPath.Combine(shelfPath, entry.Name);
+                    if (entry is DirectoryInfo subfolder)
+                    {
+                        await shelf.CreateDirectoryAsync(path, cancellationToken);
+                        await UploadFolderAsync(shelf, subfolder, path, overwrite, result, cancellationToken);
+                        return;
+                    }
+
+                    ShelfFile stored = await Transfers.UploadFileAsync(shelf, entry.FullName, path, new UploadOptions { Overwrite = overwrite }, cancellationToken);
+                    result.Add(stored.SizeBytes);
+                });
+            }
+        }
+
+        /// <summary>Runs the transfer, keeping a failure that stops it in the result rather than losing what was done.</summary>
+        private static async Task StopOnAsync(FolderTransferResult result, CancellationToken cancellationToken, Func<Task> transfer)
+        {
+            try
+            {
+                await transfer();
+            }
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested && Failure.From(exception) != null)
+            {
+                result.Stop(exception);
+            }
+        }
+
+        /// <summary>Runs one entry's step; a failure of that entry alone is reported and the transfer goes on.</summary>
+        private static async Task RunAsync(string what, FolderTransferResult result, Func<Task> step)
+        {
+            try
+            {
+                await step();
+            }
+            catch (Exception exception) when (StopsOnlyThisEntry(exception))
+            {
+                result.LeaveOut(what, Failure.From(exception)!.Message);
+            }
+        }
+
+        private static bool StopsOnlyThisEntry(Exception exception)
+        {
+            return exception switch
+            {
+                ByteShelfException refused => refused.Code is not (ErrorCodes.Unauthenticated or ErrorCodes.PermissionDenied or ErrorCodes.QuotaExceeded or ErrorCodes.ReadOnlyReplica),
+                UsageException or ArgumentException or IOException or UnauthorizedAccessException => true,
+                _ => false,
+            };
+        }
+
+        /// <summary>
+        /// The local paths a download's entries take. Names that differ only in case on the shelf are one
+        /// name on a disk that ignores case (as macOS and Windows disks do by default), so the second of
+        /// them is left out, with what under it, rather than saved over the first or merged into it.
+        /// </summary>
+        /// <remarks>
+        /// The tests run on a Linux disk, which keeps case, so nothing there reaches the refusals, and no
+        /// test covers them; nor the refusal of a name that leaves the folder (a backslash on Windows),
+        /// which the server's name rules (no '/', '.' or '..') already rule out on Linux.
+        /// </remarks>
+        private sealed class LocalNames
+        {
+            private readonly string _root;
+            private readonly string _shelfPath;
+            private readonly Dictionary<string, string> _claimed = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            private readonly List<string> _leftOutDirectories = new List<string>();
+
+            public LocalNames(string root, string shelfPath)
+            {
+                _root = root;
+                _shelfPath = shelfPath;
+            }
+
+            /// <summary>The local path for the entry at <paramref name="path"/>, claimed for it.</summary>
+            /// <exception cref="UsageException">It cannot have one of its own.</exception>
+            public string Claim(string path, bool isDirectory)
+            {
+                string? leftOutAbove = _leftOutDirectories.FirstOrDefault(directory => path.StartsWith(directory + ShelfPath.Separator, StringComparison.Ordinal));
+                if (leftOutAbove != null)
+                {
+                    throw new UsageException($"it is inside {leftOutAbove}, which was left out.");
+                }
+
+                string local = LocalPathFor(path);
+                bool taken = isDirectory ? Directory.Exists(local) : File.Exists(local);
+                if (_claimed.TryGetValue(local, out string? other) && taken)
+                {
+                    if (isDirectory)
+                    {
+                        _leftOutDirectories.Add(path);
+                    }
+
+                    throw new UsageException($"this disk ignores case, so it would land on {other}.");
+                }
+
+                _claimed[local] = path;
+                return local;
+            }
+
+            private string LocalPathFor(string path)
+            {
+                string relative = _shelfPath == ShelfPath.Root ? path[1..] : path[(_shelfPath.Length + 1)..];
+                string local = Path.GetFullPath(Path.Combine(_root, Path.Combine(relative.Split(ShelfPath.Separator))));
+                if (!local.StartsWith(Path.TrimEndingDirectorySeparator(_root) + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                {
+                    throw new UsageException("its name is not one a local file can have here.");
+                }
+
+                return local;
+            }
+        }
+    }
+}

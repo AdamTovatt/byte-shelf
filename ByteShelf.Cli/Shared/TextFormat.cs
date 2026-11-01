@@ -91,6 +91,60 @@ namespace ByteShelf.Cli.Shared
             return label.PadRight(ValueColumn) + value.ReplaceLineEndings(indent);
         }
 
+        /// <summary>What a folder transfer did, each file or folder it left out, and what stopped it early.</summary>
+        /// <param name="verb">What was done, such as "Uploaded".</param>
+        public static string FolderTransfer(FolderTransferResult result, string verb)
+        {
+            string files = result.Files == 1 ? "1 file" : $"{result.Files} files";
+            List<string> lines = new List<string> { $"{verb} {files} ({Size(result.Bytes)}) to {result.Target}." };
+            if (result.LeftOut.Count > 0)
+            {
+                lines.Add($"Left out {CountOf(result.LeftOut.Count, "file or folder", "files or folders")}:");
+                lines.AddRange(result.LeftOut.Select(failure => "  " + failure));
+            }
+
+            if (result.StoppedBy != null)
+            {
+                lines.Add($"Stopped before the end: {Failure.From(result.StoppedBy)!.Message}");
+            }
+
+            return Lines(lines);
+        }
+
+        /// <summary>Why a folder transfer that did not reach everything failed, in one line.</summary>
+        public static string FolderTransferFailure(FolderTransferResult result)
+        {
+            return result.StoppedBy != null
+                ? $"Stopped before the end: {Failure.From(result.StoppedBy)!.Message}"
+                : $"Left out {CountOf(result.LeftOut.Count, "file or folder", "files or folders")}.";
+        }
+
+        private static string CountOf(int count, string one, string many)
+        {
+            return count == 1 ? $"1 {one}" : $"{count} {many}";
+        }
+
+        /// <summary>A directory's tree, one entry per line by path (directories end in /), then <paramref name="more"/> of the cursor when a page follows.</summary>
+        public static string Tree(DirectoryTree tree, Func<string, string> more)
+        {
+            List<string> lines = tree.InOrder()
+                .Select(entry => entry.File == null ? entry.Path + "/" : $"{entry.Path}  {Size(entry.File.SizeBytes)}")
+                .ToList();
+
+            if (lines.Count == 0)
+            {
+                return "Nothing under it.";
+            }
+
+            return Lines(tree.NextCursor == null ? lines : lines.Append(more(tree.NextCursor)));
+        }
+
+        /// <summary>The link alone on its first line, for a script to take, then when it stops working.</summary>
+        public static string Link(DownloadLink link)
+        {
+            return Lines(new[] { link.Url, $"Works for anyone who has it until {Time(link.ExpiresAt)}." });
+        }
+
         /// <summary>One line per file found, then <paramref name="more"/> of the cursor when a page follows.</summary>
         public static string SearchResults(FileSearchResults results, Func<string, string> more)
         {

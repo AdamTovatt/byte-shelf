@@ -7,10 +7,11 @@ using ByteShelfCommon;
 namespace ByteShelf.Server.Storage.Services
 {
     /// <summary>
-    /// Signed links to one file's contents, for a browser that cannot send a token with a plain link
-    /// or an image's source. A link carries the shelf's and the file's ids and when it runs out,
-    /// signed with a key kept under the root's <c>keys/</c>; whoever holds it may read that file until
-    /// then, even if the access it was made with is taken away meanwhile.
+    /// Signed links to one file's contents: for a browser that cannot send a token with a plain link
+    /// or an image's source, and to share a file with someone who has no access. A link carries the
+    /// shelf's and the file's ids and when it runs out, signed with a key kept under the root's
+    /// <c>keys/</c>; whoever holds it may read that file until then, even if the access it was made
+    /// with is taken away meanwhile. Removing the key file and restarting ends every link at once.
     /// </summary>
     public sealed class DownloadLinks
     {
@@ -18,9 +19,6 @@ namespace ByteShelf.Server.Storage.Services
 
         /// <summary>The route links point at, served by <c>DownloadsController</c>; a link is this, a slash and its token.</summary>
         public const string Route = "api/downloads";
-
-        /// <summary>How long a link works: enough for a browser to start a download or a viewer to fetch ranges of the file.</summary>
-        public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(5);
 
         private const int IdBytes = 16;
         private const int ExpiryBytes = sizeof(long);
@@ -36,13 +34,20 @@ namespace ByteShelf.Server.Storage.Services
             _timeProvider = timeProvider;
         }
 
-        public DownloadLink Create(Guid shelfId, Guid fileId)
+        /// <summary>
+        /// A link to the file that works for <paramref name="lifetime"/>, or for
+        /// <see cref="DownloadLink.DefaultLifetime"/> when null. The token keeps whole seconds, so the
+        /// link runs out at the second the lifetime ends in, which is the time it answers.
+        /// </summary>
+        /// <exception cref="ArgumentException">The lifetime is one <see cref="DownloadLink.NormalizeLifetime"/> refuses.</exception>
+        public DownloadLink Create(Guid shelfId, Guid fileId, TimeSpan? lifetime)
         {
-            DateTimeOffset expiresAt = _timeProvider.GetUtcNow() + Lifetime;
+            long expiresAtSeconds = (_timeProvider.GetUtcNow() + DownloadLink.NormalizeLifetime(lifetime)).ToUnixTimeSeconds();
             byte[] token = new byte[SignedBytes + SignatureBytes];
             shelfId.TryWriteBytes(token.AsSpan(0, IdBytes));
             fileId.TryWriteBytes(token.AsSpan(IdBytes, IdBytes));
-            BinaryPrimitives.WriteInt64BigEndian(token.AsSpan(2 * IdBytes, ExpiryBytes), expiresAt.ToUnixTimeSeconds());
+            BinaryPrimitives.WriteInt64BigEndian(token.AsSpan(2 * IdBytes, ExpiryBytes), expiresAtSeconds);
+            DateTimeOffset expiresAt = DateTimeOffset.FromUnixTimeSeconds(expiresAtSeconds);
             HMACSHA256.HashData(_key, token.AsSpan(0, SignedBytes), token.AsSpan(SignedBytes));
 
             return new DownloadLink { Url = $"/{Route}/" + Base64Url.EncodeToString(token), ExpiresAt = expiresAt };

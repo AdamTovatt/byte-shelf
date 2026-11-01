@@ -3,7 +3,7 @@
 The ByteShelf web UI: React, TypeScript, Vite, Tailwind and TanStack Query, built on the house
 template. Everyone browses the shelves they reach, searches a folder and everything below it by
 name or description, uploads (dropping files on a directory works too), opens and downloads files,
-describes, moves, renames and deletes them, and restores them from the trash. Admins
+describes, shares by a link, moves, renames and deletes them, and restores them from the trash. Admins
 also create shelves and users, set quotas, give access from a shelf or from a user, make keys, and on
 the Replication page pair replicas, see how far behind each is, remove one, and promote a replica.
 
@@ -44,8 +44,9 @@ npm run codegen    # in a second terminal
   tab renewed to. Signing out ends the session on the server too.
 - **Files:** uploads up to 8 MiB go in one request, larger ones as a resumable upload in 8 MiB chunks
   (`services/uploadService.ts`); a file whose name is taken is replaced only when asked. Opening or
-  downloading a file asks the server for a short-lived link first, since a plain link cannot carry the
-  token.
+  downloading a file asks the server for a five-minute link first, since a plain link cannot carry the
+  token. "Copy link" in a file's menu copies one that works for a day, for someone without access;
+  where the browser offers no clipboard (plain HTTP), the toast shows it to copy by hand.
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and
   refetches what each event makes stale (`lib/invalidationMap.ts`), so a change made elsewhere shows up
   within about a second. A test checks the map covers every resource the server publishes. The one

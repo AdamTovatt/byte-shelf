@@ -63,6 +63,21 @@ namespace ByteShelf.Server.Tests.Access
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
 
+        [Theory]
+        [InlineData(ShelfKeyPermission.Read)]
+        [InlineData(ShelfKeyPermission.AddOnly)]
+        [InlineData(ShelfKeyPermission.ReadWrite)]
+        public async Task AnyKey_CreateDownloadLink_ServesTheFileWithoutSigningIn(ShelfKeyPermission permission)
+        {
+            using HttpClient key = await CreateKeyClientAsync("docs", permission);
+
+            HttpResponseMessage created = await key.PostAsync("/api/shelves/docs/download-link?path=/existing.txt", null);
+            created.EnsureSuccessStatusCode();
+            DownloadLink link = (await created.Content.ReadFromJsonAsync<DownloadLink>())!;
+
+            Assert.Equal("old", await _host.AnonymousClient.GetStringAsync(link.Url));
+        }
+
         [Fact]
         public async Task AddOnlyKey_PutWithOverwrite_Returns403AndKeepsTheFile()
         {

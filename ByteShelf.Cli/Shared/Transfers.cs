@@ -14,7 +14,14 @@ namespace ByteShelf.Cli.Shared
         /// directory, typed by its extension unless <paramref name="options"/> give a content type.
         /// </summary>
         /// <exception cref="UsageException">There is no such local file.</exception>
-        public static async Task<ShelfFile> UploadFileAsync(IShelfClient shelf, string localPath, ShelfLocation location, UploadOptions options, CancellationToken cancellationToken)
+        public static Task<ShelfFile> UploadFileAsync(IShelfClient shelf, string localPath, ShelfLocation location, UploadOptions options, CancellationToken cancellationToken)
+        {
+            return UploadFileAsync(shelf, localPath, location.FilePathFor(Path.GetFileName(localPath)), options, cancellationToken);
+        }
+
+        /// <summary>Stores a local file as the file at <paramref name="path"/>, typed by its extension unless <paramref name="options"/> give a content type.</summary>
+        /// <exception cref="UsageException">There is no such local file.</exception>
+        public static async Task<ShelfFile> UploadFileAsync(IShelfClient shelf, string localPath, string path, UploadOptions options, CancellationToken cancellationToken)
         {
             if (!File.Exists(localPath))
             {
@@ -22,7 +29,7 @@ namespace ByteShelf.Cli.Shared
             }
 
             await using FileStream content = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read, CopyBufferBytes, useAsync: true);
-            return await UploadAsync(shelf, location.FilePathFor(Path.GetFileName(localPath)), content, options, cancellationToken);
+            return await UploadAsync(shelf, path, content, options, cancellationToken);
         }
 
         /// <summary>Stores <paramref name="content"/>, which has no name of its own, at <paramref name="location"/>.</summary>

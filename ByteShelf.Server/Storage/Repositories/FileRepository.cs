@@ -188,11 +188,32 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<IReadOnlyList<(FileRecord File, string Path)>> GetLiveSubtreeAsync(Guid directoryId, string directoryPath, int? maxDepth, string? after, int maxRows, IDbSession? session = null)
+        {
+            SubtreeWalk walk = SubtreeWalk.ForFiles(directoryId, directoryPath, maxDepth);
+
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string query = $@"
+                    {SubtreeWalk.Sql}
+                    SELECT {SelectColumns}, tree.node_path || '/' || file.name AS {nameof(FileSearchEntity.FullPath)}
+                    FROM file JOIN tree ON file.directory_id = tree.node_id
+                    WHERE file.deleted_at IS NULL
+                      AND (@{nameof(after)} IS NULL OR {nameof(FileSearchEntity.FullPath)} > @{nameof(after)})
+                    ORDER BY {nameof(FileSearchEntity.FullPath)}
+                    LIMIT @{nameof(maxRows)}";
+
+                IEnumerable<FileSearchEntity> entities = await dbSession.Connection.QueryAsync<FileSearchEntity>(
+                    query, new { walk.DirectoryId, walk.BasePath, walk.MaxLevel, after, maxRows }, transaction: dbSession.Transaction);
+
+                return (IReadOnlyList<(FileRecord, string)>)entities.Select(entity => (entity.ToDomain(), entity.FullPath)).ToList();
+            }, session);
+        }
+
+        /// <inheritdoc />
         public async Task<IReadOnlyList<(FileRecord File, string Path)>> SearchAsync(Guid directoryId, string directoryPath, FileSearch search, int maxRows, IDbSession? session = null)
         {
-            // The tree's paths are built as it is walked, so each file's full path is there to order and
-            // page by. The root's own path is empty here, so its children's are "/name".
-            string basePath = directoryPath == ShelfPath.Root ? string.Empty : directoryPath;
+            SubtreeWalk walk = SubtreeWalk.ForFiles(directoryId, directoryPath, depth: null);
             string? text = search.Text;
             string? mediaType = search.ExactMediaType();
             string? mediaPrefix = search.MediaTypePrefix();
@@ -208,14 +229,7 @@ namespace ByteShelf.Server.Storage.Repositories
             return await UseSessionAsync(async (dbSession) =>
             {
                 string query = $@"
-                    WITH RECURSIVE tree(node_id, node_path) AS (
-                        SELECT @{nameof(directoryId)}, @{nameof(basePath)}
-                        UNION ALL
-                        SELECT directory.id, tree.node_path || '/' || directory.name
-                        FROM directory JOIN tree ON directory.parent_id = tree.node_id
-                        -- A trashed directory holds only trashed files, so this only spares walking it.
-                        WHERE directory.deleted_at IS NULL
-                    )
+                    {SubtreeWalk.Sql}
                     SELECT {SelectColumns}, tree.node_path || '/' || file.name AS {nameof(FileSearchEntity.FullPath)}
                     FROM file JOIN tree ON file.directory_id = tree.node_id
                     WHERE file.deleted_at IS NULL
@@ -238,7 +252,7 @@ namespace ByteShelf.Server.Storage.Repositories
 
                 IEnumerable<FileSearchEntity> entities = await dbSession.Connection.QueryAsync<FileSearchEntity>(
                     query,
-                    new { directoryId, basePath, text, mediaType, mediaPrefix, minSize, maxSize, createdFrom, createdBefore, updatedFrom, updatedBefore, sha256, after, maxRows },
+                    new { walk.DirectoryId, walk.BasePath, walk.MaxLevel, text, mediaType, mediaPrefix, minSize, maxSize, createdFrom, createdBefore, updatedFrom, updatedBefore, sha256, after, maxRows },
                     transaction: dbSession.Transaction);
 
                 return (IReadOnlyList<(FileRecord, string)>)entities.Select(entity => (entity.ToDomain(), entity.FullPath)).ToList();

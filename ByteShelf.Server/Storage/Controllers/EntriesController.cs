@@ -43,6 +43,20 @@ namespace ByteShelf.Server.Storage.Controllers
             return Ok(await _directoryService.ListAsync(Shelf, reference));
         }
 
+        /// <summary>
+        /// One page of everything under a directory (<c>under</c>, the root by default), at any depth or
+        /// down to <c>depth</c> levels, by path; pass the page's <c>nextCursor</c> as <c>after</c> for the next.
+        /// </summary>
+        [HttpGet("tree")]
+        [ShelfAccess(ShelfOperation.Read)]
+        [ProducesResponseType(typeof(DirectoryTree), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        public async Task<IActionResult> ListTree([FromQuery] TreeQuery query)
+        {
+            return Ok(await _directoryService.ListTreeAsync(Shelf, query));
+        }
+
         /// <summary>A file's record.</summary>
         [HttpGet("files")]
         [ShelfAccess(ShelfOperation.Read)]
@@ -117,18 +131,20 @@ namespace ByteShelf.Server.Storage.Controllers
         }
 
         /// <summary>
-        /// A link to a file's contents that needs no token for <see cref="DownloadLinks.Lifetime"/>, for a
-        /// browser to open or save, which a plain link cannot send a token with.
+        /// A link to a file's contents that needs no token for <c>expiresInMinutes</c> (24 hours by
+        /// default, at most 7 days): for a browser to open or save, which a plain link cannot send a token
+        /// with, or to share the file. Making one is a read; 400 for a lifetime outside those bounds.
         /// </summary>
         [HttpPost("download-link")]
         [ShelfAccess(ShelfOperation.Read)]
         [AllowedOnReplica]
         [ProducesResponseType(typeof(DownloadLink), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
-        public async Task<IActionResult> CreateDownloadLink([FromQuery] string? path, [FromQuery] Guid? id)
+        public async Task<IActionResult> CreateDownloadLink([FromQuery] string? path, [FromQuery] Guid? id, [FromQuery] int? expiresInMinutes)
         {
             ShelfFile file = await _fileService.GetFileAsync(Shelf, EntryReference.From(path, id));
-            return Ok(_downloadLinks.Create(Shelf.Id, file.Id));
+            return Ok(_downloadLinks.Create(Shelf.Id, file.Id, expiresInMinutes is int minutes ? TimeSpan.FromMinutes(minutes) : null));
         }
 
         /// <summary>

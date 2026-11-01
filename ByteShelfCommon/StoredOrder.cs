@@ -1,16 +1,22 @@
 using System.Text;
 
-namespace ByteShelfClient.InMemory
+namespace ByteShelfCommon
 {
     /// <summary>
-    /// Names and paths in the order the server's SQLite sorts them: by their UTF-8 bytes, which is
-    /// code point order. <see cref="StringComparer.Ordinal"/> compares UTF-16 units instead, and puts a
-    /// character above U+FFFF before one in U+E000 to U+FFFF.
+    /// The order names and paths are listed in: by Unicode code point, which is the order of their UTF-8
+    /// bytes and so the order the server's database sorts them in. <see cref="StringComparer.Ordinal"/>
+    /// compares UTF-16 units instead, and puts a character above U+FFFF before one in U+E000 to U+FFFF.
     /// </summary>
-    internal sealed class StoredOrder : IComparer<string>
+    public sealed class StoredOrder : IComparer<string>
     {
+        /// <summary>The comparer; it holds no state.</summary>
         public static readonly StoredOrder Instance = new StoredOrder();
 
+        private StoredOrder()
+        {
+        }
+
+        /// <summary>Compares two strings by code point; null comes first.</summary>
         public int Compare(string? x, string? y)
         {
             if (x == null || y == null)

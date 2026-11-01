@@ -10,6 +10,11 @@ namespace ByteShelf.Server.Storage.Services
         /// <exception cref="Shared.Errors.NotFoundException">There is no such live directory.</exception>
         Task<DirectoryListing> ListAsync(Shelf shelf, EntryReference reference);
 
+        /// <summary>One page of the live directories and files under a directory, by path, as <paramref name="query"/> asks.</summary>
+        /// <exception cref="ArgumentException">The query is not allowed.</exception>
+        /// <exception cref="Shared.Errors.NotFoundException">There is no such live directory.</exception>
+        Task<DirectoryTree> ListTreeAsync(Shelf shelf, TreeQuery query);
+
         /// <summary>
         /// The directory at <paramref name="path"/>, creating it and any missing directory above it.
         /// An existing directory is answered as it is.

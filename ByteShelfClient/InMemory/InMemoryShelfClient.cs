@@ -65,6 +65,25 @@ namespace ByteShelfClient.InMemory
             });
         }
 
+        public Task<DirectoryTree> ListTreeAsync(TreeQuery? query = null, CancellationToken cancellationToken = default)
+        {
+            TreeQuery normalized = (query ?? new TreeQuery()).Normalize();
+
+            return Run(shelf =>
+            {
+                DirectoryNode under = shelf.GetDirectory(normalized.Under!);
+
+                // A file is one level below the directory it is in, so its directories stop a level higher.
+                IEnumerable<DirectoryNode> directories = shelf.LiveSubtree(under, normalized.Depth).Skip(1);
+                IEnumerable<FileNode> files = shelf.LiveSubtree(under, normalized.Depth - 1).SelectMany(directory => shelf.LiveFilesIn(directory.Id));
+                return DirectoryTree.Page(
+                    shelf.ToShelfDirectory(under),
+                    directories.Select(shelf.ToShelfDirectory).Where(entry => IsAfter(entry.Path, normalized.After)),
+                    files.Select(shelf.ToShelfFile).Where(entry => IsAfter(entry.Path, normalized.After)),
+                    normalized.Limit!.Value);
+            });
+        }
+
         public Task<ShelfFile> GetFileAsync(EntryReference file, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(file);
@@ -117,7 +136,7 @@ namespace ByteShelfClient.InMemory
                 List<ShelfFile> found = shelf.Files
                     .Where(file => file.IsLive && directories.Contains(file.DirectoryId) && Matches(normalized, file))
                     .Select(shelf.ToShelfFile)
-                    .Where(file => normalized.After == null || StoredOrder.Instance.Compare(file.Path, normalized.After) > 0)
+                    .Where(file => IsAfter(file.Path, normalized.After))
                     .OrderBy(file => file.Path, StoredOrder.Instance)
                     .Take(normalized.Limit!.Value + 1)
                     .ToList();
@@ -131,6 +150,21 @@ namespace ByteShelfClient.InMemory
         {
             ArgumentNullException.ThrowIfNull(file);
             return Run<Stream>(shelf => new MemoryStream(shelf.GetFile(file).Content, writable: false));
+        }
+
+        /// <summary>
+        /// A link under the reserved <c>.invalid</c> domain: nothing serves it, but it names the file and
+        /// runs out as a server's link would.
+        /// </summary>
+        public Task<DownloadLink> CreateDownloadLinkAsync(EntryReference file, TimeSpan? lifetime = null, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(file);
+            TimeSpan normalized = DownloadLink.NormalizeLifetime(lifetime);
+            return Run(shelf => new DownloadLink
+            {
+                Url = $"https://byteshelf.invalid/api/downloads/{shelf.GetFile(file).Id:N}{Guid.NewGuid():N}",
+                ExpiresAt = _store.Now + normalized,
+            });
         }
 
         public Task<ShelfDirectory> CreateDirectoryAsync(string path, CancellationToken cancellationToken = default)
@@ -452,6 +486,12 @@ namespace ByteShelfClient.InMemory
         }
 
         /// <summary>Whether a file meets every criterion of a normalized search but where it is, as the server's query decides.</summary>
+        /// <summary>Whether <paramref name="path"/> belongs on a page after <paramref name="cursor"/>: the first page takes every path.</summary>
+        private static bool IsAfter(string path, string? cursor)
+        {
+            return cursor == null || StoredOrder.Instance.Compare(path, cursor) > 0;
+        }
+
         private static bool Matches(FileSearch search, FileNode file)
         {
             return (search.Text == null

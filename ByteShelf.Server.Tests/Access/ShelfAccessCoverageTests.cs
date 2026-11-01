@@ -23,6 +23,7 @@ namespace ByteShelf.Server.Tests.Access
             ["EntriesController.MoveFile"] = ShelfOperation.Write,
             ["EntriesController.SetDescription"] = ShelfOperation.Write,
             ["EntriesController.Search"] = ShelfOperation.Read,
+            ["EntriesController.ListTree"] = ShelfOperation.Read,
             ["DirectoriesController.Create"] = ShelfOperation.Add,
             ["DirectoriesController.Move"] = ShelfOperation.Write,
             ["DirectoriesController.Delete"] = ShelfOperation.Write,

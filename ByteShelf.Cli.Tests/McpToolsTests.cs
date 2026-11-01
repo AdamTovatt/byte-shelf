@@ -221,7 +221,7 @@ namespace ByteShelf.Cli.Tests
             string first = await _tools.SearchFilesAsync("docs", limit: 1);
             string second = await _tools.SearchFilesAsync("docs", limit: 1, after: "/a.txt");
 
-            Assert.EndsWith($"{Environment.NewLine}More files follow: call again with after = /a.txt", first, StringComparison.Ordinal);
+            Assert.EndsWith($"{Environment.NewLine}More follow: call again with after = /a.txt", first, StringComparison.Ordinal);
             Assert.StartsWith("/b.txt", second, StringComparison.Ordinal);
             Assert.DoesNotContain("More", second, StringComparison.Ordinal);
         }
@@ -245,6 +245,90 @@ namespace ByteShelf.Cli.Tests
             await _tools.SetDescriptionAsync("docs", "/a.txt");
 
             Assert.Null((await Docs.GetFileAsync("/a.txt")).Description);
+        }
+
+        [Fact]
+        public async Task ListTree_Pages_EndWithTheCursorToCallAgainWith()
+        {
+            await _tools.UploadFileAsync("docs", "/a/b.txt", text: "b");
+            await _tools.UploadFileAsync("docs", "/c.txt", text: "c");
+
+            string first = await _tools.ListTreeAsync("docs", limit: 2);
+            string second = await _tools.ListTreeAsync("docs", limit: 2, after: "/a/b.txt");
+
+            Assert.Equal(new[] { "/a/", "/a/b.txt  1 B", "More follow: call again with after = /a/b.txt" }, first.Split(Environment.NewLine));
+            Assert.Equal("/c.txt  1 B", second);
+        }
+
+        [Fact]
+        public async Task UploadFolderThenDownloadDirectory_KeepsTheTree()
+        {
+            Directory.CreateDirectory(_work.File("site/css"));
+            Directory.CreateDirectory(_work.File("site/empty"));
+            await File.WriteAllTextAsync(_work.File("site/index.html"), "<p>");
+            await File.WriteAllTextAsync(_work.File("site/css/a.css"), "p{}");
+
+            string uploaded = await _tools.UploadFolderAsync("docs", "/web/", _work.File("site"));
+            string saved = await _tools.DownloadDirectoryAsync("docs", "/web/site", _work.File("copy"));
+
+            Assert.Equal("Uploaded 2 files (6 B) to docs:/web/site.", uploaded);
+            Assert.Equal($"Saved 2 files (6 B) to {_work.File("copy")}.", saved);
+            Assert.Equal(("<p>", "p{}"), (await File.ReadAllTextAsync(_work.File("copy/index.html")), await File.ReadAllTextAsync(_work.File("copy/css/a.css"))));
+            Assert.True(Directory.Exists(_work.File("copy/empty")));
+        }
+
+        [Fact]
+        public async Task UploadFolder_StoppedByTheQuota_IsAnErrorSayingWhatItStoredFirst()
+        {
+            await _clients.Client.CreateShelfAsync("small", quotaBytes: 4);
+            Directory.CreateDirectory(_work.File("site"));
+            await File.WriteAllTextAsync(_work.File("site/a.txt"), "aaa");
+            await File.WriteAllTextAsync(_work.File("site/b.txt"), "bbb");
+
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFolderAsync("small", "/", _work.File("site")));
+
+            Assert.StartsWith($"Uploaded 1 file (3 B) to small:/site.{Environment.NewLine}Stopped before the end: ", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task DownloadDirectory_IntoAFolderThatExists_SavesItInsideUnderItsName()
+        {
+            await _tools.UploadFileAsync("docs", "/reports/a.txt", text: "a");
+
+            await _tools.DownloadDirectoryAsync("docs", "/reports", _work.Path);
+
+            Assert.Equal("a", await File.ReadAllTextAsync(_work.File("reports/a.txt")));
+        }
+
+        [Fact]
+        public async Task DownloadDirectory_RelativeLocalPath_IsAnErrorAndSavesNothing()
+        {
+            await _tools.UploadFileAsync("docs", "/a/b.txt", text: "b");
+
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadDirectoryAsync("docs", "/a", "copy"));
+
+            Assert.Contains("absolute", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task ShareFile_ExpiresIn_AnswersTheLinkAndWhenItRunsOut()
+        {
+            await _tools.UploadFileAsync("docs", "/a.txt", text: "a");
+
+            string shared = await _tools.ShareFileAsync("docs", "/a.txt", "30m");
+
+            Assert.StartsWith("https://", shared, StringComparison.Ordinal);
+            Assert.Contains("Works for anyone who has it until ", shared, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task ShareFile_ExpiresInNotALifetime_IsAnErrorSayingHowToWriteOne()
+        {
+            await _tools.UploadFileAsync("docs", "/a.txt", text: "a");
+
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.ShareFileAsync("docs", "/a.txt", "tomorrow"));
+
+            Assert.Contains("30m, 12h or 7d", exception.Message, StringComparison.Ordinal);
         }
 
         [Fact]

@@ -18,6 +18,14 @@ namespace ByteShelf.Server.Storage.Repositories
         Task<IReadOnlyList<DirectoryRecord>> GetLiveChildrenAsync(Guid parentId, IDbSession? session = null);
 
         /// <summary>
+        /// The live directories under <paramref name="directoryId"/>, down to <paramref name="maxDepth"/>
+        /// levels when set (1: only those directly in it), whose full path comes after
+        /// <paramref name="after"/>; by full path, each with that path, at most <paramref name="maxRows"/>
+        /// of them. <paramref name="directoryPath"/> is the directory's own path.
+        /// </summary>
+        Task<IReadOnlyList<(DirectoryRecord Directory, string Path)>> GetLiveSubtreeAsync(Guid directoryId, string directoryPath, int? maxDepth, string? after, int maxRows, IDbSession? session = null);
+
+        /// <summary>
         /// The names from the shelf's root down to <paramref name="id"/>, the root's empty name excluded:
         /// empty for the root itself.
         /// </summary>

@@ -53,6 +53,32 @@ namespace ByteShelf.Server.Storage.Services
         }
 
         /// <inheritdoc />
+        public async Task<DirectoryTree> ListTreeAsync(Shelf shelf, TreeQuery query)
+        {
+            TreeQuery normalized = query.Normalize();
+            string under = normalized.Under!;
+            int limit = normalized.Limit!.Value;
+
+            await using (IDbSession session = await _sessionFactory.CreateSessionAsync())
+            {
+                DirectoryRecord directory = await _shelfTree.GetDirectoryAsync(shelf.Id, EntryReference.ForPath(under), session);
+
+                // Each kind is asked for one past the page: whichever entries make up the first limit + 1 of
+                // both together are among the first limit + 1 of their own kind.
+                IReadOnlyList<(DirectoryRecord Directory, string Path)> directories = await _directoryRepository.GetLiveSubtreeAsync(
+                    directory.Id, under, normalized.Depth, normalized.After, limit + 1, session);
+                IReadOnlyList<(FileRecord File, string Path)> files = await _fileRepository.GetLiveSubtreeAsync(
+                    directory.Id, under, normalized.Depth, normalized.After, limit + 1, session);
+
+                return DirectoryTree.Page(
+                    StorageContracts.ToShelfDirectory(directory, under),
+                    directories.Select(row => StorageContracts.ToShelfDirectory(row.Directory, row.Path)),
+                    files.Select(row => StorageContracts.ToShelfFile(row.File, ShelfPath.GetParent(row.Path))),
+                    limit);
+            }
+        }
+
+        /// <inheritdoc />
         public async Task<ShelfDirectory> CreateAsync(Shelf shelf, string path)
         {
             string normalizedPath = ShelfPath.Normalize(path);

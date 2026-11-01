@@ -54,6 +54,12 @@ namespace ByteShelfClient.Http
             return _connection.SendAsync(HttpMethod.Get, uri, ByteShelfJsonContext.Default.DirectoryListing, cancellationToken);
         }
 
+        public Task<DirectoryTree> ListTreeAsync(TreeQuery? query = null, CancellationToken cancellationToken = default)
+        {
+            TreeQuery normalized = (query ?? new TreeQuery()).Normalize();
+            return _connection.SendAsync(HttpMethod.Get, $"{_base}/tree?{normalized.ToQuery()}", ByteShelfJsonContext.Default.DirectoryTree, cancellationToken);
+        }
+
         public Task<ShelfFile> GetFileAsync(EntryReference file, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(file);
@@ -91,6 +97,21 @@ namespace ByteShelfClient.Http
         {
             ArgumentNullException.ThrowIfNull(search);
             return _connection.SendAsync(HttpMethod.Get, $"{_base}/search?{search.Normalize().ToQuery()}", ByteShelfJsonContext.Default.FileSearchResults, cancellationToken);
+        }
+
+        public async Task<DownloadLink> CreateDownloadLinkAsync(EntryReference file, TimeSpan? lifetime = null, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(file);
+            int minutes = (int)DownloadLink.NormalizeLifetime(lifetime).TotalMinutes;
+            DownloadLink link = await _connection.SendAsync(
+                HttpMethod.Post,
+                $"{_base}/download-link?{file.ToQuery()}&expiresInMinutes={minutes}",
+                ByteShelfJsonContext.Default.DownloadLink,
+                cancellationToken).ConfigureAwait(false);
+
+            // The server answers a path from its own root; relative to the base address, it stays right for
+            // a server behind a path prefix it does not know about.
+            return new DownloadLink { Url = new Uri(_connection.BaseAddress, link.Url.TrimStart('/')).AbsoluteUri, ExpiresAt = link.ExpiresAt };
         }
 
         public async Task<Stream> OpenReadAsync(EntryReference file, CancellationToken cancellationToken = default)

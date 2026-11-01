@@ -26,16 +26,17 @@ path that is not allowed is a 400.
 | Method and route | What it does |
 |---|---|
 | `GET entries?path=` | Lists a directory (the root without `path` or `id`). |
+| `GET tree?under=&depth=&limit=&after=` | One page of the live directories and files under `under` (the root by default), at any depth or down to `depth` levels (1: what it holds directly), together by path in code point order: `limit` (1 to 1000, 100 by default) entries, and `nextCursor` to pass as `after` for the next page. 400 for a depth below 1 or a limit out of range, 404 when `under` is missing or names a file. |
 | `GET files?path=` | A file's record. |
 | `DELETE files?path=` | Moves a file to the trash; answers the deletion. |
 | `POST files/move?path=` | Moves or renames a file to the body's `toPath`; missing directories above it are created. 400 for `/`, 409 when the path is taken. |
 | `PUT files/description?path=` | Sets the body's `description`, or removes it when null or blank; 400 over `FileDescription.MaxLength` characters. |
-| `GET search?under=&text=&…` | One page of the live files under `under` (the root by default) that match every criterion given: `text`, `contentType`, `minSizeBytes`, `maxSizeBytes`, `createdFrom`, `createdBefore`, `updatedFrom`, `updatedBefore`, `sha256`, `limit` (1 to 1000, 100 by default) and `after` (the previous page's `nextCursor`). Sizes are inclusive; a time range includes its start and excludes its end. 400 for a criterion `FileSearch.Normalize` refuses, 404 for a missing `under`. See "Descriptions and search" below. |
+| `GET search?under=&text=&…` | One page of the live files under `under` (the root by default) that match every criterion given: `text`, `contentType`, `minSizeBytes`, `maxSizeBytes`, `createdFrom`, `createdBefore`, `updatedFrom`, `updatedBefore`, `sha256`, `limit` (1 to 1000, 100 by default) and `after` (the previous page's `nextCursor`). Sizes are inclusive; a time range includes its start and excludes its end. 400 for a criterion `FileSearch.Normalize` refuses, 404 when `under` is missing or names a file. See "Descriptions and search" below. |
 | `POST directories` | Creates the directory at the body's `path` and any missing one above it; an existing one is answered as it is. |
 | `POST directories/move?path=` | Moves or renames a directory with everything in it to the body's `toPath`. 400 for the root, a destination of `/` or inside itself, or one that would make a path under it longer than `ShelfPath.MaxPathLength`; 409 when the path is taken. |
 | `DELETE directories?path=` | Moves a directory and everything live under it to the trash as one deletion; 400 for the root. |
 | `GET content?path=` | Streams the contents; `Range`, `If-None-Match` and `If-Range` work, the ETag is the SHA-256. Served with `X-Content-Type-Options: nosniff` and, except for a PDF (Chrome's viewer does not run sandboxed), a sandboxing `Content-Security-Policy`. `download=true` adds a file name. |
-| `POST download-link?path=` | A link to the contents that works without a token for 5 minutes, for a browser to open or save (see below). |
+| `POST download-link?path=&expiresInMinutes=` | A link to the contents that works without a token for `expiresInMinutes` (1 to 10080, 1440 by default), to open, save or share the file (see below). Making one is a read; 400 for a lifetime outside those bounds. |
 | `PUT content?path=&overwrite=` | Stores the body in one request. Needs `Content-Length` (411 without); the `Content-Type` is stored. 409 when the path is taken and `overwrite` is not set, 507 over quota. |
 | `POST uploads` | Starts a resumable upload with its size, and the file's `description` if it has one (a single `PUT` has no body to carry one); reserves the size against the quota. |
 | `GET uploads/{id}` | Progress: `receivedBytes` is where the next chunk starts. |
@@ -48,17 +49,23 @@ path that is not allowed is a 400.
 
 ## Download links (`DownloadLinks`)
 
-A plain link or an image's source cannot carry a token, so the web UI asks for a link first.
-`/api/downloads/{token}` serves the contents as `GET content` does, `download=true` included, to
-anyone holding the token until it runs out. The token names the shelf and the file by id and when it
-runs out, signed with HMAC-SHA256 by `keys/download-link-secret`; an altered or expired one, or one
-whose file has since gone to the trash, answers 404. A link keeps working until it runs out even if
-the access it was made with is taken away meanwhile.
+One mechanism serves two uses. A plain link or an image's source cannot carry a token, so the web
+UI asks for a five-minute link before it opens or saves a file; and a link shares a file with someone
+who has no access, for the caller's pick of lifetime: a day by default, at most 7 days
+(`DownloadLink.NormalizeLifetime`). `/api/downloads/{token}` serves the contents as `GET content`
+does, `download=true` included, to anyone holding the token until it runs out. The token names the
+shelf and the file by id and when it runs out, signed with HMAC-SHA256 by `keys/download-link-secret`;
+an altered or expired one, or one whose file is in the trash, answers 404; a restored file keeps its
+id, so its unexpired links work again. A file stored over the linked one is a new file, so the link no
+longer reaches it. Creating or serving a link is recorded nowhere. A link keeps working until it
+runs out even if the access it was made with is taken away meanwhile; nothing takes one link back,
+but removing the secret file and restarting ends them all. The server answers the link as a path
+from its own root, and the clients make it absolute against the address they reach it by.
 
 ## Uploads (`UploadService`)
 
-1. Start: the path, content type and description are checked and the whole declared size is reserved against
-   the shelf's quota, in one write transaction (SQLite has one writer at a time, so two uploads can
+1. Start: the path, content type and description are checked and the whole declared size is
+   reserved against the shelf's quota, in one write transaction (SQLite has one writer at a time, so two uploads can
    never both take the same free space). A single `PUT` uses `Content-Length` as the size. The
    upload records who started it (`started_by`), the only caller besides read-write ones who may use
    it afterwards (see [Access.md](../Access/Access.md)).
@@ -99,6 +106,15 @@ every write. `contentType` compares the type without its parameters, kept the sa
 Results come by full path; a page asks for one row more than it returns, to know whether another
 follows, and its `nextCursor` is its last path, which the next page starts after. The in-memory
 client applies the same rules, and the client contract tests run both.
+
+## Trees (`DirectoryService.ListTreeAsync`)
+
+A tree page walks the directories under `under` as search does, carrying each one's level so a
+depth stops the walk, and asks for one row past the page of directories and of files apart: the first
+`limit` + 1 entries of both together are among the first `limit` + 1 of their own kind.
+`DirectoryTree.Page` in Common merges them by path and sets the cursor, for the in-memory client too.
+A directory's path sorts before those of what it holds, so a client saving a tree page by page meets each
+directory before its files.
 
 ## Moves (`FileService`, `DirectoryService`)
 

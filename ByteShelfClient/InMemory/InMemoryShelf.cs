@@ -194,13 +194,21 @@ namespace ByteShelfClient.InMemory
             }
         }
 
-        /// <summary><paramref name="directory"/> and every live directory reached from it through live ones.</summary>
-        public IEnumerable<DirectoryNode> LiveSubtree(DirectoryNode directory)
+        /// <summary>
+        /// <paramref name="directory"/> and every live directory reached from it through live ones, down
+        /// to <paramref name="levels"/> levels below it when set (0: the directory alone).
+        /// </summary>
+        public IEnumerable<DirectoryNode> LiveSubtree(DirectoryNode directory, int? levels = null)
         {
             yield return directory;
+            if (levels <= 0)
+            {
+                yield break;
+            }
+
             foreach (DirectoryNode child in LiveChildDirectories(directory.Id).ToList())
             {
-                foreach (DirectoryNode descendant in LiveSubtree(child))
+                foreach (DirectoryNode descendant in LiveSubtree(child, levels - 1))
                 {
                     yield return descendant;
                 }

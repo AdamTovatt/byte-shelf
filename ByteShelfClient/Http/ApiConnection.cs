@@ -16,6 +16,9 @@ namespace ByteShelfClient.Http
             _credentials = credentials;
         }
 
+        /// <summary>The server's address, ending in <c>/</c>, which every request is relative to.</summary>
+        public Uri BaseAddress => _http.BaseAddress!;
+
         /// <summary>
         /// Sends the request <paramref name="createRequest"/> builds and answers the successful response,
         /// which the caller disposes. When the server challenges the credentials and they can be renewed,

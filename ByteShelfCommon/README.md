@@ -13,8 +13,10 @@ AOT-compatible.
 | `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps, description. |
 | `SetDescriptionRequest`, `FileDescription` | Setting a file's description, and its rules. |
 | `FileSearch`, `FileSearchResults` | What to look for among a shelf's files, and one page of what was found. |
-| `DownloadLink` | A link to a file's contents that works without a token for a few minutes. |
+| `DownloadLink` | A link to a file's contents that works without a token until it runs out, and the bounds of its lifetime (a day by default, at most 7 days). |
 | `ShelfDirectory`, `DirectoryListing` | A directory, and what one holds. |
+| `TreeQuery`, `DirectoryTree` | What to list of everything under a directory (a depth, a page), and one page of it. |
+| `StoredOrder` | The order names and paths are listed in: by code point, as the server's database sorts them. |
 | `CreateDirectoryRequest`, `MoveRequest` | Creates a directory; moves or renames a file or directory. |
 | `StartUploadRequest`, `UploadSession` | Starting and following a resumable upload. |
 | `TrashEntry`, `TrashEntryKind` | A deletion that can still be restored. |

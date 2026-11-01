@@ -79,7 +79,10 @@ export function emptyTrash(shelf: string): Promise<void> {
   return unwrapNoContentResponse(apiClient.DELETE('/api/shelves/{shelf}/trash', { params: shelfPath(shelf) }));
 }
 
-/** A short-lived link to a file's contents that needs no token, for a browser tab or a download. */
-export function createDownloadLink(shelf: string, id: string): Promise<DownloadLink> {
-  return unwrapResponse(apiClient.POST('/api/shelves/{shelf}/download-link', { params: { ...shelfPath(shelf), query: { id } } }));
+/**
+ * A link to a file that works without signing in, for `expiresInMinutes` (the server's 24 hours when
+ * left out). `url` is relative to the server's address.
+ */
+export function createDownloadLink(shelf: string, id: string, expiresInMinutes?: number): Promise<DownloadLink> {
+  return unwrapResponse(apiClient.POST('/api/shelves/{shelf}/download-link', { params: { ...shelfPath(shelf), query: { id, expiresInMinutes } } }));
 }

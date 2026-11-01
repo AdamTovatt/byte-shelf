@@ -3,6 +3,7 @@ using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Storage.Models;
+using ByteShelfCommon;
 using EasyReasy.Database;
 using EasyReasy.Database.Mapping;
 
@@ -94,6 +95,29 @@ namespace ByteShelf.Server.Storage.Repositories
                     query, new { parentId }, transaction: dbSession.Transaction);
 
                 return (IReadOnlyList<DirectoryRecord>)entities.Select(entity => entity.ToDomain()).ToList();
+            }, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<IReadOnlyList<(DirectoryRecord Directory, string Path)>> GetLiveSubtreeAsync(Guid directoryId, string directoryPath, int? maxDepth, string? after, int maxRows, IDbSession? session = null)
+        {
+            SubtreeWalk walk = SubtreeWalk.ForDirectories(directoryId, directoryPath, maxDepth);
+
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string query = $@"
+                    {SubtreeWalk.Sql}
+                    SELECT {SelectColumns}, tree.node_path AS {nameof(DirectoryTreeEntity.FullPath)}
+                    FROM directory JOIN tree ON directory.id = tree.node_id
+                    WHERE tree.level > 0
+                      AND (@{nameof(after)} IS NULL OR tree.node_path > @{nameof(after)})
+                    ORDER BY tree.node_path
+                    LIMIT @{nameof(maxRows)}";
+
+                IEnumerable<DirectoryTreeEntity> entities = await dbSession.Connection.QueryAsync<DirectoryTreeEntity>(
+                    query, new { walk.DirectoryId, walk.BasePath, walk.MaxLevel, after, maxRows }, transaction: dbSession.Transaction);
+
+                return (IReadOnlyList<(DirectoryRecord, string)>)entities.Select(entity => (entity.ToDomain(), entity.FullPath)).ToList();
             }, session);
         }
 
@@ -344,6 +368,11 @@ namespace ByteShelf.Server.Storage.Repositories
         internal class PathEntity
         {
             public string Path { get; set; } = string.Empty;
+        }
+
+        internal sealed class DirectoryTreeEntity : DirectoryEntity
+        {
+            public string FullPath { get; set; } = string.Empty;
         }
 
         internal class DirectoryEntity

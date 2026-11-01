@@ -31,6 +31,14 @@ namespace ByteShelfClient
         /// <summary>The directories and files in a directory, by name; the root when none is given.</summary>
         Task<DirectoryListing> ListAsync(EntryReference? directory = null, CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// One page of the live directories and files under a directory, at any depth or down to
+        /// <see cref="TreeQuery.Depth"/>, by path; the whole shelf from its root when
+        /// <paramref name="query"/> is null. A query <see cref="TreeQuery.Normalize"/> refuses throws
+        /// <see cref="ArgumentException"/> before anything is sent.
+        /// </summary>
+        Task<DirectoryTree> ListTreeAsync(TreeQuery? query = null, CancellationToken cancellationToken = default);
+
         /// <summary>A file's record.</summary>
         Task<ShelfFile> GetFileAsync(EntryReference file, CancellationToken cancellationToken = default);
 
@@ -48,6 +56,15 @@ namespace ByteShelfClient
         /// checks the bytes against the file's SHA-256 and throws <see cref="IOException"/> if they differ.
         /// </summary>
         Task<Stream> OpenReadAsync(EntryReference file, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// A link to a file's contents that works without signing in for <paramref name="lifetime"/>
+        /// (<see cref="DownloadLink.DefaultLifetime"/> when null, whole minutes up to
+        /// <see cref="DownloadLink.MaxLifetime"/>), to share the file with someone who has no access.
+        /// Making one is a read. A lifetime outside those bounds throws <see cref="ArgumentException"/>
+        /// before anything is sent.
+        /// </summary>
+        Task<DownloadLink> CreateDownloadLinkAsync(EntryReference file, TimeSpan? lifetime = null, CancellationToken cancellationToken = default);
 
         /// <summary>Creates a directory and any missing directory above it; an existing one is answered as it is.</summary>
         Task<ShelfDirectory> CreateDirectoryAsync(string path, CancellationToken cancellationToken = default);
