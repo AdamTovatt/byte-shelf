@@ -89,6 +89,21 @@ export function parseQuota(amount: string, unit: QuotaUnit): number | null {
   return Math.round(value * QUOTA_UNIT_BYTES[unit]);
 }
 
+/** How many characters before the extension stay with it at the end, as macOS keeps them. */
+const KEPT_BEFORE_EXTENSION = 6;
+
+/**
+ * Where a name is cut when it does not fit (MiddleTruncatedName): everything up to the last few
+ * characters before its extension may give way to "…", and those characters with the extension always
+ * show. A name without an extension keeps its last few characters.
+ */
+export function splitForMiddle(name: string): { start: string; end: string } {
+  const dot = name.lastIndexOf('.');
+  const extensionAt = dot > 0 ? dot : name.length;
+  const cut = Math.max(0, extensionAt - KEPT_BEFORE_EXTENSION);
+  return { start: name.slice(0, cut), end: name.slice(cut) };
+}
+
 /** How much of a quota is used, 0 to 1; null without a quota. */
 export function usedShare(usedBytes: number, quotaBytes: number | null | undefined): number | null {
   if (!hasQuota(quotaBytes)) {

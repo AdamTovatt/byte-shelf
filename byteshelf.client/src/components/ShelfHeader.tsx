@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Breadcrumbs, Dropdown, DropdownItem, IconButton, iconMap, type BreadcrumbItem } from '../ui';
 import { useShelf } from '../hooks/useShelfQueries';
@@ -10,6 +11,8 @@ interface ShelfHeaderProps {
   view: ShelfView;
   /** The directory shown, for the breadcrumbs. */
   path?: string;
+  /** Wraps the crumb of each folder in the trail, the shelf's root included, such as to drop onto it. */
+  wrapFolderCrumb?: (folderPath: string, crumb: ReactNode) => ReactNode;
 }
 
 const VIEW_LABELS: Record<ShelfView, string> = { files: 'Files', trash: 'Trash', settings: 'Settings' };
@@ -18,7 +21,7 @@ const VIEW_LABELS: Record<ShelfView, string> = { files: 'Files', trash: 'Trash',
  * Where in the shelf the page is, a menu to its files, trash and (for admins) settings with the
  * current one ticked, and under them how much the shelf holds.
  */
-export function ShelfHeader({ shelf, view, path = ROOT_PATH }: ShelfHeaderProps) {
+export function ShelfHeader({ shelf, view, path = ROOT_PATH, wrapFolderCrumb }: ShelfHeaderProps) {
   const navigate = useNavigate();
   const isAdmin = useIsAdmin();
   const { data: info } = useShelf(shelf);
@@ -32,13 +35,21 @@ export function ShelfHeader({ shelf, view, path = ROOT_PATH }: ShelfHeaderProps)
       ? pathSegments(path).map((segment): BreadcrumbItem => ({ key: segment.path, label: segment.name, to: shelfRoute(shelf, segment.path), icon: iconMap.folder }))
       : [{ key: view, label: VIEW_LABELS[view], to: null }]),
   ];
+  // Which folder each crumb names: the shelf's is its root, each later one its own path.
+  const folderOf = new Map<string, string>(view === 'files' ? [[shelf, ROOT_PATH], ...pathSegments(path).map((segment): [string, string] => [segment.path, segment.path])] : []);
 
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between gap-3">
         {/* The space beside the menu, whatever the trail's own width, which is what it collapses to fit. */}
         <div className="min-w-0 flex-1">
-          <Breadcrumbs items={crumbs} />
+          <Breadcrumbs
+            items={crumbs}
+            wrapCrumb={wrapFolderCrumb && ((item, crumb) => {
+              const folder = folderOf.get(item.key);
+              return folder === undefined ? crumb : wrapFolderCrumb(folder, crumb);
+            })}
+          />
         </div>
         <Dropdown align="right" trigger={<IconButton variant="ghost" size="sm" icon={iconMap.more} aria-label={`Pages of ${shelf}`} />}>
           {views.map((value) => (

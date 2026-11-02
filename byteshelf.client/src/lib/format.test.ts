@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeUsage, formatBytes, formatDate, formatQuota, formatTime, parseQuota, usedShare } from './format';
+import { describeUsage, formatBytes, formatDate, formatQuota, formatTime, parseQuota, splitForMiddle, usedShare } from './format';
 
 describe('formatBytes', () => {
   it.each([
@@ -80,5 +80,17 @@ describe('usedShare', () => {
     expect(usedShare(25, 100)).toBe(0.25);
     expect(usedShare(150, 100)).toBe(1);
     expect(usedShare(0, 0)).toBe(1);
+  });
+});
+
+describe('splitForMiddle', () => {
+  it.each([
+    ['quarterly-report-final-2026.pdf', 'quarterly-report-fina', 'l-2026.pdf'],
+    ['README', '', 'README'],
+    ['a-long-name-without-extension', 'a-long-name-without-ext', 'ension'],
+    ['.env', '', '.env'],
+    ['/2026/march/receipt.pdf', '/2026/march/r', 'eceipt.pdf'],
+  ])('keeps the end of %s', (name, start, end) => {
+    expect(splitForMiddle(name)).toEqual({ start, end });
   });
 });

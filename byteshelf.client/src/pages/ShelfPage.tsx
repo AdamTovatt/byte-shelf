@@ -33,6 +33,10 @@ import { encryptionActions, useEncryption } from '../hooks/useEncryption';
 import { saveBlob, saveFrom, showBlob } from '../lib/localBlobs';
 import { openTabWithoutPasswords } from '../lib/encryption/passwords';
 import { showActionToast } from '../components/actionToast';
+import { NameLine } from '../components/MiddleTruncatedName';
+import { DndContext, DragOverlay, pointerWithin } from '@dnd-kit/core';
+import { DraggableEntryRow, DroppableCrumb, EntryDragPreview } from '../components/EntryDragAndDrop';
+import { useEntryDragAndDrop } from '../hooks/useEntryDragAndDrop';
 import { formatBytes, formatTime } from '../lib/format';
 import { joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../lib/shelfPaths';
 import { copyWhenReady } from '../lib/clipboard';
@@ -130,7 +134,7 @@ export function ShelfPage() {
     await runOrToast(async () => {
       const plain = await encryption.contents(file);
       if (!plain || showBlob(plain, file.name)) return;
-      showActionToast({ message: `${file.name} is unlocked`, action: 'Open', onAction: () => showBlob(plain, file.name), duration: 15000 });
+      showActionToast({ message: <NameLine name={file.name} after=" is unlocked" />, action: 'Open', onAction: () => showBlob(plain, file.name), duration: 15000 });
     }, 'Could not open the file');
   }
 
@@ -150,9 +154,14 @@ export function ShelfPage() {
 
     await runOrToast(async () => {
       const { url, expiresAt } = await link;
-      const until = `Anyone with it can open ${file.name} until ${formatTime(expiresAt)}.`;
+      const until = <span>Anyone with it can open it until {formatTime(expiresAt)}.</span>;
       if (await copied) {
-        toast.success(`Link copied. ${until}`);
+        toast.success(
+          <span className="flex min-w-0 flex-col">
+            <NameLine before="Copied a link to" name={file.name} after="." />
+            {until}
+          </span>,
+        );
       } else {
         toast((t) => (
           <span className="flex min-w-0 flex-col gap-2">
@@ -176,14 +185,20 @@ export function ShelfPage() {
       try {
         removed.push({ entry, deletionId: (await deleteEntry.mutateAsync({ kind: entry.kind, id: entry.value.id })).deletionId });
       } catch (caught) {
-        toast.error(removing.length === 1 ? getErrorMessage(caught, 'Could not delete it') : `Could not delete ${entry.value.name}: ${getErrorMessage(caught, 'it was refused')}`);
+        toast.error(removing.length === 1
+          ? getErrorMessage(caught, 'Could not delete it')
+          : (
+            <span className="flex min-w-0 flex-col">
+              <NameLine before="Could not delete" name={entry.value.name} after=":" />
+              <span>{getErrorMessage(caught, 'it was refused')}</span>
+            </span>
+          ));
       }
     }
     if (removed.length === 0) return;
 
-    const what = removed.length === 1 ? removed[0].entry.value.name : `${removed.length} items`;
     showActionToast({
-      message: `Moved ${what} to the trash`,
+      message: <NameLine before="Moved" name={removed.length === 1 ? removed[0].entry.value.name : `${removed.length} items`} after=" to the trash" />,
       action: 'Undo',
       icon: <Icon icon={iconMap.undo} size={14} />,
       onAction: () => {
@@ -215,6 +230,7 @@ export function ShelfPage() {
   const selection = useSelection(entryIds, `${shelf}/${path}`);
   const selected = entries.filter((entry) => selection.isSelected(entry.value.id));
   const selectedFiles = selected.flatMap((entry) => (entry.kind === 'file' ? [entry.value] : []));
+  const drag = useEntryDragAndDrop({ shelf, entries, selected });
   const dialogOpen = creatingDirectory || renaming !== null || moving !== null || describing !== null;
 
   // ⌘A or Ctrl+A selects every row, unless a field has the keys; Escape clears the selection. A
@@ -240,7 +256,7 @@ export function ShelfPage() {
     // know whether they are under an encrypted folder.
     const encrypted = entry.value.encrypted;
     const actions = encryptionActions(entry, !options.selectable ? 'unknown' : listing?.encryptedBy ? 'encrypted' : 'plain');
-    return (
+    const shown = (
       <EntryRow
         key={entry.value.id}
         entry={entry}
@@ -262,6 +278,10 @@ export function ShelfPage() {
         onDelete={() => void remove([entry])}
       />
     );
+    // Only the folder's own rows drag, as only they select; search results stay where they are.
+    return options.selectable
+      ? <DraggableEntryRow key={entry.value.id} entry={entry} droppable={drag.takesDrop(entry)}>{shown}</DraggableEntryRow>
+      : shown;
   }
 
   function clearSearch(): void {
@@ -320,7 +340,13 @@ export function ShelfPage() {
       }}
     >
       <PageLayout className="space-y-6">
-        <ShelfHeader shelf={shelf} view="files" path={path} />
+        <DndContext sensors={drag.sensors} accessibility={{ announcements: drag.announcements }} collisionDetection={pointerWithin} onDragStart={drag.onDragStart} onDragEnd={drag.onDragEnd} onDragCancel={drag.onDragCancel}>
+        <ShelfHeader
+          shelf={shelf}
+          view="files"
+          path={path}
+          wrapFolderCrumb={(folderPath, crumb) => <DroppableCrumb folderPath={folderPath} disabled={drag.dragged === null || folderPath === path}>{crumb}</DroppableCrumb>}
+        />
 
         {/* From md up, search and Add have a row of their own, which the selection bar covers rather
             than replaces, so the list below never moves when a row is picked. On a phone they sit in
@@ -366,6 +392,8 @@ export function ShelfPage() {
             )}
           </>
         )}
+        <DragOverlay dropAnimation={null}>{drag.dragged && <EntryDragPreview entries={drag.dragged} />}</DragOverlay>
+        </DndContext>
       </PageLayout>
 
       <NewDirectoryDialog shelf={shelf} parent={path} open={creatingDirectory} onClose={() => setCreatingDirectory(false)} />

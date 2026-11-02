@@ -18,7 +18,10 @@ import {
   searchFiles,
   setDescription,
   updateShelf,
+  type Entry,
 } from '../services/shelfService';
+import { joinPath, parentPath } from '../lib/shelfPaths';
+import { getErrorMessage } from '../ui';
 
 export function useShelves() {
   return useQuery({ queryKey: queryKeys.shelves.list, queryFn: fetchShelves });
@@ -124,6 +127,26 @@ export function useMoveEntry(shelf: string) {
       kind === 'file' ? moveFile(shelf, id, toPath) : moveDirectory(shelf, id, toPath),
     onSuccess: invalidate,
   });
+}
+
+/**
+ * Moves entries into the folder at `folder`, keeping their names, one at a time; those already there
+ * are skipped. A refusal stops there and throws, naming what it stopped at when there are several;
+ * what moved before it stays moved.
+ */
+export function useMoveEntries(shelf: string) {
+  const moveEntry = useMoveEntry(shelf);
+  const { mutateAsync } = moveEntry;
+  return useCallback(async (entries: Entry[], folder: string): Promise<void> => {
+    for (const entry of entries) {
+      if (parentPath(entry.value.path) === folder) continue;
+      try {
+        await mutateAsync({ kind: entry.kind, id: entry.value.id, toPath: joinPath(folder, entry.value.name) });
+      } catch (caught) {
+        throw new Error(entries.length === 1 ? getErrorMessage(caught, 'Could not move it') : `Could not move ${entry.value.name}: ${getErrorMessage(caught, 'it was refused')}`);
+      }
+    }
+  }, [mutateAsync]);
 }
 
 export function useDeleteEntry(shelf: string) {

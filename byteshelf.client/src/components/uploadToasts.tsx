@@ -1,6 +1,7 @@
 import toast from 'react-hot-toast';
 import { Button, ProgressBar } from '../ui';
 import { formatBytes } from '../lib/format';
+import { MiddleTruncatedName, NameLine } from './MiddleTruncatedName';
 import type { UploadReporter } from '../hooks/useUploads';
 
 /** How long a failed upload's toast stays; long enough to read the reason. */
@@ -20,7 +21,7 @@ export const reportUpload: UploadReporter = (upload, state) => {
       toast.loading(
         <span className="flex w-56 min-w-0 flex-col gap-1.5">
           <span className="flex justify-between gap-3">
-            <span className="truncate">{name}</span>
+            <MiddleTruncatedName name={name} />
             <span className="shrink-0 text-body-sm text-muted">{formatBytes(state.sentBytes)} of {formatBytes(size)}</span>
           </span>
           <ProgressBar size="sm" progress={size === 0 ? 0 : (state.sentBytes / size) * 100} label={`Uploading ${name}`} />
@@ -30,7 +31,7 @@ export const reportUpload: UploadReporter = (upload, state) => {
       return;
     }
     case 'done':
-      toast.success(`Uploaded ${name}`, { id });
+      toast.success(<NameLine before="Uploaded" name={name} />, { id });
       return;
     case 'taken':
       toast.error((t) => (
@@ -44,7 +45,13 @@ export const reportUpload: UploadReporter = (upload, state) => {
       ), { id, duration: Infinity });
       return;
     case 'failed':
-      toast.error(`Could not upload ${name}: ${state.error}`, { id, duration: FAILED_MS });
+      toast.error(
+        <span className="flex min-w-0 flex-col">
+          <NameLine before="Could not upload" name={name} after=":" />
+          <span>{state.error}</span>
+        </span>,
+        { id, duration: FAILED_MS },
+      );
       return;
   }
 };

@@ -1,4 +1,5 @@
-import { act } from 'react';
+import { Fragment, act, createElement, type ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
 // Driving rendered forms as a person does, by the labels and button text they read. Dialogs portal
 // into document.body, so everything is looked up there.
@@ -23,6 +24,13 @@ export function fill(label: string, value: string): void {
 /** The button whose text is `name`, or null when none shows. */
 export function button(name: string): HTMLButtonElement | null {
   return Array.from(document.body.querySelectorAll('button')).find((each) => each.textContent?.trim() === name) ?? null;
+}
+
+/** The text a message reads as, rendered: a toast's, which may be a string or elements. */
+export function textOf(message: ReactNode): string {
+  const container = document.createElement('div');
+  container.innerHTML = renderToStaticMarkup(createElement(Fragment, null, message));
+  return container.textContent ?? '';
 }
 
 /** Presses the button whose text is `name`. */

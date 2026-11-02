@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useMemo, useState, type ReactNode } from 'react';
 import toast from 'react-hot-toast';
 import { getErrorMessage } from '../ui';
 import { PasswordDialog, type PasswordRequest } from '../components/PasswordDialog';
+import { NameLine } from '../components/MiddleTruncatedName';
 import { DEFAULT_WORK_FACTOR, checkMatches, createCheck, decryptBlob, decryptBlobWith, encryptBlob, opensWith } from '../lib/encryption/age';
 import { filePasswordKey, folderPasswordKey, forgetPassword, rememberPassword, rememberedPassword } from '../lib/encryption/passwords';
 import {
@@ -138,7 +139,7 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
           const folder = await fetchEncryptedFolder(shelf, file.path);
           const password = folder ? await folderPassword(folder) : await ask({ kind: 'new', name });
           if (password === null) return;
-          await inPlace(`Encrypting ${name}`, 'Encrypt', [file], async (each) => {
+          await inPlace('Encrypting', name, 'Encrypt', [file], async (each) => {
             const stored = await encryptInPlace(each, password);
             if (!folder) rememberPassword(filePasswordKey(shelf, undefined, stored.id), password);
           });
@@ -151,7 +152,7 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
 
         // Listed once the folder is encrypted, when no plain file can arrive any more.
         const plain = (await filesUnder(shelf, directory.path)).filter((file) => !file.encrypted);
-        await inPlace(`Encrypting ${name}`, 'Encrypt', plain, (file) => encryptInPlace(file, password));
+        await inPlace('Encrypting', name, 'Encrypt', plain, (file) => encryptInPlace(file, password));
       }, `Could not encrypt ${name}`);
     }
 
@@ -195,7 +196,7 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
         if (entry.kind === 'file') {
           const plain = await contents(entry.value);
           if (plain === null) return;
-          await inPlace(`Removing encryption from ${name}`, 'Remove encryption', [entry.value], (file) => replaceContent(shelf, file, plain, false));
+          await inPlace('Removing encryption from', name, 'Remove encryption', [entry.value], (file) => replaceContent(shelf, file, plain, false));
           return;
         }
 
@@ -208,7 +209,7 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
         }
 
         const encrypted = (await filesUnder(shelf, directory.path)).filter((file) => file.encrypted);
-        await inPlace(`Removing encryption from ${name}`, 'Remove encryption', encrypted, (file) => decryptInPlace(file, password));
+        await inPlace('Removing encryption from', name, 'Remove encryption', encrypted, (file) => decryptInPlace(file, password));
       }, `Could not remove encryption from ${name}`);
     }
 
@@ -227,23 +228,39 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
     }
 
     /**
-     * Runs `step` for each file in turn, showing how far it has got; a file that fails is named at the
-     * end and the rest go on. Choosing `action` again finishes what failed.
+     * Runs `step` for each file in turn, showing how far `doing` `name` has got; a file that fails is
+     * named at the end and the rest go on. Choosing `action` again finishes what failed.
      */
-    async function inPlace(what: string, action: string, files: ShelfFile[], step: (file: ShelfFile) => Promise<unknown>): Promise<void> {
-      const id = toast.loading(`${what}…`);
-      const failed: string[] = [];
+    async function inPlace(doing: string, name: string, action: string, files: ShelfFile[], step: (file: ShelfFile) => Promise<unknown>): Promise<void> {
+      const line = (after: string) => <NameLine before={doing} name={name} after={after} />;
+      const id = toast.loading(line('…'));
+      const failed: { name: string; reason: string }[] = [];
       for (const [index, file] of files.entries()) {
-        if (files.length > 1) toast.loading(`${what}: ${index + 1} of ${files.length}`, { id });
+        if (files.length > 1) toast.loading(line(`: ${index + 1} of ${files.length}`), { id });
         try {
           await step(file);
         } catch (caught) {
-          failed.push(`${file.name}: ${getErrorMessage(caught, 'it failed')}`);
+          failed.push({ name: file.name, reason: getErrorMessage(caught, 'it failed') });
         }
       }
       invalidate();
-      if (failed.length === 0) toast.success(`${what}: done`, { id });
-      else toast.error(`${what}: ${failed.length} of ${files.length} failed. ${failed.join('; ')}. Choose ${action} again to finish.`, { id, duration: 12000 });
+      if (failed.length === 0) {
+        toast.success(line(': done'), { id });
+        return;
+      }
+      toast.error(
+        <span className="flex min-w-0 flex-col">
+          {line(`: ${failed.length} of ${files.length} failed.`)}
+          {failed.map((each, index) => (
+            <Fragment key={index}>
+              <NameLine name={each.name} after=":" />
+              <span>{each.reason}</span>
+            </Fragment>
+          ))}
+          <span>Choose {action} again to finish.</span>
+        </span>,
+        { id, duration: 12000 },
+      );
     }
 
     return { folderPassword, contents, encrypt, removeEncryption };

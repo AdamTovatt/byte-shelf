@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Button, Icon, Spinner, getErrorMessage, iconMap } from '../ui';
+import { Button, Icon, Spinner, iconMap } from '../ui';
 import { FormDialog } from './FormDialog';
-import { useListing, useMoveEntry } from '../hooks/useShelfQueries';
+import { useListing, useMoveEntries } from '../hooks/useShelfQueries';
 import { useSubmit } from '../hooks/useSubmit';
-import { joinPath, parentPath, pathSegments, ROOT_PATH } from '../lib/shelfPaths';
+import { parentPath, pathSegments, ROOT_PATH } from '../lib/shelfPaths';
 import type { Entry } from '../services/shelfService';
 
 interface MoveDialogProps {
@@ -20,7 +20,7 @@ interface MoveDialogProps {
  * at, and what moved before it stays moved.
  */
 export function MoveDialog({ shelf, entries, onClose }: MoveDialogProps) {
-  const moveEntry = useMoveEntry(shelf);
+  const moveEntries = useMoveEntries(shelf);
   const from = parentPath(entries[0].value.path);
   const [folder, setFolder] = useState(from);
   const { data: listing, isLoading } = useListing(shelf, folder);
@@ -32,23 +32,12 @@ export function MoveDialog({ shelf, entries, onClose }: MoveDialogProps) {
   const alreadyThere = entries.every((entry) => parentPath(entry.value.path) === folder);
   const title = entries.length === 1 ? `Move ${entries[0].value.name}` : `Move ${entries.length} items`;
 
-  async function moveAll(): Promise<void> {
-    for (const entry of entries) {
-      if (parentPath(entry.value.path) === folder) continue;
-      try {
-        await moveEntry.mutateAsync({ kind: entry.kind, id: entry.value.id, toPath: joinPath(folder, entry.value.name) });
-      } catch (caught) {
-        throw new Error(entries.length === 1 ? getErrorMessage(caught, 'Could not move it') : `Could not move ${entry.value.name}: ${getErrorMessage(caught, 'it was refused')}`);
-      }
-    }
-  }
-
   return (
     <FormDialog
       open
       title={title}
       onClose={onClose}
-      onSubmit={() => void submit(moveAll, onClose)}
+      onSubmit={() => void submit(() => moveEntries(entries, folder), onClose)}
       submitDisabled={alreadyThere}
       submitLabel="Move here"
       submitting={submitting}

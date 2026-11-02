@@ -52,6 +52,10 @@ npm run codegen    # in a second terminal
   downloading an unencrypted file asks the server for a five-minute link first, since a plain link
   cannot carry the token. "Copy link" in a file's menu copies one that works for a day, for someone without access;
   where the browser offers no clipboard (plain HTTP), the toast shows it to copy by hand.
+  A row, or the selection it is in, moves by dragging it onto a folder's row or breadcrumb crumb
+  (`hooks/useEntryDragAndDrop.ts`, dnd-kit on pointer events, so it never meets the browser's own
+  drag events that dropping files to upload uses). A toast that names a file cuts a long name in the
+  middle (`components/MiddleTruncatedName.tsx`).
 - **Encryption** (`hooks/useEncryption.tsx`, `lib/encryption/`): a file's or folder's menu encrypts
   it with a password, typed twice and then a warning that a lost one cannot be recovered; typage
   encrypts in the browser at age's work factor, about a second a file, and the file is stored over

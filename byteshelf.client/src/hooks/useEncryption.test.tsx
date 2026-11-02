@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from 'react';
+import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
@@ -8,7 +8,7 @@ import { encryptionActions, useEncryption } from './useEncryption';
 import { createCheck, decryptBlob, encryptBlob } from '../lib/encryption/age';
 import { folderPasswordKey, rememberPassword, rememberedPassword, filePasswordKey } from '../lib/encryption/passwords';
 import type { Entry, ShelfDirectory, ShelfFile } from '../services/shelfService';
-import { fill, press } from '../test/dom';
+import { fill, press, textOf as messageText } from '../test/dom';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -122,7 +122,7 @@ describe('encryption in the browser', () => {
     shelf.failing.clear();
     errors.length = 0;
     vi.spyOn(toast, 'error').mockImplementation((message) => {
-      errors.push(String(message));
+      errors.push(messageText(message as ReactNode));
       return '';
     });
     root = createRoot(document.body.appendChild(document.createElement('div')));
@@ -248,7 +248,8 @@ describe('encryption in the browser', () => {
     await act(() => encryption.encrypt(folderEntry(vault, 2, 0)));
 
     expect(shelf.stored).toEqual(['b.txt encrypted']);
-    expect(errors).toEqual(['Encrypting vault: 1 of 2 failed. a.txt: the server refused it. Choose Encrypt again to finish.']);
+    // The toast's lines, run together as its text is.
+    expect(errors).toEqual(['Encrypting vault: 1 of 2 failed.' + 'a.txt:' + 'the server refused it' + 'Choose Encrypt again to finish.']);
   });
 
   it('shows a failure to start encrypting a file, rather than dropping it', async () => {

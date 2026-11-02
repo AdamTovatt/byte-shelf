@@ -1,4 +1,4 @@
-import { Fragment, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { Fragment, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Link } from 'react-router-dom';
 import { Icon, type IconComponent } from './Icon';
 import { Skeleton } from './Skeleton';
@@ -47,6 +47,11 @@ export interface BreadcrumbsProps {
    */
   size?: 'md' | 'lg';
   className?: string;
+  /**
+   * Wraps each crumb as rendered, link or text, such as to make it a drop target. The trail's layout,
+   * collapsing and separators stay the component's own.
+   */
+  wrapCrumb?: (item: BreadcrumbItem, crumb: ReactNode) => ReactNode;
 }
 
 /** The width a pending crumb reserves — a plausible name's worth, so the trail does not jump far. */
@@ -165,7 +170,7 @@ function useCollapsedCount(items: BreadcrumbItem[], width: number, list: RefObje
   return count;
 }
 
-export function Breadcrumbs({ items, size = 'lg', className }: BreadcrumbsProps) {
+export function Breadcrumbs({ items, size = 'lg', className, wrapCrumb = (_item, crumb) => crumb }: BreadcrumbsProps) {
   const { ref: navRef, width } = useMeasuredSize<HTMLElement>();
   const listRef = useRef<HTMLOListElement>(null);
   const collapsedCount = useCollapsedCount(items, width, listRef);
@@ -197,7 +202,7 @@ export function Breadcrumbs({ items, size = 'lg', className }: BreadcrumbsProps)
                 </li>
               )}
               <li className="min-w-0">
-                {item.pending ? (
+                {wrapCrumb(item, item.pending ? (
                   // The words are still being read, but the trail must still SAY where the reader
                   // is: a bare placeholder leaves the nav announcing no current page for as long as
                   // the read takes. The type label is what the crumb would render if the read never
@@ -237,7 +242,7 @@ export function Breadcrumbs({ items, size = 'lg', className }: BreadcrumbsProps)
                   >
                     <CrumbContent item={item} iconOnly={iconOnlyKeys.has(item.key)} />
                   </Link>
-                )}
+                ))}
               </li>
             </Fragment>
           );

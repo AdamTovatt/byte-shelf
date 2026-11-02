@@ -5,6 +5,7 @@ import { Button, EmptyState, Icon, PageLayout, Spinner, getFileIcon, iconMap } f
 import { CardList } from '../components/CardList';
 import { FormDialog } from '../components/FormDialog';
 import { LoadError } from '../components/LoadError';
+import { NameLine } from '../components/MiddleTruncatedName';
 import { ShelfHeader } from '../components/ShelfHeader';
 import { useEmptyTrash, useRestoreDeletion, useTrash } from '../hooks/useShelfQueries';
 import { formatBytes, formatDate } from '../lib/format';
@@ -23,7 +24,7 @@ export function TrashPage() {
   function onRestore(entry: TrashEntry): Promise<void> {
     return runOrToast(async () => {
       await restore.mutateAsync(entry.deletionId);
-      toast.success(`Restored ${entry.path}`);
+      toast.success(<NameLine before="Restored" name={entry.path} />);
     }, 'Could not restore it');
   }
 

@@ -81,7 +81,10 @@ function App() {
         <NewVersionBanner />
         <Toaster
           position="bottom-right"
-          toastOptions={{ className: '!bg-panel !text-fg !border !border-border !text-body-md !shadow-brand-lg' }}
+          // A long unbroken run, such as a path in the server's own message, wraps rather than leaving
+          // the toast; names the app puts in a toast are cut in the middle (NameLine), which needs the
+          // message to be able to shrink to the toast's width.
+          toastOptions={{ className: '!bg-panel !text-fg !border !border-border !text-body-md !shadow-brand-lg [overflow-wrap:anywhere] [&>[role=status]]:min-w-0' }}
         />
         <AppRoutes />
       </AuthProvider>

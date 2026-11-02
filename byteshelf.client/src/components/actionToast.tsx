@@ -12,11 +12,14 @@ interface ActionToast {
   duration: number;
 }
 
-/** A toast of a message and one button, such as Undo, gone once the button is pressed. */
+/**
+ * A toast of a message and one button, such as Undo, gone once the button is pressed. A name in the
+ * message goes in a NameLine.
+ */
 export function showActionToast({ message, action, icon, onAction, duration }: ActionToast): void {
   toast((t) => (
     <span className="flex items-center gap-3">
-      <span className="min-w-0 truncate">{message}</span>
+      <span className="min-w-0">{message}</span>
       <Button
         size="sm"
         variant="secondary"
