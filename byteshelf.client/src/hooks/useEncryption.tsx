@@ -9,12 +9,11 @@ import {
   encryptDirectory,
   fetchEncryptedFolder,
   filesUnder,
-  openContent,
-  readContent,
   removeDirectoryEncryption,
   replaceContent,
   type EncryptedFolder,
 } from '../services/encryptionService';
+import { openContent, readContent } from '../services/contentService';
 import type { Entry, ShelfDirectory, ShelfFile } from '../services/shelfService';
 import { runOrToast } from '../lib/utils';
 import { useInvalidateShelf } from './useShelfQueries';

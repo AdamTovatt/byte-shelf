@@ -30,8 +30,7 @@ import { useFilePicker } from '../hooks/useFilePicker';
 import { MobileTopBarActions, MobileTopBarOverlay } from '../components/layout/MobileTopBar';
 import { useUploads } from '../hooks/useUploads';
 import { encryptionActions, useEncryption } from '../hooks/useEncryption';
-import { saveBlob, saveFrom, showBlob } from '../lib/localBlobs';
-import { openTabWithoutPasswords } from '../lib/encryption/passwords';
+import { fileOpening } from '../lib/fileOpening';
 import { showActionToast } from '../components/actionToast';
 import { NameLine } from '../components/MiddleTruncatedName';
 import { DndContext, DragOverlay, pointerWithin } from '@dnd-kit/core';
@@ -55,6 +54,7 @@ export function ShelfPage() {
   const { data: listing, isLoading, error } = useListing(shelf, path);
   const uploads = useUploads(shelf);
   const encryption = useEncryption(shelf);
+  const opening = fileOpening(shelf, encryption.contents);
   const deleteEntry = useDeleteEntry(shelf);
   const restore = useRestoreDeletion(shelf);
   const [creatingDirectory, setCreatingDirectory] = useState(false);
@@ -88,60 +88,10 @@ export function ShelfPage() {
     if (files.length > 0) void upload(files);
   }
 
-  /**
-   * Opens a file in a new tab, through a link that works only for the few minutes a browser needs to
-   * start: a plain link cannot carry the session's token. The tab is opened before the request, while
-   * the click still counts as the user's, or the browser would block it as a popup. A blocked tab
-   * saves the file instead.
-   */
-  async function openInTab(file: ShelfFile): Promise<void> {
-    if (file.encrypted) return openDecrypted(file);
-    const tab = openTabWithoutPasswords();
-    if (!tab) return save([file]);
-    await runOrToast(async () => {
-      try {
-        tab.location.href = (await createDownloadLink(shelf, file.id, OPEN_LINK_MINUTES)).url;
-      } catch (caught) {
-        tab.close();
-        throw caught;
-      }
-    }, 'Could not open the file');
-  }
-
-  /**
-   * Saves files through the same short links. Each is a download rather than a navigation, so one
-   * starting does not cancel the one before it; a browser may ask once before saving several.
-   */
-  async function save(files: ShelfFile[]): Promise<void> {
-    await runOrToast(async () => {
-      for (const file of files) {
-        if (file.encrypted) {
-          const plain = await encryption.contents(file);
-          if (plain) saveBlob(plain, file.name);
-          continue;
-        }
-        saveFrom(`${(await createDownloadLink(shelf, file.id, OPEN_LINK_MINUTES)).url}?download=true`, '');
-      }
-    }, files.length === 1 ? 'Could not save the file' : 'Could not save the files');
-  }
-
-  /**
-   * Opens an encrypted file from its contents decrypted here, never through a link. Asking for the
-   * password can take long enough for the browser to block the tab; a toast then opens it from a
-   * fresh click.
-   */
-  async function openDecrypted(file: ShelfFile): Promise<void> {
-    await runOrToast(async () => {
-      const plain = await encryption.contents(file);
-      if (!plain || showBlob(plain, file.name)) return;
-      showActionToast({ message: <NameLine name={file.name} after=" is unlocked" />, action: 'Open', onAction: () => showBlob(plain, file.name), duration: 15000 });
-    }, 'Could not open the file');
-  }
-
   /** Opens a row: a folder by going into it, a file in a new tab. */
   function open(entry: Entry): void {
     if (entry.kind === 'directory') navigate(shelfRoute(shelf, entry.value.path));
-    else void openInTab(entry.value);
+    else void opening.open(entry.value);
   }
 
   /**
@@ -268,7 +218,7 @@ export function ShelfPage() {
         } : undefined}
         onOpen={() => open(entry)}
         onPrefetch={entry.kind === 'directory' ? () => prefetchListing(entry.value.path) : undefined}
-        onDownload={entry.kind === 'file' ? () => void save([entry.value]) : undefined}
+        onDownload={entry.kind === 'file' ? () => void opening.save([entry.value]) : undefined}
         onDescribe={entry.kind === 'file' ? () => setDescribing(entry.value) : undefined}
         onCopyLink={entry.kind === 'file' && !encrypted ? () => void copyLink(entry.value) : undefined}
         onEncrypt={actions.encrypt ? () => void encryption.encrypt(entry) : undefined}
@@ -317,7 +267,7 @@ export function ShelfPage() {
   const selectionActions = {
     count: selection.count,
     sizeBytes: selected.reduce((total, entry) => total + entrySizeBytes(entry), 0),
-    onDownload: selectedFiles.length === selected.length ? () => void save(selectedFiles) : undefined,
+    onDownload: selectedFiles.length === selected.length ? () => void opening.save(selectedFiles) : undefined,
     onMove: () => setMoving(selected),
     onDelete: () => void remove(selected),
     onClear: clearSelection,
@@ -407,9 +357,6 @@ export function ShelfPage() {
 
 /** How long typing must pause before a search is sent. */
 const SEARCH_DELAY_MS = 250;
-
-/** How long a link to open or save a file works: enough for a browser to start, or a viewer to fetch ranges. */
-const OPEN_LINK_MINUTES = 5;
 
 interface SearchResultsProps {
   results: FileSearchResults | undefined;

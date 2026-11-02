@@ -39,8 +39,8 @@ path that is not allowed is a 400.
 | `GET directories/encryption?path=` | The encrypted directory a file at `path` (existing or not) would be under, with its `check`; `encryptedBy` is null for none. See "Encryption" below. |
 | `PUT directories/encryption?path=` | Encrypts a directory with the body's `check` (base64 of an age file of at most `FileEncryption.MaxCheckBytes`); 400 for a check that is not one, 409 when it is encrypted already or inside or above an encrypted directory. |
 | `DELETE directories/encryption?path=` | Stops encrypting a directory; 409 when it is not encrypted itself. |
-| `GET content?path=` (and `HEAD`) | Streams the contents (`HEAD`: only the headers); `Range`, `If-None-Match` and `If-Range` work, the ETag is the SHA-256. Served with `X-Content-Type-Options: nosniff` and, except for a PDF (Chrome's viewer does not run sandboxed), a sandboxing `Content-Security-Policy`. `download=true` adds a file name. |
-| `POST download-link?path=&expiresInMinutes=` | A link to the contents that works without a token for `expiresInMinutes` (1 to 10080, 1440 by default), to open, save or share the file (see below). Making one is a read; 400 for a lifetime outside those bounds, 409 for an encrypted file. |
+| `GET content?path=` (and `HEAD`) | Streams the contents (`HEAD`: only the headers); `Range`, `If-None-Match` and `If-Range` work, the ETag is the SHA-256. Served with `X-Content-Type-Options: nosniff`, `Cache-Control: private` and, except for a PDF (Chrome's viewer does not run sandboxed), a sandboxing `Content-Security-Policy`. `download=true` adds a file name. Also served at `/api/open/{shelf}/content`, where a signed-in browser's token may come in a cookie (see "Opening in a browser" below). |
+| `POST download-link?path=&expiresInMinutes=` | A link to the contents that works without a token for `expiresInMinutes` (1 to 10080, 1440 by default), to share the file (see below). Making one is a read; 400 for a lifetime outside those bounds, 409 for an encrypted file. |
 | `PUT content?path=&overwrite=&encrypted=` | Stores the body in one request. Needs `Content-Length` (411 without); the `Content-Type` is stored, or without one the type the path's extension names (`ContentTypes.ForUpload`), so `curl -T` stores a PDF as one. `encrypted=true` marks the body as an age file (400 when it does not start as one). 409 when the path is taken and `overwrite` is not set, or for a plain file under an encrypted directory; 507 over quota. |
 | `POST upload-link` | A link that stores one file sent to it without a token, from the body's `path`, `overwrite`, `description` and `expiresInMinutes` (1 to 1440, 15 by default); see "Upload links" below. Needs `Add`, or `Write` with `overwrite`; 400 for the root or a request `CreateUploadLinkRequest.Normalize` refuses, 409 for a path under an encrypted directory or over an encrypted file. |
 | `POST uploads` | Starts a resumable upload from the body's `path`, `sizeBytes`, `contentType` (optional, typed as `PUT content` is), `overwrite` (false by default), `encrypted` (as on `PUT content`, checked when it completes) and the file's `description` if it has one (a single `PUT` has no body to carry one); reserves the size against the quota. |
@@ -54,12 +54,23 @@ path that is not allowed is a 400.
 | `POST trash/{deletionId}/restore` | Puts a deletion back where it was. |
 | `DELETE trash` | Empties the trash: everything in it can no longer be restored, and is purged now with its objects (see below). |
 
+## Opening in a browser (`AuthSetup.CookieTokenPath`)
+
+A new tab or a save is a plain navigation, which cannot send an `Authorization` header. So the web UI
+opens and saves a file at `/api/open/{shelf}/content`, the one path where the session's access token
+may instead come in the `__Secure-access_token` cookie (EasyReasy.Auth's `CookieTokenPaths`; its README's
+"Opening Files in a New Tab (token in a cookie)"). The built-in sign-in and renewal set the cookie, `HttpOnly`, `Secure`,
+`SameSite=Strict`, host-only, with `Path=/api/open` and the token's own lifetime; a failed renewal
+and signing out clear it. It is read only on `GET` and `HEAD`, only without an `Authorization`
+header, and not when the request carries the cookie twice, so a copied URL is useless to anyone else and no public link
+is made. A link to it followed from another site arrives without the cookie and answers 401.
+Everything under `/api/open` only reads. A browser keeps a `Secure` cookie only over HTTPS or on
+localhost; elsewhere the web UI reads the contents with the header instead (see its README).
+
 ## Download links (`DownloadLinks`)
 
-One mechanism serves two uses. A plain link or an image's source cannot carry a token, so the web
-UI asks for a five-minute link before it opens or saves a file; and a link shares a file with someone
-who has no access, for the caller's pick of lifetime: a day by default, at most 7 days
-(`DownloadLink.Lifetime.Normalize`). `GET` or `HEAD /api/downloads/{token}` serves the contents as `GET content`
+A link shares a file with someone who has no access, for the caller's pick of lifetime: a day by
+default, at most 7 days (`DownloadLink.Lifetime.Normalize`). `GET` or `HEAD /api/downloads/{token}` serves the contents as `GET content`
 does, `download=true` included, to anyone holding the token until it runs out. The token names the
 shelf and the file by id and when it runs out, signed by `LinkTokens` (below);
 an altered or expired one, or one whose file is in the trash, answers 404; a restored file keeps its

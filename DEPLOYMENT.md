@@ -35,9 +35,8 @@ only migrates it and exits, for running migrations as their own step before a st
 | `ASPNETCORE_URLS` | no | Where Kestrel listens. |
 
 Two secrets are generated into `keys/` on first start, readable by the owner only: `jwt-secret`
-signs sign-ins, `link-secret` signs links that work without signing in: the web UI's five-minute
-download links, the share links any key or user with read access can make for up to 7 days, and the
-upload links any key or user that may store can make for up to 24 hours. They travel with the root,
+signs sign-ins, `link-secret` signs links that work without signing in: the share links any key or
+user with read access can make for up to 7 days, and the upload links any key or user that may store can make for up to 24 hours. They travel with the root,
 so a copied or restored root keeps its sign-ins and its unexpired links, share links included. A
 single link cannot be taken back; deleting `link-secret` and restarting ends every link at once, and
 a new secret is generated.
@@ -91,6 +90,11 @@ credential, are outside the limits.
   sends `X-Accel-Buffering: no`.
 - Pass `Authorization` through for `/mcp` and `/api` (nginx does by default): MCP clients send their
   shelf key there.
+- Serve over HTTPS, at the server's own paths (no path prefix the proxy strips): the web UI opens and
+  saves files under `/api/open` with the session's token in a `Secure` cookie scoped to that path,
+  which a browser keeps only over HTTPS. Over plain HTTP it falls back to reading each file whole into
+  the page, which works but holds large files in memory. Do not log request or response headers at
+  the proxy: that cookie carries the token, as `Authorization` does.
 - Allow long request lines: a path of up to 4096 characters travels in the query string,
   percent-encoded, and the server accepts lines of about 98 KB. For nginx:
   `large_client_header_buffers 4 128k;` (its default of 8k answers 414 for a long path).

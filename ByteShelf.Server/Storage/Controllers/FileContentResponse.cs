@@ -8,7 +8,8 @@ namespace ByteShelf.Server.Storage.Controllers
     /// How a file's contents are sent, whichever route asked for them. <c>Range</c> is supported, and
     /// the ETag is the contents' SHA-256, so <c>If-None-Match</c> and <c>If-Range</c> work as well.
     /// Whatever the stored type, the browser is told not to sniff it, and everything but a PDF is
-    /// sandboxed so it runs nothing, so an uploaded page or image cannot act with this server's origin.
+    /// sandboxed so it runs nothing, so an uploaded page or image cannot act with this server's origin,
+    /// even when a cookie another subdomain planted chose whose upload it is. No shared cache keeps it.
     /// </summary>
     internal static class FileContentResponse
     {
@@ -25,6 +26,9 @@ namespace ByteShelf.Server.Storage.Controllers
         public static IActionResult Send(ControllerBase controller, FileContent content, bool download)
         {
             controller.Response.Headers[HeaderNames.XContentTypeOptions] = "nosniff";
+
+            // Per caller (a session, a key, or a link's holder): a shared cache must never hand it to another.
+            controller.Response.Headers[HeaderNames.CacheControl] = "private";
             if (!IsPdf(content.File.ContentType))
             {
                 controller.Response.Headers[HeaderNames.ContentSecurityPolicy] = "sandbox; default-src 'none'";

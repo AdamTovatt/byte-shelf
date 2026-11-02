@@ -46,16 +46,24 @@ npm run codegen    # in a second terminal
   that challenges the token; a 401 without a challenge (a wrong current password) is an answer.
 - **The session** is kept in `localStorage`, shared by every tab. A refresh token works once, so
   renewals run one at a time across tabs (the Web Locks API), and each first takes up a token another
-  tab renewed to. Signing out ends the session on the server too.
+  tab renewed to. Signing out ends the session on the server too. The access token also rides in an
+  `HttpOnly` cookie on `/api/open` only, which the server sets and clears; the app never reads it.
 - **Files:** uploads up to 8 MiB go in one request, larger ones as a resumable upload in 8 MiB chunks
-  (`services/uploadService.ts`); a file whose name is taken is replaced only when asked. Opening or
-  downloading an unencrypted file asks the server for a five-minute link first, since a plain link
-  cannot carry the token. "Copy link" in a file's menu copies one that works for a day, for someone without access;
-  where the browser offers no clipboard (plain HTTP), the toast shows it to copy by hand.
+  (`services/uploadService.ts`); a file whose name is taken is replaced only when asked. "Copy link"
+  in a file's menu copies one that works for a day, for someone without access; where the browser
+  offers no clipboard (plain HTTP), the toast shows it to copy by hand.
   A row, or the selection it is in, moves by dragging it onto a folder's row or breadcrumb crumb
   (`hooks/useEntryDragAndDrop.ts`, dnd-kit on pointer events, so it never meets the browser's own
   drag events that dropping files to upload uses). A toast that names a file cuts a long name in the
   middle (`components/MiddleTruncatedName.tsx`).
+- **Opening and saving** (`lib/fileOpening.tsx`): an unencrypted file opens or saves by navigating to
+  `/api/open/...`, where the session's token rides in a cookie the server sets at sign-in and renewal
+  (a plain navigation cannot send the header), so no public link is made. The session is renewed
+  first when its token is about to run out, since the cookie lives as long as it, or when it was
+  saved before the server set that cookie. A browser keeps that `Secure` cookie only over HTTPS or on
+  localhost, so elsewhere (plain HTTP) the file is read with the token and shown or saved from a
+  local blob as an encrypted one is, which holds it whole in memory. One rule picks the way,
+  `opensByNavigation` (`isSecureContext`), in `services/contentService.ts`.
 - **Encryption** (`hooks/useEncryption.tsx`, `lib/encryption/`): a file's or folder's menu encrypts
   it with a password, typed twice and then a warning that a lost one cannot be recovered; typage
   encrypts in the browser at age's work factor, about a second a file, and the file's contents are

@@ -49,11 +49,6 @@ vi.mock('../services/encryptionService', () => ({
     shelf.checks.delete(id);
     return shelf.directories.get(id);
   },
-  readContent: async (_shelf: string, id: string) => shelf.files.get(id)!.content,
-  openContent: async (_shelf: string, id: string) => {
-    shelf.headerReads.push(id);
-    return shelf.files.get(id)!.content.stream();
-  },
   replaceContent: async (_shelf: string, file: ShelfFile, content: Blob, encrypted: boolean) => {
     if (shelf.failing.has(file.name)) throw new Error('the server refused it');
     shelf.stored.push(`${file.name} ${encrypted ? 'encrypted' : 'plain'}`);
@@ -63,6 +58,14 @@ vi.mock('../services/encryptionService', () => ({
   },
   filesUnder: async (_shelf: string, path: string) =>
     Array.from(shelf.files.values()).map((each) => each.file).filter((file) => file.path.startsWith(`${path}/`)),
+}));
+
+vi.mock('../services/contentService', () => ({
+  readContent: async (_shelf: string, id: string) => shelf.files.get(id)!.content,
+  openContent: async (_shelf: string, id: string) => {
+    shelf.headerReads.push(id);
+    return shelf.files.get(id)!.content.stream();
+  },
 }));
 
 function directory(path: string, encrypted = false): ShelfDirectory {

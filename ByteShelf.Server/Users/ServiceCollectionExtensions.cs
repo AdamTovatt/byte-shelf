@@ -21,10 +21,11 @@ namespace ByteShelf.Server.Users
 
             // Generated once into the root's keys/ folder, so a copied root keeps its sessions valid.
             string jwtSecret = RootKeyMaterial.GetOrCreate(root, RootKeyMaterial.JwtSecretFileName);
-            services.AddEasyReasyAuth(jwtSecret, options => options.Issuer = AuthSetup.JwtIssuer);
+            services.AddEasyReasyAuth(jwtSecret, AuthSetup.Configure);
 
-            // Every request of a signed-in user sees the roles they have now, not the token's.
-            services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+            // Every request of a signed-in user sees the roles they have now, not the token's. Configure,
+            // not PostConfigure: see AuthSetup.Configure.
+            services.Configure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
             {
                 options.Events ??= new JwtBearerEvents();
                 CurrentUserTokenValidation.AddTo(options.Events);

@@ -79,7 +79,7 @@ namespace ByteShelf.Server
 
             // A dummy secret and no-op stores, only so the auth endpoints appear in the spec.
             string dummyJwtSecret = "schema-only-dummy-secret-not-used-for-real-auth";
-            builder.Services.AddEasyReasyAuth(dummyJwtSecret, options => options.Issuer = AuthSetup.JwtIssuer);
+            builder.Services.AddEasyReasyAuth(dummyJwtSecret, AuthSetup.Configure);
             builder.Services.AddRefreshTokenService<NoOpRefreshTokenStore>();
             builder.Services.AddScoped<IAuthRequestValidationService, NoOpAuthRequestValidationService>();
 

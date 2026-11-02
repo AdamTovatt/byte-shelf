@@ -15,13 +15,17 @@ Shelves themselves are in [Shelves.md](../Storage/Shelves.md), users in [Users.m
   deleting it stops it at once. Only the SHA-256 of the secret is stored. Keys are accepted on the
   shelf endpoints and `/mcp` only, never on the user endpoints.
 
+A signed-in user's access token comes in the `Authorization` header, or, under `/api/open` only, in
+a cookie for a browser's plain navigation ([Storage](../Storage/Storage.md#opening-in-a-browser-authsetupcookietokenpath));
+either way the same access applies.
+
 A request carrying a key acts as the key, even with a user's token beside it. A key that does not
 check out answers 401 rather than falling back to the token, and so does an empty `X-Api-Key` header,
 one sent more than once, or a key sent both ways at once.
 
 ## What each endpoint needs
 
-Every action on `api/shelves/{shelf}/...` carries `[ShelfAccess(operation)]`, which requires a
+Every action on a route naming a shelf (`{shelf}`) carries `[ShelfAccess(operation)]`, which requires a
 signed-in user or a key, resolves the shelf, and asks `ShelfAccessResolver` (the one place the rule
 lives) whether the caller may do the operation there. No access answers 404, too little 403. `/mcp`
 asks the same resolver which tools to offer a key ([Mcp](../Mcp/Mcp.md)).

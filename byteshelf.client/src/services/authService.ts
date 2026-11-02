@@ -9,6 +9,11 @@ import { ROUTES } from '../lib/routes';
 const TOKEN_STORAGE_KEY = 'byteshelf_auth_token';
 const EXPIRES_AT_STORAGE_KEY = 'byteshelf_auth_expires_at';
 const REFRESH_TOKEN_STORAGE_KEY = 'byteshelf_auth_refresh_token';
+/**
+ * Kept with a session saved from a sign-in or renewal, both of which set the session's cookie for
+ * opening files. A session saved before the server set that cookie lacks it.
+ */
+const COOKIE_SET_STORAGE_KEY = 'byteshelf_auth_cookie_set';
 const RENEW_LOCK_NAME = 'byteshelf-token-renewal';
 
 /** How long before the access token runs out it is renewed. */
@@ -18,6 +23,7 @@ export function saveTokens(tokens: AuthResponse): void {
   localStorage.setItem(TOKEN_STORAGE_KEY, tokens.token);
   localStorage.setItem(EXPIRES_AT_STORAGE_KEY, tokens.expiresAt);
   localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, tokens.refreshToken);
+  localStorage.setItem(COOKIE_SET_STORAGE_KEY, 'true');
 }
 
 export function getToken(): string | null {
@@ -36,6 +42,7 @@ export function clearTokens(): void {
   localStorage.removeItem(TOKEN_STORAGE_KEY);
   localStorage.removeItem(EXPIRES_AT_STORAGE_KEY);
   localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+  localStorage.removeItem(COOKIE_SET_STORAGE_KEY);
 }
 
 /** Whether a session is kept: its access token may have run out, but it can be renewed. */
@@ -126,6 +133,18 @@ export function renewAccessToken(staleToken: string | null): Promise<string | nu
 export async function getFreshToken(): Promise<string | null> {
   const token = getToken();
   return token && !isDue() ? token : renewAccessToken(token);
+}
+
+/**
+ * Whether the browser holds the session's cookie for opening files, renewing the session first when
+ * its token is about to run out or it was saved before the server set that cookie. Cookies cleared by
+ * hand, or a clock more than a minute behind the server's, are not seen here; a file opened then
+ * answers 401 until the next renewal.
+ */
+export async function hasFreshCookie(): Promise<boolean> {
+  const token = getToken();
+  if (token && !isDue() && localStorage.getItem(COOKIE_SET_STORAGE_KEY)) return true;
+  return (await renewAccessToken(token)) !== null;
 }
 
 /** Ends the session on the server, as far as it can, and forgets it here and in every tab. */

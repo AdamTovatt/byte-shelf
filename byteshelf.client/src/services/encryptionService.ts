@@ -1,4 +1,4 @@
-import { apiClient, apiUrl, authorizedFetch, throwIfFailed, unwrapResponse } from './apiClient';
+import { apiClient, unwrapResponse } from './apiClient';
 import type { components } from '../types/api';
 import type { ShelfDirectory, ShelfFile } from './shelfService';
 import { swapContent } from './uploadService';
@@ -19,24 +19,6 @@ export function encryptDirectory(shelf: string, id: string, check: string): Prom
 /** Stops encrypting a folder; the files in it stay encrypted until the caller decrypts them. */
 export function removeDirectoryEncryption(shelf: string, id: string): Promise<ShelfDirectory> {
   return unwrapResponse(apiClient.DELETE('/api/shelves/{shelf}/directories/encryption', { params: { path: { shelf }, query: { id } } }));
-}
-
-/** A file's stored bytes, with the session's token: an encrypted file never goes through a link. */
-export async function readContent(shelf: string, id: string): Promise<Blob> {
-  const response = await authorizedFetch(apiUrl('/api/shelves/{shelf}/content', { shelf }, new URLSearchParams({ id })), { method: 'GET' });
-  await throwIfFailed(response);
-  return response.blob();
-}
-
-/**
- * A file's stored bytes as a stream, read only as far as the caller reads; `signal` aborts the
- * download, so a caller that needs only the start stops it there.
- */
-export async function openContent(shelf: string, id: string, signal: AbortSignal): Promise<ReadableStream<Uint8Array>> {
-  const response = await authorizedFetch(apiUrl('/api/shelves/{shelf}/content', { shelf }, new URLSearchParams({ id })), { method: 'GET', signal });
-  await throwIfFailed(response);
-  if (!response.body) throw new Error('The server sent no contents.');
-  return response.body;
 }
 
 /**

@@ -22,8 +22,9 @@ namespace ByteShelf.Server.Access
                 .AddScheme<AuthenticationSchemeOptions, ShelfKeyAuthenticationHandler>(ShelfKeyAuthentication.Scheme, configureOptions: null);
 
             // A key sent as the bearer token is the key scheme's; the session scheme would only fail to
-            // read it as a token on every such request, and log that it did.
-            services.PostConfigure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
+            // read it as a token on every such request, and log that it did. Configure, not
+            // PostConfigure: see AuthSetup.Configure.
+            services.Configure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, options =>
             {
                 JwtBearerEvents events = options.Events ?? new JwtBearerEvents();
                 Func<MessageReceivedContext, Task> earlier = events.OnMessageReceived;

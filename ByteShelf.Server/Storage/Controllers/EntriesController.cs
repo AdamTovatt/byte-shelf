@@ -1,6 +1,7 @@
 using ByteShelf.Server.Access.Controllers;
 using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Replication.Controllers;
+using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
@@ -19,6 +20,9 @@ namespace ByteShelf.Server.Storage.Controllers
     [Route("api/shelves/{shelf}")]
     public class EntriesController : ShelfControllerBase
     {
+        /// <summary>The contents route where the token may come in a cookie, for a browser's plain navigation.</summary>
+        private const string OpenContentRoute = AuthSetup.CookieTokenPath + "/{shelf}/content";
+
         private readonly IDirectoryService _directoryService;
         private readonly IFileService _fileService;
         private readonly IUploadService _uploadService;
@@ -121,9 +125,15 @@ namespace ByteShelf.Server.Storage.Controllers
             return Ok(await _fileService.SearchAsync(Shelf, search));
         }
 
-        /// <summary>Streams a file's contents, as <see cref="FileContentResponse"/> describes.</summary>
+        /// <summary>
+        /// Streams a file's contents, as <see cref="FileContentResponse"/> describes. Also served under
+        /// <see cref="AuthSetup.CookieTokenPath"/>, where a signed-in browser's token may come in a
+        /// cookie, so the web UI opens or saves a file by navigating to it, with no public link.
+        /// </summary>
         [HttpGet("content")]
         [HttpHead("content")]
+        [HttpGet(OpenContentRoute)]
+        [HttpHead(OpenContentRoute)]
         [ShelfAccess(ShelfOperation.Read)]
         [ProducesResponseType(typeof(FileStreamResult), 200)]
         [ProducesResponseType(206)]
@@ -136,9 +146,8 @@ namespace ByteShelf.Server.Storage.Controllers
 
         /// <summary>
         /// A link to a file's contents that needs no token for <c>expiresInMinutes</c> (24 hours by
-        /// default, at most 7 days): for a browser to open or save, which a plain link cannot send a token
-        /// with, or to share the file. Making one is a read; 400 for a lifetime outside those bounds, 409
-        /// for an encrypted file.
+        /// default, at most 7 days), to share the file. Making one is a read; 400 for a lifetime outside
+        /// those bounds, 409 for an encrypted file.
         /// </summary>
         [HttpPost("download-link")]
         [ShelfAccess(ShelfOperation.Read)]
