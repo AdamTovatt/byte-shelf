@@ -275,7 +275,6 @@ interface EntryRowProps {
 function EntryRow({ entry, label, onOpen, onDownload, onDescribe, onCopyLink, onRename, onMove, onDelete }: EntryRowProps) {
   const isFile = entry.kind === 'file';
   const name = entry.value.name;
-  const description = isFile ? entry.value.description : null;
 
   return (
     <div className="group flex items-center gap-2 px-2 py-1 transition-colors hover:bg-row-hover">
@@ -287,10 +286,7 @@ function EntryRow({ entry, label, onOpen, onDownload, onDescribe, onCopyLink, on
         className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2 text-left"
       >
         <Icon icon={isFile ? getFileIcon(name) : iconMap.folder} size={18} className="shrink-0 text-muted" />
-        <span className="flex min-w-0 flex-col">
-          <span className="truncate text-body-md text-fg">{label ?? name}</span>
-          {description && <span className="truncate text-body-sm text-muted" title={description}>{description}</span>}
-        </span>
+        <span className="min-w-0 truncate text-body-md text-fg">{label ?? name}</span>
         {isFile && (
           <Icon icon={iconMap.externalLink} size={14} className="shrink-0 text-neutral-9 opacity-60 transition-opacity group-hover:opacity-100" />
         )}
