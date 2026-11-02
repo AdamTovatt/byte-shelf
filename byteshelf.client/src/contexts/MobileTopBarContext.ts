@@ -2,7 +2,7 @@ import { createContext } from 'react';
 
 /** Where in the phone's top bar a page may put things: beside the title, or over the whole bar. */
 export interface MobileTopBarSlots {
-  /** The bar's right end, for a page's own icon buttons. */
+  /** The bar after its menu button, for a page's own field and buttons. */
   actions: HTMLElement | null;
   /** The bar itself, for something that covers it while open: a search field, a selection's actions. */
   bar: HTMLElement | null;

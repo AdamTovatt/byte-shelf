@@ -25,19 +25,15 @@ function AppShellContent({ children }: AppShellProps) {
         <MobileNavDrawer />
 
         <div className="flex-1 min-w-0 flex flex-col">
-          {/* Three columns, the outer two of equal width, so the title stays centred whatever a page
-              puts at the right end (MobileTopBarActions). */}
-          <header ref={setBar} className="md:hidden relative h-14 grid grid-cols-[1fr_auto_1fr] items-center px-4 border-b border-border bg-panel shrink-0">
-            <div>
-              <IconButton
-                variant="ghost"
-                icon={iconMap.menu}
-                onClick={() => setIsMobileOpen(true)}
-                aria-label="Open navigation menu"
-              />
-            </div>
-            <span className="text-heading-sm text-fg">ByteShelf</span>
-            <div ref={setActions} className="flex items-center justify-end gap-1" />
+          {/* The menu button, then whatever the page puts in the rest of the bar (MobileTopBarActions). */}
+          <header ref={setBar} className="md:hidden relative h-14 flex items-center gap-2 px-4 border-b border-border bg-panel shrink-0">
+            <IconButton
+              variant="ghost"
+              icon={iconMap.menu}
+              onClick={() => setIsMobileOpen(true)}
+              aria-label="Open navigation menu"
+            />
+            <div ref={setActions} className="min-w-0 flex-1 flex items-center gap-2" />
           </header>
 
           <main className="flex-1 min-h-0 overflow-y-auto">

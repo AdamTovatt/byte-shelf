@@ -3,8 +3,8 @@ import { createPortal } from 'react-dom';
 import { MobileTopBarContext } from '../../contexts/MobileTopBarContext';
 
 /**
- * Renders `children` at the right end of the phone's top bar (the one with the menu button), which
- * shows below the `md` width only. Nothing renders where the shell has no such bar.
+ * Renders `children` in the phone's top bar after its menu button, filling the rest of it. The bar
+ * shows below the `md` width only; nothing renders where the shell has no such bar.
  */
 export function MobileTopBarActions({ children }: { children: ReactNode }) {
   const { actions } = useContext(MobileTopBarContext);

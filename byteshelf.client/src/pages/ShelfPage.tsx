@@ -53,7 +53,6 @@ export function ShelfPage() {
   const [moving, setMoving] = useState<Entry[] | null>(null);
   const [describing, setDescribing] = useState<ShelfFile | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   // Kept with the shelf and folder it was typed in, so opening another starts with no search: the
   // route, and so this component, stays the same from one shelf to the next.
   const [typed, setTyped] = useState({ shelf, path, text: '' });
@@ -230,20 +229,14 @@ export function ShelfPage() {
     setTyped({ shelf, path, text: '' });
   }
 
-  /** Closing the phone's search field ends the search too: nothing would show what it is. */
-  function closeMobileSearch(): void {
-    setMobileSearchOpen(false);
-    clearSearch();
-  }
-
-  /** The search field, in its row from md up or across the phone's top bar; Escape clears it, or closes it there. */
-  function searchField({ autoFocus = false, onEscape = clearSearch }: { autoFocus?: boolean; onEscape?: () => void } = {}) {
+  /** The search field, in its row from md up or in the phone's top bar; both show the one search. Escape clears it. */
+  function searchField() {
     return (
       <Input
         variant="quiet"
         value={searchText}
         onChange={(event) => setTyped({ shelf, path, text: event.target.value })}
-        onKeyDown={(event) => event.key === 'Escape' && onEscape()}
+        onKeyDown={(event) => event.key === 'Escape' && clearSearch()}
         placeholder="Search"
         aria-label="Search files in this folder and below"
         icon={<Icon icon={iconMap.search} size={16} />}
@@ -251,7 +244,6 @@ export function ShelfPage() {
           <IconButton variant="ghost" size="sm" icon={iconMap.close} aria-label="Clear the search" onClick={clearSearch} />
         )}
         autoComplete="off"
-        autoFocus={autoFocus}
       />
     );
   }
@@ -292,7 +284,7 @@ export function ShelfPage() {
 
         {/* From md up, search and Add have a row of their own, which the selection bar covers rather
             than replaces, so the list below never moves when a row is picked. On a phone they sit in
-            the top bar instead, and an open search field and the selection's actions cover that bar. */}
+            the top bar instead, and the selection's actions cover that bar. */}
         <div className="relative hidden md:block">
           <div className={cn('flex items-center gap-2', selecting && 'invisible')}>
             <div className="min-w-0 flex-1">{searchField()}</div>
@@ -303,19 +295,11 @@ export function ShelfPage() {
           {selecting && <SelectionBar placement="row" {...selectionActions} />}
         </div>
         <MobileTopBarActions>
-          <IconButton variant="ghost" icon={iconMap.search} aria-label="Search" onClick={() => setMobileSearchOpen(true)} />
-          <Dropdown align="right" trigger={<IconButton variant="ghost" icon={iconMap.add} aria-label="Add" />}>
+          <div className="min-w-0 flex-1">{searchField()}</div>
+          <Dropdown align="right" trigger={<IconButton variant="main" icon={iconMap.add} aria-label="Add" />}>
             {addItems}
           </Dropdown>
         </MobileTopBarActions>
-        {mobileSearchOpen && (
-          <MobileTopBarOverlay>
-            <div className="absolute inset-0 flex items-center gap-2 bg-panel px-2">
-              <IconButton variant="ghost" icon={iconMap.chevronLeft} aria-label="Close the search" onClick={closeMobileSearch} />
-              <div className="min-w-0 flex-1">{searchField({ autoFocus: true, onEscape: closeMobileSearch })}</div>
-            </div>
-          </MobileTopBarOverlay>
-        )}
         {selecting && (
           <MobileTopBarOverlay>
             <SelectionBar placement="topBar" {...selectionActions} />
