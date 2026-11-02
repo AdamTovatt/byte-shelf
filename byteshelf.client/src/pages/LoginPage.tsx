@@ -58,7 +58,7 @@ export function LoginPage() {
   };
 
   return (
-    <AuthLayout title="ByteShelf">
+    <AuthLayout>
       <form onSubmit={handleSubmit} className="flex flex-col gap-6">
         {error && (
           <Notice variant="danger">

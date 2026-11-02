@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Icon, Spinner, iconMap } from '../ui';
+import { Button, Icon, Spinner, getErrorMessage, iconMap } from '../ui';
 import { FormDialog } from './FormDialog';
 import { useListing, useMoveEntry } from '../hooks/useShelfQueries';
 import { useSubmit } from '../hooks/useSubmit';
@@ -8,38 +8,50 @@ import type { Entry } from '../services/shelfService';
 
 interface MoveDialogProps {
   shelf: string;
-  entry: Entry;
+  /** What to move: one row's entry, or a selection's, all from the folder shown. */
+  entries: Entry[];
   onClose: () => void;
 }
 
 /**
- * Moves a file or folder to another folder on the same shelf, keeping its name: the reader walks the
- * shelf's folders and picks one. A folder cannot go into itself, so it and what is under it are left out.
+ * Moves files and folders to another folder on the same shelf, keeping their names: the reader walks
+ * the shelf's folders and picks one. A folder cannot go into itself, so a moving folder and what is
+ * under it are left out. They move one at a time; a refusal stops there and names what it stopped
+ * at, and what moved before it stays moved.
  */
-export function MoveDialog({ shelf, entry, onClose }: MoveDialogProps) {
+export function MoveDialog({ shelf, entries, onClose }: MoveDialogProps) {
   const moveEntry = useMoveEntry(shelf);
-  const from = parentPath(entry.value.path);
+  const from = parentPath(entries[0].value.path);
   const [folder, setFolder] = useState(from);
   const { data: listing, isLoading } = useListing(shelf, folder);
-  const { error, submit } = useSubmit('Could not move it');
+  const { error, submitting, submit } = useSubmit('Could not move it');
 
-  const isSelfOrInside = (path: string) =>
-    entry.kind === 'directory' && (path === entry.value.path || path.startsWith(`${entry.value.path}/`));
-  const folders = (listing?.directories ?? []).filter((directory) => !isSelfOrInside(directory.path));
+  const isMovingOrInside = (path: string) =>
+    entries.some((entry) => entry.kind === 'directory' && (path === entry.value.path || path.startsWith(`${entry.value.path}/`)));
+  const folders = (listing?.directories ?? []).filter((directory) => !isMovingOrInside(directory.path));
+  const alreadyThere = entries.every((entry) => parentPath(entry.value.path) === folder);
+  const title = entries.length === 1 ? `Move ${entries[0].value.name}` : `Move ${entries.length} items`;
 
-  function move(): Promise<void> {
-    return submit(() => moveEntry.mutateAsync({ kind: entry.kind, id: entry.value.id, toPath: joinPath(folder, entry.value.name) }), onClose);
+  async function moveAll(): Promise<void> {
+    for (const entry of entries) {
+      if (parentPath(entry.value.path) === folder) continue;
+      try {
+        await moveEntry.mutateAsync({ kind: entry.kind, id: entry.value.id, toPath: joinPath(folder, entry.value.name) });
+      } catch (caught) {
+        throw new Error(entries.length === 1 ? getErrorMessage(caught, 'Could not move it') : `Could not move ${entry.value.name}: ${getErrorMessage(caught, 'it was refused')}`);
+      }
+    }
   }
 
   return (
     <FormDialog
       open
-      title={`Move ${entry.value.name}`}
+      title={title}
       onClose={onClose}
-      onSubmit={() => void move()}
-      submitDisabled={folder === from}
+      onSubmit={() => void submit(moveAll, onClose)}
+      submitDisabled={alreadyThere}
       submitLabel="Move here"
-      submitting={moveEntry.isPending}
+      submitting={submitting}
       error={error}
     >
       <nav aria-label="Folder to move to" className="flex flex-wrap items-center gap-1 text-body-md">
@@ -74,7 +86,7 @@ export function MoveDialog({ shelf, entry, onClose }: MoveDialogProps) {
       </div>
 
       <p className="text-body-sm text-muted">
-        {folder === from ? 'It is in this folder now: pick another.' : 'Nothing already there is replaced.'}
+        {alreadyThere ? `${entries.length === 1 ? 'It is' : 'They are'} in this folder now: pick another.` : 'Nothing already there is replaced.'}
       </p>
     </FormDialog>
   );

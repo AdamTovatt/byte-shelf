@@ -1,4 +1,4 @@
-import { useState, type DragEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
@@ -26,6 +26,7 @@ import { MoveDialog } from '../components/MoveDialog';
 import { ShelfHeader } from '../components/ShelfHeader';
 import { useCreateDirectory, useDeleteEntry, useFileSearch, useListing, useMoveEntry, useRestoreDeletion, useSetDescription } from '../hooks/useShelfQueries';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { useSelection, type SelectionClickModifiers } from '../hooks/useSelection';
 import { useUploads } from '../hooks/useUploads';
 import { formatBytes, formatTime } from '../lib/format';
 import { joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../lib/shelfPaths';
@@ -48,7 +49,7 @@ export function ShelfPage() {
   const restore = useRestoreDeletion(shelf);
   const [creatingDirectory, setCreatingDirectory] = useState(false);
   const [renaming, setRenaming] = useState<Entry | null>(null);
-  const [moving, setMoving] = useState<Entry | null>(null);
+  const [moving, setMoving] = useState<Entry[] | null>(null);
   const [describing, setDescribing] = useState<ShelfFile | null>(null);
   const [dragging, setDragging] = useState(false);
   // Kept with the shelf and folder it was typed in, so opening another starts with no search: the
@@ -66,25 +67,43 @@ export function ShelfPage() {
   }
 
   /**
-   * Opens a file in a new tab or saves it, through a link that works only for the few minutes a
-   * browser needs to start: a plain link cannot carry the session's token. The tab is opened before
-   * the request, while the click still counts as the user's, or the browser would block it as a popup.
+   * Opens a file in a new tab, through a link that works only for the few minutes a browser needs to
+   * start: a plain link cannot carry the session's token. The tab is opened before the request, while
+   * the click still counts as the user's, or the browser would block it as a popup. A blocked tab
+   * saves the file instead.
    */
-  async function open(file: ShelfFile, download: boolean): Promise<void> {
-    const tab = download ? null : window.open('', '_blank');
+  async function openInTab(file: ShelfFile): Promise<void> {
+    const tab = window.open('', '_blank');
+    if (!tab) return save([file]);
     await runOrToast(async () => {
       try {
-        const link = await createDownloadLink(shelf, file.id, OPEN_LINK_MINUTES);
-        if (tab) {
-          tab.location.href = link.url;
-        } else {
-          window.location.assign(`${link.url}?download=true`);
-        }
+        tab.location.href = (await createDownloadLink(shelf, file.id, OPEN_LINK_MINUTES)).url;
       } catch (caught) {
-        tab?.close();
+        tab.close();
         throw caught;
       }
     }, 'Could not open the file');
+  }
+
+  /**
+   * Saves files through the same short links. Each is a download rather than a navigation, so one
+   * starting does not cancel the one before it; a browser may ask once before saving several.
+   */
+  async function save(files: ShelfFile[]): Promise<void> {
+    await runOrToast(async () => {
+      for (const file of files) {
+        const anchor = document.createElement('a');
+        anchor.href = `${(await createDownloadLink(shelf, file.id, OPEN_LINK_MINUTES)).url}?download=true`;
+        anchor.download = '';
+        anchor.click();
+      }
+    }, files.length === 1 ? 'Could not save the file' : 'Could not save the files');
+  }
+
+  /** Opens a row: a folder by going into it, a file in a new tab. */
+  function open(entry: Entry): void {
+    if (entry.kind === 'directory') navigate(shelfRoute(shelf, entry.value.path));
+    else void openInTab(entry.value);
   }
 
   /**
@@ -112,26 +131,35 @@ export function ShelfPage() {
     }, 'Could not make a link');
   }
 
-  /** Moves an entry to the trash at once; the toast's Undo restores it. Emptying the trash is what cannot be undone. */
-  async function remove(entry: Entry): Promise<void> {
-    let deletionId: string;
-    try {
-      deletionId = (await deleteEntry.mutateAsync({ kind: entry.kind, id: entry.value.id })).deletionId;
-    } catch (caught) {
-      toast.error(getErrorMessage(caught, 'Could not delete it'));
-      return;
+  /**
+   * Moves entries to the trash at once; the toast's Undo restores them. Emptying the trash is what
+   * cannot be undone. Each is its own deletion, so one refused leaves the others in the trash, and
+   * Undo restores those.
+   */
+  async function remove(removing: Entry[]): Promise<void> {
+    const removed: { entry: Entry; deletionId: string }[] = [];
+    for (const entry of removing) {
+      try {
+        removed.push({ entry, deletionId: (await deleteEntry.mutateAsync({ kind: entry.kind, id: entry.value.id })).deletionId });
+      } catch (caught) {
+        toast.error(removing.length === 1 ? getErrorMessage(caught, 'Could not delete it') : `Could not delete ${entry.value.name}: ${getErrorMessage(caught, 'it was refused')}`);
+      }
     }
+    if (removed.length === 0) return;
 
+    const what = removed.length === 1 ? removed[0].entry.value.name : `${removed.length} items`;
     toast((t) => (
       <span className="flex items-center gap-3">
-        <span>Moved {entry.value.name} to the trash</span>
+        <span>Moved {what} to the trash</span>
         <Button
           size="sm"
           variant="secondary"
           icon={<Icon icon={iconMap.undo} size={14} />}
           onClick={() => {
             toast.dismiss(t.id);
-            void runOrToast(() => restore.mutateAsync(deletionId), `Could not restore ${entry.value.name}`);
+            for (const { entry, deletionId } of removed) {
+              void runOrToast(() => restore.mutateAsync(deletionId), `Could not restore ${entry.value.name}`);
+            }
           }}
         >
           Undo
@@ -140,26 +168,56 @@ export function ShelfPage() {
     ), { duration: 8000 });
   }
 
-  const entries: Entry[] = listing
+  const entries: Entry[] = useMemo(() => (listing
     ? [
         ...listing.directories.map((value): Entry => ({ kind: 'directory', value })),
         ...listing.files.map((value): Entry => ({ kind: 'file', value })),
       ]
-    : [];
+    : []), [listing]);
+  // Only the folder's own list selects; search results open on a click as before. A search hides
+  // the list, so it lists nothing to select while it shows.
+  const entryIds = useMemo(() => (searching ? [] : entries.map((entry) => entry.value.id)), [entries, searching]);
+  const selection = useSelection(entryIds, `${shelf}/${path}`);
+  const selected = entries.filter((entry) => selection.isSelected(entry.value.id));
+  const selectedFiles = selected.flatMap((entry) => (entry.kind === 'file' ? [entry.value] : []));
+  const dialogOpen = creatingDirectory || renaming !== null || moving !== null || describing !== null;
 
-  function row(entry: Entry, label?: string) {
+  // ⌘A or Ctrl+A selects every row, unless a field has the keys; Escape clears the selection. A
+  // dialog keeps both for itself.
+  const { active: selecting, clear: clearSelection, selectAll } = selection;
+  const canSelectAll = entryIds.length > 0;
+  useEffect(() => {
+    if (dialogOpen) return;
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape' && selecting) {
+        clearSelection();
+      } else if (event.key.toLowerCase() === 'a' && (event.metaKey || event.ctrlKey) && !event.altKey && canSelectAll && !isTypingTarget(event.target)) {
+        event.preventDefault();
+        selectAll();
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [dialogOpen, selecting, clearSelection, selectAll, canSelectAll]);
+
+  function row(entry: Entry, options: { label?: string; selectable?: boolean } = {}) {
     return (
       <EntryRow
         key={entry.value.id}
         entry={entry}
-        label={label}
-        onOpen={() => (entry.kind === 'directory' ? navigate(shelfRoute(shelf, entry.value.path)) : void open(entry.value, false))}
-        onDownload={entry.kind === 'file' ? () => void open(entry.value, true) : undefined}
+        label={options.label}
+        selection={options.selectable ? {
+          selected: selection.isSelected(entry.value.id),
+          onSelectClick: (modifiers) => selection.handleSelectClick(entry.value.id, modifiers),
+          onToggle: () => selection.toggle(entry.value.id),
+        } : undefined}
+        onOpen={() => open(entry)}
+        onDownload={entry.kind === 'file' ? () => void save([entry.value]) : undefined}
         onDescribe={entry.kind === 'file' ? () => setDescribing(entry.value) : undefined}
         onCopyLink={entry.kind === 'file' ? () => void copyLink(entry.value) : undefined}
         onRename={() => setRenaming(entry)}
-        onMove={() => setMoving(entry)}
-        onDelete={() => void remove(entry)}
+        onMove={() => setMoving([entry])}
+        onDelete={() => void remove([entry])}
       />
     );
   }
@@ -173,36 +231,55 @@ export function ShelfPage() {
       }}
       onDragLeave={(event) => event.currentTarget === event.target && setDragging(false)}
       onDrop={onDrop}
+      // A click in empty space clears the selection, as Escape does and as in Finder. Menus and
+      // dialogs are portals: React hands their clicks up to here, but they are not inside this page.
+      onClick={(event) => {
+        const target = event.target as Element;
+        if (selecting && event.currentTarget.contains(target) && !target.closest('[data-selectable-row], [role="toolbar"]')) clearSelection();
+      }}
     >
       <PageLayout className="space-y-6">
         <ShelfHeader shelf={shelf} view="files" path={path} />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <FileButton variant="main" icon={<Icon icon={iconMap.upload} size={16} />} onFiles={(files) => uploads.upload(files, path)} aria-label="Upload files">
-            Upload
-          </FileButton>
-          <Button variant="secondary" icon={<Icon icon={iconMap.folder} size={16} />} onClick={() => setCreatingDirectory(true)} aria-label="New folder">
-            New folder
-          </Button>
-          <div className="min-w-48 flex-1">
-            <Input
-              variant="quiet"
-              value={searchText}
-              onChange={(event) => setTyped({ shelf, path, text: event.target.value })}
-              onKeyDown={(event) => event.key === 'Escape' && setTyped({ shelf, path, text: '' })}
-              placeholder="Search names and descriptions"
-              aria-label="Search files in this folder and below"
-              icon={<Icon icon={iconMap.search} size={16} />}
-              endElement={searchText && (
-                <IconButton variant="ghost" size="sm" icon={iconMap.close} aria-label="Clear the search" onClick={() => setTyped({ shelf, path, text: '' })} />
-              )}
-              autoComplete="off"
-            />
+        {/* The selection bar covers the toolbar rather than replacing it, so the list below never
+            moves when a row is picked, even where the toolbar wraps onto two lines. */}
+        <div className="relative">
+          <div className={cn('flex flex-wrap items-center gap-2', selecting && 'invisible')}>
+            <FileButton variant="main" icon={<Icon icon={iconMap.upload} size={16} />} onFiles={(files) => uploads.upload(files, path)} aria-label="Upload files">
+              Upload
+            </FileButton>
+            <Button variant="secondary" icon={<Icon icon={iconMap.folder} size={16} />} onClick={() => setCreatingDirectory(true)} aria-label="New folder">
+              New folder
+            </Button>
+            <div className="min-w-48 flex-1">
+              <Input
+                variant="quiet"
+                value={searchText}
+                onChange={(event) => setTyped({ shelf, path, text: event.target.value })}
+                onKeyDown={(event) => event.key === 'Escape' && setTyped({ shelf, path, text: '' })}
+                placeholder="Search names and descriptions"
+                aria-label="Search files in this folder and below"
+                icon={<Icon icon={iconMap.search} size={16} />}
+                endElement={searchText && (
+                  <IconButton variant="ghost" size="sm" icon={iconMap.close} aria-label="Clear the search" onClick={() => setTyped({ shelf, path, text: '' })} />
+                )}
+                autoComplete="off"
+              />
+            </div>
           </div>
+          {selecting && (
+            <SelectionBar
+              count={selection.count}
+              onDownload={selectedFiles.length === selected.length ? () => void save(selectedFiles) : undefined}
+              onMove={() => setMoving(selected)}
+              onDelete={() => void remove(selected)}
+              onClear={clearSelection}
+            />
+          )}
         </div>
 
         {searching ? (
-          <SearchResults results={found.data} isLoading={found.isLoading} error={found.error} text={searchText.trim()} row={(file) => row({ kind: 'file', value: file }, relativeTo(path, file.path))} />
+          <SearchResults results={found.data} isLoading={found.isLoading} error={found.error} text={searchText.trim()} row={(file) => row({ kind: 'file', value: file }, { label: relativeTo(path, file.path) })} />
         ) : (
           <>
             {isLoading && <Spinner />}
@@ -214,8 +291,8 @@ export function ShelfPage() {
               />
             )}
             {entries.length > 0 && (
-              <CardList className={cn('overflow-hidden', dragging && 'ring-2 ring-brand-border')}>
-                {entries.map((entry) => row(entry))}
+              <CardList hideDividersBesideLitRows className={cn('overflow-hidden', dragging && 'ring-2 ring-brand-border')}>
+                {entries.map((entry) => row(entry, { selectable: true }))}
               </CardList>
             )}
           </>
@@ -224,7 +301,7 @@ export function ShelfPage() {
 
       <NewDirectoryDialog shelf={shelf} parent={path} open={creatingDirectory} onClose={() => setCreatingDirectory(false)} />
       {renaming && <RenameDialog shelf={shelf} entry={renaming} onClose={() => setRenaming(null)} />}
-      {moving && <MoveDialog shelf={shelf} entry={moving} onClose={() => setMoving(null)} />}
+      {moving && <MoveDialog shelf={shelf} entries={moving} onClose={() => setMoving(null)} />}
       {describing && <DescriptionDialog shelf={shelf} file={describing} onClose={() => setDescribing(null)} />}
     </div>
   );
@@ -259,10 +336,55 @@ function SearchResults({ results, isLoading, error, text, row }: SearchResultsPr
   );
 }
 
+/** Whether a key pressed here belongs to a field, as ⌘A selecting its text does. */
+function isTypingTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+}
+
+interface SelectionBarProps {
+  count: number;
+  /** Saves the selection; absent when it holds a folder, which cannot be saved as one file. */
+  onDownload?: () => void;
+  onMove: () => void;
+  onDelete: () => void;
+  onClear: () => void;
+}
+
+/**
+ * What can be done to the selected rows, over the toolbar while any are selected. As ordo's
+ * FileSelectionToolbar. On a narrow screen the buttons keep only their icons, their names read out
+ * but not shown, so all of them fit on a phone.
+ */
+function SelectionBar({ count, onDownload, onMove, onDelete, onClear }: SelectionBarProps) {
+  const label = (text: string) => <span className="sr-only sm:not-sr-only">{text}</span>;
+
+  return (
+    <div role="toolbar" aria-label="Selected items" className="absolute inset-0 flex items-center gap-2 rounded-lg bg-surface px-3">
+      <span className="whitespace-nowrap text-body-sm text-fg">{count} selected</span>
+      <div className="flex-1" />
+      {onDownload && (
+        <Button variant="secondary" size="sm" icon={<Icon icon={iconMap.download} size={16} />} onClick={onDownload}>{label('Download')}</Button>
+      )}
+      <Button variant="secondary" size="sm" icon={<Icon icon={iconMap.move} size={16} />} onClick={onMove}>{label('Move')}</Button>
+      <Button variant="outlineDanger" size="sm" icon={<Icon icon={iconMap.delete} size={16} />} onClick={onDelete}>{label('Delete')}</Button>
+      <IconButton variant="ghost" size="sm" icon={iconMap.close} aria-label="Clear the selection" onClick={onClear} />
+    </div>
+  );
+}
+
+/** A row's part in a selection: a click selects, a double-click or Enter opens. */
+interface RowSelection {
+  selected: boolean;
+  onSelectClick: (modifiers: SelectionClickModifiers) => void;
+  onToggle: () => void;
+}
+
 interface EntryRowProps {
   entry: Entry;
   /** What the row is called: the name, unless a search shows the path from the folder. */
   label?: string;
+  /** Given, the row selects on a click and opens on a double-click; otherwise a click opens it. */
+  selection?: RowSelection;
   onOpen: () => void;
   onDownload?: () => void;
   onDescribe?: () => void;
@@ -272,30 +394,51 @@ interface EntryRowProps {
   onDelete: () => void;
 }
 
-function EntryRow({ entry, label, onOpen, onDownload, onDescribe, onCopyLink, onRename, onMove, onDelete }: EntryRowProps) {
+function EntryRow({ entry, label, selection, onOpen, onDownload, onDescribe, onCopyLink, onRename, onMove, onDelete }: EntryRowProps) {
   const isFile = entry.kind === 'file';
   const name = entry.value.name;
+  const selected = selection?.selected ?? false;
+  const openName = isFile ? `Open ${name} in a new tab` : `Open the folder ${name}`;
 
+  // As ordo's file rows: a selected row takes a translucent wash of the selection blue behind its
+  // usual text, and `data-active` lets its list hide the lines beside it.
   return (
-    <div className="group flex items-center gap-2 px-2 py-1 transition-colors hover:bg-row-hover">
+    <div
+      data-selectable-row={selection ? true : undefined}
+      data-active={selected || undefined}
+      className={cn('group flex items-center gap-2 px-2 py-1 transition-colors', selected ? 'bg-selected/15 hover:bg-selected/20' : 'hover:bg-row-hover')}
+    >
       <button
         type="button"
-        onClick={onOpen}
-        title={isFile ? 'Opens in a new tab' : undefined}
-        aria-label={isFile ? `Open ${name} in a new tab` : `Open the folder ${name}`}
-        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2 text-left"
+        onClick={selection ? (event) => selection.onSelectClick({ shiftKey: event.shiftKey, metaKey: event.metaKey, ctrlKey: event.ctrlKey }) : onOpen}
+        onDoubleClick={selection ? onOpen : undefined}
+        // Enter opens, as a double-click does, and Space toggles the row; both stop the button's own
+        // click, which would select the row alone.
+        onKeyDown={selection ? (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            onOpen();
+          } else if (event.key === ' ') {
+            event.preventDefault();
+            selection.onToggle();
+          }
+        } : undefined}
+        title={selection ? `${openName}: double-click or press Enter` : isFile ? 'Opens in a new tab' : undefined}
+        aria-label={selection ? label ?? name : openName}
+        aria-pressed={selection ? selected : undefined}
+        className="flex min-w-0 flex-1 select-none items-center gap-3 rounded-lg px-2 py-2 text-left"
       >
         <Icon icon={isFile ? getFileIcon(name) : iconMap.folder} size={18} className="shrink-0 text-muted" />
         <span className="min-w-0 truncate text-body-md text-fg">{label ?? name}</span>
         {isFile && (
           <Icon icon={iconMap.externalLink} size={14} className="shrink-0 text-neutral-9 opacity-60 transition-opacity group-hover:opacity-100" />
         )}
+        {isFile && (
+          <span className="ml-auto hidden shrink-0 pl-2 text-body-sm text-muted sm:inline">
+            {formatBytes(entry.value.sizeBytes)} · {formatTime(entry.value.updatedAt)}
+          </span>
+        )}
       </button>
-      {isFile && (
-        <span className="hidden shrink-0 text-body-sm text-muted sm:inline">
-          {formatBytes(entry.value.sizeBytes)} · {formatTime(entry.value.updatedAt)}
-        </span>
-      )}
       <Dropdown align="right" trigger={<IconButton variant="ghost" size="sm" icon={iconMap.more} aria-label={`Actions for ${name}`} />}>
         {onDownload && <DropdownItem icon={<Icon icon={iconMap.download} size={16} />} onClick={onDownload}>Download</DropdownItem>}
         {onCopyLink && <DropdownItem icon={<Icon icon={iconMap.copy} size={16} />} onClick={onCopyLink}>Copy link</DropdownItem>}

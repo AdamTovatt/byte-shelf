@@ -34,7 +34,7 @@ test('a file uploaded in one tab appears in another and downloads intact', async
   async function upload(name: string, text: string): Promise<void> {
     await uploader.getByTestId('file-input').setInputFiles({ name, mimeType: 'text/plain', buffer: Buffer.from(text) });
     await expect(uploader.getByText(`Uploaded ${name}`)).toBeVisible();
-    await expect(watcher.getByRole('button', { name: `Open ${name} in a new tab`, exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(watcher.getByRole('button', { name, exact: true })).toBeVisible({ timeout: 15_000 });
   }
 
   await upload('first.txt', 'the first file');
