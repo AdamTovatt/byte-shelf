@@ -3,7 +3,10 @@
 ByteShelf is installed and updated with updaemon: `dotnet publish ByteShelf.Server` produces the
 executable with its `updaemon.json`, which names it, and the web UI's build in `wwwroot/`. Publishing
 builds the web UI, so it needs Node.js and npm. The running server needs one writable folder, the
-root, and nothing else on disk.
+root, and nothing else on disk. The publish carries SkiaSharp's native library, which `/mcp` makes
+image previews with, for Linux x64 and arm64 (glibc, no system libraries needed), macOS and Windows
+x64 (`Directory.Build.targets`). Elsewhere (musl, 32-bit arm, Windows on arm) the server runs, but
+`/mcp`'s `download_file` fails on an image it would preview.
 
 ## Installing
 

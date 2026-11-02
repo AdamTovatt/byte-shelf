@@ -44,7 +44,7 @@ namespace ByteShelf.Tools.Mcp
 
         private static readonly EncryptedFiles NeverDecrypted = EncryptedFiles.LeftOut(EncryptedReason);
 
-        /// <summary>The stored media types that say a file is one of <see cref="InlineImageKinds"/>, so it is read up to <see cref="MaxInlineImageBytes"/>.</summary>
+        /// <summary>The stored media types that say a file is one of <see cref="InlineImageKinds"/>, so a host without previews reads it up to <see cref="MaxInlineImageBytes"/>.</summary>
         private static readonly HashSet<string> InlineImageTypes = new HashSet<string>(StringComparer.Ordinal)
         {
             "image/png", "image/jpeg", "image/gif", "image/webp",
@@ -230,7 +230,7 @@ namespace ByteShelf.Tools.Mcp
 
         [McpServerTool(Name = "download_file", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
         [ToolNeeds(ToolNeed.Read)]
-        [Description("Reads a file from a shelf: saved to localPath when given (into it when it is a directory); else answered here, as text when it is UTF-8 of at most 256 KiB, or as an image you can see when it is a " + InlineImageKinds + " of at most 1 MiB. For any other file over the server's MCP, make a link with share_file instead.")]
+        [Description("Reads a file from a shelf: saved to localPath when given (into it when it is a directory); else answered here, as text when it is UTF-8 of at most 256 KiB, or as an image you can see when it is a " + InlineImageKinds + " of at most 1 MiB. On the server's MCP, any other file stored as an image (image/*) of at most 32 MiB is answered as a JPEG preview at most 1568 pixels on its long side, with its full size and where to get it whole; for any other file there, make a link with share_file instead.")]
         public Task<IEnumerable<ContentBlock>> DownloadFileAsync(
             [Description("The file's path.")] string path,
             [Description("An absolute path to save it to; omit to have it answered here. Only the byteshelf CLI's MCP server, on your own machine, can save one.")] string? localPath = null,
@@ -393,41 +393,102 @@ namespace ByteShelf.Tools.Mcp
 
         /// <summary>
         /// A file answered in the call: an image the model can see when its bytes are one of
-        /// <see cref="InlineImageKinds"/>, else its text when it is UTF-8 within <see cref="MaxInlineBytes"/>.
-        /// The image's type is the one its bytes carry, never the stored one, which is only what the
-        /// uploader said: a model refuses an image that does not decode as its stated type. A file stored
-        /// as one of those images is read up to <see cref="MaxInlineImageBytes"/>; any other only up to
-        /// <see cref="MaxInlineBytes"/>.
+        /// <see cref="InlineImageKinds"/> within <see cref="MaxInlineImageBytes"/>, else its text when it
+        /// is UTF-8 within <see cref="MaxInlineBytes"/>, else, for a file stored as an image where the
+        /// host makes previews, a preview of it (<see cref="ImagePreview"/>) with where to get the whole
+        /// file. The image's type is the one its bytes carry, never the stored one, which is only what
+        /// the uploader said: a model refuses an image that does not decode as its stated type. How far
+        /// a file is read is <see cref="ReadingOf"/>'s.
         /// </summary>
         /// <exception cref="UsageException">It is larger than that, or neither an image nor text; the message says where to get it instead.</exception>
         private async Task<IEnumerable<ContentBlock>> ReadInlineAsync(IShelfClient shelf, ShelfFile file, CancellationToken cancellationToken)
         {
             string path = file.Path;
-            bool storedAsImage = InlineImageTypes.Contains(ContentTypes.MediaTypeOf(file.ContentType));
-            int maxBytes = storedAsImage ? MaxInlineImageBytes : MaxInlineBytes;
-            if (file.SizeBytes > maxBytes)
+            InlineReading reading = ReadingOf(file);
+            if (file.SizeBytes > reading.MaxBytes)
             {
-                throw NotAnsweredInline($"{path} is {TextFormat.Size(file.SizeBytes)}, more than the {TextFormat.Size(maxBytes)} answered here{(storedAsImage ? " as an image" : string.Empty)}");
+                throw NotAnsweredInline($"{path} is {TextFormat.Size(file.SizeBytes)}, more than the {TextFormat.Size(reading.MaxBytes)} answered here{reading.AnsweredAs}");
+            }
+
+            // Only a preview can answer an image this large, so the previewer reads it in its turn, and
+            // a call waiting for that turn holds none of it.
+            if (reading.Previews != null && file.SizeBytes > MaxInlineImageBytes)
+            {
+                return await PreviewAsync(reading.Previews, file, token => Transfers.ReadAllAsync(shelf, file, token), cancellationToken);
             }
 
             byte[] content = await Transfers.ReadAllAsync(shelf, file, cancellationToken);
-            if (ImageTypeOf(content) is string imageType)
+            if (ImageTypeOf(content) is string imageType && content.Length <= MaxInlineImageBytes)
             {
                 return new ContentBlock[] { ImageContentBlock.FromBytes(content, imageType), Text($"{path} ({imageType}, {TextFormat.Size(content.Length)})") };
             }
 
-            if (content.Length > MaxInlineBytes)
+            if (content.Length <= MaxInlineBytes && Utf8TextOf(content) is string text)
             {
-                throw NotAnsweredInline($"{path} is not a {InlineImageKinds} image, and at {TextFormat.Size(content.Length)} it is more than the {TextFormat.Size(MaxInlineBytes)} answered here as text");
+                return new ContentBlock[] { Text(text) };
             }
 
+            if (reading.Previews != null)
+            {
+                return await PreviewAsync(reading.Previews, file, _ => Task.FromResult(content), cancellationToken);
+            }
+
+            throw NotAnsweredInline(content.Length > MaxInlineBytes
+                ? $"{path} is not a {InlineImageKinds} image, and at {TextFormat.Size(content.Length)} it is more than the {TextFormat.Size(MaxInlineBytes)} answered here as text"
+                : $"{path} is neither UTF-8 text nor a {InlineImageKinds} image");
+        }
+
+        /// <summary>How far download_file reads a file it answers in the call, what it says it answers it as, and whether a preview may stand in for it.</summary>
+        private sealed record InlineReading(long MaxBytes, string AnsweredAs, IImagePreviews? Previews);
+
+        /// <summary>
+        /// Where the host makes previews, a file stored as any image is read up to
+        /// <see cref="ImagePreview.MaxSourceBytes"/>, to be previewed when it cannot be answered as it is.
+        /// Elsewhere only a file stored as one of <see cref="InlineImageKinds"/> is read up to
+        /// <see cref="MaxInlineImageBytes"/>; any other file, up to <see cref="MaxInlineBytes"/>.
+        /// </summary>
+        private InlineReading ReadingOf(ShelfFile file)
+        {
+            string mediaType = ContentTypes.MediaTypeOf(file.ContentType);
+            if (_host.Previews is IImagePreviews previews && mediaType.StartsWith("image/", StringComparison.Ordinal))
+            {
+                return new InlineReading(ImagePreview.MaxSourceBytes, " as an image or a preview of one", previews);
+            }
+
+            return InlineImageTypes.Contains(mediaType)
+                ? new InlineReading(MaxInlineImageBytes, " as an image", Previews: null)
+                : new InlineReading(MaxInlineBytes, string.Empty, Previews: null);
+        }
+
+        /// <summary>A preview of <paramref name="file"/>, with where to get it whole.</summary>
+        /// <exception cref="UsageException">No preview could be made; the message says why, and where to get the file.</exception>
+        private async Task<IEnumerable<ContentBlock>> PreviewAsync(IImagePreviews previews, ShelfFile file, Func<CancellationToken, Task<byte[]>> readContent, CancellationToken cancellationToken)
+        {
+            return await previews.MakeAsync(readContent, cancellationToken) switch
+            {
+                PreviewOutcome.Made made => new ContentBlock[] { ImageContentBlock.FromBytes(made.Preview.Jpeg, "image/jpeg"), Text(PreviewNote(file, made.Preview)) },
+                PreviewOutcome.NotMade { Why: NoPreview.TooManyPixels } => throw NotAnsweredInline($"{file.Path} decodes to more pixels than a preview is made from here"),
+                PreviewOutcome.NotMade { Why: NoPreview.TooDetailed } => throw NotAnsweredInline($"{file.Path} has too much fine detail for a preview within {TextFormat.Size(MaxInlineImageBytes)}"),
+                _ => throw NotAnsweredInline($"{file.Path} ({file.ContentType}) is not an image these tools can make a preview of"),
+            };
+        }
+
+        /// <summary>What a preview stands in for, and where the whole file is.</summary>
+        private string PreviewNote(ShelfFile file, ImagePreview preview)
+        {
+            return $"{file.Path} is a {preview.OriginalWidth}×{preview.OriginalHeight} {preview.OriginalType} of {TextFormat.Size(file.SizeBytes)}; "
+                + $"this is a {preview.Width}×{preview.Height} JPEG preview of it. For the whole file, {WhereToGetIt()}.";
+        }
+
+        private static string? Utf8TextOf(byte[] content)
+        {
             try
             {
-                return new ContentBlock[] { Text(new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(content)) };
+                return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(content);
             }
             catch (DecoderFallbackException)
             {
-                throw NotAnsweredInline($"{path} is neither UTF-8 text nor a {InlineImageKinds} image");
+                return null;
             }
         }
 
@@ -456,9 +517,15 @@ namespace ByteShelf.Tools.Mcp
         /// <summary>A file download_file cannot answer here, saying where to get it: a share link, or a local file where there is one.</summary>
         private UsageException NotAnsweredInline(string reason)
         {
-            return new UsageException(_host.ReachesLocalFiles
-                ? $"{reason}; save it to a local file with localPath, or make a link with share_file."
-                : $"{reason}; make a link to it with share_file and fetch it from there.");
+            return new UsageException($"{reason}; {WhereToGetIt()}.");
+        }
+
+        /// <summary>How to get a file whole that is not answered here whole.</summary>
+        private string WhereToGetIt()
+        {
+            return _host.ReachesLocalFiles
+                ? "save it to a local file with localPath, or make a link with share_file"
+                : "make a link to it with share_file and fetch it from there, such as with curl";
         }
 
         private static TextContentBlock Text(string text)

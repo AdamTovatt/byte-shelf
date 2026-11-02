@@ -18,7 +18,11 @@ namespace ByteShelf.Tools.Mcp
             page.
 
             Reading: download_file answers a UTF-8 file of up to 256 KiB as text, and a
-            {ByteShelfMcpTools.InlineImageKinds} image of up to 1 MiB as an image you can see.
+            {ByteShelfMcpTools.InlineImageKinds} image of up to 1 MiB as an image you can see. On the
+            ByteShelf server's MCP, any other file stored as an image (image/*) of up to 32 MiB comes as
+            a JPEG preview at most 1568 pixels on its long side, saying its full size and where to get
+            it whole; one it cannot preview (HEIC, say) comes only with why and where to get it.
+            Through the byteshelf CLI's MCP, save a larger image with localPath and look at it there.
             share_file makes a link anyone can open without signing in, for 24 hours or the time asked
             for (at most 7 days); use it to hand a person a file, or to fetch anything else.
 

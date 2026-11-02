@@ -1,0 +1,21 @@
+<Project>
+  <!--
+    SkiaSharp (the server's image previews, Mcp/SkiaImagePreviews.cs) brings its native library for
+    every platform it supports, with Windows debug symbols, into every build and publish of the
+    server and its tests. Keep only the platforms the server runs on: Linux x64 and arm64, macOS
+    (Skia's one universal library, under osx), and Windows x64. On any other platform, /mcp's
+    download_file fails on an image it would preview.
+  -->
+  <Target Name="KeepSkiaSharpNativesForByteShelfPlatforms" AfterTargets="ResolvePackageAssets">
+    <PropertyGroup>
+      <ByteShelfSkiaRuntimes>;linux-x64;linux-arm64;osx;win-x64;</ByteShelfSkiaRuntimes>
+    </PropertyGroup>
+    <ItemGroup>
+      <RuntimeTargetsCopyLocalItems
+        Remove="@(RuntimeTargetsCopyLocalItems)"
+        Condition="$([System.String]::Copy('%(RuntimeTargetsCopyLocalItems.NuGetPackageId)').StartsWith('SkiaSharp.NativeAssets.'))
+                   And ('%(RuntimeTargetsCopyLocalItems.Extension)' == '.pdb'
+                        Or !$(ByteShelfSkiaRuntimes.Contains(';%(RuntimeTargetsCopyLocalItems.RuntimeIdentifier);')))" />
+    </ItemGroup>
+  </Target>
+</Project>

@@ -15,7 +15,8 @@ permissions: read, add-only (read, and store new files, never replace or remove)
   allows (only reading ones on a replica). The server tells the agent the shelf's name when it
   connects, and every tool works on that shelf when shelf is left out. It cannot read or write the
   agent's own files: upload text or base64 (up to 256 KiB), read text of up to 256 KiB or a PNG,
-  JPEG, GIF or WebP image of up to 1 MiB, and use share_file for a link to anything else, or
+  JPEG, GIF or WebP image of up to 1 MiB (any other file stored as an image, up to 32 MiB, as a
+  preview at most 1568 pixels on its long side), and use share_file for a link to anything else, or
   create_upload_link for a link that stores one file sent to it with curl. Add it to
   Claude Code with this server's address and the key:
   `claude mcp add --transport http byteshelf https://<this-server>/mcp --header "Authorization: Bearer bsk_..."`

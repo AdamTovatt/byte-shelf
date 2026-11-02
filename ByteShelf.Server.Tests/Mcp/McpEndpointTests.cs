@@ -161,6 +161,95 @@ namespace ByteShelf.Server.Tests.Mcp
         }
 
         [Fact]
+        public async Task CallTool_DownloadALargeImage_AnswersAPreviewAndHowToFetchItWhole()
+        {
+            byte[] png = TestImages.PhotoLikePng(2400, 1600);
+            Assert.True(png.Length > ByteShelfMcpTools.MaxInlineImageBytes);
+            await StoreAsync("/a.png", png, "image/png");
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+
+            CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/a.png" });
+
+            AssertSucceeded(read);
+            ImageContentBlock image = Assert.Single(read.Content.OfType<ImageContentBlock>());
+            Assert.Equal("image/jpeg", image.MimeType);
+            int height = (int)Math.Round(1600.0 * ImagePreview.LongSide / 2400);
+            Assert.Equal((ImagePreview.LongSide, height), TestImages.SizeOf(image.DecodedData.ToArray()));
+            Assert.Equal(
+                $"/a.png is a 2400×1600 image/png of {TextFormat.Size(png.Length)}; this is a {ImagePreview.LongSide}×{height} JPEG preview of it. "
+                + "For the whole file, make a link to it with share_file and fetch it from there, such as with curl.",
+                TextOf(read));
+        }
+
+        [Fact]
+        public async Task CallTool_DownloadASmallImageOfAKindModelsCannotTake_AnswersAPreview()
+        {
+            await StoreAsync("/scan.bmp", TestImages.Bmp(300, 200), "image/bmp");
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+
+            CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/scan.bmp" });
+
+            AssertSucceeded(read);
+            Assert.Equal((300, 200), TestImages.SizeOf(Assert.Single(read.Content.OfType<ImageContentBlock>()).DecodedData.ToArray()));
+            Assert.StartsWith("/scan.bmp is a 300×200 image/bmp of", TextOf(read), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task CallTool_DownloadTextStoredAsAnImage_AnswersTheText()
+        {
+            const string svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\"/>";
+            await StoreAsync("/logo.svg", Encoding.UTF8.GetBytes(svg), "image/svg+xml");
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+
+            CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/logo.svg" });
+
+            AssertSucceeded(read);
+            Assert.Empty(read.Content.OfType<ImageContentBlock>());
+            Assert.Equal(svg, TextOf(read));
+        }
+
+        [Fact]
+        public async Task CallTool_DownloadAnImageItCannotDecode_AnswersOnlyHowToFetchItWhole()
+        {
+            await StoreAsync("/a.heic", TestImages.HeicHeaderOnly(ByteShelfMcpTools.MaxInlineImageBytes + 1), "image/heic");
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+
+            CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/a.heic" });
+
+            Assert.Equal(true, read.IsError);
+            Assert.EndsWith("/a.heic (image/heic) is not an image these tools can make a preview of; make a link to it with share_file and fetch it from there, such as with curl.", TextOf(read), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task CallTool_DownloadAnImageDecodingPastTheMemoryBudget_SaysSoAndHowToFetchItWhole()
+        {
+            byte[] png = TestImages.BlankRgbaPng(9000, 9000);
+            Assert.True(png.Length > ByteShelfMcpTools.MaxInlineImageBytes);
+            await StoreAsync("/huge.png", png, "image/png");
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+
+            CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/huge.png" });
+
+            Assert.Equal(true, read.IsError);
+            Assert.EndsWith("/huge.png decodes to more pixels than a preview is made from here; make a link to it with share_file and fetch it from there, such as with curl.", TextOf(read), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task CallTool_DownloadAnImageOverThePreviewCap_IsRefusedUnread()
+        {
+            await StoreAsync("/a.png", new byte[ImagePreview.MaxSourceBytes + 1], "image/png");
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+
+            CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/a.png" });
+
+            Assert.Equal(true, read.IsError);
+            Assert.Contains(
+                $"/a.png is {TextFormat.Size(ImagePreview.MaxSourceBytes + 1)}, more than the {TextFormat.Size(ImagePreview.MaxSourceBytes)} answered here as an image or a preview of one;",
+                TextOf(read),
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
         public async Task CallTool_MissingARequiredArgument_NamesIt()
         {
             await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
@@ -277,8 +366,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task CallTool_AddOnlyKeyOverwriting_IsRefusedByTheApi()
         {
-            using StringContent content = new StringContent("kept", Encoding.UTF8, "text/plain");
-            (await _host.AdminClient.PutAsync("/api/shelves/docs/content?path=/a.txt", content)).EnsureSuccessStatusCode();
+            await StoreAsync("/a.txt", Encoding.UTF8.GetBytes("kept"), "text/plain");
             await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.AddOnly));
 
             CallToolResult result = await client.CallToolAsync(
@@ -303,8 +391,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task CallTool_NotOfferedToTheKey_IsAnUnknownToolAndChangesNothing()
         {
-            using StringContent content = new StringContent("kept", Encoding.UTF8, "text/plain");
-            (await _host.AdminClient.PutAsync("/api/shelves/docs/content?path=/a.txt", content)).EnsureSuccessStatusCode();
+            await StoreAsync("/a.txt", Encoding.UTF8.GetBytes("kept"), "text/plain");
             (await _host.AdminClient.DeleteAsync("/api/shelves/docs/files?path=/a.txt")).EnsureSuccessStatusCode();
             await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
 
@@ -349,6 +436,13 @@ namespace ByteShelf.Server.Tests.Mcp
 
             Assert.Equal(("text/plain", HttpStatusCode.OK), (response.Content.Headers.ContentType?.MediaType, response.StatusCode));
             Assert.StartsWith("# ByteShelf", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        /// <summary>Stores <paramref name="content"/> on the docs shelf as the admin, typed <paramref name="contentType"/>.</summary>
+        private async Task StoreAsync(string path, byte[] content, string contentType)
+        {
+            using ByteArrayContent body = new ByteArrayContent(content) { Headers = { ContentType = new MediaTypeHeaderValue(contentType) } };
+            (await _host.AdminClient.PutAsync($"/api/shelves/docs/content?path={path}", body)).EnsureSuccessStatusCode();
         }
 
         private static string TextOf(CallToolResult result)

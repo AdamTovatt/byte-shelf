@@ -30,10 +30,18 @@ the same words:
   and whether it works only on the agent's own files. The server offers a key only the tools its
   access allows, and a tool without the mark to no one.
 - `ToolHost` says where the tools run. On the agent's machine a tool takes a local path; on the
-  server it refuses one, since the server cannot reach the agent's files.
+  server it refuses one, since the server cannot reach the agent's files. The server's host also
+  carries `IImagePreviews`, the server's SkiaSharp previews (`Mcp/SkiaImagePreviews.cs` there), so
+  these tools take no image library of their own and the CLI carries none.
 - `upload_file` takes text or base64 of up to `MaxInlineBytes` (256 KiB), and `download_file`
   answers text up to the same size: what an agent can carry in its own context. It answers a PNG,
-  JPEG, GIF or WebP of up to `MaxInlineImageBytes` (1 MiB) as image content the model sees.
+  JPEG, GIF or WebP of up to `MaxInlineImageBytes` (1 MiB) as image content the model sees. On a
+  host with previews, any other file stored as an image, up to `ImagePreview.MaxSourceBytes` (32
+  MiB), comes as a JPEG preview of at most `ImagePreview.LongSide` (1568) pixels on its long side,
+  with its full size and where to get it whole; one the host makes no preview of (`NoPreview` says
+  why) gets only the pointer. The host reads such an image itself, in its turn. Without previews
+  (the CLI), only a file stored as one of those four kinds is read past 256 KiB, and an agent saves
+  a larger image with `localPath` and looks at it there.
   Anything else moves as a local file, through the API, or by a link: `share_file` to fetch one,
   `create_upload_link` to have one sent in, answered with the `curl` command that sends it.
 - `Encrypting` encrypts and decrypts what is stored, in place, for the CLI's `encrypt` and `decrypt`;

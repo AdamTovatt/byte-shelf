@@ -35,6 +35,16 @@
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.19.1" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.3.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+    <!--
+      Scales a large image down to a preview /mcp's download_file can answer (Mcp/SkiaImagePreviews.cs;
+      MIT). SkiaSharp carries the Windows and macOS native libraries itself; Linux's come from
+      NoDependencies, which needs no fontconfig on the host since a preview draws no text. The
+      platforms kept are in Directory.Build.targets. Not ImageSharp, though fully managed: its package
+      checks at build time for a license key registered with Six Labors and fails a Release build
+      without one, a key every builder of ByteShelf, and updaemon's, would then need.
+    -->
+    <PackageReference Include="SkiaSharp" Version="4.153.2" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.153.2" />
   </ItemGroup>
 
   <ItemGroup>

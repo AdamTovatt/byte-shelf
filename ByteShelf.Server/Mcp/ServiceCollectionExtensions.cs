@@ -21,7 +21,7 @@ namespace ByteShelf.Server.Mcp
             services.AddHttpContextAccessor();
             services.AddHttpClient(SelfApi.HttpClientName);
             services.AddSingleton<SelfApi>();
-            services.AddSingleton(ToolHost.Server);
+            services.AddSingleton(ToolHost.Server(new SkiaImagePreviews()));
             services.AddScoped<IShelfClientSource, CallerKeyClientSource>();
 
             services.AddAuthorization(options => options.AddPolicy(McpCallerPolicy, policy => policy

@@ -77,6 +77,7 @@ namespace ByteShelf.Cli.Tests
             { "set_description", null, $"up to {FileDescription.MaxLength} characters" },
             { "download_file", null, $"at most {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)}" },
             { "download_file", null, $"WebP of at most {TextFormat.Size(ByteShelfMcpTools.MaxInlineImageBytes)}" },
+            { "download_file", null, $"of at most {TextFormat.Size(ImagePreview.MaxSourceBytes)} is answered as a JPEG preview at most {ImagePreview.LongSide} pixels" },
             { "share_file", "expiresIn", $"{DownloadLink.Lifetime.Default.TotalHours}h by default, at most {DownloadLink.Lifetime.Max.TotalDays}d" },
             { "create_upload_link", "expiresIn", $"{UploadLink.Lifetime.Default.TotalMinutes}m by default, at most {UploadLink.Lifetime.Max.TotalHours}h" },
             { "create_upload_link", "description", $"up to {FileDescription.MaxLength} characters" },
@@ -103,6 +104,7 @@ namespace ByteShelf.Cli.Tests
 
             Assert.Contains($"up to {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)}", instructions, StringComparison.Ordinal);
             Assert.Contains($"image of up to {TextFormat.Size(ByteShelfMcpTools.MaxInlineImageBytes)}", instructions, StringComparison.Ordinal);
+            Assert.Contains($"of up to {TextFormat.Size(ImagePreview.MaxSourceBytes)} comes as a JPEG preview at most {ImagePreview.LongSide} pixels", instructions, StringComparison.Ordinal);
             Assert.Contains($"for {DownloadLink.Lifetime.Default.TotalHours} hours", instructions, StringComparison.Ordinal);
             Assert.Contains($"(at most {DownloadLink.Lifetime.Max.TotalDays} days)", instructions, StringComparison.Ordinal);
             Assert.Contains($"for {UploadLink.Lifetime.Default.TotalMinutes} minutes", instructions, StringComparison.Ordinal);
@@ -260,14 +262,15 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
-        public async Task DownloadInline_AnImageOverItsCap_IsAnErrorPointingElsewhere()
+        public async Task DownloadInline_AnImageOverItsCap_PointsToALocalFileSinceTheCliMakesNoPreview()
         {
             await Docs.UploadAsync("/photo.jpg", new MemoryStream(new byte[ByteShelfMcpTools.MaxInlineImageBytes + 1]), new UploadOptions { ContentType = "image/jpeg" });
 
             McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadFileAsync("/photo.jpg", shelf: "docs"));
 
-            Assert.Contains($"more than the {TextFormat.Size(ByteShelfMcpTools.MaxInlineImageBytes)} answered here as an image", exception.Message, StringComparison.Ordinal);
-            Assert.Contains("share_file", exception.Message, StringComparison.Ordinal);
+            Assert.Equal(
+                $"/photo.jpg is {TextFormat.Size(ByteShelfMcpTools.MaxInlineImageBytes + 1)}, more than the {TextFormat.Size(ByteShelfMcpTools.MaxInlineImageBytes)} answered here as an image; save it to a local file with localPath, or make a link with share_file.",
+                exception.Message);
         }
 
         [Fact]
@@ -336,6 +339,28 @@ namespace ByteShelf.Cli.Tests
             McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadFileAsync("/big.png", shelf: "docs"));
 
             Assert.StartsWith($"/big.png is not a {ByteShelfMcpTools.InlineImageKinds} image", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task DownloadInline_StoredAsAnImageOfAnotherKind_IsCappedAsTextSinceTheCliMakesNoPreview()
+        {
+            await Docs.UploadAsync("/photo.heic", new MemoryStream(new byte[ByteShelfMcpTools.MaxInlineBytes + 1]), new UploadOptions { ContentType = "image/heic" });
+
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadFileAsync("/photo.heic", shelf: "docs"));
+
+            Assert.Equal(
+                $"/photo.heic is {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes + 1)}, more than the {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)} answered here; save it to a local file with localPath, or make a link with share_file.",
+                exception.Message);
+        }
+
+        [Fact]
+        public async Task DownloadInline_NotStoredAsAnImageAndOverTheTextCap_IsAnError()
+        {
+            await Docs.UploadAsync("/big.bin", new MemoryStream(new byte[ByteShelfMcpTools.MaxInlineBytes + 1]), new UploadOptions { ContentType = "application/octet-stream" });
+
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadFileAsync("/big.bin", shelf: "docs"));
+
+            Assert.StartsWith($"/big.bin is {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes + 1)}, more than the {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)} answered here;", exception.Message, StringComparison.Ordinal);
         }
 
         [Theory]

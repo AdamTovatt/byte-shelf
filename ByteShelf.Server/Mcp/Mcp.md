@@ -50,11 +50,21 @@ naming it (`RequiredArguments`), not with the SDK's bare "An error occurred invo
 A local path means nothing on the server, so a tool given one (`upload_file`'s `localPath`,
 `download_file`'s) refuses it and says to give the contents instead: `upload_file` takes text or a
 binary file as base64, each up to 256 KiB, a size an agent can carry in its own context.
+A file larger than `upload_file` takes goes the other way through `create_upload_link`, whose link
+the agent's shell (or a person) sends it to with `curl -T`; the link acts as the key, checked again
+when it is used, and is put on the same address a `share_file` link is.
+
 `download_file` answers text of up to 256 KiB, and a PNG, JPEG, GIF or WebP image of up to 1 MiB as
-image content the agent sees; for anything else it says to make a link with `share_file`. A larger
-file goes the other way through `create_upload_link`, whose link the agent's shell (or a person)
-sends it to with `curl -T`; the link acts as the key, checked again when it is used, and is put on
-the same address a `share_file` link is.
+image content the agent sees. Any other file stored as an image (its stored type is `image/*`), of
+up to 32 MiB, comes as a JPEG preview at most 1568 pixels on its long side, saying the image's full
+size and to make a link with `share_file` and fetch it with `curl` for the whole file; for anything
+else it says to make that link. `SkiaImagePreviews` makes previews with SkiaSharp (native; the
+platforms kept are in `Directory.Build.targets`), upright by the image's EXIF orientation and on
+white where it is transparent. It reads and makes one at a time, so calls waiting their turn hold
+no image. An image gets no preview, only the pointer and why, when Skia cannot decode it (HEIC, say),
+when its pixels would take more than `MaxDecodedBytes` (256 MiB, after the scaling a JPEG allows
+while decoding, with the mipmaps drawing it down builds), or when its detail leaves even the
+lowest-quality JPEG over 1 MiB.
 
 A password never goes through a tool call, so the tools leave encrypted files alone: `download_file`
 refuses one saying so, `download_directory` leaves them out, and the server refuses links to them and
