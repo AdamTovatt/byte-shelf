@@ -53,9 +53,24 @@ describe('formatQuota', () => {
 });
 
 describe('describeUsage', () => {
-  it('names the quota only when there is one', () => {
+  const MiB = 1024 * 1024;
+
+  it('without a quota, says only what is used', () => {
     expect(describeUsage({ usedBytes: 2048, quotaBytes: null, fileCount: 1 })).toBe('2 KiB used · 1 file');
-    expect(describeUsage({ usedBytes: 0, quotaBytes: 1024, fileCount: 3 })).toBe('0 B of 1 KiB used · 3 files');
+    expect(describeUsage({ usedBytes: 14.7 * MiB, quotaBytes: undefined, fileCount: 6 })).toBe('14.7 MiB used · 6 files');
+  });
+
+  it.each([
+    [14.7 * MiB, 1000 * MiB, '1% used (14.7 MiB / 1000 MiB)'],
+    [0, 1000 * MiB, '0% used (0 B / 1000 MiB)'],
+    [1, 1000 * MiB, '<1% used (1 B / 1000 MiB)'],
+    [9.9 * MiB, 1000 * MiB, '<1% used (9.9 MiB / 1000 MiB)'],
+    [10 * MiB, 1000 * MiB, '1% used (10 MiB / 1000 MiB)'],
+    [125 * MiB, 1000 * MiB, '13% used (125 MiB / 1000 MiB)'],
+    [1500 * MiB, 1000 * MiB, '150% used (1.5 GiB / 1000 MiB)'],
+    [1, 0, '100% used (1 B / 0 B)'],
+  ])('with a quota, %d of %d bytes reads "%s"', (usedBytes, quotaBytes, expected) => {
+    expect(describeUsage({ usedBytes, quotaBytes, fileCount: 6 })).toBe(`${expected} · 6 files`);
   });
 });
 

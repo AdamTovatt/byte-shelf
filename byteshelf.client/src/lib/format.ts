@@ -35,10 +35,26 @@ function hasQuota(quotaBytes: number | null | undefined): quotaBytes is number {
   return quotaBytes !== null && quotaBytes !== undefined;
 }
 
-/** A shelf's usage in one line: "12 MiB of 1 GiB used · 3 files". */
+/**
+ * A shelf's usage in one line, the one wording every place shows it in:
+ * "1% used (14.7 MiB / 1000 MiB) · 6 files", or "14.7 MiB used · 6 files" without a quota.
+ */
 export function describeUsage(shelf: { usedBytes: number; quotaBytes?: number | null; fileCount: number }): string {
-  const quota = hasQuota(shelf.quotaBytes) ? ` of ${formatBytes(shelf.quotaBytes)}` : '';
-  return `${formatBytes(shelf.usedBytes)}${quota} used · ${shelf.fileCount} ${shelf.fileCount === 1 ? 'file' : 'files'}`;
+  const used = hasQuota(shelf.quotaBytes)
+    ? `${formatPercent(shelf.usedBytes, shelf.quotaBytes)} used (${formatBytes(shelf.usedBytes)} / ${formatBytes(shelf.quotaBytes)})`
+    : `${formatBytes(shelf.usedBytes)} used`;
+  return `${used} · ${shelf.fileCount} ${shelf.fileCount === 1 ? 'file' : 'files'}`;
+}
+
+/** How much of a quota is used, to the whole percent: "<1%" for some but under one, and past 100% when over it. */
+function formatPercent(usedBytes: number, quotaBytes: number): string {
+  if (usedBytes <= 0) {
+    return '0%';
+  }
+
+  // A quota of nothing is full by any use.
+  const percent = quotaBytes === 0 ? 100 : (usedBytes / quotaBytes) * 100;
+  return percent < 1 ? '<1%' : `${Math.round(percent)}%`;
 }
 
 /** The units a quota is typed in. */
