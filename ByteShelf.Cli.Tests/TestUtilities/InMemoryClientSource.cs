@@ -7,7 +7,13 @@ namespace ByteShelf.Cli.Tests.TestUtilities
     /// <summary>Commands over an in-memory client, signed in as its admin; signing in and out is the server tests' part.</summary>
     internal sealed class InMemoryClientSource : IClientSource
     {
-        public InMemoryByteShelfClient Client { get; } = new InMemoryByteShelfClient();
+        /// <param name="timeProvider">The client's clock; the real one unless given.</param>
+        public InMemoryClientSource(TimeProvider? timeProvider = null)
+        {
+            Client = new InMemoryByteShelfClient(timeProvider: timeProvider);
+        }
+
+        public InMemoryByteShelfClient Client { get; }
 
         public Task<IByteShelfClient> OpenAsync(CancellationToken cancellationToken)
         {

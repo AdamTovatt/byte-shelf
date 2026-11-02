@@ -138,7 +138,7 @@ namespace ByteShelf.Server.Replication.Services
 
         private async Task ApplyAsync(ReplicationSource source, IReadOnlyList<ChangeLogEntry> entries, long reached, string? reachedFingerprint, CancellationToken cancellationToken)
         {
-            HashSet<string> unavailable = new HashSet<string>(StringComparer.Ordinal);
+            HashSet<(Guid FileId, string Sha256)> unavailable = new HashSet<(Guid FileId, string Sha256)>();
             await FetchObjectsAsync(source, entries, unavailable, cancellationToken);
 
             AppliedChanges changes = new AppliedChanges();
@@ -182,7 +182,7 @@ namespace ByteShelf.Server.Replication.Services
 
             long? startedAt = null;
             long after = 0;
-            HashSet<string> unavailable = new HashSet<string>(StringComparer.Ordinal);
+            HashSet<(Guid FileId, string Sha256)> unavailable = new HashSet<(Guid FileId, string Sha256)>();
             while (true)
             {
                 ChangeFeedPage page = await _primaryClient.GetCopyAsync(source, after, _pageSize, cancellationToken);
@@ -234,12 +234,13 @@ namespace ByteShelf.Server.Replication.Services
 
         /// <summary>
         /// Fetches every object the files in <paramref name="entries"/> name that is not here yet, checking
-        /// each one's hash, and adds to <paramref name="unavailable"/> the objects none of those files holds
-        /// on the primary any more: purged, or swapped for other contents (encrypted or decrypted in place).
-        /// The entries naming them are not applied, since the log goes on to the files' removal or their
-        /// newer state.
+        /// each one's hash, and adds to <paramref name="unavailable"/> each of those files with the object
+        /// when none of them holds it on the primary any more: purged, or swapped for other contents
+        /// (encrypted or decrypted in place). Those entries are not applied, since the log goes on to the
+        /// files' removal or their newer state. Keyed by file as well: a file on a later page with the same
+        /// contents is fetched and applied on its own.
         /// </summary>
-        private async Task FetchObjectsAsync(ReplicationSource source, IReadOnlyList<ChangeLogEntry> entries, ISet<string> unavailable, CancellationToken cancellationToken)
+        private async Task FetchObjectsAsync(ReplicationSource source, IReadOnlyList<ChangeLogEntry> entries, ISet<(Guid FileId, string Sha256)> unavailable, CancellationToken cancellationToken)
         {
             IEnumerable<IGrouping<string, Guid>> filesByObject = entries
                 .Where(entry => entry.EntityType == ChangeEntityType.File && entry.Payload != null)
@@ -269,22 +270,25 @@ namespace ByteShelf.Server.Replication.Services
 
                 if (!fetched)
                 {
-                    unavailable.Add(files.Key);
+                    foreach (Guid fileId in files)
+                    {
+                        unavailable.Add((fileId, files.Key));
+                    }
                 }
             }
         }
 
         /// <summary>
-        /// The entries to apply: all but the writes of files naming contents the primary no longer has.
-        /// Only those writes: a later entry of the same file naming other contents still applies.
+        /// The entries to apply: all but the writes of files naming contents the primary no longer holds
+        /// for them. Only those writes: a later entry of the same file naming other contents still applies.
         /// </summary>
-        private static IReadOnlyList<ChangeLogEntry> WithoutUnavailable(IReadOnlyList<ChangeLogEntry> entries, IReadOnlySet<string> unavailable)
+        private static IReadOnlyList<ChangeLogEntry> WithoutUnavailable(IReadOnlyList<ChangeLogEntry> entries, IReadOnlySet<(Guid FileId, string Sha256)> unavailable)
         {
             return unavailable.Count == 0
                 ? entries
                 : entries.Where(entry => !(entry.EntityType == ChangeEntityType.File
                     && entry.Payload != null
-                    && unavailable.Contains(ChangePayload.Deserialize<FileRecord>(entry.Payload).Sha256))).ToList();
+                    && unavailable.Contains((entry.EntityId, ChangePayload.Deserialize<FileRecord>(entry.Payload).Sha256)))).ToList();
         }
 
         /// <summary>

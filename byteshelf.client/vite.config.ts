@@ -27,9 +27,8 @@ export default defineConfig({
     strictPort: true,
     open: false,
     // Requests arrive through that proxy under its own host name. `true` turns off Vite's DNS-rebinding
-    // check, but the proxied name differs per developer and the dev-server launcher sets no variable
-    // naming it, so it cannot be listed here yet; the fix belongs in the house setup first (final
-    // review, item 13).
+    // check, because the proxied name differs per developer and the dev-server launcher sets no
+    // variable naming it, so there is no name to list here. Listing it needs the launcher to pass it.
     allowedHosts: true,
   }
 })

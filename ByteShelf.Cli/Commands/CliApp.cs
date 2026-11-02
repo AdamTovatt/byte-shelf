@@ -55,7 +55,7 @@ namespace ByteShelf.Cli.Commands
                 new Command(Section.Files, "stat", "<shelf>:<path>", "a file's record, or a directory's", StatAsync),
                 new Command(Section.Files, "tree", "<shelf>[:<path>] [--depth <n>] [--limit <n>] [--after <cursor>]", "everything under a directory, by path, at any depth or down to --depth levels", TreeAsync),
                 new Command(Section.Files, "put", "<local-file>|<local-folder>|- <shelf>:<path> [--overwrite] [--type <content-type>] [--description <text>] [--encrypt] [--password-file <file>]", "store a file, - for stdin, or a whole folder; a path ending in / keeps the local name; encrypted with the folder's password under an encrypted folder, or with a new one given --encrypt", PutAsync),
-                new Command(Section.Files, "get", "<shelf>:<path> [<local-file>|<local-folder>|-] [--overwrite] [--decrypt] [--password-file <file>]", "save a file, - for stdout, or a whole directory; an encrypted file is saved as its .age file unless --decrypt or --password-file decrypts it", GetAsync),
+                new Command(Section.Files, "get", "<shelf>:<path> [<local-file>|<local-folder>|-] [--overwrite] [--decrypt] [--password-file <file>]", "save a file, - for stdout, or a whole directory; an encrypted file is saved as its age bytes, named .age in a folder, unless --decrypt or --password-file decrypts it", GetAsync),
                 new Command(Section.Files, "encrypt", "<shelf>:<path> [--password-file <file>]", "encrypt a file, or a folder and every file under it, with a password that never leaves this machine; the unencrypted contents are deleted at once, and a lost password cannot be recovered", EncryptAsync),
                 new Command(Section.Files, "decrypt", "<shelf>:<path> [--password-file <file>]", "remove a file's or a folder's encryption", DecryptAsync),
                 new Command(Section.Files, "describe", "<shelf>:<path> <text> | --clear", "set a file's description, which find matches too", DescribeAsync),
@@ -313,9 +313,9 @@ namespace ByteShelf.Cli.Commands
 
             // Under an encrypted folder the files must be encrypted with its password; elsewhere only when asked.
             EncryptedFolder? folder = (await shelf.GetEncryptionAsync(target, cancellationToken)).EncryptedBy;
-            Encryptor? encryptWith = folder != null
-                ? new Encryptor(await Encrypting.FolderPasswordAsync(folder, password, cancellationToken), _encryptionWorkFactor)
-                : encrypt ? new Encryptor(password(PasswordUse.New), _encryptionWorkFactor) : null;
+            Encryptor? encryptWith = folder != null || encrypt
+                ? new Encryptor(await Encrypting.PasswordForAsync(folder, PasswordUse.New, password, cancellationToken), _encryptionWorkFactor)
+                : null;
 
             if (isFolder)
             {
@@ -366,7 +366,7 @@ namespace ByteShelf.Cli.Commands
                 EncryptedFiles encrypted = decrypt
                     ? EncryptedFiles.DecryptedWith(await Encrypting.ExistingPasswordAsync(shelf, location.Path, password, cancellationToken))
                     : EncryptedFiles.SavedAsTheyAre;
-                FolderDone(await FolderTransfers.DownloadAsync(shelf, location, target, overwrite, cancellationToken, encrypted), "Saved");
+                FolderDone(await FolderTransfers.DownloadAsync(shelf, location, target, overwrite, encrypted, cancellationToken), "Saved");
                 return;
             }
 

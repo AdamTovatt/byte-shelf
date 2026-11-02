@@ -4,8 +4,6 @@ using ByteShelf.Server.Version.Services;
 
 namespace ByteShelf.Server.Version.Controllers
 {
-    // Shaped unlike the other controllers (ActionResult<T>, no ProducesResponseType); left as is, since
-    // reshaping working code is a taste call the final review chose to skip.
     [ApiController]
     [Route("api/version")]
     public class VersionController : ControllerBase
@@ -22,7 +20,8 @@ namespace ByteShelf.Server.Version.Controllers
         /// polls this on the login screen too, and the value is not sensitive.
         /// </summary>
         [HttpGet("current")]
-        public ActionResult<VersionView> GetCurrent()
+        [ProducesResponseType(typeof(VersionView), 200)]
+        public IActionResult GetCurrent()
         {
             return Ok(_versionService.GetCurrent());
         }

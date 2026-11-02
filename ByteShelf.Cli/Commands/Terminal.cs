@@ -1,4 +1,3 @@
-using System.Text;
 using ByteShelf.Tools;
 
 namespace ByteShelf.Cli.Commands
@@ -6,8 +5,6 @@ namespace ByteShelf.Cli.Commands
     /// <summary>Where a command reads and writes: the console, or what a test hands it.</summary>
     internal sealed class Terminal
     {
-        private static readonly TimeSpan KeyPollInterval = TimeSpan.FromMilliseconds(20);
-
         private readonly Func<Stream> _openInput;
         private readonly Func<Stream> _openOutput;
 
@@ -65,44 +62,8 @@ namespace ByteShelf.Cli.Commands
         /// <exception cref="OperationCanceledException">Ctrl+C was pressed while typing.</exception>
         public string ReadSecret(string prompt, CancellationToken cancellationToken)
         {
-            string? secret;
-            if (Interactive)
-            {
-                Error.Write(prompt);
-                StringBuilder typed = new StringBuilder();
-                for (ConsoleKeyInfo key = ReadKey(cancellationToken); key.Key != ConsoleKey.Enter; key = ReadKey(cancellationToken))
-                {
-                    if (key.Key == ConsoleKey.Backspace)
-                    {
-                        typed.Length = Math.Max(typed.Length - 1, 0);
-                    }
-                    else if (!char.IsControl(key.KeyChar))
-                    {
-                        typed.Append(key.KeyChar);
-                    }
-                }
-
-                Error.WriteLine();
-                secret = typed.ToString();
-            }
-            else
-            {
-                secret = Input.ReadLine();
-            }
-
+            string? secret = Interactive ? HiddenInput.ReadLine(Error, prompt, cancellationToken) : Input.ReadLine();
             return string.IsNullOrEmpty(secret) ? throw new UsageException("Nothing was given.") : secret;
-        }
-
-        /// <summary>The next key typed, waiting in a way Ctrl+C can end: Console.ReadKey alone would not return for it.</summary>
-        private static ConsoleKeyInfo ReadKey(CancellationToken cancellationToken)
-        {
-            while (!Console.KeyAvailable)
-            {
-                cancellationToken.WaitHandle.WaitOne(KeyPollInterval);
-                cancellationToken.ThrowIfCancellationRequested();
-            }
-
-            return Console.ReadKey(intercept: true);
         }
     }
 }

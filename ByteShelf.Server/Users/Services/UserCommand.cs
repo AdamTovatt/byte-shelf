@@ -4,11 +4,11 @@ using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Errors;
+using ByteShelf.Server.Shared.Middleware;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Users.Exceptions;
 using ByteShelf.Server.Users.Models;
 using ByteShelfCommon;
-using Microsoft.Data.Sqlite;
 
 namespace ByteShelf.Server.Users.Services
 {
@@ -27,7 +27,7 @@ namespace ByteShelf.Server.Users.Services
         /// <summary>Nothing was changed: no such user, a taken email, the last admin, a refused password, a replica, a damaged root.</summary>
         public const int Failed = 1;
 
-        /// <summary>Nothing was tried: the arguments or <c>BYTESHELF_ROOT</c> are missing or wrong.</summary>
+        /// <summary>Nothing was tried: the arguments are wrong, or <c>BYTESHELF_ROOT</c> is not set.</summary>
         public const int Usage = 2;
 
         /// <summary>The flags that name a user command; the server runs this instead of starting when its arguments hold one.</summary>
@@ -70,13 +70,16 @@ namespace ByteShelf.Server.Users.Services
                 }
                 finally
                 {
-                    ReleaseDatabase(root);
+                    // Refusing anyone but the root's owner would need the folder's owner, which .NET does not
+                    // expose; releasing the connections leaves no files owned by whoever ran this instead.
+                    DataSources.Release(root.ConnectionString);
                 }
             }
-            catch (Exception exception) when (exception is ConflictException or NotFoundException or ArgumentException or FileNotFoundException)
+            catch (Exception exception) when (exception is FileNotFoundException || ExceptionHandlingMiddleware.RefusalMessage(exception) != null)
             {
-                // What the person running it can act on, as the API would answer it.
-                logger.LogError("{Message}", exception.Message);
+                // What the person running it can act on, as the API would answer it; a root without a
+                // database besides.
+                logger.LogError("{Message}", ExceptionHandlingMiddleware.RefusalMessage(exception) ?? exception.Message);
                 return Failed;
             }
             catch (Exception exception)
@@ -100,27 +103,9 @@ namespace ByteShelf.Server.Users.Services
 
             await using ServiceProvider services = BuildServices(root, loggerFactory);
             await using AsyncServiceScope scope = services.CreateAsyncScope();
-            if (!await scope.ServiceProvider.GetRequiredService<ReplicationState>().AllowsWritesAsync())
-            {
-                logger.LogError("This server is a replica, which takes its users from its primary; run this on the primary.");
-                return Failed;
-            }
-
+            await scope.ServiceProvider.GetRequiredService<ReplicationState>().RequireWritesAsync();
             logger.LogInformation("{Done}", await change.ApplyAsync(scope.ServiceProvider, passwords));
             return Done;
-        }
-
-        /// <summary>
-        /// Closes the pooled connections to the root's database, which outlive the service provider. With
-        /// the server stopped this process is then the last to close the database, and SQLite removes its
-        /// <c>-wal</c> and <c>-shm</c> files; left open until the process exits, they would stay, owned by
-        /// whoever ran this, and a server running as another user could not open its database. (Refusing
-        /// anyone but the root's owner would need the folder's owner, which .NET does not expose.)
-        /// </summary>
-        private static void ReleaseDatabase(RootFolder root)
-        {
-            using SqliteConnection connection = new SqliteConnection(root.ConnectionString);
-            SqliteConnection.ClearPool(connection);
         }
 
         /// <summary>
@@ -130,6 +115,8 @@ namespace ByteShelf.Server.Users.Services
         /// </summary>
         internal static UserChange? Parse(IReadOnlyList<string> args)
         {
+            // Its own few lines rather than the CLI's ArgumentList, which reads a command table and
+            // ByteShelf.Tools does not hold: four flags and two options do not earn moving it there.
             List<string> left = new List<string>(args);
             bool wellFormed = true;
 

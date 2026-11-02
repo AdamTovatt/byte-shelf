@@ -32,7 +32,7 @@ namespace ByteShelf.Server.Mcp
                 .WithHttpTransport(options =>
                 {
                     options.Stateless = true;
-                    options.ConfigureSessionOptions = McpCallerOptions.ConfigureAsync;
+                    options.ConfigureSessionOptions = McpCallerSetup.ConfigureAsync;
                 })
                 .WithByteShelfTools();
 

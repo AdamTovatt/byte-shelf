@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { splitForMiddle } from '../lib/format';
 
 /**
@@ -27,6 +28,19 @@ export function NameLine({ before, name, after }: { before?: string; name: strin
       {before && <span className="shrink-0 whitespace-pre">{before} </span>}
       <MiddleTruncatedName name={name} />
       {after && <span className="shrink-0 whitespace-pre">{after}</span>}
+    </span>
+  );
+}
+
+/**
+ * A toast's name, then the reason on a line of its own below: "Could not delete report.pdf:", then
+ * the server's words. `after` ends the name's line, a colon unless given.
+ */
+export function NameAndReason({ before, name, after = ':', reason }: { before?: string; name: string; after?: string; reason: ReactNode }) {
+  return (
+    <span className="flex min-w-0 flex-col">
+      <NameLine before={before} name={name} after={after} />
+      <span>{reason}</span>
     </span>
   );
 }

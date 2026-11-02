@@ -8,8 +8,8 @@ export interface TabbedPageShellProps {
 }
 
 /**
- * The frame a tabbed page hangs in (from ordo's): a full-height column whose header stays put while
- * the tab's content scrolls below it at the one padded-page width.
+ * The frame a tabbed page hangs in: a full-height column whose header stays put while the tab's
+ * content scrolls below it at the one padded-page width.
  */
 export function TabbedPageShell({ header, children }: TabbedPageShellProps) {
   return (

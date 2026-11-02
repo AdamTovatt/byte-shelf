@@ -87,18 +87,20 @@ namespace ByteShelf.Server.Storage.Repositories
             return await UseSessionAsync(async (dbSession) =>
             {
                 // Each child heads its own walk (top_id), so one pass sums every child's subtree. A
-                // trashed directory holds only trashed entries, so it is not walked into.
+                // trashed directory holds only trashed entries, so it is not walked into. Encrypted files
+                // under an encrypted directory below the child (in_encrypted) are that directory's to
+                // count, not the child's.
                 string query = $@"
-                    WITH RECURSIVE tree(top_id, node_id) AS (
-                        SELECT id, id FROM directory
+                    WITH RECURSIVE tree(top_id, node_id, in_encrypted) AS (
+                        SELECT id, id, 0 FROM directory
                         WHERE parent_id = @{nameof(parentId)} AND deleted_at IS NULL
                         UNION ALL
-                        SELECT tree.top_id, directory.id
+                        SELECT tree.top_id, directory.id, tree.in_encrypted OR directory.encryption_check IS NOT NULL
                         FROM directory JOIN tree ON directory.parent_id = tree.node_id
                         WHERE directory.deleted_at IS NULL
                     ),
                     totals(top_id, size_bytes, file_count, encrypted_file_count) AS (
-                        SELECT tree.top_id, COALESCE(SUM(file.size_bytes), 0), COUNT(file.id), COALESCE(SUM(file.encrypted), 0)
+                        SELECT tree.top_id, COALESCE(SUM(file.size_bytes), 0), COUNT(file.id), COALESCE(SUM(CASE WHEN tree.in_encrypted THEN 0 ELSE file.encrypted END), 0)
                         FROM tree LEFT JOIN file ON file.directory_id = tree.node_id AND file.deleted_at IS NULL
                         GROUP BY tree.top_id
                     )
@@ -248,6 +250,9 @@ namespace ByteShelf.Server.Storage.Repositories
         {
             return await UseSessionAsync(async (dbSession) =>
             {
+                // Its own walk, as each query here writes one: they differ in direction, in where they
+                // start, in which rows they keep and in what they return, and a recursive CTE shared as a
+                // string would need all of that as parameters.
                 string query = $@"
                     WITH RECURSIVE ancestor (node_id, up_id, depth) AS (
                         SELECT id, parent_id, 0 FROM directory WHERE id = @{nameof(id)}

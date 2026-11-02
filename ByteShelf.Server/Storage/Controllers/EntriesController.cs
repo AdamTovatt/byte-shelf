@@ -17,10 +17,13 @@ namespace ByteShelf.Server.Storage.Controllers
     /// of the root.
     /// </summary>
     [ApiController]
-    [Route("api/shelves/{shelf}")]
+    [Route(ShelfRoute)]
     public class EntriesController : ShelfControllerBase
     {
         /// <summary>The contents route where the token may come in a cookie, for a browser's plain navigation.</summary>
+        /// <summary>Where a shelf's entries are, <c>{shelf}</c> its name; MCP's instructions name it in their curl commands.</summary>
+        internal const string ShelfRoute = "api/shelves/{shelf}";
+
         private const string OpenContentRoute = AuthSetup.CookieTokenPath + "/{shelf}/content";
 
         private readonly IDirectoryService _directoryService;
@@ -229,7 +232,7 @@ namespace ByteShelf.Server.Storage.Controllers
         [ProducesResponseType(typeof(ErrorResponse), 507)]
         public async Task<IActionResult> SwapContent([FromQuery] Guid id, [FromQuery] string sha256, [FromQuery] bool encrypted, CancellationToken cancellationToken = default)
         {
-            long length = Request.ContentLength ?? throw new LengthRequiredException("A single swap needs Content-Length. Send content of unknown length as a resumable swap.");
+            long length = SingleUpload.LengthOf(Request, "A single swap needs Content-Length. Send content of unknown length as a resumable swap.");
             StartContentSwapRequest request = new StartContentSwapRequest { FileId = id, Sha256 = sha256, SizeBytes = length, Encrypted = encrypted };
             return Ok(await _uploadService.SwapAsync(Shelf, request, Access.Caller.Id, Request.Body, cancellationToken));
         }

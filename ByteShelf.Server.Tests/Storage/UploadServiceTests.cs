@@ -127,6 +127,41 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
+        public async Task SwapAsync_ExpectedHashInUppercase_SwapsAsInLowercase()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile plain = await StoreTextAsync(shelf, "/report.txt", "plain contents");
+
+            ShelfFile swapped = await SwapAsync(shelf, plain, AgeBytes, encrypted: true, plain.Sha256.ToUpperInvariant());
+
+            Assert.Equal((plain.Id, true), (swapped.Id, swapped.Encrypted));
+        }
+
+        [Fact]
+        public async Task SwapAsync_ExpectedHashNotASha256_ThrowsArgument()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile plain = await StoreTextAsync(shelf, "/report.txt", "plain contents");
+
+            await Assert.ThrowsAsync<ArgumentException>(() => SwapAsync(shelf, plain, AgeBytes, encrypted: true, "not-a-hash"));
+        }
+
+        [Fact]
+        public async Task StoreThroughLinkAsync_FileEncryptedWhileTheBodyArrives_ThrowsConflictAndKeepsTheEncryptedFile()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile plain = await StoreTextAsync(shelf, "/report.txt", "plain contents");
+            byte[] replacement = Encoding.UTF8.GetBytes("sent through the link");
+            Stream body = new BeforeFirstRead(replacement, () => SwapAsync(shelf, plain, AgeBytes, encrypted: true));
+
+            await Assert.ThrowsAsync<ConflictException>(() => UploadService.StoreThroughLinkAsync(
+                shelf, Single("/report.txt", replacement.Length, "text/plain", overwrite: true), Uploader, body, CancellationToken.None));
+
+            ShelfFile current = await FileService.GetFileAsync(shelf, EntryReference.ForPath("/report.txt"));
+            Assert.Equal((plain.Id, true), (current.Id, current.Encrypted));
+        }
+
+        [Fact]
         public async Task StartSwapAsync_CompletedInChunks_SwapsInPlaceAndRemovesTheOldObject()
         {
             Shelf shelf = await CreateShelfAsync();
@@ -498,9 +533,10 @@ namespace ByteShelf.Server.Tests.Storage
         /// <summary>Contents the server takes as encrypted: it checks only that they start as an age file.</summary>
         private static readonly byte[] AgeBytes = Encoding.ASCII.GetBytes("age-encryption.org/v1\nan encrypted file");
 
-        private Task<ShelfFile> SwapAsync(Shelf shelf, ShelfFile file, byte[] content, bool encrypted)
+        /// <param name="expectedSha256">The hash the swap expects the file's contents to have; the file's own unless given.</param>
+        private Task<ShelfFile> SwapAsync(Shelf shelf, ShelfFile file, byte[] content, bool encrypted, string? expectedSha256 = null)
         {
-            StartContentSwapRequest request = new StartContentSwapRequest { FileId = file.Id, Sha256 = file.Sha256, SizeBytes = content.Length, Encrypted = encrypted };
+            StartContentSwapRequest request = new StartContentSwapRequest { FileId = file.Id, Sha256 = expectedSha256 ?? file.Sha256, SizeBytes = content.Length, Encrypted = encrypted };
             return UploadService.SwapAsync(shelf, request, Uploader, new MemoryStream(content), CancellationToken.None);
         }
 
@@ -515,6 +551,29 @@ namespace ByteShelf.Server.Tests.Storage
         private async Task<string> ReadTextAsync(Shelf shelf, string path)
         {
             return await ReadObjectTextAsync((await FileService.GetFileAsync(shelf, EntryReference.ForPath(path))).Sha256);
+        }
+
+        /// <summary>A body that runs <c>meanwhile</c> before its first bytes are read, as a change made while they travel.</summary>
+        private sealed class BeforeFirstRead : MemoryStream
+        {
+            private Func<Task>? _meanwhile;
+
+            public BeforeFirstRead(byte[] bytes, Func<Task> meanwhile)
+                : base(bytes)
+            {
+                _meanwhile = meanwhile;
+            }
+
+            public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            {
+                Func<Task>? meanwhile = Interlocked.Exchange(ref _meanwhile, null);
+                if (meanwhile != null)
+                {
+                    await meanwhile();
+                }
+
+                return await base.ReadAsync(buffer, cancellationToken);
+            }
         }
 
         /// <summary>A body that fails the test if anything reads it.</summary>

@@ -56,13 +56,19 @@ namespace ByteShelf.Server.Storage.Services
         /// <inheritdoc />
         public async Task<ShelfFile> StoreAsync(Shelf shelf, StartUploadRequest request, string startedBy, Stream content, CancellationToken cancellationToken)
         {
-            return await StoreInOneGoAsync(await BeginAsync(shelf, request, startedBy, isResumable: false), content, cancellationToken);
+            return await StoreInOneGoAsync(await BeginAsync(shelf, request, startedBy, isResumable: false), content, throughLink: false, cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public async Task<ShelfFile> StoreThroughLinkAsync(Shelf shelf, StartUploadRequest request, string startedBy, Stream content, CancellationToken cancellationToken)
+        {
+            return await StoreInOneGoAsync(await BeginAsync(shelf, request, startedBy, isResumable: false), content, throughLink: true, cancellationToken);
         }
 
         /// <inheritdoc />
         public async Task<ShelfFile> SwapAsync(Shelf shelf, StartContentSwapRequest request, string startedBy, Stream content, CancellationToken cancellationToken)
         {
-            return await StoreInOneGoAsync(await BeginSwapAsync(shelf, request, startedBy, isResumable: false), content, cancellationToken);
+            return await StoreInOneGoAsync(await BeginSwapAsync(shelf, request, startedBy, isResumable: false), content, throughLink: false, cancellationToken);
         }
 
         /// <inheritdoc />
@@ -73,7 +79,7 @@ namespace ByteShelf.Server.Storage.Services
         }
 
         /// <summary>Writes a single PUT's whole body to its upload and finishes it, discarding it on any failure.</summary>
-        private async Task<ShelfFile> StoreInOneGoAsync(UploadRecord upload, Stream content, CancellationToken cancellationToken)
+        private async Task<ShelfFile> StoreInOneGoAsync(UploadRecord upload, Stream content, bool throughLink, CancellationToken cancellationToken)
         {
             using (await _uploadLocks.AcquireAsync(upload.Id, CancellationToken.None))
             {
@@ -86,7 +92,7 @@ namespace ByteShelf.Server.Storage.Services
                         throw new ArgumentException($"The request declared {upload.SizeBytes} bytes but carried {written}.");
                     }
 
-                    ShelfFile file = await FinishAsync(upload, cancellationToken);
+                    ShelfFile file = await FinishAsync(upload, throughLink, cancellationToken);
                     stored = true;
                     return file;
                 }
@@ -154,7 +160,7 @@ namespace ByteShelf.Server.Storage.Services
                     throw new ConflictException($"The upload holds {upload.ReceivedBytes} of its {upload.SizeBytes} bytes.");
                 }
 
-                return await FinishAsync(upload, cancellationToken);
+                return await FinishAsync(upload, throughLink: false, cancellationToken);
             }
         }
 
@@ -180,28 +186,15 @@ namespace ByteShelf.Server.Storage.Services
                 throw new ArgumentException("A file cannot be stored at the root itself; give it a name.");
             }
 
-            long sizeBytes = request.SizeBytes;
-            if (sizeBytes < 0)
-            {
-                throw new ArgumentException("The size of an upload cannot be negative.");
-            }
-
             bool overwrite = request.Overwrite;
-            DateTimeOffset now = _timeProvider.GetUtcNow();
-            UploadRecord upload = new UploadRecord
-            {
-                Id = Guid.NewGuid(),
-                ShelfId = shelf.Id,
-                StartedBy = startedBy,
-                Target = new StoreAtPath(normalizedPath, overwrite, FileDescription.Normalize(request.Description)),
-                ContentType = ContentTypes.ForUpload(request.ContentType, normalizedPath),
-                SizeBytes = sizeBytes,
-                ReceivedBytes = 0,
-                Encrypted = request.Encrypted,
-                IsResumable = isResumable,
-                CreatedAt = now,
-                LastActivityAt = now,
-            };
+            UploadRecord upload = NewUpload(
+                shelf,
+                startedBy,
+                new StoreAtPath(normalizedPath, overwrite, FileDescription.Normalize(request.Description)),
+                ContentTypes.ForUpload(request.ContentType, normalizedPath),
+                request.SizeBytes,
+                request.Encrypted,
+                isResumable);
 
             await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
             {
@@ -222,36 +215,49 @@ namespace ByteShelf.Server.Storage.Services
         /// </summary>
         private async Task<UploadRecord> BeginSwapAsync(Shelf shelf, StartContentSwapRequest request, string startedBy, bool isResumable)
         {
-            if (request.SizeBytes < 0)
+            // Stored and compared lowercase, as hashes are everywhere here; a client may send either case.
+            string expectedSha256 = request.Sha256.ToLowerInvariant();
+            if (!ObjectStore.IsValidHash(expectedSha256))
             {
-                throw new ArgumentException("The size of an upload cannot be negative.");
+                throw new ArgumentException($"'{request.Sha256}' is not a SHA-256: 64 hexadecimal digits.");
             }
 
-            ContentSwap swap = new ContentSwap(request.FileId, request.Sha256);
-            DateTimeOffset now = _timeProvider.GetUtcNow();
+            ContentSwap swap = new ContentSwap(request.FileId, expectedSha256);
             await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
             {
                 (FileRecord file, _) = await GetSwappableAsync(shelf.Id, swap, request.Encrypted, session);
-                UploadRecord upload = new UploadRecord
-                {
-                    Id = Guid.NewGuid(),
-                    ShelfId = shelf.Id,
-                    StartedBy = startedBy,
-                    Target = swap,
-                    ContentType = file.ContentType,
-                    SizeBytes = request.SizeBytes,
-                    ReceivedBytes = 0,
-                    Encrypted = request.Encrypted,
-                    IsResumable = isResumable,
-                    CreatedAt = now,
-                    LastActivityAt = now,
-                };
-
+                UploadRecord upload = NewUpload(shelf, startedBy, swap, file.ContentType, request.SizeBytes, request.Encrypted, isResumable);
                 await ReserveAsync(shelf, upload, session);
                 await session.CommitAsync();
                 _stagingArea.EnsureExists(upload.Id);
                 return upload;
             }
+        }
+
+        /// <summary>A new upload to <paramref name="target"/>, nothing received yet.</summary>
+        /// <exception cref="ArgumentException"><paramref name="sizeBytes"/> is negative.</exception>
+        private UploadRecord NewUpload(Shelf shelf, string startedBy, UploadTarget target, string contentType, long sizeBytes, bool encrypted, bool isResumable)
+        {
+            if (sizeBytes < 0)
+            {
+                throw new ArgumentException("The size of an upload cannot be negative.");
+            }
+
+            DateTimeOffset now = _timeProvider.GetUtcNow();
+            return new UploadRecord
+            {
+                Id = Guid.NewGuid(),
+                ShelfId = shelf.Id,
+                StartedBy = startedBy,
+                Target = target,
+                ContentType = contentType,
+                SizeBytes = sizeBytes,
+                ReceivedBytes = 0,
+                Encrypted = encrypted,
+                IsResumable = isResumable,
+                CreatedAt = now,
+                LastActivityAt = now,
+            };
         }
 
         /// <summary>
@@ -287,9 +293,11 @@ namespace ByteShelf.Server.Storage.Services
         /// or swaps its contents (<see cref="SwapInAsync"/>) and removes the upload, placing the object last
         /// before the commit. The object's lock is held from placing it until the row commits, so no
         /// removal can take it away in between. A swap's old contents are removed once it commits, unless
-        /// another file holds them. Hold the upload's lock.
+        /// another file holds them. Hold the upload's lock. An upload <paramref name="throughLink"/> is held
+        /// to <see cref="ShelfEncryption.RequireLinkTargetAsync"/> again in that transaction: the place may
+        /// have been encrypted while the body arrived.
         /// </summary>
-        private async Task<ShelfFile> FinishAsync(UploadRecord upload, CancellationToken cancellationToken)
+        private async Task<ShelfFile> FinishAsync(UploadRecord upload, bool throughLink, CancellationToken cancellationToken)
         {
             // The server cannot tell a right password, but it can tell what is no age file at all.
             if (upload.Encrypted && !await _stagingArea.StartsAsAgeFileAsync(upload.Id, cancellationToken))
@@ -312,7 +320,7 @@ namespace ByteShelf.Server.Storage.Services
                         DateTimeOffset now = _timeProvider.GetUtcNow();
                         stored = upload.Target switch
                         {
-                            StoreAtPath store => await StoreNewAsync(upload, store, sha256, now, session),
+                            StoreAtPath store => await StoreNewAsync(upload, store, sha256, throughLink, now, session),
                             ContentSwap swap => await SwapInAsync(upload, swap, sha256, now, session),
                             _ => throw new InvalidOperationException($"No upload stores to a {upload.Target.GetType().Name}."),
                         };
@@ -344,9 +352,13 @@ namespace ByteShelf.Server.Storage.Services
         /// Creates missing directories, moves a file the upload replaces to the trash, and inserts the new
         /// file's row.
         /// </summary>
-        private async Task<ShelfFile> StoreNewAsync(UploadRecord upload, StoreAtPath store, string sha256, DateTimeOffset now, IDbSession session)
+        private async Task<ShelfFile> StoreNewAsync(UploadRecord upload, StoreAtPath store, string sha256, bool throughLink, DateTimeOffset now, IDbSession session)
         {
             await EnsureTargetAcceptsAsync(upload.ShelfId, store.Path, store.Overwrite, upload.Encrypted, session);
+            if (throughLink)
+            {
+                await _encryption.RequireLinkTargetAsync(upload.ShelfId, store.Path, session);
+            }
 
             string directoryPath = ShelfPath.GetParent(store.Path);
             string name = ShelfPath.GetName(store.Path);

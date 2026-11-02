@@ -13,6 +13,7 @@ using ByteShelfClient.Encryption;
 using ByteShelfCommon;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
+using Microsoft.Extensions.Time.Testing;
 using ModelContextProtocol.Server;
 
 namespace ByteShelf.Cli.Tests
@@ -580,6 +581,24 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
+        public async Task LinkTools_ExpiresIn_AnswerWhenEachLinkRunsOut()
+        {
+            FakeTimeProvider clock = new FakeTimeProvider(new DateTimeOffset(2026, 3, 1, 12, 0, 0, TimeSpan.Zero));
+            InMemoryClientSource clients = new InMemoryClientSource(clock);
+            await clients.Client.CreateShelfAsync("docs");
+            ByteShelfMcpTools tools = new ByteShelfMcpTools(clients, ToolHost.Local);
+            await tools.UploadFileAsync("/a.txt", text: "a", shelf: "docs");
+
+            string shared = await tools.ShareFileAsync("/a.txt", "30m", shelf: "docs");
+            string upload = await tools.CreateUploadLinkAsync("/in/q3.pdf", overwrite: true, expiresIn: "2h", shelf: "docs");
+
+            Assert.Equal($"Works for anyone who has it until {TextFormat.Time(clock.GetUtcNow().AddMinutes(30))}.", shared.Split(Environment.NewLine)[1]);
+            Assert.Equal(
+                $"Stores one file at /in/q3.pdf for anyone who has it until {TextFormat.Time(clock.GetUtcNow().AddHours(2))}. A file already there is replaced.",
+                upload.Split(Environment.NewLine)[1]);
+        }
+
+        [Fact]
         public async Task CreateUploadLink_ExpiresInPastTheMost_IsAnErrorNamingTheBounds()
         {
             McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.CreateUploadLinkAsync("/a.txt", expiresIn: "2d", shelf: "docs"));
@@ -597,7 +616,7 @@ namespace ByteShelf.Cli.Tests
             McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadFileAsync("/secret.txt", localPath: toLocalFile ? _work.Path : null, shelf: "docs"));
 
             Assert.Contains("passwords never go through tool calls", exception.Message, StringComparison.Ordinal);
-            Assert.False(File.Exists(_work.File("secret.txt")));
+            Assert.Empty(Directory.GetFiles(_work.Path, "secret*"));
         }
 
         [Fact]
@@ -656,7 +675,7 @@ namespace ByteShelf.Cli.Tests
 
         private Task<ShelfFile> StoreEncryptedAsync(string path)
         {
-            return Transfers.UploadAsync(Docs, path, new MemoryStream(Encoding.UTF8.GetBytes("secret")), new UploadOptions(), new Encryptor("pw", 10), CancellationToken.None);
+            return Transfers.UploadAsync(Docs, path, new MemoryStream(Encoding.UTF8.GetBytes("secret")), new UploadOptions(), CancellationToken.None, new Encryptor("pw", 10));
         }
 
         private static string TextOf(IEnumerable<ContentBlock> answer)

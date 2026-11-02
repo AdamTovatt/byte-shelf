@@ -31,7 +31,7 @@ namespace ByteShelf.Server.Tests.Email
         {
             string logged = Assert.Single(await WarningsAsync(EmailOptions.None, Environments.Production));
 
-            Assert.Contains("a forgotten password cannot be reset", logged, StringComparison.Ordinal);
+            Assert.Contains("a forgotten password is reset only with the server's --reset-password", logged, StringComparison.Ordinal);
         }
 
         [Fact]

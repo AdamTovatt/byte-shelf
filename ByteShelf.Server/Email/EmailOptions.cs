@@ -54,6 +54,9 @@ namespace ByteShelf.Server.Email
                     new MailSender(address ?? throw new InvalidOperationException("EMAIL_FROM_ADDRESS must be set when POSTMARK_API_KEY is: Postmark sends only from a confirmed sender."), name));
             }
 
+            // In any environment, unlike LoggingEmailSender's links in the log: only remote-claude sets the
+            // variable, for a server it runs whatever its environment, the files are the owner's only, and
+            // the startup warning names the folder.
             return directory != null ? new DevMailEmail(directory, new MailSender(address ?? DevMailFromAddress, name)) : None;
         }
 

@@ -59,7 +59,13 @@ spaces.
   1) only after they have gone out: check the exit code before using what was piped.
 - `share` prints the link alone on its first line. Anyone who has it can open the file until it runs
   out (24 hours by default, at most 7 days), and nothing takes it back sooner, so share only what may
-  be seen.
+  be seen. It refuses a file encrypted with a password `(conflict)`.
+- A file or folder can be encrypted with a password (`ls` and `stat` mark it; `byteshelf encrypt` and
+  `decrypt` change it). Without the password, `get` saves such a file as the age file it is stored
+  as: to `./report.pdf` or `-` those are age bytes, not a PDF, and into a folder it is named
+  `report.pdf.age`. Add `--password-file <file>` (its first line is the password) to decrypt it; `put`
+  under an encrypted folder needs that folder's password the same way. Never put a password on a
+  command line, and only use one a person gave you.
 - Add `--json` to get the server's JSON for anything you parse.
 
 ## When something fails
@@ -68,10 +74,10 @@ The exit code says what kind of failure it was:
 
 - `0`: done.
 - `1`: the server refused or could not be reached, a download did not match its hash, a local file
-  could not be read or written, a folder transfer left something out (listed in the output), or
+  could not be read or written, an encrypted file is damaged, a folder transfer left something out (listed in the output), or
   another `byteshelf` command held the config file for 30 seconds (run it again).
 - `2`: the command was given wrongly, or cannot run as things are (not signed in, a missing local
-  file, a local file in the way without `--overwrite`).
+  file, a local file in the way without `--overwrite`, a wrong password).
 - `130`: interrupted with Ctrl+C.
 
 A refusal ends with its code in parentheses: `(not_found)`, `(conflict)` for a path that is taken,

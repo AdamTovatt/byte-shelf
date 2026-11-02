@@ -25,10 +25,20 @@ namespace ByteShelfClient.Encryption
         public static async Task<bool> MatchesAsync(EncryptedFolder folder, string password, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(folder);
+            byte[] check;
+            try
+            {
+                check = FileEncryption.DecodeCheck(folder.Check);
+            }
+            catch (ArgumentException exception)
+            {
+                throw new AgeException(AgeFailure.Header, $"The check of the encrypted folder '{folder.Directory.Path}' is damaged. {exception.Message}");
+            }
+
             using MemoryStream text = new MemoryStream();
             try
             {
-                await AgeEncryption.DecryptAsync(new MemoryStream(Convert.FromBase64String(folder.Check)), text, password, cancellationToken).ConfigureAwait(false);
+                await AgeEncryption.DecryptAsync(new MemoryStream(check), text, password, cancellationToken).ConfigureAwait(false);
             }
             catch (AgeException exception) when (exception.Failure == AgeFailure.NoMatch)
             {

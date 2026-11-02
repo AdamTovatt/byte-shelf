@@ -30,8 +30,10 @@ await session.SignOutAsync();   // ends it on the server; disposing alone leaves
 
 `IByteShelfClient` lists and creates shelves and, with a `UserSession`, the signed-in user and
 (for admins) the other users; a shelf key cannot reach users. `IShelfClient` works on one shelf:
-list a directory or its whole tree, search, upload, open, describe, share by a link, create
-directories, move, delete, the trash, and for admins the shelf's settings, grants and keys. Files and
+list a directory or its whole tree, search, upload, open, describe, share by a link, make an upload
+link, encrypt directories and swap a file's contents in place (`SwapContentAsync`), create
+directories, move, delete, the trash, and for admins the shelf's settings, grants and keys.
+`ByteShelfClient.Encryption` encrypts and decrypts with a password, on the client only. Files and
 directories are named by path or by id; both convert to an `EntryReference`.
 
 ## Uploads
@@ -92,7 +94,8 @@ a client that reaches the server at another address than the people the links ar
 `CreateUploadLinkAsync` makes a link that stores one file at a path when anyone holding it `PUT`s the
 contents with a `Content-Length` (`curl -T file '<link>'`), for 15 minutes unless `UploadLinkOptions`
 give a lifetime up to 24 hours, with an optional description and `Overwrite`. Making one is a store,
-so a read key cannot, and the link acts with the client's access, checked again when it is used. Its
+so a read key cannot, and one with `Overwrite` needs write access, so an add-only key cannot either.
+The link acts with the client's access, checked again when it is used. Its
 URL is made absolute as a download link's is.
 
 ## Encryption
@@ -101,17 +104,24 @@ URL is made absolute as a download link's is.
 (c2sp.org/age) with a scrypt recipient, which `age -d` opens too. `AgeEncryption` encrypts and
 decrypts streams; it follows the specification, passes its official test vectors, reads what typage
 (age in JavaScript, which the web UI depends on) writes and the other way round, and needs the platform's ChaCha20-Poly1305
-(`IsSupported`). Store an encrypted file with `UploadOptions.Encrypted`. A directory is encrypted
-with `EncryptDirectoryAsync` and a check from `FolderPassword.CreateCheckAsync`; from then on every
-file stored under it must be encrypted with its password, which `FolderPassword.MatchesAsync` tells
-against the check that `GetEncryptionAsync` or a listing's `EncryptedBy` answers. Files already
+(`IsSupported`). New files are encrypted at work factor 18 (`DefaultWorkFactor`, age's default), and
+a file is decrypted up to 22 (`MaxWorkFactor`, age's cap), which takes 4 GiB of memory; past it the
+file is refused. A failed decryption throws `AgeException`, whose `Failure` is `NoMatch` for a wrong
+password (or a file not encrypted with one), `Header` or `Payload` for a file that is no age file or
+is damaged. `IsOpenedByAsync` tells whether a password opens a file from its header alone. Store an
+encrypted file with `UploadOptions.Encrypted`. A directory is encrypted with `EncryptDirectoryAsync`
+and a check from `FolderPassword.CreateCheckAsync`; from then on every file stored under it must be
+encrypted with its password, which `FolderPassword.MatchesAsync` tells against the check that
+`GetEncryptionAsync` or a listing's `EncryptedBy` answers. Files already
 there stay as they are until the client encrypts them in place with `SwapContentAsync`, which takes
 the file's record as it was read and stores the encrypted (or decrypted) contents in its place: the
 file keeps its id, and its old contents are gone at once, from replicas too, never to the trash.
 A file that changed since it was read is refused with a conflict. `RemoveDirectoryEncryptionAsync`
 ends the rule and leaves the files encrypted. The server keeps the rule
 ([Storage](../ByteShelf.Server/Storage/Storage.md#encryption-shelfencryption)), and so does the
-in-memory client. Neither kind of link reaches an encrypted file: making a download link to one, or
+in-memory client, as far as either can see it: a file stored under the directory must be sent as
+encrypted and start as an age file. Neither ever sees the password, so the client that stores the
+file is the one that checks it with `MatchesAsync`. Neither kind of link reaches an encrypted file: making a download link to one, or
 an upload link under an encrypted directory or over an encrypted file, throws a conflict.
 
 ## In tests

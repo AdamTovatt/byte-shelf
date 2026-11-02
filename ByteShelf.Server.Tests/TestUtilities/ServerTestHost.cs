@@ -5,6 +5,7 @@ using ByteShelf.Server.Email;
 using ByteShelf.Server.Mcp;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Auth;
+using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Services;
 using ByteShelfCommon;
 using Microsoft.AspNetCore.Builder;
@@ -121,6 +122,9 @@ namespace ByteShelf.Server.Tests.TestUtilities
 
                     // No public URL, whatever APP_BASE_URL the machine running the tests has; a test wanting one registers it.
                     builder.Services.AddSingleton(new PublicAddress(null));
+
+                    // No first admin from the environment, whatever INITIAL_ADMIN_* the machine has: the host makes its own users.
+                    builder.Services.AddSingleton(new InitialAdminSettings(null, null, null));
                     configureServices?.Invoke(builder.Services);
                 },
                 EmailOptions.None);

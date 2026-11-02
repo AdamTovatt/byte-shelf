@@ -42,7 +42,7 @@ namespace ByteShelf.Tools
             {
                 if (!file.Encrypted)
                 {
-                    string chosen = folder == null ? password(PasswordUse.New) : await FolderPasswordAsync(folder, password, cancellationToken);
+                    string chosen = await PasswordForAsync(folder, PasswordUse.New, password, cancellationToken);
                     await FolderTransfers.StopOnAsync(result, cancellationToken, () => EncryptFileAsync(shelf, file, new Encryptor(chosen, workFactor), result, cancellationToken));
                 }
 
@@ -55,13 +55,16 @@ namespace ByteShelf.Tools
                 throw new UsageException($"'{directoryPath}' is inside the encrypted folder '{folder.Directory.Path}'; encrypt that folder to finish what is under it.");
             }
 
-            Encryptor encryptor = new Encryptor(folder == null ? password(PasswordUse.New) : await FolderPasswordAsync(folder, password, cancellationToken), workFactor);
+            Encryptor encryptor = new Encryptor(await PasswordForAsync(folder, PasswordUse.New, password, cancellationToken), workFactor);
             List<ShelfFile> files = await FilesUnderAsync(shelf, directoryPath, cancellationToken);
+            HashSet<Guid> checkedFiles = new HashSet<Guid>();
             if (folder == null)
             {
                 // Refused before anything changes: once the directory is encrypted, a file under it
                 // could no longer be decrypted with its own password.
-                await RequireAllOpenedByAsync(shelf, files.Where(under => under.Encrypted), encryptor.Password, cancellationToken);
+                List<ShelfFile> encrypted = files.Where(under => under.Encrypted).ToList();
+                await RequireAllOpenedByAsync(shelf, encrypted, encryptor.Password, cancellationToken);
+                checkedFiles.UnionWith(encrypted.Select(under => under.Id));
             }
 
             await FolderTransfers.StopOnAsync(result, cancellationToken, async () =>
@@ -69,6 +72,10 @@ namespace ByteShelf.Tools
                 if (folder == null)
                 {
                     await shelf.EncryptDirectoryAsync(directoryPath, await encryptor.CreateCheckAsync(cancellationToken), cancellationToken);
+
+                    // Listed again now that nothing plain can land in it: a file stored after the first
+                    // listing would be left plain otherwise.
+                    files = await FilesUnderAsync(shelf, directoryPath, cancellationToken);
                 }
 
                 foreach (ShelfFile under in files)
@@ -79,8 +86,11 @@ namespace ByteShelf.Tools
                         {
                             await EncryptFileAsync(shelf, under, encryptor, result, cancellationToken);
                         }
-                        else if (folder != null && !await IsOpenedByAsync(shelf, under, encryptor.Password, cancellationToken))
+                        else if (!checkedFiles.Contains(under.Id) && !await IsOpenedByAsync(shelf, under, encryptor.Password, cancellationToken))
                         {
+                            // One scrypt per encrypted file when run again, slow on a large folder, and kept:
+                            // a file under the folder that its password does not open is told now, not
+                            // when someone tries to open it.
                             // Only a client that skipped the folder's check could have stored it here.
                             throw new UsageException("it is encrypted with another password; move it out of this folder to decrypt it with that one.");
                         }
@@ -131,7 +141,7 @@ namespace ByteShelf.Tools
                 throw new UsageException($"The encrypted folder '{encryptedBelow.Path}' is under '{directoryPath}'; decrypt that folder itself.");
             }
 
-            string folderPassword = folder != null ? await FolderPasswordAsync(folder, password, cancellationToken) : password(PasswordUse.Existing);
+            string folderPassword = await PasswordForAsync(folder, PasswordUse.Existing, password, cancellationToken);
             await FolderTransfers.StopOnAsync(result, cancellationToken, async () =>
             {
                 if (folder != null)
@@ -168,7 +178,17 @@ namespace ByteShelf.Tools
         public static async Task<string> ExistingPasswordAsync(IShelfClient shelf, string path, Func<PasswordUse, string> password, CancellationToken cancellationToken)
         {
             EncryptedFolder? folder = (await shelf.GetEncryptionAsync(path, cancellationToken)).EncryptedBy;
-            return folder != null ? await FolderPasswordAsync(folder, password, cancellationToken) : password(PasswordUse.Existing);
+            return await PasswordForAsync(folder, PasswordUse.Existing, password, cancellationToken);
+        }
+
+        /// <summary>
+        /// The password for a place: <paramref name="folder"/>'s, checked, when the place is under one;
+        /// else one asked for as <paramref name="outsideFolders"/> says.
+        /// </summary>
+        /// <exception cref="UsageException">It is not the folder's password.</exception>
+        public static async Task<string> PasswordForAsync(EncryptedFolder? folder, PasswordUse outsideFolders, Func<PasswordUse, string> password, CancellationToken cancellationToken)
+        {
+            return folder != null ? await FolderPasswordAsync(folder, password, cancellationToken) : password(outsideFolders);
         }
 
         /// <summary>
@@ -202,14 +222,22 @@ namespace ByteShelf.Tools
         }
 
         /// <exception cref="UsageException">The password does not open some of <paramref name="files"/>, which it names.</exception>
+        /// <exception cref="AgeException">One of them cannot be read as an age file a password opens, which it names.</exception>
         private static async Task RequireAllOpenedByAsync(IShelfClient shelf, IEnumerable<ShelfFile> files, string password, CancellationToken cancellationToken)
         {
             List<string> others = new List<string>();
             foreach (ShelfFile file in files)
             {
-                if (!await IsOpenedByAsync(shelf, file, password, cancellationToken))
+                try
                 {
-                    others.Add($"'{file.Path}'");
+                    if (!await IsOpenedByAsync(shelf, file, password, cancellationToken))
+                    {
+                        others.Add($"'{file.Path}'");
+                    }
+                }
+                catch (AgeException exception)
+                {
+                    throw new AgeException(exception.Failure, $"Nothing was encrypted: '{file.Path}' could not be checked against the password. {exception.Message}");
                 }
             }
 
@@ -239,15 +267,11 @@ namespace ByteShelf.Tools
         {
             List<ShelfFile> files = new List<ShelfFile>();
             ShelfDirectory? encryptedBelow = null;
-            string? after = null;
-            do
+            await foreach (DirectoryTree page in Entries.TreePagesAsync(shelf, directoryPath, TreeQuery.MaxLimit, cancellationToken))
             {
-                DirectoryTree page = await shelf.ListTreeAsync(new TreeQuery { Under = directoryPath, Limit = TreeQuery.MaxLimit, After = after }, cancellationToken);
                 files.AddRange(page.Files);
                 encryptedBelow ??= page.Directories.FirstOrDefault(directory => directory.Encrypted);
-                after = page.NextCursor;
             }
-            while (after != null);
 
             return (files, encryptedBelow);
         }

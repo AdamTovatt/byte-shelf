@@ -329,6 +329,22 @@ namespace ByteShelf.Server.Tests.Replication
         }
 
         [Fact]
+        public async Task Sync_ACopyMissingOneFilesContents_StillTakesALaterFileWithTheSameContents()
+        {
+            Guid missing = Guid.Empty;
+            await using ReplicationPair pair = await ReplicationPair.StartAsync(primary => new MissingContentsHandler(primary, () => missing), pageSize: 1);
+            await pair.CreateShelfAsync("docs");
+            missing = (await pair.PutOnPrimaryAsync("docs", "/a.txt", "the same bytes")).Id;
+            await pair.PutOnPrimaryAsync("docs", "/b.txt", "the same bytes");
+            await pair.PairAsync();
+
+            await pair.SyncAsync();
+
+            using HttpClient replica = await pair.SignInOnReplicaAsync();
+            Assert.Equal("the same bytes", await replica.GetStringAsync("/api/shelves/docs/content?path=/b.txt"));
+        }
+
+        [Fact]
         public async Task Sync_BytesThatDoNotMatchTheirHash_AreNotKept()
         {
             await using ReplicationPair tampered = await ReplicationPair.StartAsync(primary => new TamperingHandler(primary));
@@ -660,6 +676,28 @@ namespace ByteShelf.Server.Tests.Replication
                 }
 
                 return response;
+            }
+        }
+
+        /// <summary>Answers 404 for one file's bytes, as the primary does once that file no longer holds them.</summary>
+        private sealed class MissingContentsHandler : DelegatingHandler
+        {
+            private readonly Func<Guid> _missing;
+
+            public MissingContentsHandler(HttpMessageHandler primary, Func<Guid> missing)
+                : base(primary)
+            {
+                _missing = missing;
+            }
+
+            protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                if (request.RequestUri!.AbsolutePath.EndsWith($"/files/{_missing():D}/object", StringComparison.Ordinal))
+                {
+                    return new HttpResponseMessage(HttpStatusCode.NotFound);
+                }
+
+                return await base.SendAsync(request, cancellationToken);
             }
         }
 

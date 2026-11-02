@@ -29,8 +29,12 @@ namespace ByteShelf.Server.Email.Services
                     _logger.LogWarning("No mail provider is configured: emails, password-reset links included, are written to the log instead of sent.");
                     break;
                 case LogOnlyEmail:
-                    _logger.LogWarning("No mail provider is configured: emails, password-reset links included, are not sent, so a forgotten password cannot be reset.");
+                    _logger.LogWarning("No mail provider is configured: emails, password-reset links included, are not sent, so a forgotten password is reset only with the server's --reset-password.");
                     break;
+                case PostmarkEmail:
+                    break;
+                default:
+                    throw new InvalidOperationException($"No startup warning is defined for {_options.GetType().Name}.");
             }
 
             return Task.CompletedTask;

@@ -14,6 +14,10 @@ namespace ByteShelf.Server.Storage.Services
     /// could differ). A file moved out keeps its encryption. Plain files already there when it was
     /// encrypted stay plain until a client encrypts them in place, by swapping their contents.
     /// </summary>
+    /// <remarks>
+    /// The encryption types and messages say folder (<c>EncryptedFolder</c>), as the web UI and the CLI
+    /// say to the person; storage's own types say directory.
+    /// </remarks>
     public sealed class ShelfEncryption
     {
         private readonly IDirectoryRepository _directoryRepository;

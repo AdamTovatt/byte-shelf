@@ -23,47 +23,66 @@ const shelf = vi.hoisted(() => ({
   stored: [] as string[],
   folderMarks: [] as string[],
   headerReads: [] as string[],
+  /** The files whose header read has ended, the read aborted once it was checked. */
+  headerReadsEnded: [] as string[],
+  /** Held until it settles, every header read waits for it: a password check still running. */
+  gate: null as Promise<void> | null,
+  /** What changed, in order: a folder marked or unmarked, a file swapped, what is shown refetched. */
+  events: [] as string[],
   failing: new Set<string>(),
   unreachable: false,
   /** What happens on the server just before a folder is marked encrypted, such as an upload. */
   beforeMark: async () => {},
 }));
 
-vi.mock('../services/encryptionService', () => ({
-  fetchEncryptedFolder: async (_shelf: string, path: string) => {
-    if (shelf.unreachable) throw new Error('The server cannot be reached.');
-    for (const directory of shelf.directories.values()) {
-      const check = shelf.checks.get(directory.id);
-      if (check && (path === directory.path || path.startsWith(`${directory.path}/`))) return { directory, check };
-    }
-    return null;
-  },
-  encryptDirectory: async (_shelf: string, id: string, check: string) => {
-    await shelf.beforeMark();
-    shelf.folderMarks.push(`encrypt ${id}`);
-    shelf.checks.set(id, check);
-    return shelf.directories.get(id);
-  },
-  removeDirectoryEncryption: async (_shelf: string, id: string) => {
-    shelf.folderMarks.push(`remove ${id}`);
-    shelf.checks.delete(id);
-    return shelf.directories.get(id);
-  },
-  replaceContent: async (_shelf: string, file: ShelfFile, content: Blob, encrypted: boolean) => {
-    if (shelf.failing.has(file.name)) throw new Error('the server refused it');
-    shelf.stored.push(`${file.name} ${encrypted ? 'encrypted' : 'plain'}`);
-    const stored = { ...file, encrypted, contentType: content.type };
-    shelf.files.set(file.id, { file: stored, content });
-    return stored;
-  },
-  filesUnder: async (_shelf: string, path: string) =>
-    Array.from(shelf.files.values()).map((each) => each.file).filter((file) => file.path.startsWith(`${path}/`)),
-}));
+vi.mock('../services/encryptionService', () => {
+  const filesUnder = (path: string) => Array.from(shelf.files.values()).map((each) => each.file).filter((file) => file.path.startsWith(`${path}/`));
+  return {
+    fetchEncryptedFolder: async (_shelf: string, path: string) => {
+      if (shelf.unreachable) throw new Error('The server cannot be reached.');
+      for (const directory of shelf.directories.values()) {
+        const check = shelf.checks.get(directory.id);
+        if (check && (path === directory.path || path.startsWith(`${directory.path}/`))) return { directory, check };
+      }
+      return null;
+    },
+    encryptDirectory: async (_shelf: string, id: string, check: string) => {
+      await shelf.beforeMark();
+      shelf.folderMarks.push(`encrypt ${id}`);
+      shelf.events.push(`encrypt ${id}`);
+      shelf.checks.set(id, check);
+      return shelf.directories.get(id);
+    },
+    removeDirectoryEncryption: async (_shelf: string, id: string) => {
+      shelf.folderMarks.push(`remove ${id}`);
+      shelf.events.push(`remove ${id}`);
+      shelf.checks.delete(id);
+      return shelf.directories.get(id);
+    },
+    replaceContent: async (_shelf: string, file: ShelfFile, content: Blob, encrypted: boolean) => {
+      if (shelf.failing.has(file.name)) throw new Error('the server refused it');
+      shelf.stored.push(`${file.name} ${encrypted ? 'encrypted' : 'plain'}`);
+      shelf.events.push(`${file.name} ${encrypted ? 'encrypted' : 'plain'}`);
+      const stored = { ...file, encrypted, contentType: content.type };
+      shelf.files.set(file.id, { file: stored, content });
+      return stored;
+    },
+    filesUnder: async (_shelf: string, path: string) => filesUnder(path),
+    treeUnder: async (_shelf: string, path: string) => ({
+      directories: Array.from(shelf.directories.values())
+        .filter((directory) => directory.path.startsWith(`${path}/`))
+        .map((directory) => ({ ...directory, encrypted: shelf.checks.has(directory.id) })),
+      files: filesUnder(path),
+    }),
+  };
+});
 
 vi.mock('../services/contentService', () => ({
   readContent: async (_shelf: string, id: string) => shelf.files.get(id)!.content,
-  openContent: async (_shelf: string, id: string) => {
+  openContent: async (_shelf: string, id: string, signal: AbortSignal) => {
     shelf.headerReads.push(id);
+    signal.addEventListener('abort', () => shelf.headerReadsEnded.push(id));
+    await shelf.gate;
     return shelf.files.get(id)!.content.stream();
   },
 }));
@@ -101,6 +120,7 @@ async function textOf(path: string, password?: string): Promise<string> {
 
 describe('encryption in the browser', () => {
   let root: Root;
+  let client: QueryClient;
   let encryption: ReturnType<typeof useEncryption>;
   const errors: string[] = [];
 
@@ -118,7 +138,7 @@ describe('encryption in the browser', () => {
 
   beforeEach(async () => {
     sessionStorage.clear();
-    Object.assign(shelf, { stored: [], folderMarks: [], headerReads: [], unreachable: false, beforeMark: async () => {} });
+    Object.assign(shelf, { stored: [], folderMarks: [], headerReads: [], headerReadsEnded: [], gate: null, events: [], unreachable: false, beforeMark: async () => {} });
     shelf.files.clear();
     shelf.checks.clear();
     shelf.directories.clear();
@@ -128,8 +148,12 @@ describe('encryption in the browser', () => {
       errors.push(messageText(message as ReactNode));
       return '';
     });
+    client = new QueryClient();
+    vi.spyOn(client, 'invalidateQueries').mockImplementation(async (filters) => {
+      if (filters?.queryKey?.[0] === 'shelfContents') shelf.events.push('refetch');
+    });
     root = createRoot(document.body.appendChild(document.createElement('div')));
-    await act(async () => root.render(<QueryClientProvider client={new QueryClient()}><Probe /></QueryClientProvider>));
+    await act(async () => root.render(<QueryClientProvider client={client}><Probe /></QueryClientProvider>));
   });
 
   afterEach(() => {
@@ -150,15 +174,125 @@ describe('encryption in the browser', () => {
     expect(rememberedPassword(folderPasswordKey('docs', vault.id))).toBe('new');
   });
 
-  it('forgets a kept password that no longer opens a file, and answers null when the prompt is cancelled', async () => {
+  it('forgets a kept password that no longer opens a file', async () => {
     const secret = await file('/secret.txt', 'contents', 'right');
     rememberPassword(filePasswordKey('docs', undefined, secret.id), 'stale');
 
     const { answer: asked } = await untilAsked(() => encryption.contents(secret));
+
+    expect(rememberedPassword(filePasswordKey('docs', undefined, secret.id))).toBeNull();
+    await press('Cancel');
+    await asked;
+  });
+
+  it('answers null when the password prompt is cancelled', async () => {
+    const vault = await encryptedFolder('/vault', 'pw');
+
+    const { answer: asked } = await untilAsked(() => encryption.folderPassword({ directory: vault, check: shelf.checks.get(vault.id)! }));
     await press('Cancel');
 
     expect(await asked).toBeNull();
-    expect(rememberedPassword(filePasswordKey('docs', undefined, secret.id))).toBeNull();
+    expect(document.body.querySelector('form')).toBeNull();
+    expect(rememberedPassword(folderPasswordKey('docs', vault.id))).toBeNull();
+  });
+
+  it('leaves a newer prompt open when a check its cancelled prompt started ends after it opened', async () => {
+    const reports = directory('/reports');
+    await file('/reports/a.txt', 'a', 'pw');
+    let release = () => {};
+    shelf.gate = new Promise((resolve) => {
+      release = resolve;
+    });
+
+    const { answer: removing } = await untilAsked(() => encryption.removeEncryption(folderEntry(reports, 1, 1)));
+    fill('Password', 'pw');
+    await press('Unlock');
+    await press('Cancel');
+    await removing;
+
+    const vault = await encryptedFolder('/vault', 'v');
+    const { answer: asked } = await untilAsked(() => encryption.folderPassword({ directory: vault, check: shelf.checks.get(vault.id)! }));
+    release();
+    await vi.waitFor(() => expect(shelf.headerReadsEnded).toHaveLength(1));
+    await act(async () => {});
+
+    expect(document.body.textContent).toContain('Unlock vault');
+    fill('Password', 'v');
+    await press('Unlock');
+    expect(await asked).toBe('v');
+    expect(shelf.stored).toEqual([]);
+  });
+
+  it('encrypts a file on its own with a new password, kept for the file', async () => {
+    const plain = await file('/a.txt', 'a');
+
+    const { answer: running } = await untilAsked(() => encryption.encrypt({ kind: 'file', value: plain }));
+    fill('Password', 'pw');
+    fill('Password again', 'pw');
+    await press('Next');
+    await press('Encrypt');
+    await running;
+
+    expect(shelf.stored).toEqual(['a.txt encrypted']);
+    expect(await textOf('/a.txt', 'pw')).toBe('encrypted a');
+    expect(rememberedPassword(filePasswordKey('docs', undefined, plain.id))).toBe('pw');
+  });
+
+  it('removes the encryption of a file encrypted on its own, with its password', async () => {
+    const secret = await file('/secret.txt', 'contents', 'pw');
+
+    const { answer: running } = await untilAsked(() => encryption.removeEncryption({ kind: 'file', value: secret }));
+    fill('Password', 'pw');
+    await press('Unlock');
+    await running;
+
+    expect(shelf.stored).toEqual(['secret.txt plain']);
+    expect(await textOf('/secret.txt')).toBe('plain contents');
+  });
+
+  it('changes nothing when the new password for a folder is cancelled', async () => {
+    const reports = directory('/reports');
+    await file('/reports/a.txt', 'a');
+
+    const { answer: running } = await untilAsked(() => encryption.encrypt(folderEntry(reports, 1, 0)));
+    await press('Cancel');
+    await running;
+
+    expect([shelf.folderMarks, shelf.stored, errors]).toEqual([[], [], []]);
+  });
+
+  it('says so when a folder shown as encrypted is no longer one', async () => {
+    const vault = directory('/vault', true);
+    await file('/vault/a.txt', 'a');
+
+    await act(() => encryption.encrypt(folderEntry(vault, 1, 0)));
+
+    expect(errors).toEqual(['Could not encrypt vault:' + 'vault is no longer an encrypted folder.']);
+    expect(shelf.stored).toEqual([]);
+  });
+
+  it('refetches what is shown once a folder is marked, and again once its files are encrypted', async () => {
+    const reports = directory('/reports');
+    await file('/reports/a.txt', 'a');
+
+    const { answer: running } = await untilAsked(() => encryption.encrypt(folderEntry(reports, 1, 0)));
+    fill('Password', 'pw');
+    fill('Password again', 'pw');
+    await press('Next');
+    await press('Encrypt');
+    await running;
+
+    expect(shelf.events).toEqual([`encrypt ${reports.id}`, 'refetch', 'a.txt encrypted', 'refetch']);
+  });
+
+  it('refetches what is shown once a folder is unmarked, and again once its files are decrypted', async () => {
+    const vault = await encryptedFolder('/vault', 'pw');
+    rememberPassword(folderPasswordKey('docs', vault.id), 'pw');
+    await file('/vault/a.txt', 'a', 'pw');
+
+    await act(() => encryption.removeEncryption(folderEntry(vault, 1, 1)));
+
+    expect(shelf.events).toEqual([`remove ${vault.id}`, 'refetch', 'a.txt plain', 'refetch']);
   });
 
   it('refuses to encrypt a folder holding a file under another password, before marking the folder', async () => {
@@ -173,7 +307,7 @@ describe('encryption in the browser', () => {
     await press('Encrypt');
     await running;
 
-    expect(errors).toEqual(['b.txt is encrypted with another password. Remove that encryption first.']);
+    expect(errors).toEqual(['Could not encrypt reports:' + 'b.txt is encrypted with another password. Remove that encryption first.']);
     expect([shelf.folderMarks, shelf.stored]).toEqual([[], []]);
     expect(shelf.headerReads).toEqual([other.id]);
   });
@@ -241,6 +375,44 @@ describe('encryption in the browser', () => {
     expect(shelf.stored).toEqual(['a.txt plain']);
   });
 
+  it('leaves the files of an encrypted folder below a plain one to that folder\'s own Remove encryption', async () => {
+    const reports = directory('/reports');
+    await file('/reports/a.txt', 'a', 'pw');
+    await encryptedFolder('/reports/vault', 'sealed');
+    await file('/reports/vault/b.txt', 'b', 'sealed');
+
+    const { answer: running } = await untilAsked(() => encryption.removeEncryption(folderEntry(reports, 1, 1)));
+    // Only the files this run decrypts count: the inner folder's password opens none of them.
+    fill('Password', 'sealed');
+    await press('Unlock');
+    expect(document.body.textContent).toContain('That is not the password.');
+    fill('Password', 'pw');
+    await press('Unlock');
+    await running;
+
+    expect(shelf.stored).toEqual(['a.txt plain']);
+    expect(errors).toEqual([]);
+  });
+
+  it('asks again for a plain folder\'s files left under another password, rather than reusing the one that opened the others', async () => {
+    const reports = directory('/reports');
+    await file('/reports/a.txt', 'a', 'first');
+    await file('/reports/b.txt', 'b', 'second');
+
+    const { answer: first } = await untilAsked(() => encryption.removeEncryption(folderEntry(reports, 2, 2)));
+    fill('Password', 'first');
+    await press('Unlock');
+    await first;
+    expect(shelf.stored).toEqual(['a.txt plain']);
+
+    const { answer: second } = await untilAsked(() => encryption.removeEncryption(folderEntry(reports, 2, 1)));
+    fill('Password', 'second');
+    await press('Unlock');
+    await second;
+
+    expect(shelf.stored).toEqual(['a.txt plain', 'b.txt plain']);
+  });
+
   it('goes on past a file that fails, then names it and how to finish', async () => {
     const vault = await encryptedFolder('/vault', 'pw');
     rememberPassword(folderPasswordKey('docs', vault.id), 'pw');
@@ -261,7 +433,7 @@ describe('encryption in the browser', () => {
 
     await act(() => encryption.encrypt({ kind: 'file', value: plain }));
 
-    expect(errors).toEqual(['The server cannot be reached.']);
+    expect(errors).toEqual(['Could not encrypt a.txt:' + 'The server cannot be reached.']);
   });
 });
 

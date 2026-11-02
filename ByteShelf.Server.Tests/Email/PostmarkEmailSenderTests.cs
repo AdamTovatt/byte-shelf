@@ -37,7 +37,7 @@ namespace ByteShelf.Server.Tests.Email
 
             using JsonDocument body = JsonDocument.Parse(handler.Body!);
             JsonElement root = body.RootElement;
-            Assert.Equal("Shelf <shelf@example.com>", root.GetProperty("From").GetString());
+            Assert.Equal("\"Shelf\" <shelf@example.com>", root.GetProperty("From").GetString());
             Assert.Equal("user@example.com", root.GetProperty("To").GetString());
             Assert.Equal("Reset your password", root.GetProperty("Subject").GetString());
             Assert.Equal("<p>Reset</p>", root.GetProperty("HtmlBody").GetString());
@@ -47,6 +47,18 @@ namespace ByteShelf.Server.Tests.Email
             // Sent, not left out: an absent field is the dashboard's setting rather than ours.
             Assert.False(root.GetProperty("TrackOpens").GetBoolean());
             Assert.Equal("None", root.GetProperty("TrackLinks").GetString());
+        }
+
+        [Fact]
+        public async Task SendAsync_NameWithACommaAndQuotes_IsSentAsOneQuotedName()
+        {
+            RecordingHandler handler = new RecordingHandler(HttpStatusCode.OK, """{"MessageID":"abc-123","ErrorCode":0,"Message":"OK"}""");
+            PostmarkEmail settings = new PostmarkEmail("server-token", new MailSender("shelf@example.com", "Acme \"Shelf\", Inc"));
+
+            await new PostmarkEmailSender(new ClientFactory(handler), settings, new RecordingLogger<PostmarkEmailSender>()).SendAsync(ResetEmail);
+
+            using JsonDocument body = JsonDocument.Parse(handler.Body!);
+            Assert.Equal("\"Acme \\\"Shelf\\\", Inc\" <shelf@example.com>", body.RootElement.GetProperty("From").GetString());
         }
 
         [Fact]

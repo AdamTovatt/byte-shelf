@@ -15,6 +15,18 @@ namespace ByteShelf.Server.Users
         /// <param name="services">The service collection.</param>
         /// <param name="root">The root whose <c>keys/</c> folder holds the JWT secret.</param>
         /// <remarks>Reset links are made on the registered <see cref="PublicAddress"/>.</remarks>
+        /// <summary>
+        /// The first admin, created at the server's start from <paramref name="settings"/> while there are
+        /// no users (<see cref="InitialAccountSeeder"/>): the web host's, so the server's commands and the
+        /// service tests never read <c>INITIAL_ADMIN_*</c>.
+        /// </summary>
+        public static IServiceCollection AddInitialAdmin(this IServiceCollection services, InitialAdminSettings settings)
+        {
+            services.AddSingleton(settings);
+            services.AddHostedService<InitialAccountSeeder>();
+            return services;
+        }
+
         public static IServiceCollection AddUserServices(this IServiceCollection services, RootFolder root)
         {
             services.TryAddTimeProvider();
@@ -52,10 +64,8 @@ namespace ByteShelf.Server.Users
             services.AddScoped<IPasswordResetService, PasswordResetService>();
             services.AddScoped<IPasswordResetNotifier, EmailPasswordResetNotifier>();
 
-            services.AddSingleton(InitialAdminSettings.FromEnvironment());
             services.AddSingleton<ResetLinkOutbox>();
             services.AddHostedService<ResetLinkSender>();
-            services.AddHostedService<InitialAccountSeeder>();
             services.AddHostedService<ExpiredTokenCleanupWorker>();
 
             return services;

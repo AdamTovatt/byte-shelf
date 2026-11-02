@@ -14,6 +14,9 @@ the same words:
 | `Entries` | A file or directory by path, whichever is there. |
 | `Transfers` | Moving one file between a local file or stream and a shelf; a download is checked against its SHA-256 and written to a side file first. |
 | `FolderTransfers` | Moving a whole local folder or shelf directory. An entry that cannot move is left out and listed; a refusal that would fail every entry (signed out, no permission, over quota, a replica, the server out of reach) stops the transfer. Symbolic links are never followed. |
+| `Encryptor` | A password to encrypt with and its scrypt work factor, which `Transfers` and `FolderTransfers` take to encrypt on the way up. |
+| `EncryptedFiles` | What a download does with an encrypted file: saves it as the age file it is (named `.age` when the download picks the name), decrypts it with a password, or leaves it out. |
+| `Encrypting` | Encrypting and decrypting what is stored, in place, for the CLI's `encrypt` and `decrypt`: a directory first, then each file swapped for its encrypted or decrypted contents, keeping its id. Run again, it finishes a run that stopped. |
 | `LinkLifetimes` | A link's lifetime as written: `30m`, `12h`, `7d`. |
 | `PermissionNames` | The words for access and key permissions. |
 | `TextFormat` | How results read as text, in the terminal and in answers to an agent. |
@@ -44,9 +47,8 @@ the same words:
   a larger image with `localPath` and looks at it there.
   Anything else moves as a local file, through the API, or by a link: `share_file` to fetch one,
   `create_upload_link` to have one sent in, answered with the `curl` command that sends it.
-- `Encrypting` encrypts and decrypts what is stored, in place, for the CLI's `encrypt` and `decrypt`;
-  `Transfers` and `FolderTransfers` take a password to encrypt on the way up and decrypt on the way
-  down. The MCP tools never take one: they refuse encrypted contents and leave them out.
+- The tools never take a password: `download_file` refuses an encrypted file, and a directory
+  download leaves encrypted files out (`EncryptedFiles.LeftOut`) and lists them.
 - Every tool working on one shelf takes `shelf` last and optional: left out, it is the only shelf
   the caller reaches, which a shelf key always is. Several reachable shelves ask for a name.
 - `RequiredArguments` is a call-tool filter both servers add, so a call missing a required argument

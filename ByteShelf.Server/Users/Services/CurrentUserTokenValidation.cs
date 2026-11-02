@@ -52,6 +52,14 @@ namespace ByteShelf.Server.Users.Services
                 return;
             }
 
+            // A token's issue time is in whole seconds (nbf, stamped with iat), so one issued in the same
+            // second as the reset, before or after it, is refused too: the old ones must all go.
+            if (user.SessionsEndedAt is DateTimeOffset ended && context.SecurityToken.ValidFrom < ended.UtcDateTime)
+            {
+                context.Fail("The user's password was reset after this token was issued.");
+                return;
+            }
+
             foreach (Claim role in identity.FindAll(identity.RoleClaimType).ToList())
             {
                 identity.RemoveClaim(role);

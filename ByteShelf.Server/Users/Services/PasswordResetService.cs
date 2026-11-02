@@ -22,6 +22,7 @@ namespace ByteShelf.Server.Users.Services
 
         private readonly IPasswordResetTokenRepository _tokenRepository;
         private readonly IUserLoginRepository _userLoginRepository;
+        private readonly IUserRepository _userRepository;
         private readonly IPasswordResetTokenHandler _tokenHandler;
         private readonly IPasswordHasher _passwordHasher;
         private readonly ResetLinkOutbox _outbox;
@@ -33,6 +34,7 @@ namespace ByteShelf.Server.Users.Services
         public PasswordResetService(
             IPasswordResetTokenRepository tokenRepository,
             IUserLoginRepository userLoginRepository,
+            IUserRepository userRepository,
             IPasswordResetTokenHandler tokenHandler,
             IPasswordHasher passwordHasher,
             ResetLinkOutbox outbox,
@@ -43,6 +45,7 @@ namespace ByteShelf.Server.Users.Services
         {
             _tokenRepository = tokenRepository;
             _userLoginRepository = userLoginRepository;
+            _userRepository = userRepository;
             _tokenHandler = tokenHandler;
             _passwordHasher = passwordHasher;
             _outbox = outbox;
@@ -135,9 +138,10 @@ namespace ByteShelf.Server.Users.Services
         }
 
         /// <summary>
-        /// Gives the user's login <paramref name="passwordHash"/>, and ends every reset link of theirs; false
-        /// when there is no such login. A password set without the current one, by a reset link or by
-        /// whoever runs the server, is followed by <see cref="EndSessionsAsync"/> once it commits.
+        /// Gives the user's login <paramref name="passwordHash"/>, ends every reset link of theirs, and
+        /// refuses every access token issued before <paramref name="now"/>; false when there is no such
+        /// login. A password set without the current one, by a reset link or by whoever runs the server,
+        /// is followed by <see cref="EndSessionsAsync"/> once it commits.
         /// </summary>
         private async Task<bool> ReplaceCredentialAsync(Guid userId, string passwordHash, DateTimeOffset now, IDbSession session)
         {
@@ -147,6 +151,7 @@ namespace ByteShelf.Server.Users.Services
             }
 
             await _tokenRepository.InvalidateAllForUserAsync(userId, now, session);
+            await _userRepository.EndSessionsAsync(userId, now, session);
             return true;
         }
 

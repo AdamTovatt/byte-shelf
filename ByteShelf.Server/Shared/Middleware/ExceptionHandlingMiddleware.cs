@@ -70,6 +70,17 @@ namespace ByteShelf.Server.Shared.Middleware
             await context.Response.WriteAsync(JsonSerializer.Serialize(body, JsonDefaults.CamelCase));
         }
 
+        /// <summary>
+        /// What the caller is told of <paramref name="exception"/> when it is a refusal it can act on, as
+        /// the API answers it; null for a fault, which the API answers with 500. For the server's commands
+        /// too, so they tell the same as the API.
+        /// </summary>
+        internal static string? RefusalMessage(Exception exception)
+        {
+            (HttpStatusCode statusCode, string message, _) = Classify(exception);
+            return statusCode == HttpStatusCode.InternalServerError ? null : message;
+        }
+
         private static (HttpStatusCode StatusCode, string Message, string? Code) Classify(Exception exception)
         {
             return exception switch

@@ -88,10 +88,10 @@ export function useTrash(shelf: string) {
 /** Refetches what a change on a shelf touches. The live updates do too, a moment later; this is for the tab that made it. */
 export function useInvalidateShelf() {
   const queryClient = useQueryClient();
-  return () => {
+  return useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.shelves.root });
     void queryClient.invalidateQueries({ queryKey: queryKeys.shelfContents.root });
-  };
+  }, [queryClient]);
 }
 
 export function useCreateShelf() {
@@ -120,33 +120,60 @@ export function useCreateDirectory(shelf: string) {
   return useMutation({ mutationFn: (path: string) => createDirectory(shelf, path), onSuccess: invalidate });
 }
 
+interface Move {
+  kind: Entry['kind'];
+  id: string;
+  toPath: string;
+}
+
+function moveEntry(shelf: string, { kind, id, toPath }: Move): Promise<unknown> {
+  return kind === 'file' ? moveFile(shelf, id, toPath) : moveDirectory(shelf, id, toPath);
+}
+
 export function useMoveEntry(shelf: string) {
   const invalidate = useInvalidateShelf();
-  return useMutation({
-    mutationFn: ({ kind, id, toPath }: { kind: 'file' | 'directory'; id: string; toPath: string }) =>
-      kind === 'file' ? moveFile(shelf, id, toPath) : moveDirectory(shelf, id, toPath),
-    onSuccess: invalidate,
-  });
+  return useMutation({ mutationFn: (move: Move) => moveEntry(shelf, move), onSuccess: invalidate });
+}
+
+/**
+ * A move refused: the name of the entry it stopped at and the server's reason, for a toast to set on
+ * lines of their own. Its message, for a form, names the entry only when several were moving.
+ */
+export class MoveRefused extends Error {
+  readonly entryName: string;
+  readonly reason: string;
+
+  constructor(entryName: string, caught: unknown, several: boolean) {
+    const reason = getErrorMessage(caught, several ? 'it was refused' : 'Could not move it');
+    super(several ? `Could not move ${entryName}: ${reason}` : reason);
+    this.entryName = entryName;
+    this.reason = reason;
+  }
 }
 
 /**
  * Moves entries into the folder at `folder`, keeping their names, one at a time; those already there
- * are skipped. A refusal stops there and throws, naming what it stopped at when there are several;
- * what moved before it stays moved.
+ * are skipped. A refusal stops there and throws a MoveRefused; what moved before it stays moved. What
+ * is shown is refetched once, after the last or the refusal, rather than once a move.
  */
 export function useMoveEntries(shelf: string) {
-  const moveEntry = useMoveEntry(shelf);
-  const { mutateAsync } = moveEntry;
+  const invalidate = useInvalidateShelf();
   return useCallback(async (entries: Entry[], folder: string): Promise<void> => {
-    for (const entry of entries) {
-      if (parentPath(entry.value.path) === folder) continue;
-      try {
-        await mutateAsync({ kind: entry.kind, id: entry.value.id, toPath: joinPath(folder, entry.value.name) });
-      } catch (caught) {
-        throw new Error(entries.length === 1 ? getErrorMessage(caught, 'Could not move it') : `Could not move ${entry.value.name}: ${getErrorMessage(caught, 'it was refused')}`);
+    let moved = false;
+    try {
+      for (const entry of entries) {
+        if (parentPath(entry.value.path) === folder) continue;
+        try {
+          await moveEntry(shelf, { kind: entry.kind, id: entry.value.id, toPath: joinPath(folder, entry.value.name) });
+        } catch (caught) {
+          throw new MoveRefused(entry.value.name, caught, entries.length > 1);
+        }
+        moved = true;
       }
+    } finally {
+      if (moved) invalidate();
     }
-  }, [mutateAsync]);
+  }, [shelf, invalidate]);
 }
 
 export function useDeleteEntry(shelf: string) {

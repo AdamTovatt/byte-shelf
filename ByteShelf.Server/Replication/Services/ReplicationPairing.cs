@@ -17,8 +17,7 @@ namespace ByteShelf.Server.Replication.Services
     /// the replica uses from then on.
     /// </summary>
     /// <remarks>
-    /// Not done (review item 55, a taste call): Storage's naming, an interface and a <c>…Service</c>
-    /// name. Nothing substitutes this class, and renaming it would only move code around.
+    /// A class without an interface, named for what it does: nothing substitutes it.
     /// </remarks>
     public sealed class ReplicationPairing
     {

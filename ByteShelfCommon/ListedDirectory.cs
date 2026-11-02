@@ -13,9 +13,10 @@ namespace ByteShelfCommon
         public required int FileCount { get; init; }
 
         /// <summary>
-        /// How many of those files are encrypted. Below <see cref="FileCount"/> under an encrypted
-        /// directory, or above zero under a plain one, it shows encrypting or decrypting in place left
-        /// files to finish.
+        /// How many of those files are encrypted, leaving out those under an encrypted directory below
+        /// this one, which that directory's own count holds. Below <see cref="FileCount"/> under an
+        /// encrypted directory, or above zero under a plain one, it shows encrypting or decrypting in
+        /// place left files to finish.
         /// </summary>
         public required int EncryptedFileCount { get; init; }
     }

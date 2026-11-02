@@ -91,18 +91,17 @@ namespace ByteShelf.Tools
         /// under it as a local folder: <paramref name="localTarget"/>, or inside it under the directory's
         /// name when it is a folder that exists, or that name in the working folder when null.
         /// </summary>
-        /// <param name="encrypted">What to do with encrypted files; null saves them as they are (<see cref="EncryptedFiles.SavedAsTheyAre"/>), as age files.</param>
+        /// <param name="encrypted">What to do with encrypted files: decrypt them, save them as age files, or leave them out.</param>
         /// <param name="pageSize">How many entries to ask for at a time; tests make it small to page over few files.</param>
         public static async Task<FolderTransferResult> DownloadAsync(
             IShelfClient shelf,
             ShelfLocation location,
             string? localTarget,
             bool overwrite,
+            EncryptedFiles encrypted,
             CancellationToken cancellationToken,
-            EncryptedFiles? encrypted = null,
             int pageSize = TreeQuery.MaxLimit)
         {
-            encrypted ??= EncryptedFiles.SavedAsTheyAre;
             string name = location.Path == ShelfPath.Root ? location.Shelf : ShelfPath.GetName(location.Path);
             string root = Path.GetFullPath(localTarget == null ? name : Directory.Exists(localTarget) ? Path.Combine(localTarget, name) : localTarget);
             FolderTransferResult result = new FolderTransferResult(root);
@@ -111,20 +110,15 @@ namespace ByteShelf.Tools
             await StopOnAsync(result, cancellationToken, async () =>
             {
                 Directory.CreateDirectory(root);
-                string? after = null;
-                do
+                await foreach (DirectoryTree page in Entries.TreePagesAsync(shelf, location.Path, pageSize, cancellationToken))
                 {
-                    DirectoryTree page = await shelf.ListTreeAsync(new TreeQuery { Under = location.Path, Limit = pageSize, After = after }, cancellationToken);
                     foreach (TreeEntry entry in page.InOrder())
                     {
                         await RunAsync(entry.Path, result, () => entry.File == null
                             ? SaveDirectoryAsync(entry.Path, names)
                             : SaveFileAsync(shelf, entry.File, names, overwrite, encrypted, result, cancellationToken));
                     }
-
-                    after = page.NextCursor;
                 }
-                while (after != null);
             });
 
             return result;
@@ -175,6 +169,7 @@ namespace ByteShelf.Tools
         }
 
         /// <summary>Runs the transfer, keeping a failure that stops it in the result rather than losing what was done.</summary>
+        /// <remarks>Internal, with <see cref="RunAsync"/>, for <see cref="Encrypting"/>, whose runs report as transfers do.</remarks>
         internal static async Task StopOnAsync(FolderTransferResult result, CancellationToken cancellationToken, Func<Task> transfer)
         {
             try

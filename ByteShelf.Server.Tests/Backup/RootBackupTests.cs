@@ -148,6 +148,30 @@ namespace ByteShelf.Server.Tests.Backup
         }
 
         [Fact]
+        public async Task WriteAsync_TwoFilesSwappedToTheSameContentsAfterTheSnapshot_BacksUpThoseContentsOnce()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile first = await StoreTextAsync(shelf, "/a.txt", "first");
+            ShelfFile second = await StoreTextAsync(shelf, "/b.txt", "second");
+            byte[] encrypted = System.Text.Encoding.ASCII.GetBytes("age-encryption.org/v1\nthe same");
+            string sameSha256 = null!;
+
+            BackupSummary summary = await RootBackup.WriteAsync(TestRoot.Root, _zipPath, async () =>
+            {
+                foreach (ShelfFile plain in new[] { first, second })
+                {
+                    StartContentSwapRequest request = new StartContentSwapRequest { FileId = plain.Id, Sha256 = plain.Sha256, SizeBytes = encrypted.Length, Encrypted = true };
+                    sameSha256 = (await UploadService.SwapAsync(shelf, request, Uploader, new MemoryStream(encrypted), CancellationToken.None)).Sha256;
+                }
+            }, CancellationToken.None);
+
+            RootFolder restored = Restore();
+            Assert.Equal(1, summary.ObjectCount);
+            Assert.Equal(2, await CountAsync(restored, $"SELECT COUNT(*) FROM file WHERE sha256 = '{sameSha256}'"));
+            Assert.True(new StoredObjects(restored).Exists(sameSha256));
+        }
+
+        [Fact]
         public async Task WriteAsync_ObjectMissingWhileAFilePointsAtIt_WritesNoBackup()
         {
             Shelf shelf = await CreateShelfAsync();

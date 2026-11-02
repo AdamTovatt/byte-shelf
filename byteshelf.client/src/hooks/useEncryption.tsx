@@ -1,8 +1,9 @@
-import { Fragment, useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import toast from 'react-hot-toast';
 import { getErrorMessage } from '../ui';
 import { PasswordDialog, type PasswordRequest } from '../components/PasswordDialog';
-import { NameLine } from '../components/MiddleTruncatedName';
+import { NameAndReason, NameLine } from '../components/MiddleTruncatedName';
+import { runOrToastNamed } from '../components/nameToasts';
 import { DEFAULT_WORK_FACTOR, checkMatches, createCheck, decryptBlob, decryptBlobWith, encryptBlob, opensWith } from '../lib/encryption/age';
 import { filePasswordKey, folderPasswordKey, forgetPassword, rememberPassword, rememberedPassword } from '../lib/encryption/passwords';
 import {
@@ -11,11 +12,11 @@ import {
   filesUnder,
   removeDirectoryEncryption,
   replaceContent,
+  treeUnder,
   type EncryptedFolder,
 } from '../services/encryptionService';
 import { openContent, readContent } from '../services/contentService';
 import type { Entry, ShelfDirectory, ShelfFile } from '../services/shelfService';
-import { runOrToast } from '../lib/utils';
 import { useInvalidateShelf } from './useShelfQueries';
 
 /** What a row's menu offers for encryption. */
@@ -41,6 +42,8 @@ export function encryptionActions(entry: Entry, inside: 'encrypted' | 'plain' | 
 }
 
 interface Pending {
+  /** Tells one prompt from the next, even for the same name. */
+  id: number;
   request: PasswordRequest;
   resolve: (password: string | null) => void;
 }
@@ -50,25 +53,33 @@ interface Pending {
  * (`passwords.ts`), their contents decrypted from the stored bytes (never through a link), and
  * encrypting or decrypting a file or a folder in place. `dialog` is the password prompt to render.
  * `workFactor` is what new files and folders are encrypted at; only tests lower it.
+ *
+ * These jobs stay in one hook: they share the one prompt and the tab's kept passwords, which split
+ * apart each would have to take as arguments.
  */
 export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
   const [pending, setPending] = useState<Pending | null>(null);
+  const prompts = useRef(0);
   const invalidate = useInvalidateShelf();
 
-  const ask = useCallback((request: PasswordRequest) => new Promise<string | null>((resolve) => setPending({ request, resolve })), []);
+  const ask = useCallback(
+    (request: PasswordRequest) => new Promise<string | null>((resolve) => setPending({ id: ++prompts.current, request, resolve })),
+    [],
+  );
+
+  // Closes only its own prompt: a password check still running when its prompt was cancelled ends
+  // after another prompt may have opened, and must leave that one open.
+  function settle(settled: Pending, password: string | null): void {
+    setPending((current) => (current === settled ? null : current));
+    settled.resolve(password);
+  }
 
   const dialog: ReactNode = pending && (
     <PasswordDialog
-      key={pending.request.name}
+      key={pending.id}
       request={pending.request}
-      onDone={(password) => {
-        setPending(null);
-        pending.resolve(password);
-      }}
-      onCancel={() => {
-        setPending(null);
-        pending.resolve(null);
-      }}
+      onDone={(password) => settle(pending, password)}
+      onCancel={() => settle(pending, null)}
     />
   );
 
@@ -132,7 +143,7 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
      */
     async function encrypt(entry: Entry): Promise<void> {
       const { name } = entry.value;
-      await runOrToast(async () => {
+      await runOrToastNamed(async () => {
         if (entry.kind === 'file') {
           const file = entry.value;
           const folder = await fetchEncryptedFolder(shelf, file.path);
@@ -152,7 +163,7 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
         // Listed once the folder is encrypted, when no plain file can arrive any more.
         const plain = (await filesUnder(shelf, directory.path)).filter((file) => !file.encrypted);
         await inPlace('Encrypting', name, 'Encrypt', plain, (file) => encryptInPlace(file, password));
-      }, `Could not encrypt ${name}`);
+      }, 'Could not encrypt', name);
     }
 
     /**
@@ -191,7 +202,7 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
      */
     async function removeEncryption(entry: Entry): Promise<void> {
       const { name } = entry.value;
-      await runOrToast(async () => {
+      await runOrToastNamed(async () => {
         if (entry.kind === 'file') {
           const plain = await contents(entry.value);
           if (plain === null) return;
@@ -207,17 +218,29 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
           invalidate();
         }
 
-        const encrypted = (await filesUnder(shelf, directory.path)).filter((file) => file.encrypted);
-        await inPlace('Removing encryption from', name, 'Remove encryption', encrypted, (file) => decryptInPlace(file, password));
-      }, `Could not remove encryption from ${name}`);
+        await inPlace('Removing encryption from', name, 'Remove encryption', await encryptedFilesOf(directory), (file) => decryptInPlace(file, password));
+      }, 'Could not remove encryption from', name);
+    }
+
+    /**
+     * The encrypted files a folder's Remove encryption decrypts. Those under an encrypted folder below
+     * it are left out: the server refuses to decrypt a file inside an encrypted folder, and that folder
+     * has a Remove encryption of its own.
+     */
+    async function encryptedFilesOf(directory: ShelfDirectory): Promise<ShelfFile[]> {
+      const { directories, files } = await treeUnder(shelf, directory.path);
+      const sealed = directories.filter((each) => each.encrypted && each.id !== directory.id).map((each) => `${each.path}/`);
+      return files.filter((file) => file.encrypted && !sealed.some((prefix) => file.path.startsWith(prefix)));
     }
 
     /**
      * The password of the encrypted files left under a plain folder: kept under the folder from when
-     * its encryption was removed, or asked for, opening at least one of them. Null when cancelled.
+     * its encryption was removed, or asked for, opening at least one of them. A kept one that opens
+     * none of those left, as when they were encrypted with different passwords, is asked for again.
+     * Null when cancelled.
      */
     async function leftEncryptedPassword(directory: ShelfDirectory): Promise<string | null> {
-      const encrypted = (await filesUnder(shelf, directory.path)).filter((file) => file.encrypted);
+      const encrypted = await encryptedFilesOf(directory);
       return unlock(folderPasswordKey(shelf, directory.id), directory.name, async (given) => {
         for (const file of encrypted) {
           if (await fileOpensWith(file, given)) return true;
@@ -250,12 +273,7 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
       toast.error(
         <span className="flex min-w-0 flex-col">
           {line(`: ${failed.length} of ${files.length} failed.`)}
-          {failed.map((each, index) => (
-            <Fragment key={index}>
-              <NameLine name={each.name} after=":" />
-              <span>{each.reason}</span>
-            </Fragment>
-          ))}
+          {failed.map((each, index) => <NameAndReason key={index} name={each.name} reason={each.reason} />)}
           <span>Choose {action} again to finish.</span>
         </span>,
         { id, duration: 12000 },

@@ -165,21 +165,18 @@ namespace ByteShelf.Server.Tests.Users
         }
 
         [Fact]
-        public async Task SetPasswordAsync_LogsTheLoginWithTheNewHash()
+        public async Task SetPasswordAsync_LogsTheLoginWithTheNewHashAndTheSessionsEnded()
         {
             User user = await UserService.CreateUserAsync(Email, "Known", "old-password");
             long before = await ChangeLog.GetLatestSequenceAsync();
 
             await ResetService.SetPasswordAsync(user.Id, "new-password");
 
-            ChangeLogEntry entry = Assert.Single(await ChangeLog.GetAfterAsync(before, 100));
-            Assert.Equal((ChangeEntityType.UserLogin, ChangeAction.Updated), (entry.EntityType, entry.Action));
-            UserCredentials stored = (await Services.GetRequiredService<IUserLoginRepository>().GetCredentialsByEmailAsync(Email))!;
-            Assert.Equal(stored.PasswordHash, ChangePayload.Deserialize<UserLogin>(entry.Payload!).Credential);
+            await AssertLoggedTheResetAsync(before);
         }
 
         [Fact]
-        public async Task CompleteResetAsync_ValidToken_LogsTheLoginWithTheNewHash()
+        public async Task CompleteResetAsync_ValidToken_LogsTheLoginWithTheNewHashAndTheSessionsEnded()
         {
             await UserService.CreateUserAsync(Email, "Known", "old-password");
             await ResetService.RequestResetAsync(Email);
@@ -188,10 +185,22 @@ namespace ByteShelf.Server.Tests.Users
 
             await ResetService.CompleteResetAsync(link.Token, "new-password");
 
-            ChangeLogEntry entry = Assert.Single(await ChangeLog.GetAfterAsync(before, 100));
-            Assert.Equal((ChangeEntityType.UserLogin, ChangeAction.Updated), (entry.EntityType, entry.Action));
+            await AssertLoggedTheResetAsync(before);
+        }
+
+        /// <summary>
+        /// That the change log holds, after <paramref name="before"/>, the login with its new hash and then
+        /// the user with their sessions ended now: what a replica takes to follow the reset.
+        /// </summary>
+        private async Task AssertLoggedTheResetAsync(long before)
+        {
+            IReadOnlyList<ChangeLogEntry> changes = await ChangeLog.GetAfterAsync(before, 100);
+            Assert.Equal(
+                new[] { (ChangeEntityType.UserLogin, ChangeAction.Updated), (ChangeEntityType.User, ChangeAction.Updated) },
+                changes.Select(change => (change.EntityType, change.Action)));
             UserCredentials stored = (await Services.GetRequiredService<IUserLoginRepository>().GetCredentialsByEmailAsync(Email))!;
-            Assert.Equal(stored.PasswordHash, ChangePayload.Deserialize<UserLogin>(entry.Payload!).Credential);
+            Assert.Equal(stored.PasswordHash, ChangePayload.Deserialize<UserLogin>(changes[0].Payload!).Credential);
+            Assert.Equal(Clock.GetUtcNow(), ChangePayload.Deserialize<User>(changes[1].Payload!).SessionsEndedAt);
         }
 
         /// <summary>The next queued link, or null when none arrives promptly.</summary>

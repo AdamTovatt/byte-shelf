@@ -70,7 +70,8 @@ namespace ByteShelf.Server.Tests.Users
 
             await RunAsync(new Passwords(NewPassword), "--create-user", NewEmail, "--name", "New");
 
-            Assert.Contains(await ChangesAfterAsync(before), change => (change.EntityType, change.Action) == (ChangeEntityType.User, ChangeAction.Added));
+            ChangeLogEntry added = Assert.Single(await ChangesAfterAsync(before), change => (change.EntityType, change.Action) == (ChangeEntityType.User, ChangeAction.Added));
+            Assert.Equal(NewEmail, ChangePayload.Deserialize<User>(added.Payload!).Email);
         }
 
         [Fact]
@@ -131,6 +132,18 @@ namespace ByteShelf.Server.Tests.Users
             Assert.Equal(HttpStatusCode.Unauthorized, (await _host.TrySignInAsync(ServerTestHost.MemberEmail, ServerTestHost.Password)).StatusCode);
             await _host.CreateSignedInClientAsync(ServerTestHost.MemberEmail, NewPassword);
             Assert.Equal(HttpStatusCode.Unauthorized, (await _host.AnonymousClient.PostAsJsonAsync("/api/auth/refresh", new { refreshToken })).StatusCode);
+        }
+
+        [Fact]
+        public async Task ResetPassword_RefusesAnAccessTokenIssuedBeforeIt()
+        {
+            Assert.Equal(HttpStatusCode.OK, (await _host.MemberClient.GetAsync("/api/users/me")).StatusCode);
+
+            int exitCode = await RunAsync(new Passwords(NewPassword), "--reset-password", ServerTestHost.MemberEmail);
+
+            Assert.Equal(UserCommand.Done, exitCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, (await _host.MemberClient.GetAsync("/api/users/me")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await _host.AdminClient.GetAsync("/api/users/me")).StatusCode);
         }
 
         [Fact]
@@ -254,7 +267,9 @@ namespace ByteShelf.Server.Tests.Users
             Assert.False(File.Exists(_host.TestRoot.Root.DatabasePath + "-wal"));
             await using ServiceProvider services = UserCommand.BuildServices(_host.TestRoot.Root, NullLoggerFactory.Instance);
             await using AsyncServiceScope scope = services.CreateAsyncScope();
-            Assert.NotEmpty(await scope.ServiceProvider.GetRequiredService<IChangeLogRepository>().GetAfterAsync(before, 100));
+            IReadOnlyList<ChangeLogEntry> changes = await scope.ServiceProvider.GetRequiredService<IChangeLogRepository>().GetAfterAsync(before, 100);
+            Assert.NotEmpty(changes);
+            Assert.All(changes, change => Assert.Contains(change.EntityType, new[] { ChangeEntityType.User, ChangeEntityType.UserLogin }));
         }
 
         [Fact]

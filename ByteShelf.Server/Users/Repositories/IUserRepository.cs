@@ -14,6 +14,9 @@ namespace ByteShelf.Server.Users.Repositories
         /// <summary>Replaces a user's roles. False when there is no such user.</summary>
         Task<bool> UpdateRolesAsync(Guid userId, IReadOnlyList<string> roles, DateTimeOffset updatedAt, IDbSession session);
 
+        /// <summary>Refuses every access token of the user issued before <paramref name="at"/>. False when there is no such user.</summary>
+        Task<bool> EndSessionsAsync(Guid userId, DateTimeOffset at, IDbSession session);
+
         /// <summary>
         /// Removes a user's row, and with it (by cascade) their reset tokens. Remove their shelf grants and
         /// logins first, so the change log records them gone. False when there is no such user.

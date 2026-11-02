@@ -8,7 +8,9 @@ import {
   pathSegments,
   relativeTo,
   SHELF_ROUTE_PATTERNS,
+  SHELF_SETTINGS_TABS,
   shelfRoute,
+  shelfSettingsRoute,
   shelfViewRoute,
   type ShelfView,
 } from './shelfPaths';
@@ -67,5 +69,11 @@ describe('shelf paths', () => {
 
     expect(matched?.id).toBe(view);
     expect(matched?.params.shelf).toBe('50% docs');
+  });
+
+  it.each(SHELF_SETTINGS_TABS)('routes the %s tab of a shelf\'s settings to the settings page, naming the tab', (tab) => {
+    const matched = match(shelfSettingsRoute('50% docs', tab));
+
+    expect(matched).toEqual({ id: 'settings', params: { shelf: '50% docs', tab } });
   });
 });

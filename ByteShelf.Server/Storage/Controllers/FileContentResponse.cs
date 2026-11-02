@@ -34,8 +34,9 @@ namespace ByteShelf.Server.Storage.Controllers
                 controller.Response.Headers[HeaderNames.ContentSecurityPolicy] = "sandbox; default-src 'none'";
             }
 
-            return controller.PhysicalFile(
-                content.ObjectPath,
+            // The result disposes the stream once it is sent.
+            return controller.File(
+                content.Contents,
                 content.File.ContentType,
                 download ? content.File.Name : null,
                 content.File.UpdatedAt,

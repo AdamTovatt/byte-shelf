@@ -17,6 +17,14 @@ namespace ByteShelf.Server.Storage.Services
         /// <param name="startedBy">Who stores it, recorded on the upload as <see cref="UploadRecord.StartedBy"/>.</param>
         Task<ShelfFile> StoreAsync(Shelf shelf, StartUploadRequest request, string startedBy, Stream content, CancellationToken cancellationToken);
 
+        /// <summary>
+        /// Stores through an upload link, as <see cref="StoreAsync"/> does, refused when it finishes too if
+        /// the place is then under an encrypted directory or holds an encrypted file
+        /// (<see cref="ShelfEncryption.RequireLinkTargetAsync"/>): it may have been encrypted meanwhile.
+        /// </summary>
+        /// <exception cref="Shared.Errors.ConflictException">The place took encryption while the body arrived.</exception>
+        Task<ShelfFile> StoreThroughLinkAsync(Shelf shelf, StartUploadRequest request, string startedBy, Stream content, CancellationToken cancellationToken);
+
         /// <param name="startedBy">Who starts it, recorded as <see cref="UploadRecord.StartedBy"/>.</param>
         Task<UploadSession> StartAsync(Shelf shelf, StartUploadRequest request, string startedBy);
 

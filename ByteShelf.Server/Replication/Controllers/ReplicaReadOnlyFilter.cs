@@ -25,9 +25,9 @@ namespace ByteShelf.Server.Replication.Controllers
             bool reads = HttpMethods.IsGet(method) || HttpMethods.IsHead(method);
             bool allowed = context.ActionDescriptor.EndpointMetadata.OfType<AllowedOnReplicaAttribute>().Any();
 
-            if (!reads && !allowed && !await _replicationState.AllowsWritesAsync())
+            if (!reads && !allowed)
             {
-                throw new ReadOnlyReplicaException();
+                await _replicationState.RequireWritesAsync();
             }
 
             await next();

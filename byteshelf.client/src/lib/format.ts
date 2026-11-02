@@ -74,34 +74,59 @@ export function formatQuota(quotaBytes: number | null | undefined): { amount: st
   return { amount: String(quotaBytes / QUOTA_UNIT_BYTES[unit]), unit };
 }
 
-/** A quota typed as an amount of `unit`, as bytes; null when left empty. The reverse of formatQuota. */
-export function parseQuota(amount: string, unit: QuotaUnit): number | null {
+/**
+ * A quota typed as an amount of `unit`: its bytes, null when left empty, or undefined when what is
+ * typed is not a size.
+ */
+export function tryParseQuota(amount: string, unit: QuotaUnit): number | null | undefined {
   const trimmed = amount.trim();
   if (trimmed === '') {
     return null;
   }
 
   const value = Number(trimmed);
-  if (!Number.isFinite(value) || value < 0) {
+  return Number.isFinite(value) && value >= 0 ? Math.round(value * QUOTA_UNIT_BYTES[unit]) : undefined;
+}
+
+/** A quota typed as an amount of `unit`, as bytes; null when left empty. The reverse of formatQuota. */
+export function parseQuota(amount: string, unit: QuotaUnit): number | null {
+  const bytes = tryParseQuota(amount, unit);
+  if (bytes === undefined) {
     throw new Error(`The quota is a number of ${unit}, or empty for no limit`);
   }
 
-  return Math.round(value * QUOTA_UNIT_BYTES[unit]);
+  return bytes;
 }
 
 /** How many characters before the extension stay with it at the end, as macOS keeps them. */
 const KEPT_BEFORE_EXTENSION = 6;
 
 /**
+ * What counts as an extension: a dot and up to eight letters or digits ending the name, such as
+ * ".pdf" or ".docx". Anything longer after the last dot, or with spaces or dashes in it, is part of
+ * the name ("v1.2 release notes"), so it can give way like the rest.
+ */
+const EXTENSION = /\.[\p{L}\p{N}]{1,8}$/u;
+
+const characters = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+/** The characters of `text` as a reader counts them, an emoji of several code points as one. */
+function charactersOf(text: string): string[] {
+  return Array.from(characters.segment(text), (each) => each.segment);
+}
+
+/**
  * Where a name is cut when it does not fit (MiddleTruncatedName): everything up to the last few
  * characters before its extension may give way to "…", and those characters with the extension always
- * show. A name without an extension keeps its last few characters.
+ * show. A name without an extension keeps its last few characters. It is cut between characters as a
+ * reader sees them, never inside an emoji.
  */
 export function splitForMiddle(name: string): { start: string; end: string } {
-  const dot = name.lastIndexOf('.');
-  const extensionAt = dot > 0 ? dot : name.length;
-  const cut = Math.max(0, extensionAt - KEPT_BEFORE_EXTENSION);
-  return { start: name.slice(0, cut), end: name.slice(cut) };
+  const all = charactersOf(name);
+  const extension = EXTENSION.exec(name);
+  const extensionLength = extension && extension.index > 0 ? charactersOf(extension[0]).length : 0;
+  const cut = Math.max(0, all.length - extensionLength - KEPT_BEFORE_EXTENSION);
+  return { start: all.slice(0, cut).join(''), end: all.slice(cut).join('') };
 }
 
 /** How much of a quota is used, 0 to 1; null without a quota. */

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type DragEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
@@ -30,9 +30,10 @@ import { useFilePicker } from '../hooks/useFilePicker';
 import { MobileTopBarActions, MobileTopBarOverlay } from '../components/layout/MobileTopBar';
 import { useUploads } from '../hooks/useUploads';
 import { encryptionActions, useEncryption } from '../hooks/useEncryption';
-import { fileOpening } from '../lib/fileOpening';
+import { fileOpening } from '../components/fileOpening';
 import { showActionToast } from '../components/actionToast';
-import { NameLine } from '../components/MiddleTruncatedName';
+import { NameAndReason, NameLine } from '../components/MiddleTruncatedName';
+import { reasonOf, runOrToastNamed, toastNamedFailure } from '../components/nameToasts';
 import { DndContext, DragOverlay, pointerWithin } from '@dnd-kit/core';
 import { DraggableEntryRow, DroppableCrumb, EntryDragPreview } from '../components/EntryDragAndDrop';
 import { useEntryDragAndDrop } from '../hooks/useEntryDragAndDrop';
@@ -41,10 +42,10 @@ import { joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../
 import { copyWhenReady } from '../lib/clipboard';
 import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
-import { createDownloadLink, directoryEntry, entrySizeBytes, type Entry, type FileSearchResults, type ShelfFile } from '../services/shelfService';
+import { createDownloadLink, directoryEntry, entrySizeBytes, nameOrCount, type Entry, type FileSearchResults, type ShelfFile } from '../services/shelfService';
 
-// Its toasts and dialogs stay here with the page rather than in their own modules: splitting them out
-// would only reshape working code (final review, item 51).
+// Its toasts and dialogs stay here with the page rather than in modules of their own: each is small
+// and serves this page alone, so apart they would only be moved, not made simpler or shared.
 /** One directory on a shelf: what is in it, uploading into it, and renaming, moving and deleting what is there. */
 export function ShelfPage() {
   const params = useParams();
@@ -106,12 +107,7 @@ export function ShelfPage() {
       const { url, expiresAt } = await link;
       const until = <span>Anyone with it can open it until {formatTime(expiresAt)}.</span>;
       if (await copied) {
-        toast.success(
-          <span className="flex min-w-0 flex-col">
-            <NameLine before="Copied a link to" name={file.name} after="." />
-            {until}
-          </span>,
-        );
+        toast.success(<NameAndReason before="Copied a link to" name={file.name} after="." reason={until} />);
       } else {
         toast((t) => (
           <span className="flex min-w-0 flex-col gap-2">
@@ -135,25 +131,19 @@ export function ShelfPage() {
       try {
         removed.push({ entry, deletionId: (await deleteEntry.mutateAsync({ kind: entry.kind, id: entry.value.id })).deletionId });
       } catch (caught) {
-        toast.error(removing.length === 1
-          ? getErrorMessage(caught, 'Could not delete it')
-          : (
-            <span className="flex min-w-0 flex-col">
-              <NameLine before="Could not delete" name={entry.value.name} after=":" />
-              <span>{getErrorMessage(caught, 'it was refused')}</span>
-            </span>
-          ));
+        if (removing.length === 1) toast.error(getErrorMessage(caught, 'Could not delete it'));
+        else toastNamedFailure('Could not delete', entry.value.name, reasonOf(caught));
       }
     }
     if (removed.length === 0) return;
 
     showActionToast({
-      message: <NameLine before="Moved" name={removed.length === 1 ? removed[0].entry.value.name : `${removed.length} items`} after=" to the trash" />,
+      message: <NameLine before="Moved" name={nameOrCount(removed.map(({ entry }) => entry))} after=" to the trash" />,
       action: 'Undo',
       icon: <Icon icon={iconMap.undo} size={14} />,
       onAction: () => {
         for (const { entry, deletionId } of removed) {
-          void runOrToast(() => restore.mutateAsync(deletionId), `Could not restore ${entry.value.name}`);
+          void runOrToastNamed(() => restore.mutateAsync(deletionId), 'Could not restore', entry.value.name);
         }
       },
       duration: 8000,
@@ -168,14 +158,20 @@ export function ShelfPage() {
     : []), [listing]);
 
   // Opening a subfolder should be instant: fetch the first ones ahead as this folder opens, and any
-  // other as the pointer or focus reaches it (onPrefetch below).
+  // other as the pointer or focus reaches it (onPrefetch below). Only as it opens: the listing is
+  // refetched after every change on the shelf, and fetching them all again each time would send up
+  // to PREFETCHED_SUBFOLDERS more requests for each change.
   const prefetchListing = usePrefetchListing(shelf);
+  const prefetchedFor = useRef<string | null>(null);
   useEffect(() => {
-    listing?.directories.slice(0, PREFETCHED_SUBFOLDERS).forEach((listed) => prefetchListing(listed.directory.path));
-  }, [listing, prefetchListing]);
+    const folder = `${shelf}\n${path}`;
+    if (!listing || prefetchedFor.current === folder) return;
+    prefetchedFor.current = folder;
+    listing.directories.slice(0, PREFETCHED_SUBFOLDERS).forEach((listed) => prefetchListing(listed.directory.path));
+  }, [shelf, path, listing, prefetchListing]);
 
   // Only the folder's own list selects; search results open on a click as before. A search hides
-  // the list, so it lists nothing to select while it shows.
+  // the list, so it lists nothing to select while it shows, and the selection is dropped as it starts.
   const entryIds = useMemo(() => (searching ? [] : entries.map((entry) => entry.value.id)), [entries, searching]);
   const selection = useSelection(entryIds, `${shelf}/${path}`);
   const selected = entries.filter((entry) => selection.isSelected(entry.value.id));
@@ -400,9 +396,9 @@ interface SelectionBarProps {
 }
 
 /**
- * What can be done to the selected rows, over the toolbar while any are selected. As ordo's
- * FileSelectionToolbar. On a narrow screen the buttons keep only their icons, their names read out
- * but not shown, so all of them fit on a phone.
+ * What can be done to the selected rows, over the toolbar while any are selected. On a narrow screen
+ * the buttons keep only their icons, their names read out but not shown, so all of them fit on a
+ * phone.
  */
 function SelectionBar({ placement, count, sizeBytes, onDownload, onMove, onDelete, onClear }: SelectionBarProps) {
   const label = (text: string) => <span className="sr-only sm:not-sr-only">{text}</span>;
@@ -457,8 +453,8 @@ function EntryRow({ entry, label, selection, onOpen, onPrefetch, onDownload, onD
   const selected = selection?.selected ?? false;
   const openName = isFile ? `Open ${name} in a new tab` : `Open the folder ${name}`;
 
-  // As ordo's file rows: a selected row takes a translucent wash of the selection blue behind its
-  // usual text, and `data-active` lets its list hide the lines beside it.
+  // A selected row takes a translucent wash of the selection blue behind its usual text, so the text
+  // keeps its colours, and `data-active` lets its list hide the lines beside it.
   return (
     <div
       data-selectable-row={selection ? true : undefined}

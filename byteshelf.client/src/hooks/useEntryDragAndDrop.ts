@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { PointerSensor, useSensor, useSensors, type Announcements, type DragEndEvent, type DragStartEvent, type UniqueIdentifier } from '@dnd-kit/core';
 import { folderOfDropId } from '../lib/dropTargets';
 import { ROOT_PATH, nameOf } from '../lib/shelfPaths';
-import { runOrToast } from '../lib/utils';
-import type { Entry } from '../services/shelfService';
-import { useMoveEntries } from './useShelfQueries';
+import { reasonOf, toastNamedFailure } from '../components/nameToasts';
+import { nameOrCount, type Entry } from '../services/shelfService';
+import { MoveRefused, useMoveEntries } from './useShelfQueries';
 
 interface EntryDragAndDropArgs {
   shelf: string;
@@ -15,10 +15,11 @@ interface EntryDragAndDropArgs {
 }
 
 /**
- * Moving rows of a folder by dragging them onto a folder row or a breadcrumb crumb, as in ordo's file
- * list: dragging a selected row moves the whole selection, an unselected row moves itself. A short
- * distance before a drag starts lets a click still select and a double-click still open. A refusal,
- * such as a plain file into an encrypted folder, shows as a toast; what moved before it stays moved.
+ * Moving rows of a folder by dragging them onto a folder row or a breadcrumb crumb: dragging a
+ * selected row moves the whole selection, an unselected row moves itself. A short distance before a
+ * drag starts lets a click still select and a double-click still open. A refusal, such as a plain
+ * file into an encrypted folder, shows as a toast naming what it stopped at; what moved before it
+ * stays moved.
  */
 export function useEntryDragAndDrop({ shelf, entries, selected }: EntryDragAndDropArgs) {
   const moveEntries = useMoveEntries(shelf);
@@ -33,9 +34,7 @@ export function useEntryDragAndDrop({ shelf, entries, selected }: EntryDragAndDr
     return selected.some((each) => each.value.id === entry.value.id) ? selected : [entry];
   }
 
-  function describe(moving: Entry[]): string {
-    return moving.length === 1 ? moving[0].value.name : `${moving.length} items`;
-  }
+  const describe = nameOrCount;
 
   /** The name of the folder a drop target is, the shelf's for its root; null for none. */
   function folderName(id: UniqueIdentifier | undefined): string | null {
@@ -61,7 +60,12 @@ export function useEntryDragAndDrop({ shelf, entries, selected }: EntryDragAndDr
     setDragged(null);
     const folder = folderOfDropId(event.over?.id);
     if (!moving || folder === null) return;
-    await runOrToast(() => moveEntries(moving, folder), `Could not move ${describe(moving)}`);
+    try {
+      await moveEntries(moving, folder);
+    } catch (caught) {
+      if (caught instanceof MoveRefused) toastNamedFailure('Could not move', caught.entryName, caught.reason);
+      else toastNamedFailure('Could not move', describe(moving), reasonOf(caught));
+    }
   }
 
   return {

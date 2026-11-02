@@ -26,6 +26,23 @@ describe('decrypted files in a tab', () => {
     expect(open).not.toHaveBeenCalled();
   });
 
+  it('opens a type it shows in a tab without this tab\'s kept passwords', () => {
+    /** The copy of this tab's sessionStorage a new tab starts with. */
+    class CopiedStorage {
+      'byteshelf.password.docs/folder-1' = 'pw';
+      theme = 'dark';
+      removeItem(key: string): void {
+        delete (this as unknown as Record<string, string>)[key];
+      }
+    }
+    const tab = { sessionStorage: new CopiedStorage(), location: { href: '' }, close: () => {} };
+    vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window);
+
+    expect(showBlob(new Blob(['a'], { type: 'text/plain' }), 'a.txt')).toBe(true);
+    expect(Object.keys(tab.sessionStorage)).toEqual(['theme']);
+    expect(tab.location.href).toMatch(/^blob:/);
+  });
+
   it('answers false when the browser blocks the tab', () => {
     vi.spyOn(window, 'open').mockReturnValue(null);
 

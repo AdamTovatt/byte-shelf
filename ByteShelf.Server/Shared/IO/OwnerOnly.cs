@@ -38,6 +38,43 @@ namespace ByteShelf.Server.Shared.IO
             }
         }
 
+        /// <summary>
+        /// Writes <paramref name="content"/> to <paramref name="path"/>, which must not exist yet, readable by
+        /// its owner only: to a temporary sibling first, renamed into place in one step, so a crash or a
+        /// reader never meets part of it. A sibling rather than a temp folder, so the rename stays within
+        /// one filesystem, where it is atomic. The sibling is removed when the rename does not happen.
+        /// </summary>
+        /// <exception cref="IOException"><paramref name="path"/> exists, or the disk failed.</exception>
+        public static void WriteThenRename(string path, string content)
+        {
+            string temporaryPath = path + ".tmp";
+            try
+            {
+                // Create, not CreateNew: a sibling a crash left is written over.
+                using (StreamWriter writer = new StreamWriter(temporaryPath, Write(FileMode.Create)))
+                {
+                    writer.Write(content);
+                }
+
+                File.Move(temporaryPath, path, overwrite: false);
+            }
+            finally
+            {
+                // A file is left to delete only when the rename did not happen. A failure here is swallowed:
+                // an exception from a finally block would replace the one in flight, which says why.
+                try
+                {
+                    File.Delete(temporaryPath);
+                }
+                catch (IOException)
+                {
+                }
+                catch (UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+
         /// <summary>Makes the existing folder at <paramref name="path"/> reachable by its owner only.</summary>
         public static void RestrictDirectory(string path)
         {

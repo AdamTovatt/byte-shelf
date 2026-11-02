@@ -136,10 +136,8 @@ namespace ByteShelf.Server.Backup.Services
 
                 await using (source)
                 {
-                    copied.Bytes += await AddObjectAsync(zip, entryName, source, sha256, cancellationToken);
+                    await AddOnceAsync(zip, root, objects, source, sha256, copied, cancellationToken);
                 }
-
-                copied.Added.Add(sha256);
             }
 
             return copied;
@@ -164,18 +162,22 @@ namespace ByteShelf.Server.Backup.Services
                 foreach (FileRecord file in await snapshot.Files.GetLiveWithObjectAsync(sha256))
                 {
                     // The live database points at nothing missing (AddObjectsAsync), so a file still there
-                    // holds other contents now.
-                    if (await live.Files.GetByIdAsync(file.Id) is not FileRecord current
-                        || TryOpenRead(objects, current.Sha256) is not FileStream source)
+                    // holds other contents now; they are opened only when the zip does not hold them yet.
+                    if (await live.Files.GetByIdAsync(file.Id) is not FileRecord current)
                     {
                         continue;
                     }
 
-                    await using (source)
+                    if (!copied.Added.Contains(current.Sha256))
                     {
-                        if (copied.Added.Add(current.Sha256))
+                        if (TryOpenRead(objects, current.Sha256) is not FileStream source)
                         {
-                            copied.Bytes += await AddObjectAsync(zip, EntryName(root, objects, current.Sha256), source, current.Sha256, cancellationToken);
+                            continue;
+                        }
+
+                        await using (source)
+                        {
+                            await AddOnceAsync(zip, root, objects, source, current.Sha256, copied, cancellationToken);
                         }
                     }
 
@@ -184,6 +186,15 @@ namespace ByteShelf.Server.Backup.Services
             }
 
             return swapped;
+        }
+
+        /// <summary>Adds the object in <paramref name="source"/> to the zip unless it holds it already, counting it in <paramref name="copied"/>.</summary>
+        private static async Task AddOnceAsync(ZipArchive zip, RootFolder root, ObjectStore objects, FileStream source, string sha256, CopiedObjects copied, CancellationToken cancellationToken)
+        {
+            if (copied.Added.Add(sha256))
+            {
+                copied.Bytes += await AddObjectAsync(zip, EntryName(root, objects, sha256), source, sha256, cancellationToken);
+            }
         }
 
         /// <summary>Where an object goes in the zip: its path under the root.</summary>

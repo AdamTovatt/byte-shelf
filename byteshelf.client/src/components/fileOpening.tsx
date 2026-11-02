@@ -1,10 +1,10 @@
-import { NameLine } from '../components/MiddleTruncatedName';
-import { showActionToast } from '../components/actionToast';
+import { openTabWithoutPasswords } from '../lib/encryption/passwords';
+import { saveBlob, saveFrom, showBlob } from '../lib/localBlobs';
+import { runOrToast } from '../lib/utils';
 import { navigationUrl, opensByNavigation, readContent } from '../services/contentService';
 import type { ShelfFile } from '../services/shelfService';
-import { openTabWithoutPasswords } from './encryption/passwords';
-import { saveBlob, saveFrom, showBlob } from './localBlobs';
-import { runOrToast } from './utils';
+import { showActionToast } from './actionToast';
+import { NameLine } from './MiddleTruncatedName';
 
 /** Opening a file in a new tab, and saving files. */
 export interface FileOpening {

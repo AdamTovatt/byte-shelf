@@ -10,15 +10,15 @@ AOT-compatible.
 |---|---|
 | `ShelfInfo` | A shelf with its quota and usage. |
 | `CreateShelfRequest`, `UpdateShelfRequest` | Creates a shelf, and replaces its name and quota. |
-| `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps, description. |
+| `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps, description, and whether its contents are encrypted (`Encrypted`). |
 | `SetDescriptionRequest`, `FileDescription` | Setting a file's description, and its rules. |
 | `FileSearch`, `FileSearchResults` | What to look for among a shelf's files, and one page of what was found. |
 | `DownloadLink` | A link to a file's contents that works without a token until it runs out, and the bounds of its lifetime (`Lifetime`: a day by default, at most 7 days). |
 | `UploadLink`, `CreateUploadLinkRequest`, `NormalizedUploadLinkRequest` | A link that stores one file sent to it without a token, and asking for one (`Lifetime`: 15 minutes by default, at most 24 hours). |
 | `LinkLifetime` | One kind of link's lifetime rule: its default, its bounds and `Normalize`. |
 | `FileEncryption`, `EncryptedFolder`, `PathEncryption`, `SetFolderEncryptionRequest` | Password encryption: how an age file starts, an encrypted directory's check text, an encrypted directory with its check, what a path is encrypted under, and encrypting a directory. |
-| `ShelfDirectory`, `DirectoryListing`, `ListedDirectory` | A directory, what one holds, and a directory in a listing with the size and count of the files under it, and how many are encrypted. |
-| `TreeQuery`, `DirectoryTree` | What to list of everything under a directory (a depth, a page), and one page of it. |
+| `ShelfDirectory`, `DirectoryListing`, `ListedDirectory` | A directory and whether it is encrypted (`Encrypted`), what one holds, and a directory in a listing with the size and count of the files under it, and how many are encrypted. |
+| `TreeQuery`, `DirectoryTree`, `TreeEntry` | What to list of everything under a directory (a depth, a page), one page of it, and one entry of a page, a directory or a file. |
 | `StoredOrder` | The order names and paths are listed in: by code point, as the server's database sorts them. |
 | `CreateDirectoryRequest`, `MoveRequest` | Creates a directory; moves or renames a file or directory. |
 | `StartUploadRequest`, `StartContentSwapRequest`, `UploadSession` | Starting and following a resumable upload, of a new file or swapping a file's contents in place. |
@@ -65,4 +65,5 @@ AOT-compatible.
 ## JSON
 
 `ByteShelfCommon.Serialization.ByteShelfJsonContext` serializes every type without reflection, in
-camelCase like the server. Enums are written as camelCase strings.
+camelCase like the server. Enums are written as camelCase strings and read back ignoring case, by
+`CamelCaseEnumConverter`, set on each enum type so the server and every client agree.

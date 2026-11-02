@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { Outlet, useNavigate, useParams } from 'react-router-dom';
+import { useState, type FormEvent, type ReactNode } from 'react';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Button, ButtonGroup, CopyField, Icon, IconButton, Input, PAGE_CONTENT_WIDTH, RouteTab, TabGroup, cn, getErrorMessage, iconMap, type IconComponent } from '../ui';
 import { TabbedPageShell } from '../components/layout/TabbedPageShell';
@@ -12,7 +12,7 @@ import { ShelfHeader } from '../components/ShelfHeader';
 import { useCreateKey, useDeleteKey, useGrants, useKeys, useRemoveGrant, useSetGrant } from '../hooks/useAccessQueries';
 import { useDeleteShelf, useShelf, useUpdateShelf } from '../hooks/useShelfQueries';
 import { useUsers } from '../hooks/useUserQueries';
-import { formatQuota, formatTime, parseQuota, type QuotaUnit } from '../lib/format';
+import { formatQuota, formatTime, parseQuota, tryParseQuota, type QuotaUnit } from '../lib/format';
 import { ACCESS_OPTIONS, KEY_OPTIONS, keyPermissionLabel } from '../lib/access';
 import { SHELF_SETTINGS_TABS, shelfSettingsRoute, type ShelfSettingsTab } from '../lib/shelfPaths';
 import { ROUTES } from '../lib/routes';
@@ -21,57 +21,56 @@ import { useSubmit } from '../hooks/useSubmit';
 import type { CreatedShelfKey, ShelfAccessGrant, ShelfAccessPermission, ShelfKeyInfo, ShelfKeyPermission } from '../services/accessService';
 import type { ShelfInfo } from '../services/shelfService';
 
-const TAB_LABELS: Record<ShelfSettingsTab, { label: string; icon: IconComponent }> = {
-  general: { label: 'General', icon: iconMap.settings },
-  access: { label: 'Access', icon: iconMap.users },
-  keys: { label: 'Keys', icon: iconMap.key },
+/** Each tab: its name, its icon, and what it shows. Typed by the tab list, so none can be left out. */
+const TABS: Record<ShelfSettingsTab, { label: string; icon: IconComponent; Content: (props: { shelf: string }) => ReactNode }> = {
+  general: { label: 'General', icon: iconMap.settings, Content: GeneralTab },
+  access: { label: 'Access', icon: iconMap.users, Content: GrantsSection },
+  keys: { label: 'Keys', icon: iconMap.key, Content: KeysSection },
 };
 
 /**
- * An admin's settings for one shelf, as tabs that are routes (as ordo's organization page): General
- * (name, quota and deleting it), Access (who may use it) and Keys (which programs may).
+ * An admin's settings for one shelf, as tabs that are routes, so each can be linked to and the back
+ * button steps between them: General (name, quota and deleting it), Access (who may use it) and Keys
+ * (which programs may). The tab comes from the route (`SHELF_ROUTE_PATTERNS.settings`); none, or one
+ * not in the list, goes to General.
  */
-export function ShelfSettingsLayout() {
-  const shelf = useParams().shelf!;
+export function ShelfSettingsPage() {
+  const params = useParams();
+  const shelf = params.shelf!;
+  const tab = SHELF_SETTINGS_TABS.find((each) => each === params.tab);
+  if (!tab) return <Navigate to={shelfSettingsRoute(shelf, SHELF_SETTINGS_TABS[0])} replace />;
+  const { Content } = TABS[tab];
 
   return (
     <TabbedPageShell
       header={
         // The page's own padding and width, so the breadcrumbs sit where they do on the files and
-        // trash pages; the tabs hang off the band's bottom rule.
+        // trash pages; the tabs hang off the band's bottom rule. Written out rather than a
+        // PageLayout: that pads all four sides, and this band alone wants no padding below.
         <div className="shrink-0 border-b border-border bg-panel px-6 pt-6 md:px-8 md:pt-8">
           <div className={cn(PAGE_CONTENT_WIDTH, 'mx-auto space-y-4')}>
             <ShelfHeader shelf={shelf} view="settings" />
             <TabGroup>
-              {SHELF_SETTINGS_TABS.map((tab) => (
-                <RouteTab key={tab} label={TAB_LABELS[tab].label} icon={TAB_LABELS[tab].icon} href={shelfSettingsRoute(shelf, tab)} />
+              {SHELF_SETTINGS_TABS.map((each) => (
+                <RouteTab key={each} label={TABS[each].label} icon={TABS[each].icon} href={shelfSettingsRoute(shelf, each)} />
               ))}
             </TabGroup>
           </div>
         </div>
       }
     >
-      <Outlet />
+      <Content shelf={shelf} />
     </TabbedPageShell>
   );
 }
 
-export function ShelfGeneralTab() {
-  const shelf = useParams().shelf!;
+function GeneralTab({ shelf }: { shelf: string }) {
   return (
     <div className="space-y-10">
       <SettingsSection shelf={shelf} />
       <DeleteSection shelf={shelf} />
     </div>
   );
-}
-
-export function ShelfAccessTab() {
-  return <GrantsSection shelf={useParams().shelf!} />;
-}
-
-export function ShelfKeysTab() {
-  return <KeysSection shelf={useParams().shelf!} />;
 }
 
 function SettingsSection({ shelf }: { shelf: string }) {
@@ -115,11 +114,7 @@ function SettingsForm({ info }: { info: ShelfInfo }) {
 }
 
 function quotaDiffers(amount: string, unit: QuotaUnit, savedBytes: number | null | undefined): boolean {
-  try {
-    return parseQuota(amount, unit) !== (savedBytes ?? null);
-  } catch {
-    return true;
-  }
+  return tryParseQuota(amount, unit) !== (savedBytes ?? null);
 }
 
 function GrantsSection({ shelf }: { shelf: string }) {

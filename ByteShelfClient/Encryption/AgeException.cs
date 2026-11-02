@@ -11,6 +11,9 @@ namespace ByteShelfClient.Encryption
 
         /// <summary>The contents after the header are damaged or cut short.</summary>
         Payload,
+
+        /// <summary>Its password's work factor asks for more memory than this process could have.</summary>
+        OutOfMemory,
     }
 
     /// <summary>An age file that could not be decrypted, and why.</summary>

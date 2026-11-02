@@ -17,6 +17,7 @@ using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Shared.StaticFiles;
 using ByteShelf.Server.Storage;
 using ByteShelf.Server.Users;
+using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Services;
 using ByteShelf.Server.Version;
 using ByteShelfCommon;
@@ -169,6 +170,7 @@ namespace ByteShelf.Server
             // One line per feature; adding a feature = add a folder, add one line here or in AddDomainServices.
             PublicAddress publicAddress = PublicAddress.Resolve(EnvironmentVariables.AppBaseUrl.GetValueOrDefault(), builder.Environment);
             AddDomainServices(builder.Services, root, publicAddress, email ?? EmailOptions.FromEnvironment());
+            builder.Services.AddInitialAdmin(InitialAdminSettings.FromEnvironment());
             builder.Services.AddInvalidationServices();
             builder.Services.AddVersionServices();
             builder.Services.AddReplicationServices(publicAddress.Absolute.AbsoluteUri);

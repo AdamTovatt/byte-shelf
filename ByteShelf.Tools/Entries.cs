@@ -69,6 +69,23 @@ namespace ByteShelf.Tools
             }
         }
 
+        /// <summary>Everything under the directory at <paramref name="under"/>, a page of the tree at a time, following each page's cursor.</summary>
+        public static async IAsyncEnumerable<DirectoryTree> TreePagesAsync(
+            IShelfClient shelf,
+            string under,
+            int pageSize,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            string? after = null;
+            do
+            {
+                DirectoryTree page = await shelf.ListTreeAsync(new TreeQuery { Under = under, Limit = pageSize, After = after }, cancellationToken);
+                yield return page;
+                after = page.NextCursor;
+            }
+            while (after != null);
+        }
+
         /// <summary>Moves or renames the file or directory at <paramref name="path"/>, answering it where it is now.</summary>
         public static async Task<Entry> MoveAsync(IShelfClient shelf, string path, string toPath, CancellationToken cancellationToken)
         {

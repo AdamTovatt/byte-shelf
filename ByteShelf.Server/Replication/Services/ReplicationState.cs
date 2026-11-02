@@ -1,4 +1,5 @@
 using ByteShelf.Server.Replication.Repositories;
+using ByteShelf.Server.Shared.Errors;
 
 namespace ByteShelf.Server.Replication.Services
 {
@@ -19,6 +20,16 @@ namespace ByteShelf.Server.Replication.Services
         public async Task<bool> AllowsWritesAsync()
         {
             return await _sourceRepository.GetAsync() == null;
+        }
+
+        /// <summary>Throws on a replica, for a write its API or the server's own commands would make.</summary>
+        /// <exception cref="ReadOnlyReplicaException">This server is a replica.</exception>
+        public async Task RequireWritesAsync()
+        {
+            if (!await AllowsWritesAsync())
+            {
+                throw new ReadOnlyReplicaException();
+            }
         }
     }
 }

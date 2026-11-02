@@ -143,15 +143,28 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
-        public async Task GetContentAsync_ByPath_PointsAtTheObject()
+        public async Task GetContentAsync_ByPath_OpensTheObject()
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "contents");
 
-            FileContent content = await FileService.GetContentAsync(shelf, EntryReference.ForPath("/a.txt"));
+            await using FileContent content = await FileService.GetContentAsync(shelf, EntryReference.ForPath("/a.txt"));
 
             Assert.Equal(file.Id, content.File.Id);
-            Assert.Equal(ObjectStore.GetPath(file.Sha256), content.ObjectPath);
+            Assert.Equal(ObjectStore.GetPath(file.Sha256), content.Contents.Name);
+        }
+
+        [UnixFact]
+        public async Task GetContentAsync_ObjectRemovedOnceOpened_StillReadsWhole()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "contents");
+
+            await using FileContent content = await FileService.GetContentAsync(shelf, EntryReference.ForPath("/a.txt"));
+            ObjectStore.Delete(file.Sha256);
+
+            using StreamReader reader = new StreamReader(content.Contents);
+            Assert.Equal("contents", await reader.ReadToEndAsync());
         }
     }
 }

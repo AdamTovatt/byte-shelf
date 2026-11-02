@@ -24,11 +24,22 @@ namespace ByteShelf.Server.Access.Models
             return _allowed.Contains(operation);
         }
 
-        /// <summary>Throws unless the caller may store a file here: one that may replace a file needs <see cref="ShelfOperation.Write"/>.</summary>
+        /// <summary>Whether the caller may store a file here: one that may replace a file needs <see cref="ShelfOperation.Write"/>.</summary>
+        public bool AllowsStore(bool overwrite)
+        {
+            return Allows(StoreOperation(overwrite));
+        }
+
+        /// <summary>Throws unless <see cref="AllowsStore"/>.</summary>
         /// <exception cref="PermissionDeniedException">It may not.</exception>
         public void RequireStore(bool overwrite)
         {
-            Require(overwrite ? ShelfOperation.Write : ShelfOperation.Add);
+            Require(StoreOperation(overwrite));
+        }
+
+        private static ShelfOperation StoreOperation(bool overwrite)
+        {
+            return overwrite ? ShelfOperation.Write : ShelfOperation.Add;
         }
 
         /// <summary>

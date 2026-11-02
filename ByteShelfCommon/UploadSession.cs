@@ -10,6 +10,10 @@ namespace ByteShelfCommon
         public required Guid ShelfId { get; init; }
 
         /// <summary>Where the file will be stored; null for a swap, whose file stays where it is.</summary>
+        /// <remarks>
+        /// Exactly one of this and <see cref="SwapFileId"/> is set. Two flat fields rather than a typed
+        /// target, as the server keeps it: this is the API's JSON, read by clients in any language.
+        /// </remarks>
         public string? Path { get; init; }
 
         /// <summary>The file whose contents a swap replaces in place; null for an upload of a new file.</summary>

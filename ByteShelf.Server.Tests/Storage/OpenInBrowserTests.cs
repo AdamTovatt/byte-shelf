@@ -2,8 +2,12 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Net.Http.Headers;
 
 namespace ByteShelf.Server.Tests.Storage
@@ -125,6 +129,22 @@ namespace ByteShelf.Server.Tests.Storage
             HttpResponseMessage response = await SendWithCookieAsync(HttpMethod.Get, $"/api/shelves/docs/content?id={_file.Id}", (await SignInAsync(ServerTestHost.AdminEmail)).Cookie);
 
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        /// <summary>The cookie carries the session to any route under its path, and a page on another site can make a browser send it: only reads may be there.</summary>
+        [Fact]
+        public void RoutesUnderTheCookiePath_OnlyRead()
+        {
+            string cookiePath = AuthSetup.CookieTokenPath.TrimStart('/');
+            IEnumerable<RouteEndpoint> underIt = _host.Services.GetRequiredService<EndpointDataSource>().Endpoints
+                .OfType<RouteEndpoint>()
+                .Where(endpoint => endpoint.RoutePattern.RawText?.TrimStart('/').StartsWith(cookiePath, StringComparison.OrdinalIgnoreCase) == true)
+                .ToList();
+
+            Assert.NotEmpty(underIt);
+            Assert.All(underIt, endpoint => Assert.All(
+                endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods ?? ["any method"],
+                method => Assert.Contains(method, new[] { HttpMethods.Get, HttpMethods.Head })));
         }
 
         private string OpenUri()

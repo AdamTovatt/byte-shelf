@@ -94,15 +94,23 @@ namespace ByteShelf.Server.Tests.Client
             Assert.Equal(ErrorCodes.InvalidRequest, exception.Code);
         }
 
-        [Theory]
-        [InlineData("not base64!")]
-        [InlineData("long")]
-        public async Task EncryptDirectoryAsync_CheckNotBase64OrTooLong_ThrowsInvalidRequest(string check)
+        [Fact]
+        public async Task EncryptDirectoryAsync_CheckNotBase64_ThrowsInvalidRequest()
+        {
+            await Shelf.CreateDirectoryAsync("/secret");
+
+            ByteShelfException exception = await RefusalOf(Shelf.EncryptDirectoryAsync("/secret", "not base64!"));
+
+            Assert.Equal(ErrorCodes.InvalidRequest, exception.Code);
+        }
+
+        [Fact]
+        public async Task EncryptDirectoryAsync_CheckTooLong_ThrowsInvalidRequest()
         {
             await Shelf.CreateDirectoryAsync("/secret");
             string tooLong = Convert.ToBase64String([.. FileEncryption.AgeHeader, .. new byte[FileEncryption.MaxCheckBytes]]);
 
-            ByteShelfException exception = await RefusalOf(Shelf.EncryptDirectoryAsync("/secret", check == "long" ? tooLong : check));
+            ByteShelfException exception = await RefusalOf(Shelf.EncryptDirectoryAsync("/secret", tooLong));
 
             Assert.Equal(ErrorCodes.InvalidRequest, exception.Code);
         }
@@ -181,6 +189,33 @@ namespace ByteShelf.Server.Tests.Client
             ByteShelfException encrypted = await RefusalOf(Shelf.MoveFileAsync("/own.txt", "/secret/own.txt"));
 
             Assert.Equal((ErrorCodes.Conflict, ErrorCodes.Conflict), (plain.Code, encrypted.Code));
+        }
+
+        [Fact]
+        public async Task ListAsync_PlainDirectoryHoldingAnEncryptedOne_CountsItsEncryptedFilesThereOnly()
+        {
+            await Shelf.CreateDirectoryAsync("/plain/secret");
+            await Shelf.EncryptDirectoryAsync("/plain/secret", await CheckAsync());
+            await UploadEncryptedAsync("/plain/secret/a.txt", "a");
+            await UploadEncryptedAsync("/plain/own.txt", "its own password");
+
+            ListedDirectory plain = Assert.Single((await Shelf.ListAsync()).Directories);
+            ListedDirectory secret = Assert.Single((await Shelf.ListAsync("/plain")).Directories);
+
+            Assert.Equal((2, 1), (plain.FileCount, plain.EncryptedFileCount));
+            Assert.Equal((1, 1), (secret.FileCount, secret.EncryptedFileCount));
+        }
+
+        [Fact]
+        public async Task MoveFileAsync_RefusedIntoNewDirectoriesInAnEncryptedOne_LeavesThoseDirectoriesUnmade()
+        {
+            await Shelf.CreateDirectoryAsync("/secret");
+            await Shelf.EncryptDirectoryAsync("/secret", await CheckAsync());
+            await UploadTextAsync("/plain.txt", "plain");
+
+            await RefusalOf(Shelf.MoveFileAsync("/plain.txt", "/secret/new/plain.txt"));
+
+            Assert.Empty((await Shelf.ListAsync("/secret")).Directories);
         }
 
         [Fact]
@@ -410,7 +445,7 @@ namespace ByteShelf.Server.Tests.Client
         /// <summary>Stores <paramref name="text"/> encrypted with <see cref="FolderPasswordText"/>, as the CLI does, at a low work factor so the tests run fast.</summary>
         private Task<ShelfFile> UploadEncryptedAsync(string path, string text)
         {
-            return Transfers.UploadAsync(Shelf, path, new MemoryStream(Encoding.UTF8.GetBytes(text)), new UploadOptions(), new Encryptor(FolderPasswordText, 10), CancellationToken.None);
+            return Transfers.UploadAsync(Shelf, path, new MemoryStream(Encoding.UTF8.GetBytes(text)), new UploadOptions(), CancellationToken.None, new Encryptor(FolderPasswordText, 10));
         }
     }
 }

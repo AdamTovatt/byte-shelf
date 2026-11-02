@@ -47,7 +47,8 @@ namespace ByteShelf.Server.Storage
         private static StorageOptions CreateOptions()
         {
             string? restoreWindowDays = EnvironmentVariables.RestoreWindowDays.GetValueOrDefault();
-            if (string.IsNullOrWhiteSpace(restoreWindowDays))
+            // Null when unset or blank, as EasyReasy reads a blank variable.
+            if (restoreWindowDays == null)
             {
                 return new StorageOptions();
             }

@@ -31,15 +31,18 @@ export function pathSegments(path: string): { name: string; path: string }[] {
 /** A shelf's pages: its files (the shelf's own route shows the root directory), its trash and its settings. */
 export type ShelfView = 'files' | 'trash' | 'settings';
 
-/** The route patterns App serves a shelf's pages at; shelfRoute and shelfViewRoute build URLs that match them. */
+/**
+ * The route patterns App serves a shelf's pages at; shelfRoute, shelfViewRoute and shelfSettingsRoute
+ * build URLs that match them. The settings page reads its tab from `:tab`, one of SHELF_SETTINGS_TABS.
+ */
 export const SHELF_ROUTE_PATTERNS = {
   shelf: '/shelves/:shelf',
   files: '/shelves/:shelf/files/*',
   trash: '/shelves/:shelf/trash',
-  settings: '/shelves/:shelf/settings',
+  settings: '/shelves/:shelf/settings/:tab?',
 } as const;
 
-/** The tabs of a shelf's settings, each its own route below the settings page. */
+/** The tabs of a shelf's settings, each its own route below the settings page; the first is its default. */
 export const SHELF_SETTINGS_TABS = ['general', 'access', 'keys'] as const;
 export type ShelfSettingsTab = (typeof SHELF_SETTINGS_TABS)[number];
 

@@ -9,6 +9,9 @@ namespace ByteShelf.Server.Storage.Services
     /// <inheritdoc />
     public class FileService : IFileService
     {
+        /// <summary>How often a file is looked up for its contents before contents still missing are a fault: a swap per lookup in between would take more.</summary>
+        private const int ContentLookups = 3;
+
         private readonly IDbSessionFactory _sessionFactory;
         private readonly IFileRepository _fileRepository;
         private readonly ShelfTree _shelfTree;
@@ -45,13 +48,20 @@ namespace ByteShelf.Server.Storage.Services
         /// <inheritdoc />
         public async Task<FileContent> GetContentAsync(Shelf shelf, EntryReference reference)
         {
-            FileRecord file = await _shelfTree.GetFileAsync(shelf.Id, reference);
-
-            return new FileContent
+            // A swap removes a file's old contents as soon as it commits, so the ones just looked up may be
+            // gone when they are opened: the file is then looked up again, with its new ones.
+            for (int attempt = 1; ; attempt++)
             {
-                File = await _shelfTree.ToShelfFileAsync(file),
-                ObjectPath = _objectStore.GetPath(file.Sha256),
-            };
+                FileRecord file = await _shelfTree.GetFileAsync(shelf.Id, reference);
+                ShelfFile described = await _shelfTree.ToShelfFileAsync(file);
+                try
+                {
+                    return new FileContent { File = described, Contents = _objectStore.OpenRead(file.Sha256) };
+                }
+                catch (FileNotFoundException) when (attempt < ContentLookups)
+                {
+                }
+            }
         }
 
         /// <inheritdoc />

@@ -240,6 +240,10 @@ namespace ByteShelfClient.InMemory
             }
         }
 
+        // The encryption rules below are the server's ShelfEncryption's, written again over this client's
+        // nodes rather than the server's rows, with the same messages; the client contract tests run
+        // against both hold them together. One home would mean an abstraction over both trees.
+
         /// <summary>As the server's ShelfEncryption.RequireStoreAsync: never a plain file under an encrypted directory.</summary>
         public void RequireStore(string normalizedPath, bool encrypted)
         {
@@ -369,8 +373,15 @@ namespace ByteShelfClient.InMemory
                 Directory = ToShelfDirectory(directory),
                 SizeBytes = files.Sum(file => file.Content.LongLength),
                 FileCount = files.Count,
-                EncryptedFileCount = files.Count(file => file.Encrypted),
+                EncryptedFileCount = files.Count(file => file.Encrypted && !InEncryptedBelow(directory, file)),
             };
+        }
+
+        /// <summary>Whether <paramref name="file"/> is under an encrypted directory below <paramref name="top"/>, whose own count it is in.</summary>
+        private bool InEncryptedBelow(DirectoryNode top, FileNode file)
+        {
+            DirectoryNode? encrypted = EncryptedFolderOf(file.DirectoryId);
+            return encrypted != null && encrypted.Id != top.Id && PathOf(encrypted).StartsWith(PathOf(top) + ShelfPath.Separator, StringComparison.Ordinal);
         }
 
         /// <summary>The lowercase-hex SHA-256 of <paramref name="content"/>, as the server stores it.</summary>

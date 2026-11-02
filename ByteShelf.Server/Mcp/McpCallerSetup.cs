@@ -5,6 +5,7 @@ using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Access.Services;
 using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared;
+using ByteShelf.Server.Storage.Controllers;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
 using ByteShelfCommon;
@@ -19,7 +20,7 @@ namespace ByteShelf.Server.Mcp
     /// marked with <see cref="ToolNeedsAttribute"/> is offered to no one. The API the tools call checks
     /// every call again; the offer only keeps an agent from seeing tools that could only fail.
     /// </summary>
-    internal static class McpCallerOptions
+    internal static class McpCallerSetup
     {
         public static async Task ConfigureAsync(HttpContext httpContext, McpServerOptions options, CancellationToken cancellationToken)
         {
@@ -41,8 +42,10 @@ namespace ByteShelf.Server.Mcp
             }
 
             options.ToolCollection = offered;
+            // The configured address, else the one this request came in at, where the agent reached the
+            // server; CalledAt is the tools' own rule for where to call it, kept beside them in Mcp.
             Uri server = services.GetRequiredService<PublicAddress>().Configured ?? CallerKeyClientSource.CalledAt(httpContext.Request);
-            options.ServerInstructions = InstructionsFor(shelf.Name, key.Permission, isReplica, server);
+            options.ServerInstructions = InstructionsFor(shelf.Name, key.Permission, access, isReplica, server);
         }
 
         /// <summary>
@@ -74,16 +77,17 @@ namespace ByteShelf.Server.Mcp
             };
         }
 
+        /// <param name="permission">The key's permission, named in the instructions.</param>
+        /// <param name="access">What the key may do on its shelf, which decides the ways in shown, as it decides the tools offered.</param>
         /// <param name="server">The server's root, ending in <c>/</c>, for the curl commands.</param>
-        internal static string InstructionsFor(string shelf, ShelfKeyPermission permission, bool isReplica, Uri server)
+        internal static string InstructionsFor(string shelf, ShelfKeyPermission permission, ShelfAccess access, bool isReplica, Uri server)
         {
             string reach = isReplica
                 ? "This server is a replica, a read-only copy of another, so only reading tools are offered."
                 : $"The key's access is {PermissionNames.Of(permission)}, and only the tools it allows are offered.";
-            // What the key may do here decides which ways in are shown: the same rule as the tools offered.
-            bool stores = !isReplica && permission != ShelfKeyPermission.Read;
-            bool overwrites = stores && permission == ShelfKeyPermission.ReadWrite;
-            string content = $"{server.AbsoluteUri}api/shelves/{shelf}/content?path=/reports/q3.pdf";
+            bool stores = !isReplica && access.AllowsStore(overwrite: false);
+            bool overwrites = stores && access.AllowsStore(overwrite: true);
+            string content = $"{server.AbsoluteUri}{EntriesController.ShelfRoute.Replace("{shelf}", shelf, StringComparison.Ordinal)}/content?path=/reports/q3.pdf";
             string download = $"""  curl -fsS -H "Authorization: Bearer $BYTESHELF_KEY" -o q3.pdf "{content}" """.TrimEnd();
 
             string files = stores

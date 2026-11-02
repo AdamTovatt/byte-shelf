@@ -32,7 +32,7 @@ namespace ByteShelf.Tools
             }
 
             await using FileStream content = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read, CopyBufferBytes, useAsync: true);
-            return await UploadAsync(shelf, path, content, options, encryptor, cancellationToken);
+            return await UploadAsync(shelf, path, content, options, cancellationToken, encryptor);
         }
 
         /// <summary>Stores <paramref name="content"/>, which has no name of its own, at <paramref name="location"/>, encrypted by <paramref name="encryptor"/> when one is given.</summary>
@@ -45,11 +45,15 @@ namespace ByteShelf.Tools
                 throw new UsageException($"{source} has no file name; end the path with one.");
             }
 
-            return UploadAsync(shelf, location.Path, content, options, encryptor, cancellationToken);
+            return UploadAsync(shelf, location.Path, content, options, cancellationToken, encryptor);
         }
 
         /// <summary>Stores <paramref name="content"/> as it is, or as an age file of it made by <paramref name="encryptor"/>.</summary>
-        public static async Task<ShelfFile> UploadAsync(IShelfClient shelf, string path, Stream content, UploadOptions options, Encryptor? encryptor, CancellationToken cancellationToken)
+        /// <remarks>
+        /// Encrypting is the tools' (Encryptor holds the password and work factor they chose), so these
+        /// steps live here rather than in the client library, which stores bytes as it is given them.
+        /// </remarks>
+        public static async Task<ShelfFile> UploadAsync(IShelfClient shelf, string path, Stream content, UploadOptions options, CancellationToken cancellationToken, Encryptor? encryptor = null)
         {
             if (encryptor == null)
             {
@@ -66,13 +70,27 @@ namespace ByteShelf.Tools
         }
 
         /// <summary>
-        /// A new file in the temp folder for bytes on their way, removed when it is closed. It sits on the
-        /// caller's own disk; what passes through it may be decrypted contents.
+        /// A new file in the temp folder for bytes on their way, removed when it is closed. What passes
+        /// through it may be decrypted contents, so it is readable by its owner only; a process killed
+        /// before closing it leaves it there.
         /// </summary>
         public static FileStream OpenSideFile()
         {
-            return new FileStream(
-                Path.Combine(Path.GetTempPath(), $"byteshelf-{Guid.NewGuid():N}"), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, CopyBufferBytes, FileOptions.Asynchronous | FileOptions.DeleteOnClose);
+            FileStreamOptions options = new FileStreamOptions
+            {
+                Mode = FileMode.CreateNew,
+                Access = FileAccess.ReadWrite,
+                Share = FileShare.None,
+                BufferSize = CopyBufferBytes,
+                Options = FileOptions.Asynchronous | FileOptions.DeleteOnClose,
+            };
+
+            if (!OperatingSystem.IsWindows())
+            {
+                options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+            }
+
+            return new FileStream(Path.Combine(Path.GetTempPath(), $"byteshelf-{Guid.NewGuid():N}"), options);
         }
 
         /// <summary>

@@ -24,6 +24,10 @@ namespace ByteShelf.Tools.Mcp
     /// Every tool working on one shelf takes <c>shelf</c> last and optional: left out, it is the one
     /// shelf the caller reaches, which is always so for a shelf key (<see cref="ShelfNameAsync"/>).
     /// </para>
+    /// <para>
+    /// How <c>download_file</c> answers inline (text, an image, a preview) stays with the tools: no other
+    /// code answers that way.
+    /// </para>
     /// </remarks>
     [McpServerToolType]
     internal sealed class ByteShelfMcpTools
@@ -299,7 +303,7 @@ namespace ByteShelf.Tools.Mcp
             return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, shelfName) =>
             {
                 ShelfLocation location = ShelfLocation.Of(shelfName, path);
-                return FolderAnswer(await FolderTransfers.DownloadAsync(shelfClient, location, Absolute(localPath), overwrite, cancellationToken, NeverDecrypted), "Saved");
+                return FolderAnswer(await FolderTransfers.DownloadAsync(shelfClient, location, Absolute(localPath), overwrite, NeverDecrypted, cancellationToken), "Saved");
             });
         }
 

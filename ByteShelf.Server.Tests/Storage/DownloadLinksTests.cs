@@ -48,6 +48,19 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
+        public async Task Link_FileEncryptedInPlaceSince_Returns409()
+        {
+            ShelfFile file = await PutAsync("/a.txt", "plain contents");
+            DownloadLink link = await CreateLinkAsync("/a.txt");
+            using StringContent encrypted = new StringContent("age-encryption.org/v1\nencrypted contents");
+            (await _host.AdminClient.PutAsync($"/api/shelves/docs/content/swap?id={file.Id}&sha256={file.Sha256}&encrypted=true", encrypted)).EnsureSuccessStatusCode();
+
+            HttpResponseMessage response = await _host.AnonymousClient.GetAsync(link.Url);
+
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        }
+
+        [Fact]
         public async Task Link_WithoutAPublicUrl_IsAPathFromTheServersRoot()
         {
             await PutAsync("/a.txt", "a");

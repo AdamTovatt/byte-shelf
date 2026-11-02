@@ -86,6 +86,19 @@ namespace ByteShelfClient.Tests.Encryption
             Assert.EndsWith(" 18", Encoding.ASCII.GetString(encrypted.ToArray()).Split('\n')[1], StringComparison.Ordinal);
         }
 
+        /// <summary>Slow on purpose, as above: every file this library and age write by default must open again, so the cap on what is decrypted is at least 18.</summary>
+        [Fact]
+        public async Task Decrypt_AFileAtTheDefaultWorkFactor_AnswersItsContents()
+        {
+            using MemoryStream encrypted = new MemoryStream();
+            await AgeEncryption.EncryptAsync(new MemoryStream(Encoding.UTF8.GetBytes("at the default")), encrypted, "pw", CancellationToken.None, AgeEncryption.DefaultWorkFactor);
+            using MemoryStream decrypted = new MemoryStream();
+
+            await AgeEncryption.DecryptAsync(new MemoryStream(encrypted.ToArray()), decrypted, "pw", CancellationToken.None);
+
+            Assert.Equal("at the default", Encoding.UTF8.GetString(decrypted.ToArray()));
+        }
+
         /// <summary>
         /// typage.age is what typage 0.3.1 (age in JavaScript, which the web UI depends on) wrote for 100 KiB of (i % 251) with this
         /// password at work factor 10; byteshelf.client's interop test opens the file this library writes

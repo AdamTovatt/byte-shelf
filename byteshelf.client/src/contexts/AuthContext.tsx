@@ -17,6 +17,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Signed in while a session is kept: an access token that ran out is renewed on the next request.
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(hasSession);
 
+  // A tab the browser restores keeps its sessionStorage, and with it the passwords, past a sign-out
+  // made while it was closed: starting without a session, it forgets them.
+  useEffect(() => {
+    if (!hasSession()) forgetPasswords();
+  }, []);
+
   // Another tab signing out, or signing in as someone else, changes the shared session.
   useEffect(() => {
     function onStorage(event: StorageEvent): void {

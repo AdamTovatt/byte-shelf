@@ -20,11 +20,12 @@ namespace ByteShelf.Server.Users.Repositories
             display_name AS {nameof(UserEntity.DisplayName)},
             roles AS {nameof(UserEntity.RolesJson)},
             created_at AS {nameof(UserEntity.CreatedAt)},
-            updated_at AS {nameof(UserEntity.UpdatedAt)}";
+            updated_at AS {nameof(UserEntity.UpdatedAt)},
+            sessions_ended_at AS {nameof(UserEntity.SessionsEndedAt)}";
 
         private const string InsertSql = @"
-            INSERT INTO user_account (id, email, display_name, roles, created_at, updated_at)
-            VALUES (@Id, @Email, @DisplayName, @Roles, @CreatedAt, @UpdatedAt)";
+            INSERT INTO user_account (id, email, display_name, roles, created_at, updated_at, sessions_ended_at)
+            VALUES (@Id, @Email, @DisplayName, @Roles, @CreatedAt, @UpdatedAt, @SessionsEndedAt)";
 
         private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict(InsertSql);
 
@@ -98,6 +99,27 @@ namespace ByteShelf.Server.Users.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<bool> EndSessionsAsync(Guid userId, DateTimeOffset at, IDbSession session)
+        {
+            string query = $@"
+                UPDATE user_account
+                SET sessions_ended_at = @{nameof(at)}, updated_at = @{nameof(at)}
+                WHERE id = @{nameof(userId)}
+                RETURNING {SelectColumns}";
+
+            UserEntity? updated = await session.Connection.QuerySingleOrDefaultAsync<UserEntity>(
+                query, new { userId, at }, transaction: session.Transaction);
+
+            if (updated == null)
+            {
+                return false;
+            }
+
+            await _changeLog.AppendAsync(ChangeEntityType.User, userId, ChangeAction.Updated, updated.ToDomain(), at, session);
+            return true;
+        }
+
+        /// <inheritdoc />
         public async Task<bool> DeleteAsync(Guid userId, DateTimeOffset deletedAt, IDbSession session)
         {
             string query = $"DELETE FROM user_account WHERE id = @{nameof(userId)} RETURNING id";
@@ -162,6 +184,7 @@ namespace ByteShelf.Server.Users.Repositories
                 Roles = RolesJsonParser.Serialize(user.Roles),
                 user.CreatedAt,
                 user.UpdatedAt,
+                user.SessionsEndedAt,
             };
         }
 
@@ -173,6 +196,7 @@ namespace ByteShelf.Server.Users.Repositories
             public string RolesJson { get; set; } = string.Empty;
             public DateTimeOffset CreatedAt { get; set; }
             public DateTimeOffset UpdatedAt { get; set; }
+            public DateTimeOffset? SessionsEndedAt { get; set; }
 
             public User ToDomain()
             {
@@ -184,6 +208,7 @@ namespace ByteShelf.Server.Users.Repositories
                     Roles = RolesJsonParser.Parse(RolesJson),
                     CreatedAt = CreatedAt,
                     UpdatedAt = UpdatedAt,
+                    SessionsEndedAt = SessionsEndedAt,
                 };
             }
         }

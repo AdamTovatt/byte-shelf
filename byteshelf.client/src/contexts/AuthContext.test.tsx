@@ -50,6 +50,19 @@ describe('kept passwords and the session', () => {
     expect(rememberedPassword(key)).toBeNull();
   });
 
+  it('keeps them when the app starts with a session', () => {
+    expect(rememberedPassword(key)).toBe('pw');
+  });
+
+  it('forgets them when the app starts without a session, as a tab restored after a sign-out does', async () => {
+    act(() => root.unmount());
+    clearTokens();
+    root = createRoot(document.createElement('div'));
+    await act(async () => root.render(<QueryClientProvider client={new QueryClient()}><AuthProvider><Probe /></AuthProvider></QueryClientProvider>));
+
+    expect(rememberedPassword(key)).toBeNull();
+  });
+
   it('forgets them when another tab signs out, and keeps them when it only renews', () => {
     act(() => window.dispatchEvent(new StorageEvent('storage', { key: 'byteshelf_auth_refresh_token' })));
     expect(rememberedPassword(key)).toBe('pw');

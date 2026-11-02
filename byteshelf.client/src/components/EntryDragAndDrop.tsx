@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { Icon, cn, getFileIcon, iconMap } from '../ui';
-import type { Entry } from '../services/shelfService';
+import { nameOrCount, type Entry } from '../services/shelfService';
 import { folderDropId } from '../lib/dropTargets';
 
-// Moving rows by dragging them, from ordo's file list: a row drags, a folder row or a folder's
-// breadcrumb crumb takes the drop. dnd-kit works on pointer events, so it never meets the browser's
-// own drag events that dropping files from the computer to upload them uses.
+// Moving rows by dragging them: a row drags, a folder row or a folder's breadcrumb crumb takes the
+// drop. dnd-kit works on pointer events, so it never meets the browser's own drag events that
+// dropping files from the computer to upload them uses.
 
 /** The outline a folder shows while what is dragged would drop into it. */
 const DROP_OUTLINE = 'rounded-lg ring-1 ring-inset ring-selected bg-selected/10';
@@ -45,7 +45,7 @@ export function EntryDragPreview({ entries }: { entries: Entry[] }) {
   return (
     <div className="flex max-w-xs items-center gap-2 rounded-lg border border-border bg-panel px-3 py-1.5 text-body-md text-fg shadow-lg">
       <Icon icon={icon} size={18} className="shrink-0 text-muted" />
-      <span className="truncate">{single ? single.value.name : `${entries.length} items`}</span>
+      <span className="truncate">{nameOrCount(entries)}</span>
     </div>
   );
 }

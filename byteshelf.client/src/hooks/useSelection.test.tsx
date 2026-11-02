@@ -96,6 +96,33 @@ describe('useSelection', () => {
     expect(selection.isSelected('b')).toBe(false);
   });
 
+  it('leaves a row unselected when it is listed again, as after a deletion is undone', () => {
+    act(() => selection.selectAll());
+    render(['a', 'c', 'd']);
+    render(ROWS);
+
+    expect(selected()).toEqual(['a', 'c', 'd']);
+  });
+
+  it('draws a shift range from the row a cmd or ctrl click toggled last', () => {
+    act(() => selection.handleSelectClick('a', PLAIN));
+    act(() => selection.handleSelectClick('c', META));
+    act(() => selection.handleSelectClick('d', SHIFT));
+
+    expect(selected()).toEqual(['c', 'd']);
+  });
+
+  it('selects just the row on a shift click once the last clicked row is gone', () => {
+    act(() => selection.handleSelectClick('b', PLAIN));
+    render(['a', 'c', 'd']);
+    act(() => selection.handleSelectClick('d', SHIFT));
+    expect(selected()).toEqual(['d']);
+
+    // And that row is where the next range starts.
+    act(() => selection.handleSelectClick('a', SHIFT));
+    expect(selected()).toEqual(['a', 'c', 'd']);
+  });
+
   it('starts empty in another scope, and does not bring the old selection back on return', () => {
     act(() => selection.selectAll());
     render(ROWS, 'shelf/2025');

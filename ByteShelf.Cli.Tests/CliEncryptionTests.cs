@@ -77,7 +77,8 @@ namespace ByteShelf.Cli.Tests
         {
             await UploadAsync("/secret/a.txt", "a");
             ShelfFile b = await UploadAsync("/secret/b.txt", "b");
-            bool changed = false;
+            const string AnotherClients = "age-encryption.org/v1\nanother client's";
+            int listings = 0;
             IShelfClient shelf = ShelfStandIn.Over(Docs, (method, args) => method.Name == nameof(IShelfClient.ListTreeAsync)
                 ? ListThenChangeBAsync((TreeQuery?)args![0], (CancellationToken)args[1]!)
                 : null);
@@ -86,22 +87,67 @@ namespace ByteShelf.Cli.Tests
 
             Assert.StartsWith("/secret/b.txt: ", Assert.Single(result.LeftOut), StringComparison.Ordinal);
             Assert.True((await Docs.GetFileAsync("/secret/a.txt")).Encrypted);
-            Assert.Equal("b, changed", await ReadAsync("/secret/b.txt"));
+            Assert.Equal(AnotherClients, await ReadAsync("/secret/b.txt"));
 
-            // Between the run's listing and its swap of b, another client encrypts b and decrypts it
-            // again with other contents: plain then and now, so only its contents tell the listing is stale.
+            // The run lists the folder again once it is marked encrypted, and works from that listing.
+            // Between it and the run's swap of b, another client encrypts b in place itself.
             async Task<DirectoryTree> ListThenChangeBAsync(TreeQuery? query, CancellationToken cancellationToken)
             {
                 DirectoryTree tree = await Docs.ListTreeAsync(query, cancellationToken);
-                if (!changed)
+                if (++listings == 2)
                 {
-                    changed = true;
-                    ShelfFile encryptedB = await Docs.SwapContentAsync(b, new MemoryStream(Encoding.ASCII.GetBytes("age-encryption.org/v1\nanother client's")), encrypted: true, cancellationToken);
-                    await Docs.SwapContentAsync(encryptedB, new MemoryStream(Encoding.UTF8.GetBytes("b, changed")), encrypted: false, cancellationToken);
+                    await Docs.SwapContentAsync(b, new MemoryStream(Encoding.ASCII.GetBytes(AnotherClients)), encrypted: true, cancellationToken);
                 }
 
                 return tree;
             }
+        }
+
+        [Fact]
+        public async Task EncryptAFolder_AFileStoredBeforeTheFolderIsMarked_IsEncryptedToo()
+        {
+            await UploadAsync("/secret/a.txt", "a");
+            IShelfClient shelf = ShelfStandIn.Over(Docs, (method, args) => method.Name == nameof(IShelfClient.EncryptDirectoryAsync)
+                ? StoreThenEncryptAsync((EntryReference)args![0]!, (string)args[1]!, (CancellationToken)args[2]!)
+                : null);
+
+            FolderTransferResult result = await Encrypting.EncryptAsync(shelf, ShelfLocation.Parse("docs:/secret"), _ => Password, FastWorkFactor, CancellationToken.None);
+
+            Assert.Empty(result.LeftOut);
+            Assert.True((await Docs.GetFileAsync("/secret/late.txt")).Encrypted);
+
+            // Another client stores a plain file after the run listed the folder, before it is marked.
+            async Task<ShelfDirectory> StoreThenEncryptAsync(EntryReference directory, string check, CancellationToken cancellationToken)
+            {
+                await UploadAsync("/secret/late.txt", "late");
+                return await Docs.EncryptDirectoryAsync(directory, check, cancellationToken);
+            }
+        }
+
+        [Fact]
+        public async Task EncryptAFolder_HoldingADamagedAgeFile_FailsNamingItAndEncryptsNothing()
+        {
+            await Docs.UploadAsync("/secret/damaged.age", new MemoryStream(Encoding.ASCII.GetBytes("age-encryption.org/v1\nnot a header")), new UploadOptions { Encrypted = true });
+            await UploadAsync("/secret/plain.txt", "plain");
+
+            CliRun run = await RunAsync("encrypt", "docs:/secret", "--password-file", PasswordFile);
+
+            Assert.Equal(CliApp.Failed, run.ExitCode);
+            Assert.Contains("Nothing was encrypted: '/secret/damaged.age' could not be checked", run.Error, StringComparison.Ordinal);
+            Assert.False((await Docs.GetFileAsync("/secret/plain.txt")).Encrypted);
+        }
+
+        [Fact]
+        public async Task SideFile_IsReadableByItsOwnerOnly()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            await using FileStream side = Transfers.OpenSideFile();
+
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(side.Name));
         }
 
         [Fact]
@@ -114,15 +160,16 @@ namespace ByteShelf.Cli.Tests
             CliRun run = await RunAsync("encrypt", "docs:/secret", "--password-file", PasswordFile);
 
             Assert.Equal(CliApp.Succeeded, run.ExitCode);
-            Assert.True((await Docs.GetFileAsync("/secret/plain.txt")).Encrypted);
-            Assert.Equal(done.Id, (await Docs.GetFileAsync("/secret/done.txt")).Id);
+            Assert.StartsWith("Encrypted 1 file", run.Output, StringComparison.Ordinal);
+            Assert.Equal("plain", await ReadDecryptedAsync("/secret/plain.txt"));
+            Assert.Equal(done.Sha256, (await Docs.GetFileAsync("/secret/done.txt")).Sha256);
         }
 
         [Fact]
         public async Task DecryptAFolder_RunAgainAfterItStopped_DecryptsWhatIsStillEncrypted()
         {
             await UploadAsync("/secret/a.txt", "first");
-            await RunAsync("encrypt", "docs:/secret", "--password-file", PasswordFile);
+            await EncryptAsync("docs:/secret");
             await Docs.RemoveDirectoryEncryptionAsync("/secret");
 
             CliRun run = await RunAsync("decrypt", "docs:/secret", "--password-file", PasswordFile);
@@ -135,7 +182,7 @@ namespace ByteShelf.Cli.Tests
         public async Task DecryptAFolder_HoldingAnEncryptedFolder_FailsAsMisuseNamingIt()
         {
             await Docs.CreateDirectoryAsync("/outer/secret");
-            await RunAsync("encrypt", "docs:/outer/secret", "--password-file", PasswordFile);
+            await EncryptAsync("docs:/outer/secret");
 
             CliRun run = await RunAsync("decrypt", "docs:/outer", "--password-file", PasswordFile);
 
@@ -161,7 +208,7 @@ namespace ByteShelf.Cli.Tests
         public async Task EncryptAFolder_InsideAnEncryptedOne_FailsAsMisuse()
         {
             await Docs.CreateDirectoryAsync("/secret/inner");
-            await RunAsync("encrypt", "docs:/secret", "--password-file", PasswordFile);
+            await EncryptAsync("docs:/secret");
 
             CliRun run = await RunAsync("encrypt", "docs:/secret/inner", "--password-file", PasswordFile);
 
@@ -188,7 +235,7 @@ namespace ByteShelf.Cli.Tests
         public async Task Decrypt_OneFileUnderAnEncryptedFolder_FailsAsMisuseAndChangesNothing()
         {
             await UploadAsync("/secret/a.txt", "a");
-            await RunAsync("encrypt", "docs:/secret", "--password-file", PasswordFile);
+            await EncryptAsync("docs:/secret");
 
             CliRun run = await RunAsync("decrypt", "docs:/secret/a.txt", "--password-file", PasswordFile);
 
@@ -241,7 +288,7 @@ namespace ByteShelf.Cli.Tests
         public async Task GetAFolder_WithItsPassword_SavesItsFilesDecrypted()
         {
             await UploadAsync("/secret/a.txt", "a");
-            await RunAsync("encrypt", "docs:/secret", "--password-file", PasswordFile);
+            await EncryptAsync("docs:/secret");
 
             CliRun run = await RunAsync("get", "docs:/secret", _work.File("out"), "--decrypt", "--password-file", PasswordFile);
 
@@ -253,7 +300,7 @@ namespace ByteShelf.Cli.Tests
         public async Task GetAFolder_WithAnotherPassword_FailsAsMisuseBeforeSavingAnything()
         {
             await UploadAsync("/secret/a.txt", "a");
-            await RunAsync("encrypt", "docs:/secret", "--password-file", PasswordFile);
+            await EncryptAsync("docs:/secret");
             await File.WriteAllTextAsync(_work.File("wrong.txt"), "another password\n");
 
             CliRun run = await RunAsync("get", "docs:/secret", _work.File("out"), "--password-file", _work.File("wrong.txt"));
@@ -303,7 +350,7 @@ namespace ByteShelf.Cli.Tests
         public async Task TreeFindAndStat_MarkWhatIsEncrypted()
         {
             await UploadAsync("/secret/a.txt", "a");
-            await RunAsync("encrypt", "docs:/secret", "--password-file", PasswordFile);
+            await EncryptAsync("docs:/secret");
 
             CliRun tree = await RunAsync("tree", "docs:/");
             CliRun find = await RunAsync("find", "docs:/", "a.txt");
@@ -321,7 +368,14 @@ namespace ByteShelf.Cli.Tests
         private async Task EncryptSecretAsync()
         {
             await Docs.CreateDirectoryAsync("/secret");
-            Assert.Equal(CliApp.Succeeded, (await RunAsync("encrypt", "docs:/secret", "--password-file", PasswordFile)).ExitCode);
+            await EncryptAsync("docs:/secret");
+        }
+
+        /// <summary>Encrypts <paramref name="location"/> with <see cref="Password"/>, as a test's setup, failing the test unless it succeeds.</summary>
+        private async Task EncryptAsync(string location)
+        {
+            CliRun run = await RunAsync("encrypt", location, "--password-file", PasswordFile);
+            Assert.True(run.ExitCode == CliApp.Succeeded, run.Error);
         }
 
         private Task<CliRun> RunAsync(params string[] commandLine)
@@ -336,7 +390,17 @@ namespace ByteShelf.Cli.Tests
 
         private Task<ShelfFile> StoreEncryptedAsync(string path, string text, string password)
         {
-            return Transfers.UploadAsync(Docs, path, new MemoryStream(Encoding.UTF8.GetBytes(text)), new UploadOptions(), new Encryptor(password, FastWorkFactor), CancellationToken.None);
+            return Transfers.UploadAsync(Docs, path, new MemoryStream(Encoding.UTF8.GetBytes(text)), new UploadOptions(), CancellationToken.None, new Encryptor(password, FastWorkFactor));
+        }
+
+        /// <summary>The file at <paramref name="path"/>, decrypted with <see cref="Password"/>; fails unless it is encrypted with it.</summary>
+        private async Task<string> ReadDecryptedAsync(string path)
+        {
+            ShelfFile file = await Docs.GetFileAsync(path);
+            Assert.True(file.Encrypted);
+            using MemoryStream plain = new MemoryStream();
+            await Transfers.WriteAsync(Docs, file, plain, EncryptedFiles.DecryptedWith(Password), CancellationToken.None);
+            return Encoding.UTF8.GetString(plain.ToArray());
         }
 
         private async Task<string> ReadAsync(string path)

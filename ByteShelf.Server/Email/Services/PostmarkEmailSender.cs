@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Net.Mail;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using ByteShelf.Server.Email.Models;
@@ -39,7 +40,8 @@ namespace ByteShelf.Server.Email.Services
         {
             _httpClientFactory = httpClientFactory;
             _apiKey = settings.ApiKey;
-            _from = $"{settings.From.Name} <{settings.From.Address}>";
+            // Quoted, so a name holding a comma, a quote or angle brackets stays one name.
+            _from = new MailAddress(settings.From.Address, settings.From.Name).ToString();
             _logger = logger;
         }
 

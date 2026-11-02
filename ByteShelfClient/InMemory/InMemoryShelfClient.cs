@@ -95,11 +95,7 @@ namespace ByteShelfClient.InMemory
         {
             ArgumentNullException.ThrowIfNull(content);
             NormalizedUpload upload = NormalizedUpload.Of(path, options);
-
-            using MemoryStream buffer = new MemoryStream();
-            await content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
-            byte[] bytes = buffer.ToArray();
-
+            byte[] bytes = await ReadAllAsync(content, cancellationToken).ConfigureAwait(false);
             return await Run(cancellationToken, shelf => Store(shelf, upload, bytes)).ConfigureAwait(false);
         }
 
@@ -107,10 +103,7 @@ namespace ByteShelfClient.InMemory
         {
             ArgumentNullException.ThrowIfNull(file);
             ArgumentNullException.ThrowIfNull(content);
-
-            using MemoryStream buffer = new MemoryStream();
-            await content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
-            byte[] bytes = buffer.ToArray();
+            byte[] bytes = await ReadAllAsync(content, cancellationToken).ConfigureAwait(false);
 
             return await Run(cancellationToken, shelf =>
             {
@@ -539,13 +532,47 @@ namespace ByteShelfClient.InMemory
         /// <summary>Runs <paramref name="action"/> on this shelf as <see cref="InMemoryStore.RunAsync{T}"/> does.</summary>
         private Task<T> Run<T>(CancellationToken cancellationToken, Func<InMemoryShelf, T> action)
         {
-            return _store.RunAsync(() => action(_store.GetShelf(Name)), cancellationToken);
+            return _store.RunAsync(() => Refusable(_store.GetShelf(Name), action), cancellationToken);
         }
 
         /// <inheritdoc cref="Run{T}(CancellationToken, Func{InMemoryShelf, T})"/>
         private Task Run(CancellationToken cancellationToken, Action<InMemoryShelf> action)
         {
-            return _store.RunAsync(() => action(_store.GetShelf(Name)), cancellationToken);
+            return _store.RunAsync(
+                () => Refusable(_store.GetShelf(Name), shelf =>
+                {
+                    action(shelf);
+                    return true;
+                }),
+                cancellationToken);
+        }
+
+        /// <summary>A stream's whole contents, read before the store is touched, as the server stages a body before it stores it.</summary>
+        private static async Task<byte[]> ReadAllAsync(Stream content, CancellationToken cancellationToken)
+        {
+            using MemoryStream buffer = new MemoryStream();
+            await content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+            return buffer.ToArray();
+        }
+
+        /// <summary>
+        /// Runs <paramref name="action"/>, and when it is refused removes the directories it created on the
+        /// way, as the server's transaction rolls them back: a move or store creates its destination's
+        /// directories before every rule about it is checked. Every other change an operation makes comes
+        /// after its checks.
+        /// </summary>
+        private static T Refusable<T>(InMemoryShelf shelf, Func<InMemoryShelf, T> action)
+        {
+            int directories = shelf.Directories.Count;
+            try
+            {
+                return action(shelf);
+            }
+            catch
+            {
+                shelf.Directories.RemoveRange(directories, shelf.Directories.Count - directories);
+                throw;
+            }
         }
 
         /// <summary>Stores a file as an upload does on the server: refuses up front, then replaces and creates what it needs.</summary>

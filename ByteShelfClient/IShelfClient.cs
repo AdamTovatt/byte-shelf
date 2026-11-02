@@ -60,6 +60,10 @@ namespace ByteShelfClient
         /// not flip its encryption, or would leave a plain file under an encrypted directory. Needs write
         /// access.
         /// </summary>
+        /// <remarks>
+        /// <paramref name="encrypted"/> says what the client made of the bytes, and only the flip of
+        /// <paramref name="file"/>'s own flag is taken.
+        /// </remarks>
         Task<ShelfFile> SwapContentAsync(ShelfFile file, Stream content, bool encrypted, CancellationToken cancellationToken = default);
 
         /// <summary>

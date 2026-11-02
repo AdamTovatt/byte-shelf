@@ -47,10 +47,15 @@ holding a file encrypted with another password is refused before anything change
 password derivation of about a second, and a run again checks each file already encrypted the same
 way, so a large folder takes a while. Files put under an encrypted folder are encrypted with its
 password, checked first, and `put --encrypt` encrypts a file elsewhere with a new one. `get` saves an
-encrypted file as its `.age` file, which `age -d` opens, and a folder's encrypted files the same way,
-unless `--decrypt` or a `--password-file` asks to decrypt them; a folder's password is checked first.
-The password is read from the terminal without echo, a new one twice, or from the first line of
-`--password-file`; never from an argument. A lost password cannot be recovered.
+encrypted file as the age file it is stored as, which `age -d` opens, unless `--decrypt` or a
+`--password-file` asks to decrypt it: saved into a local folder it gets `.age` added to its name, and
+saved to a named file or `-` it is written there as it is. A folder's encrypted files are saved the
+same way, as `.age` files, and a folder's password is checked first. `share` refuses an encrypted
+file, since a link would hand out bytes only the password opens. The password is read from the
+terminal without echo, a new one twice, or from the next line of standard input when one is piped
+in, or from the first line of `--password-file`; never from an argument. `put -` reads the file from
+standard input, so a password it needs must come from `--password-file`. A lost password cannot be
+recovered.
 
 `mkdir` creates a directory with any missing parents, `rm` moves a file or a directory to the trash,
 `trash` lists what can be restored, `restore` brings a deletion back, and `empty-trash` deletes the
@@ -115,9 +120,10 @@ an agent with only a shell to use `byteshelf`. For Claude Code, copy that folder
 
 - `0`: done.
 - `1`: the server refused or could not be reached, a download did not match its SHA-256 (with
-  `get … -`, after the bytes were written), a local file could not be read or written, a folder
-  transfer left anything out, or another command held the config for 30 seconds.
+  `get … -`, after the bytes were written), an encrypted file is damaged, a local file could not be
+  read or written, a folder transfer left anything out, or another command held the config for 30
+  seconds.
 - `2`: the command was given wrongly or cannot run as things are: before signing in, a local file
-  or folder that is missing, or a file that exists when `get` of that one file was not asked to
-  overwrite it.
+  or folder that is missing, a file that exists when `get` of that one file was not asked to
+  overwrite it, or a wrong password.
 - `130`: interrupted with Ctrl+C. A second Ctrl+C ends the process at once.

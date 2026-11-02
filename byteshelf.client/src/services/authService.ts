@@ -137,7 +137,7 @@ export async function getFreshToken(): Promise<string | null> {
 
 /**
  * Whether the browser holds the session's cookie for opening files, renewing the session first when
- * its token is about to run out or it was saved before the server set that cookie. Cookies cleared by
+ * its token is about to run out or it holds no record that the server set that cookie. Cookies cleared by
  * hand, or a clock more than a minute behind the server's, are not seen here; a file opened then
  * answers 401 until the next renewal.
  */

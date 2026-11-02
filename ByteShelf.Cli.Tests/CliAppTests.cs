@@ -196,7 +196,7 @@ namespace ByteShelf.Cli.Tests
             await UploadAsync("/many/2.txt", "2");
             await UploadAsync("/many/3.txt", "3");
 
-            FolderTransferResult result = await FolderTransfers.DownloadAsync(Docs, ShelfLocation.Parse("docs:/many"), _work.File("out"), overwrite: false, CancellationToken.None, pageSize: 2);
+            FolderTransferResult result = await FolderTransfers.DownloadAsync(Docs, ShelfLocation.Parse("docs:/many"), _work.File("out"), overwrite: false, EncryptedFiles.SavedAsTheyAre, CancellationToken.None, pageSize: 2);
 
             Assert.Equal((3, true), (result.Files, result.IsComplete));
             Assert.Equal(new[] { "1.txt", "2.txt", "3.txt" }, Directory.GetFiles(_work.File("out"), "*", SearchOption.AllDirectories).Select(Path.GetFileName).Order());

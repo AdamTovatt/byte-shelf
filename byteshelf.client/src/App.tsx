@@ -7,7 +7,7 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { ShelvesPage } from './pages/ShelvesPage';
 import { ShelfPage } from './pages/ShelfPage';
 import { TrashPage } from './pages/TrashPage';
-import { ShelfAccessTab, ShelfGeneralTab, ShelfKeysTab, ShelfSettingsLayout } from './pages/ShelfSettingsPage';
+import { ShelfSettingsPage } from './pages/ShelfSettingsPage';
 import { UsersPage } from './pages/UsersPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ReplicationPage } from './pages/ReplicationPage';
@@ -59,12 +59,7 @@ function AppRoutes() {
         <Route path={SHELF_ROUTE_PATTERNS.trash} element={<TrashPage />} />
         <Route path={ROUTES.SETTINGS} element={<SettingsPage />} />
         <Route element={<AdminRoute />}>
-          <Route path={SHELF_ROUTE_PATTERNS.settings} element={<ShelfSettingsLayout />}>
-            <Route index element={<Navigate to="general" replace />} />
-            <Route path="general" element={<ShelfGeneralTab />} />
-            <Route path="access" element={<ShelfAccessTab />} />
-            <Route path="keys" element={<ShelfKeysTab />} />
-          </Route>
+          <Route path={SHELF_ROUTE_PATTERNS.settings} element={<ShelfSettingsPage />} />
           <Route path={ROUTES.USERS} element={<UsersPage />} />
           <Route path={ROUTES.REPLICATION} element={<ReplicationPage />} />
         </Route>

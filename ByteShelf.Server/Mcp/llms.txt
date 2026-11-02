@@ -29,8 +29,8 @@ permissions: read, add-only (read, and store new files, never replace or remove)
 
 - Install with `dotnet tool install -g ByteShelf.Cli`. With `BYTESHELF_URL` and `BYTESHELF_KEY` set it
   needs no login.
-- `byteshelf whoami`, `shelves`, `ls`, `tree`, `find`, `stat`, `get`, `put`, `mkdir`, `describe`,
-  `share`, `mv`, `rm`, `trash`, `restore`, `empty-trash`; `--json` prints the server's JSON. A place
+- `byteshelf whoami`, `shelves`, `ls`, `tree`, `find`, `stat`, `get`, `put`, `encrypt`, `decrypt`,
+  `mkdir`, `describe`, `share`, `mv`, `rm`, `trash`, `restore`, `empty-trash`; `--json` prints the server's JSON. A place
   is written `shelf:/path`. `byteshelf help` lists every command.
 - [The CLI's guide](https://github.com/AdamTovatt/byte-shelf/blob/master/ByteShelf.Cli/README.md)
 - [A skill for agents using it](https://github.com/AdamTovatt/byte-shelf/blob/master/skills/byteshelf/SKILL.md):

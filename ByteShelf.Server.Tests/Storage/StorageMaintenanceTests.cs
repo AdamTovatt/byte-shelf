@@ -199,6 +199,7 @@ namespace ByteShelf.Server.Tests.Storage
                 ContentType = ContentTypes.Default,
                 SizeBytes = 100,
                 ReceivedBytes = 0,
+                Encrypted = false,
                 IsResumable = false,
                 CreatedAt = startedAt,
                 LastActivityAt = startedAt,

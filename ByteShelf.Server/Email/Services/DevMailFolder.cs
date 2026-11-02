@@ -66,42 +66,8 @@ namespace ByteShelf.Server.Email.Services
             };
 
             OwnerOnly.CreateDirectory(directory);
-            await WriteThenRenameAsync(path, JsonSerializer.Serialize(file, JsonOptions), cancellationToken);
+            OwnerOnly.WriteThenRename(path, JsonSerializer.Serialize(file, JsonOptions));
             return path;
-        }
-
-        /// <summary>Writes <paramref name="content"/> owner-only to a temporary sibling of <paramref name="path"/> and renames it into place.</summary>
-        private static async Task WriteThenRenameAsync(string path, string content, CancellationToken cancellationToken)
-        {
-            // A sibling rather than a temp directory, so the rename stays within one filesystem: a move across a
-            // mount point is a copy, which is not atomic.
-            string temporaryPath = path + ".tmp";
-
-            try
-            {
-                await using (StreamWriter writer = new StreamWriter(temporaryPath, OwnerOnly.Write(FileMode.CreateNew)))
-                {
-                    await writer.WriteAsync(content.AsMemory(), cancellationToken);
-                }
-
-                File.Move(temporaryPath, path);
-            }
-            finally
-            {
-                // Reached with a file to delete only when the rename did not happen. A failure here is swallowed
-                // because an exception from a finally block would replace the one in flight, which says why the
-                // write failed; the name is unique, so a leftover is never written over.
-                try
-                {
-                    File.Delete(temporaryPath);
-                }
-                catch (IOException)
-                {
-                }
-                catch (UnauthorizedAccessException)
-                {
-                }
-            }
         }
 
         /// <summary>

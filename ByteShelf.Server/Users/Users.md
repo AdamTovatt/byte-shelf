@@ -56,8 +56,14 @@ Every session is stamped with the password it was signed in with (`CredentialSta
 token stores the SHA-256 of the password hash as it was when the password was checked. A refresh is
 refused once the user's password hash is another, so a password change or reset ends every session
 that predates it, set to the same password again included. A sign-in that checked the password just
-before a reset committed is refused rather than handed out. Sessions signed in before stamps existed
-have none, and end at their next refresh.
+before a reset committed is refused rather than handed out. A session without a stamp
+ends at its next refresh.
+
+A reset, by a link or by the server's `--reset-password`, also refuses at once every access token the
+user holds: it sets the user's `sessions_ended_at`, and `CurrentUserTokenValidation` refuses a token
+issued before then. A token's issue time is in whole seconds, so one issued in the same second as the
+reset is refused too, even just after it. Changing your own password sets none: your other sessions
+end at their next refresh, within the hour an access token lasts.
 
 ## Password reset
 

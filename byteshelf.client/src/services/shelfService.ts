@@ -25,6 +25,11 @@ export function directoryEntry(listed: ListedDirectory): Entry {
   return { kind: 'directory', value: directory, sizeBytes, fileCount, encryptedFileCount };
 }
 
+/** What several entries are called in a title or a toast: the one's name, or how many there are. */
+export function nameOrCount(entries: readonly Entry[]): string {
+  return entries.length === 1 ? entries[0].value.name : `${entries.length} items`;
+}
+
 /** An entry's size: a file's own, or a directory's with everything under it. */
 export function entrySizeBytes(entry: Entry): number {
   return entry.kind === 'file' ? entry.value.sizeBytes : entry.sizeBytes;

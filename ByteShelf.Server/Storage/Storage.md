@@ -75,7 +75,8 @@ does, `download=true` included, to anyone holding the token until it runs out. T
 shelf and the file by id and when it runs out, signed by `LinkTokens` (below);
 an altered or expired one, or one whose file is in the trash, answers 404; a restored file keeps its
 id, so its unexpired links work again. A file stored over the linked one is a new file, so the link no
-longer reaches it. Creating or serving a link is recorded nowhere. A link keeps working until it
+longer reaches it; one encrypted or decrypted in place keeps its id, so the link serves its contents
+as they are then, and answers 409 while it is encrypted. Creating or serving a link is recorded nowhere. A link keeps working until it
 runs out even if the access it was made with is taken away meanwhile; nothing takes one link back,
 but removing the secret file and restarting ends them all. `DownloadLinks` makes the link with
 `PublicAddress.LinkTo`: absolute on `APP_BASE_URL` when that is set, which clients keep as it is;
@@ -196,8 +197,8 @@ own or an ancestor, existing directories or not; a directory is never encrypted 
 another; nothing moves into one from outside it, encrypted or not, since its password could differ
 (moving out is fine, and the file stays encrypted); a deletion holding a plain file or an encrypted
 directory is not restored into one; and upload links, which send plain files, are refused under one
-or over an encrypted file, when made and again when used. A download link is never made to an
-encrypted file. Encrypting a directory touches none of its files: a client encrypts them after, and
+or over an encrypted file, when made, when used, and again as the upload finishes. A download link is
+never made to an encrypted file, nor serves one encrypted in place since. Encrypting a directory touches none of its files: a client encrypts them after, and
 removing its encryption decrypts nothing, so a client decrypts them after; the server only records
 the mark.
 

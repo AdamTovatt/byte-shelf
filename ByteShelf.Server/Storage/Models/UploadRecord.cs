@@ -17,7 +17,7 @@ namespace ByteShelf.Server.Storage.Models
         public required long ReceivedBytes { get; init; }
 
         /// <summary>Whether the bytes are an age file encrypted with a password, as the file will be stored.</summary>
-        public bool Encrypted { get; init; }
+        public required bool Encrypted { get; init; }
 
         /// <summary>False for a single PUT, whose upload cannot outlive the request that made it.</summary>
         public required bool IsResumable { get; init; }

@@ -24,7 +24,7 @@ namespace ByteShelf.Server.Storage.Controllers
             _fileService = fileService;
         }
 
-        /// <summary>Streams the file the link names, as <see cref="FileContentResponse"/> describes; 404 once it has run out.</summary>
+        /// <summary>Streams the file the link names, as <see cref="FileContentResponse"/> describes; 404 once it has run out, 409 while the file is encrypted.</summary>
         [HttpGet("{token}")]
         [HttpHead("{token}")]
         [ProducesResponseType(typeof(FileStreamResult), 200)]
@@ -39,6 +39,14 @@ namespace ByteShelf.Server.Storage.Controllers
 
             Shelf shelf = await _shelfService.GetByIdAsync(shelfId);
             FileContent content = await _fileService.GetContentAsync(shelf, EntryReference.ForId(fileId));
+
+            // The link names the file by id, which an in-place encryption keeps: refused while it is encrypted.
+            if (content.File.Encrypted)
+            {
+                await content.DisposeAsync();
+                ShelfEncryption.RequireDownloadLinkTarget(content.File);
+            }
+
             return FileContentResponse.Send(this, content, download);
         }
     }

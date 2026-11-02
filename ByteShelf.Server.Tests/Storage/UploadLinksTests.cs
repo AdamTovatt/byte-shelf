@@ -173,6 +173,20 @@ namespace ByteShelf.Server.Tests.Storage
             HttpResponseMessage response = await PutAsync(link, "a");
 
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            await AssertNothingAtAsync("docs", "/a.txt");
+        }
+
+        [Fact]
+        public async Task Link_MadeByAnAdminWhoIsNoLongerOne_Returns404AndStoresNothing()
+        {
+            (await _host.AdminClient.PutAsJsonAsync($"/api/users/{_host.MemberId}/roles", new { roles = new[] { UserRoles.Admin } })).EnsureSuccessStatusCode();
+            UploadLink link = await CreateLinkAsync(_host.MemberClient, new CreateUploadLinkRequest { Path = "/a.txt" });
+            (await _host.AdminClient.PutAsJsonAsync($"/api/users/{_host.MemberId}/roles", new { roles = Array.Empty<string>() })).EnsureSuccessStatusCode();
+
+            HttpResponseMessage response = await PutAsync(link, "a");
+
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            await AssertNothingAtAsync("docs", "/a.txt");
         }
 
         [Fact]
@@ -185,6 +199,7 @@ namespace ByteShelf.Server.Tests.Storage
             HttpResponseMessage response = await PutAsync(link, "a");
 
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            await AssertNothingAtAsync("docs", "/a.txt");
         }
 
         [Fact]
@@ -197,7 +212,7 @@ namespace ByteShelf.Server.Tests.Storage
             HttpResponseMessage response = await PutAsync(link, "a");
 
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-            Assert.Equal(HttpStatusCode.NotFound, (await _host.AdminClient.GetAsync("/api/shelves/docs/files?path=/a.txt")).StatusCode);
+            await AssertNothingAtAsync("docs", "/a.txt");
         }
 
         [Fact]
@@ -210,6 +225,7 @@ namespace ByteShelf.Server.Tests.Storage
             HttpResponseMessage response = await PutAsync(link, "five!");
 
             Assert.Equal(HttpStatusCode.InsufficientStorage, response.StatusCode);
+            await AssertNothingAtAsync("small", "/a.txt");
         }
 
         [Fact]
@@ -308,6 +324,11 @@ namespace ByteShelf.Server.Tests.Storage
         private static string TokenOf(UploadLink link)
         {
             return link.Url[$"/{UploadLinks.Route}/".Length..];
+        }
+
+        private async Task AssertNothingAtAsync(string shelf, string path)
+        {
+            Assert.Equal(HttpStatusCode.NotFound, (await _host.AdminClient.GetAsync($"/api/shelves/{shelf}/files?path={Uri.EscapeDataString(path)}")).StatusCode);
         }
 
         private static async Task<UploadLink> CreateLinkAsync(HttpClient client, CreateUploadLinkRequest request)

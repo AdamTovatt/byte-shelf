@@ -45,21 +45,24 @@ ByteShelf.Server --unset-admin <email>
 A new password is never an argument, which other users of the machine could read: it is typed twice
 at the terminal without being shown, or read as one line from stdin when stdin is redirected
 (`< password-file`). The commands go through the same rules as the API: password length, a taken
-email, never removing the last admin. A reset ends every session and reset link of that user, and the
-change log records each change, so replicas follow. A replica refuses them; run them on its primary.
+email, never removing the last admin. A reset ends every session and reset link of that user: the
+access tokens they hold are refused at once, and none of their sessions can be renewed. The change
+log records each change, so replicas follow. A replica refuses them; run them on its primary.
 They never migrate the database, which the running server may be using: a database an older version
 left is refused until this version has started on it or `--migrate-only` has run. Exit codes: 0 done,
-1 refused or failed (the reason is logged), 2 the arguments are wrong or `BYTESHELF_ROOT` is missing.
+1 refused or failed (the reason is logged; a root without a database too), 2 the arguments are wrong
+or `BYTESHELF_ROOT` is not set.
 
 ## Environment variables
 
 | Variable | Required | Meaning |
 |---|---|---|
 | `BYTESHELF_ROOT` | yes | The root folder. Created on first start, with `objects/`, `staging/` and `keys/` inside. The server makes it reachable by its owner only on every start, so it must be owned by the user the server runs as. |
-| `APP_BASE_URL` | outside Development | The public URL, e.g. `https://shelf.example.com`. Password-reset links and the download links the API answers (share links, the web UI's Copy link, MCP's `share_file`) point at it. |
+| `APP_BASE_URL` | outside Development | The public URL, e.g. `https://shelf.example.com`. Password-reset links, the download links the API answers (share links, the web UI's Copy link, MCP's `share_file`) and upload links point at it. |
 | `POSTMARK_API_KEY` | to send email | A Postmark server token. Without it no email is sent (see [Email](#email)). |
 | `EMAIL_FROM_ADDRESS` | with `POSTMARK_API_KEY` | The address mail is from, a sender confirmed in Postmark. The server refuses to start with a token and no address. |
 | `EMAIL_FROM_NAME` | no | The name mail is from. `ByteShelf` by default. |
+| `REMOTE_CLAUDE_DEV_MAIL_DIR` | no | A folder each email is written into as a file instead of being sent, in any environment, unless `POSTMARK_API_KEY` is set. Set by remote-claude for a dev server; see [Email](#email). |
 | `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD` | no | Create the first admin while there are no users; ignored afterwards and can be removed. Without them, create it with `--create-user`. |
 | `INITIAL_ADMIN_DISPLAY_NAME` | no | The first admin's display name; the email's local part otherwise. |
 | `BYTESHELF_RESTORE_WINDOW_DAYS` | no | How long a deletion can be restored before it is purged. 30 by default. |
@@ -79,13 +82,14 @@ The server sends its email, such as password-reset links, through Postmark when 
 and `EMAIL_FROM_ADDRESS` are set. Open and link tracking are always off, whatever the Postmark
 server's settings, so a link arrives as written. A send Postmark refuses is logged as an error.
 
-Without a token no email is sent, and the server says so at startup. A user who asks for a password
-reset gets the same answer as ever, but no link reaches them: outside Development the server logs
-only that a reset email was asked for, never the link. So a forgotten password cannot be reset by
-email; on the server's machine `--reset-password` sets a new one
-([Users from the command line](#users-from-the-command-line)). In Development the link is written to the log instead. A dev
-server started by remote-claude gets `REMOTE_CLAUDE_DEV_MAIL_DIR`, and each email is then written
-there as a file for remote-claude to show ([Email](ByteShelf.Server/Email/Email.md)). Reset links
+Without a token no email is sent, and the server says so at startup. When `REMOTE_CLAUDE_DEV_MAIL_DIR`
+is set, which remote-claude does for a dev server it starts, each email is written there as a file
+for remote-claude to show ([Email](ByteShelf.Server/Email/Email.md)), in any environment. Without
+either, a user who asks for a password reset gets the same 204, but no link reaches them: outside
+Development the server logs only that a reset email was asked for, never the link. So a forgotten
+password cannot be reset by email; on the server's machine `--reset-password` sets a new one
+([Users from the command line](#users-from-the-command-line)). In Development the link is written to
+the log instead. Reset links
 wait in an outbox in memory that holds 100: when it is full a new link is dropped with a warning,
 links still waiting are lost on a restart, and a failed send is not retried
 ([Users](ByteShelf.Server/Users/Users.md#password-reset)).
@@ -180,8 +184,8 @@ moment, the objects its files point at, and `keys/`. Unzipped, it is a root a se
 The zip is readable by its owner only, since it holds password hashes and the server's secrets. It
 must be written outside the root, to a folder with room for both the zip and a copy of the database,
 which is written beside it while the backup runs. Exit code 0 means it was written; 1 that it failed
-and wrote nothing, such as for a damaged object; 2 that the zip's path after `--backup` or
-`BYTESHELF_ROOT` is missing.
+and wrote nothing, such as for a damaged object or a root without a database; 2 that the zip's path
+after `--backup` is not given or `BYTESHELF_ROOT` is not set.
 
 A zip of a stopped server's root is a complete copy too. Restoring either onto a primary makes its
 replicas take a whole copy once they notice, which [Backup](ByteShelf.Server/Backup/Backup.md) explains.

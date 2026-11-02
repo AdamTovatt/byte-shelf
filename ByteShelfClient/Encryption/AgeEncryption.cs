@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using ByteShelfCommon;
 
 namespace ByteShelfClient.Encryption
 {
@@ -29,7 +30,8 @@ namespace ByteShelfClient.Encryption
         /// </remarks>
         public const int MaxWorkFactor = 22;
 
-        private const string VersionLine = "age-encryption.org/v1";
+        /// <summary>The header's first line, without its line feed: <see cref="FileEncryption.AgeHeader"/>, which the server checks for.</summary>
+        private static readonly string VersionLine = Encoding.ASCII.GetString(FileEncryption.AgeHeader[..^1]);
         private const string ScryptLabel = "age-encryption.org/v1/scrypt";
         private const int FileKeyBytes = 16;
         private const int SaltBytes = 16;
@@ -237,9 +239,23 @@ namespace ByteShelfClient.Encryption
         }
 
         /// <summary>The key a password wraps a file key with: scrypt of it with the file's salt, at its work factor.</summary>
+        /// <exception cref="AgeException">The work factor needs more memory than this process could have.</exception>
+        /// <remarks>
+        /// Not cancellable part way: at <see cref="MaxWorkFactor"/> it takes seconds.
+        /// </remarks>
         private static byte[] WrapKey(string passphrase, byte[] salt, int workFactor)
         {
-            return Scrypt.DeriveKey(Encoding.UTF8.GetBytes(passphrase), [.. Encoding.ASCII.GetBytes(ScryptLabel), .. salt], workFactor, ScryptBlockSize, ScryptParallelism, KeyBytes);
+            try
+            {
+                return Scrypt.DeriveKey(Encoding.UTF8.GetBytes(passphrase), [.. Encoding.ASCII.GetBytes(ScryptLabel), .. salt], workFactor, ScryptBlockSize, ScryptParallelism, KeyBytes);
+            }
+            catch (OutOfMemoryException)
+            {
+                // The one allocation that grows with the work factor is scrypt's own: failing it leaves the
+                // process as it was, so this file fails and the rest go on.
+                long mebibytes = ((long)128 * ScryptBlockSize << workFactor) / (1024 * 1024);
+                throw new AgeException(AgeFailure.OutOfMemory, $"Its password's work factor {workFactor} needs {mebibytes} MiB of memory, more than could be had.");
+            }
         }
 
         /// <exception cref="AgeException">The header's MAC is not the one <paramref name="fileKey"/> gives it.</exception>

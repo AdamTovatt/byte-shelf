@@ -49,10 +49,8 @@ namespace ByteShelf.Server.Replication.Services
 
             // Every entity type the change log holds, with its table and how to write and remove one. The
             // order is the copy's removal pass: what refers to others first. A file or directory set aside
-            // here goes to the trash as a deletion of its own.
-            // Not done (review items 27 and 28, a taste call): each feature owning a handler for its
-            // entities, keyed on typed descriptors such as ChangeEntity<FileRecord> rather than strings.
-            // The list below works and keeps the removal order in one place.
+            // here goes to the trash as a deletion of its own. One list rather than a handler per feature:
+            // the removal order spans the features, and here it stays in one place.
             _handlers = new[]
             {
                 new EntityHandler(
@@ -76,7 +74,9 @@ namespace ByteShelf.Server.Replication.Services
                     async (entry, at, session, changes) =>
                     {
                         // A file's row points at other contents only when they were swapped in place
-                        // (encrypting or decrypting it), whose old ones go at once here too.
+                        // (encrypting or decrypting it), whose old ones go at once here too. Told by the
+                        // hashes, not by the entry's action: a whole copy holds only a file's newest
+                        // entry, so a swap followed by a move arrives as a move.
                         FileRecord file = ChangePayload.Deserialize<FileRecord>(entry.Payload!);
                         if (await fileRepository.GetByIdAsync(file.Id, session) is FileRecord here && here.Sha256 != file.Sha256)
                         {
@@ -185,28 +185,5 @@ namespace ByteShelf.Server.Replication.Services
             Func<ChangeLogEntry, DateTimeOffset, IDbSession, AppliedChanges, Task> WriteAsync,
             Func<Guid, DateTimeOffset, IDbSession, Task<bool>> RemoveAsync,
             bool RemovalEndsSessions = false);
-    }
-
-    /// <summary>What applying entries leaves to do once they commit, noted as they are applied.</summary>
-    public sealed class AppliedChanges
-    {
-        private readonly List<Guid> _removedUsers = new List<Guid>();
-        private readonly HashSet<string> _releasedObjects = new HashSet<string>(StringComparer.Ordinal);
-
-        /// <summary>The users removed, whose sessions end.</summary>
-        public IReadOnlyCollection<Guid> RemovedUsers => _removedUsers;
-
-        /// <summary>Objects files pointed at before their contents were swapped, to remove unless a row still points at one.</summary>
-        public IReadOnlyCollection<string> ReleasedObjects => _releasedObjects;
-
-        public void UserRemoved(Guid userId)
-        {
-            _removedUsers.Add(userId);
-        }
-
-        public void ObjectReleased(string sha256)
-        {
-            _releasedObjects.Add(sha256);
-        }
     }
 }

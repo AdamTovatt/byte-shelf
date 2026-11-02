@@ -84,7 +84,7 @@ namespace ByteShelf.Cli.Tests
                 ? Task.FromResult(new DirectoryTree { Directory = directory, Directories = Array.Empty<ShelfDirectory>(), Files = new[] { escaping, kept } })
                 : null);
 
-            FolderTransferResult result = await FolderTransfers.DownloadAsync(shelf, ShelfLocation.Parse("docs:/r"), _work.File("out/r"), overwrite: false, CancellationToken.None);
+            FolderTransferResult result = await FolderTransfers.DownloadAsync(shelf, ShelfLocation.Parse("docs:/r"), _work.File("out/r"), overwrite: false, EncryptedFiles.SavedAsTheyAre, CancellationToken.None);
 
             Assert.Equal("/r/../../escaped.txt: its name is not one a local file can have here.", Assert.Single(result.LeftOut));
             Assert.Equal(1, result.Files);

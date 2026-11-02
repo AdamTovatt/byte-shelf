@@ -28,14 +28,7 @@ namespace ByteShelf.Server.Shared.Root
             }
 
             string secret = Convert.ToBase64String(RandomNumberGenerator.GetBytes(byteCount));
-            string temporaryPath = path + ".tmp";
-
-            using (StreamWriter writer = new StreamWriter(temporaryPath, OwnerOnly.Write(FileMode.Create)))
-            {
-                writer.Write(secret);
-            }
-
-            File.Move(temporaryPath, path, overwrite: false);
+            OwnerOnly.WriteThenRename(path, secret);
             return secret;
         }
     }

@@ -10,8 +10,10 @@ the Replication page pair replicas, see how far behind each is, remove one, and 
 
 `src/ui` is the UI library: buttons, fields, cards, dialogs, menus, page layout and the sidebar, with
 the colour, type and icon systems and the Tailwind preset they need. It was copied from the house
-component library, trimmed to what ByteShelf uses; pages import from `src/ui`, and app-specific
-pieces (the form dialog, the file button, the quota field) live in `src/components`.
+component library, trimmed to what ByteShelf uses; pages import from `src/ui`. `src/components` holds
+what the library lacks: app-specific pieces (the form dialog, the password dialog, the quota field)
+and a few generic ones written for this app (`CardList`, `MiddleTruncatedName`). The file picker is a
+hook, `hooks/useFilePicker.tsx`.
 
 ## Working on it
 
@@ -52,15 +54,20 @@ npm run codegen    # in a second terminal
   (`services/uploadService.ts`); a file whose name is taken is replaced only when asked. "Copy link"
   in a file's menu copies one that works for a day, for someone without access; where the browser
   offers no clipboard (plain HTTP), the toast shows it to copy by hand.
+  A folder's rows select as in Finder (`hooks/useSelection.ts`): a click selects one, Cmd or Ctrl
+  adds or takes one away, Shift selects a range, Space toggles the focused row, Cmd or Ctrl+A selects
+  them all, and Escape or a click in empty space clears it; a double-click or Enter opens a row. While
+  any are selected, a bar over the search row (the top bar, on a phone) downloads, moves or deletes
+  them. A selection belongs to its folder, and a row that leaves the list leaves it for good.
   A row, or the selection it is in, moves by dragging it onto a folder's row or breadcrumb crumb
   (`hooks/useEntryDragAndDrop.ts`, dnd-kit on pointer events, so it never meets the browser's own
   drag events that dropping files to upload uses). A toast that names a file cuts a long name in the
   middle (`components/MiddleTruncatedName.tsx`).
-- **Opening and saving** (`lib/fileOpening.tsx`): an unencrypted file opens or saves by navigating to
+- **Opening and saving** (`components/fileOpening.tsx`): an unencrypted file opens or saves by navigating to
   `/api/open/...`, where the session's token rides in a cookie the server sets at sign-in and renewal
   (a plain navigation cannot send the header), so no public link is made. The session is renewed
-  first when its token is about to run out, since the cookie lives as long as it, or when it was
-  saved before the server set that cookie. A browser keeps that `Secure` cookie only over HTTPS or on
+  first when its token is about to run out, since the cookie lives as long as it, or when the
+  session holds no record that the server set that cookie. A browser keeps that `Secure` cookie only over HTTPS or on
   localhost, so elsewhere (plain HTTP) the file is read with the token and shown or saved from a
   local blob as an encrypted one is, which holds it whole in memory. One rule picks the way,
   `opensByNavigation` (`isSecureContext`), in `services/contentService.ts`.
@@ -77,7 +84,14 @@ npm run codegen    # in a second terminal
   decrypted here, never through a link, and shown from a local blob: in a tab for images, PDFs, plain
   text, audio and video, saved for every other type, since a blob runs as the app. A password is
   asked for once and kept in the tab's `sessionStorage` (an encrypted folder's under the folder),
-  taken out of any tab the app opens, and forgotten on sign-in and sign-out.
+  taken out of any tab the app opens, and forgotten on sign-in and sign-out, and when the app starts
+  with no session (a tab the browser restores after a sign-out). A plain folder's Remove encryption
+  leaves out the files of an encrypted folder below it, which has its own.
+- **Pages and layout:** a shelf's settings are tabs that are routes, `/shelves/:shelf/settings/:tab`
+  (`SHELF_SETTINGS_TABS` in `lib/shelfPaths.ts` lists them; the page picks the tab from the route and
+  sends any other to General). Below the `md` width the sidebar becomes a drawer behind a top bar, and
+  a page puts its own controls in that bar through `MobileTopBarActions`, or covers it with
+  `MobileTopBarOverlay` (`components/layout/MobileTopBar.tsx`).
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and
   refetches what each event makes stale (`lib/invalidationMap.ts`), so a change made elsewhere shows up
   within about a second. A test checks the map covers every resource the server publishes. The one

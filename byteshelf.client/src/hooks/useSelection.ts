@@ -34,22 +34,26 @@ interface Stored {
 /**
  * Finder-style multi-selection over rows listed in `orderedIds`, in display order. A selection
  * belongs to its `scope` (such as the shelf and folder shown), so it is gone once the scope changes
- * rather than coming back on return; rows no longer listed drop out of it. Copied from ordo's
- * useFileSelection, without the folder tree it also serves there.
+ * rather than coming back on return; rows no longer listed drop out of it for good, so a deleted row
+ * that comes back (an Undo) comes back unselected.
  */
 export function useSelection(orderedIds: string[], scope: string): Selection {
   const [stored, setStored] = useState<Stored>({ scope, ids: new Set(), anchor: null });
-  // Dropped as the scope changes, during the render rather than in an effect: React renders again at
-  // once with the empty selection, so the old one never shows in the new scope and is not there to
-  // come back.
-  if (stored.scope !== scope) setStored({ scope, ids: new Set(), anchor: null });
-
-  // Derived rather than pruned in an effect, so a deleted row never counts for a render.
   const listed = useMemo(() => new Set(orderedIds), [orderedIds]);
-  const selectedIds = useMemo(() => {
-    const kept = [...stored.ids].filter((id) => listed.has(id));
-    return kept.length === stored.ids.size ? stored.ids : new Set(kept);
-  }, [stored.ids, listed]);
+
+  // Both dropped during the render rather than in an effect: React renders again at once, so what
+  // was dropped never shows, nor counts for a render. The old scope's selection, as the scope
+  // changes; rows (and the anchor) no longer listed, as the list changes.
+  if (stored.scope !== scope) {
+    setStored({ scope, ids: new Set(), anchor: null });
+  } else if ([...stored.ids].some((id) => !listed.has(id)) || (stored.anchor !== null && !listed.has(stored.anchor))) {
+    setStored({
+      scope,
+      ids: new Set([...stored.ids].filter((id) => listed.has(id))),
+      anchor: stored.anchor !== null && listed.has(stored.anchor) ? stored.anchor : null,
+    });
+  }
+  const selectedIds = stored.ids;
 
   const update = useCallback(
     (next: (previous: Stored) => Omit<Stored, 'scope'>) => setStored((previous) => ({ ...previous, ...next(previous) })),

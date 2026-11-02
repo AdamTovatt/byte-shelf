@@ -14,7 +14,7 @@ namespace ByteShelf.Server.Backup.Services
         /// <summary>Nothing was written: the root has no database, an object is damaged, the disk failed.</summary>
         public const int Failed = 1;
 
-        /// <summary>Nothing was tried: the zip's path or <c>BYTESHELF_ROOT</c> is missing.</summary>
+        /// <summary>Nothing was tried: the zip's path is not given, or <c>BYTESHELF_ROOT</c> is not set.</summary>
         public const int Usage = 2;
 
         public static int Run(string? rootPath, string? zipPath, ILogger logger)

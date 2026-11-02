@@ -12,7 +12,7 @@ import { textOf } from '../test/dom';
 /** What was shown or saved from a blob here, and saved by navigating; whether a tab may show one. */
 const blobs = vi.hoisted(() => ({ shown: [] as string[], saved: [] as string[], savedFrom: [] as string[], tabBlocked: false }));
 
-vi.mock('./localBlobs', () => ({
+vi.mock('../lib/localBlobs', () => ({
   showBlob: (blob: Blob, name: string) => {
     if (blobs.tabBlocked) return false;
     blobs.shown.push(`${name} ${blob.type}`);
@@ -29,7 +29,7 @@ vi.mock('./localBlobs', () => ({
 /** The tabs opened, or none when the browser blocks them. */
 const tabs = vi.hoisted(() => ({ opened: [] as { location: { href: string }; closed: boolean; close: () => void }[], blocked: false }));
 
-vi.mock('./encryption/passwords', () => ({
+vi.mock('../lib/encryption/passwords', () => ({
   openTabWithoutPasswords: () => {
     if (tabs.blocked) return null;
     const tab = { location: { href: '' }, closed: false, close: () => { tab.closed = true; } };
@@ -41,7 +41,7 @@ vi.mock('./encryption/passwords', () => ({
 /** The action toasts shown: their text, and the action that pressing their button runs. */
 const toasts = vi.hoisted(() => ({ shown: [] as { message: ReactNode; action: string; onAction: () => void }[] }));
 
-vi.mock('../components/actionToast', () => ({
+vi.mock('./actionToast', () => ({
   showActionToast: (shown: { message: ReactNode; action: string; onAction: () => void }) => {
     toasts.shown.push(shown);
   },
@@ -146,13 +146,14 @@ describe('opening and saving files', () => {
       expect(tabs.opened.map((tab) => tab.location.href)).toEqual(['/api/open/docs/content?id=f', '/api/open/docs/content?id=f']);
     });
 
-    it('closes the tab rather than navigating it when the session has ended', async () => {
+    it('closes the tab rather than navigating it when the session has ended, and says so', async () => {
       localStorage.clear();
       stubServer(async () => json({}));
 
       await opening.open(file());
 
       expect(tabs.opened.map((tab) => [tab.location.href, tab.closed])).toEqual([['', true]]);
+      expect(errors).toEqual(['The session has ended. Sign in again to open files.']);
     });
 
     it('saves a plain file by navigating when the browser blocks the tab', async () => {

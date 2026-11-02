@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeUsage, formatBytes, formatDate, formatQuota, formatTime, parseQuota, splitForMiddle, usedShare } from './format';
+import { describeUsage, formatBytes, formatDate, formatQuota, formatTime, parseQuota, splitForMiddle, tryParseQuota, usedShare } from './format';
 
 describe('formatBytes', () => {
   it.each([
@@ -90,7 +90,25 @@ describe('splitForMiddle', () => {
     ['a-long-name-without-extension', 'a-long-name-without-ext', 'ension'],
     ['.env', '', '.env'],
     ['/2026/march/receipt.pdf', '/2026/march/r', 'eceipt.pdf'],
+    // What follows the last dot here is no extension, so it gives way as the rest of the name does.
+    ['v1.2 release notes for the team', 'v1.2 release notes for th', 'e team'],
+    ['backup.from-2026-03-01-nightly', 'backup.from-2026-03-01-n', 'ightly'],
   ])('keeps the end of %s', (name, start, end) => {
     expect(splitForMiddle(name)).toEqual({ start, end });
+  });
+
+  it('cuts between emoji, never inside one', () => {
+    expect(splitForMiddle(`party-${'🎉'.repeat(8)}.png`)).toEqual({ start: 'party-🎉🎉', end: `${'🎉'.repeat(6)}.png` });
+    const family = '👨‍👩‍👧';
+    expect(splitForMiddle(`x${family.repeat(7)}`)).toEqual({ start: `x${family}`, end: family.repeat(6) });
+  });
+});
+
+describe('tryParseQuota', () => {
+  it('answers undefined for what is not a size, rather than throwing', () => {
+    expect(tryParseQuota('ten', 'MiB')).toBeUndefined();
+    expect(tryParseQuota('-1', 'GiB')).toBeUndefined();
+    expect(tryParseQuota('', 'GiB')).toBeNull();
+    expect(tryParseQuota('2', 'MiB')).toBe(2 * 1024 * 1024);
   });
 });

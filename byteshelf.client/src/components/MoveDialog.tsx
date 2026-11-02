@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Button, Icon, Spinner, iconMap } from '../ui';
+import { Button, Icon, ListButton, Spinner, iconMap } from '../ui';
 import { FormDialog } from './FormDialog';
 import { useListing, useMoveEntries } from '../hooks/useShelfQueries';
 import { useSubmit } from '../hooks/useSubmit';
 import { parentPath, pathSegments, ROOT_PATH } from '../lib/shelfPaths';
-import type { Entry } from '../services/shelfService';
+import { nameOrCount, type Entry } from '../services/shelfService';
 
 interface MoveDialogProps {
   shelf: string;
@@ -30,7 +30,7 @@ export function MoveDialog({ shelf, entries, onClose }: MoveDialogProps) {
     entries.some((entry) => entry.kind === 'directory' && (path === entry.value.path || path.startsWith(`${entry.value.path}/`)));
   const folders = (listing?.directories ?? []).map((listed) => listed.directory).filter((directory) => !isMovingOrInside(directory.path));
   const alreadyThere = entries.every((entry) => parentPath(entry.value.path) === folder);
-  const title = entries.length === 1 ? `Move ${entries[0].value.name}` : `Move ${entries.length} items`;
+  const title = `Move ${nameOrCount(entries)}`;
 
   return (
     <FormDialog
@@ -43,6 +43,8 @@ export function MoveDialog({ shelf, entries, onClose }: MoveDialogProps) {
       submitting={submitting}
       error={error}
     >
+      {/* Not the library's Breadcrumbs: those are links to routes, and this trail picks a folder in
+          the dialog's own state without leaving the page. */}
       <nav aria-label="Folder to move to" className="flex flex-wrap items-center gap-1 text-body-md">
         <Button type="button" variant="text" onClick={() => setFolder(ROOT_PATH)} className={folder === ROOT_PATH ? 'font-medium text-fg' : 'text-muted'}>
           {shelf}
@@ -61,16 +63,15 @@ export function MoveDialog({ shelf, entries, onClose }: MoveDialogProps) {
         {isLoading && <div className="p-3"><Spinner size="sm" /></div>}
         {listing && folders.length === 0 && <p className="p-3 text-body-md text-muted">No folders in here.</p>}
         {folders.map((directory) => (
-          <button
+          <ListButton
             key={directory.id}
-            type="button"
+            icon={iconMap.folder}
             onClick={() => setFolder(directory.path)}
-            className="flex w-full items-center gap-3 px-3 py-2 text-left text-body-md text-fg hover:bg-row-hover"
+            className="gap-3 px-3 py-2 text-body-md text-fg hover:bg-row-hover"
+            actions={<Icon icon={iconMap.chevronRight} size={14} className="pointer-events-none shrink-0 text-neutral-9" />}
           >
-            <Icon icon={iconMap.folder} size={16} className="shrink-0 text-muted" />
-            <span className="min-w-0 flex-1 truncate">{directory.name}</span>
-            <Icon icon={iconMap.chevronRight} size={14} className="shrink-0 text-neutral-9" />
-          </button>
+            <span className="block truncate">{directory.name}</span>
+          </ListButton>
         ))}
       </div>
 

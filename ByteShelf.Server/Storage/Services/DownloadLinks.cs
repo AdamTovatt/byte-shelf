@@ -33,6 +33,10 @@ namespace ByteShelf.Server.Storage.Services
         /// <c>DownloadLink.Lifetime.Default</c> when null, made by <see cref="PublicAddress.LinkTo"/>.
         /// </summary>
         /// <exception cref="ArgumentException">The lifetime is one <c>DownloadLink.Lifetime.Normalize</c> refuses.</exception>
+        /// <remarks>
+        /// Ids, not a file: whether a file may be linked to is <see cref="ShelfEncryption.RequireDownloadLinkTarget"/>'s
+        /// to say, as the link is made and again as it is used, since the file may be encrypted in between.
+        /// </remarks>
         public DownloadLink Create(Guid shelfId, Guid fileId, TimeSpan? lifetime)
         {
             byte[] payload = new byte[2 * IdBytes];
