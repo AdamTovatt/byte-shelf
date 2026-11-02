@@ -82,7 +82,7 @@ namespace ByteShelf.Server.Mcp
                 {ToolInstructions.Text}
 
                 This server is the ByteShelf server itself, reached with a shelf key. The key reaches one
-                shelf, "{shelf}", which list_shelves shows: pass shelf = "{shelf}" to every tool. {reach}
+                shelf, "{shelf}", which every tool works on when you leave shelf out. {reach}
                 The server cannot reach your files: give upload_file the contents as text or base64, and
                 read with download_file or a share_file link.
                 """;

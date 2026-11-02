@@ -16,18 +16,13 @@ namespace ByteShelf.Server.Mcp
         /// The MCP tools over Streamable HTTP, statelessly, for shelf keys: the same tools as
         /// <c>byteshelf --mcp</c>, acting through this server's own API with the caller's key.
         /// </summary>
-        /// <param name="appBaseUrl">The server's public URL, which the links the tools make point at.</param>
-        public static IServiceCollection AddMcpServices(this IServiceCollection services, string appBaseUrl)
+        public static IServiceCollection AddMcpServices(this IServiceCollection services)
         {
-            Uri publicAddress = new Uri(appBaseUrl.EndsWith('/') ? appBaseUrl : appBaseUrl + "/");
             services.AddHttpContextAccessor();
             services.AddHttpClient(SelfApi.HttpClientName);
             services.AddSingleton<SelfApi>();
             services.AddSingleton(ToolHost.Server);
-            services.AddScoped<IShelfClientSource>(provider => new CallerKeyClientSource(
-                provider.GetRequiredService<IHttpContextAccessor>(),
-                provider.GetRequiredService<SelfApi>(),
-                publicAddress));
+            services.AddScoped<IShelfClientSource, CallerKeyClientSource>();
 
             services.AddAuthorization(options => options.AddPolicy(McpCallerPolicy, policy => policy
                 .AddAuthenticationSchemes(ShelfKeyAuthentication.Scheme)
@@ -39,7 +34,7 @@ namespace ByteShelf.Server.Mcp
                     options.Stateless = true;
                     options.ConfigureSessionOptions = McpCallerOptions.ConfigureAsync;
                 })
-                .WithTools<ByteShelfMcpTools>();
+                .WithByteShelfTools();
 
             return services;
         }

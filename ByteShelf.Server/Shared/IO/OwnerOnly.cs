@@ -1,8 +1,8 @@
-namespace ByteShelf.Server.Shared.Root
+namespace ByteShelf.Server.Shared.IO
 {
     /// <summary>
-    /// Files and folders readable by their owner only, for anything holding secrets or password hashes.
-    /// Windows keeps its own access lists, so there they are left as created.
+    /// Files and folders readable by their owner only, for anything holding secrets, password hashes or
+    /// reset links. Windows keeps its own access lists, so there they are left as created.
     /// </summary>
     public static class OwnerOnly
     {
@@ -20,6 +20,22 @@ namespace ByteShelf.Server.Shared.Root
             }
 
             return options;
+        }
+
+        /// <summary>
+        /// Creates the folder at <paramref name="path"/>, with its missing parents, reachable by its owner
+        /// only. A folder that exists already is left as it is, permissions included.
+        /// </summary>
+        public static void CreateDirectory(string path)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                Directory.CreateDirectory(path);
+            }
+            else
+            {
+                Directory.CreateDirectory(path, DirectoryPermissions);
+            }
         }
 
         /// <summary>Makes the existing folder at <paramref name="path"/> reachable by its owner only.</summary>

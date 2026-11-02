@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using ByteShelf.Server.Shared.IO;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Tests.TestUtilities;
 

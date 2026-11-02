@@ -82,9 +82,10 @@ they do not match the file's SHA-256, so a file read whole is the file that was 
 
 `CreateDownloadLinkAsync` makes a link to one file that anyone holding it can open without signing
 in, for a day unless a lifetime in whole minutes up to 7 days is given. Making one is a read, so any
-key may. The HTTP client answers it absolute, against the `HttpClient`'s base address, or against
-`ByteShelfHttpClientOptions.LinkBaseAddress` for a client that reaches the server at another address
-than the people the links are for. The in-memory client's links name the file under the reserved
+key may. A server with a public URL configured answers the link on it, and the HTTP client keeps it
+as it is. Otherwise the server answers a path from its root, which the HTTP client makes absolute
+against the `HttpClient`'s base address, or against `ByteShelfHttpClientOptions.LinkBaseAddress` for
+a client that reaches the server at another address than the people the links are for. The in-memory client's links name the file under the reserved
 `byteshelf.invalid` domain, which nothing serves.
 
 ## In tests

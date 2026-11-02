@@ -19,7 +19,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ModelContextProtocol.Core" Version="2.3.0" />
+    <!-- Not only .Core: McpServerBuilderExtensions registers the tools on both servers' builder. -->
+    <PackageReference Include="ModelContextProtocol" Version="2.3.0" />
   </ItemGroup>
 
   <ItemGroup>

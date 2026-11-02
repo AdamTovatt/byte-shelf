@@ -24,7 +24,10 @@ only migrates it and exits, for running migrations as their own step before a st
 | Variable | Required | Meaning |
 |---|---|---|
 | `BYTESHELF_ROOT` | yes | The root folder. Created on first start, with `objects/`, `staging/` and `keys/` inside. The server makes it reachable by its owner only on every start, so it must be owned by the user the server runs as. |
-| `APP_BASE_URL` | outside Development | The public URL, e.g. `https://shelf.example.com`. Password-reset links point at it, once email can be sent (see below). |
+| `APP_BASE_URL` | outside Development | The public URL, e.g. `https://shelf.example.com`. Password-reset links and the download links the API answers (share links, the web UI's Copy link, MCP's `share_file`) point at it. |
+| `POSTMARK_API_KEY` | to send email | A Postmark server token. Without it no email is sent (see [Email](#email)). |
+| `EMAIL_FROM_ADDRESS` | with `POSTMARK_API_KEY` | The address mail is from, a sender confirmed in Postmark. The server refuses to start with a token and no address. |
+| `EMAIL_FROM_NAME` | no | The name mail is from. `ByteShelf` by default. |
 | `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD` | first start | Create the first admin while there are no users; ignored afterwards and can be removed. |
 | `INITIAL_ADMIN_DISPLAY_NAME` | no | The first admin's display name; the email's local part otherwise. |
 | `BYTESHELF_RESTORE_WINDOW_DAYS` | no | How long a deletion can be restored before it is purged. 30 by default. |
@@ -40,13 +43,19 @@ once, and a new secret is generated.
 
 ## Email
 
-There is no mail provider yet, so the server sends no email. A user who asks for a password reset
-gets the same answer as ever, but no link reaches them: outside Development the server logs only
-that a reset email was asked for and no mail provider is configured, never the link, and says at
-startup that email is not sent. So a forgotten password cannot be reset; an admin can still make a
-new account. In Development the link is written to the log instead. Reset links wait in an outbox
-in memory that holds 100: when it is full a new link is dropped with a warning, links still waiting
-are lost on a restart, and a failed send is not retried ([Users](ByteShelf.Server/Users/Users.md#password-reset)).
+The server sends its email, such as password-reset links, through Postmark when `POSTMARK_API_KEY`
+and `EMAIL_FROM_ADDRESS` are set. Open and link tracking are always off, whatever the Postmark
+server's settings, so a link arrives as written. A send Postmark refuses is logged as an error.
+
+Without a token no email is sent, and the server says so at startup. A user who asks for a password
+reset gets the same answer as ever, but no link reaches them: outside Development the server logs
+only that a reset email was asked for, never the link. So a forgotten password cannot be reset; an
+admin can still make a new account. In Development the link is written to the log instead. A dev
+server started by remote-claude gets `REMOTE_CLAUDE_DEV_MAIL_DIR`, and each email is then written
+there as a file for remote-claude to show ([Email](ByteShelf.Server/Email/Email.md)). Reset links
+wait in an outbox in memory that holds 100: when it is full a new link is dropped with a warning,
+links still waiting are lost on a restart, and a failed send is not retried
+([Users](ByteShelf.Server/Users/Users.md#password-reset)).
 
 ## Logging
 

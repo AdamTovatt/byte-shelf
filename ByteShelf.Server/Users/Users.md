@@ -67,10 +67,11 @@ response takes as long whether or not the email has an account. Asking again lea
 working until one of them is used, which invalidates the rest and ends every session.
 `APP_BASE_URL` is where links point; it is required outside Development.
 
-No mail provider exists yet, so reset emails are not delivered: outside Development the link is
-neither sent nor logged, and a forgotten password cannot be reset ([Email](../Email/Email.md)). In
-Development the link is written to the log. The outbox holds at most 100 links waiting to be sent:
-when it is full a new link is dropped (with a warning in the log) and the user has to ask again.
+Reset emails go through Postmark when it is configured ([Email](../Email/Email.md)). Without it the
+link goes into remote-claude's dev mail folder when one is set; else, in Development, to the log;
+anywhere else it is neither sent nor logged, and a forgotten password cannot be reset. The outbox
+holds at most 100 links waiting to be sent: when it is full a new link is dropped (with a warning in
+the log) and the user has to ask again.
 It lives in memory, so links still waiting are lost on a restart, and a send that fails is logged
 and not tried again.
 

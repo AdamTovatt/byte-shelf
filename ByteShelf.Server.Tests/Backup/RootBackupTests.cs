@@ -3,6 +3,7 @@ using System.Runtime.Versioning;
 using ByteShelf.Server.Backup.Models;
 using ByteShelf.Server.Backup.Services;
 using ByteShelf.Server.ChangeLog.Models;
+using ByteShelf.Server.Shared.IO;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;

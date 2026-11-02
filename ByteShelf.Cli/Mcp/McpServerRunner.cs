@@ -37,7 +37,7 @@ namespace ByteShelf.Cli.Mcp
             builder.Services.AddSingleton(ToolHost.Local);
             builder.Services.AddMcpServer(options => options.ServerInstructions = Instructions)
                 .WithStdioServerTransport()
-                .WithTools<ByteShelfMcpTools>();
+                .WithByteShelfTools();
 
             using IHost host = builder.Build();
             await host.RunAsync(cancellationToken);

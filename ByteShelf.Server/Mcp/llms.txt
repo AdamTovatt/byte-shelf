@@ -13,8 +13,9 @@ permissions: read, add-only (read, and store new files, never replace or remove)
 - `/mcp` on this server: MCP over Streamable HTTP. Send the key as `Authorization: Bearer <key>` (or
   in `X-Api-Key`). It reaches the key's own shelf, and offers only the tools the key's permission
   allows (only reading ones on a replica). The server tells the agent the shelf's name when it
-  connects. It cannot read or write the agent's own files: upload text or base64 (up to 256 KiB),
-  read text of up to 256 KiB, and use share_file for a link to anything larger or binary. Add it to
+  connects, and every tool works on that shelf when shelf is left out. It cannot read or write the
+  agent's own files: upload text or base64 (up to 256 KiB), read text of up to 256 KiB or a PNG,
+  JPEG, GIF or WebP image of up to 1 MiB, and use share_file for a link to anything else. Add it to
   Claude Code with this server's address and the key:
   `claude mcp add --transport http byteshelf https://<this-server>/mcp --header "Authorization: Bearer bsk_..."`
 - `byteshelf --mcp`: the same tools over stdio on the agent's own machine, signed in as the CLI is,

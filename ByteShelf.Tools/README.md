@@ -32,8 +32,13 @@ the same words:
 - `ToolHost` says where the tools run. On the agent's machine a tool takes a local path; on the
   server it refuses one, since the server cannot reach the agent's files.
 - `upload_file` takes text or base64 of up to `MaxInlineBytes` (256 KiB), and `download_file`
-  answers text up to the same size: what an agent can carry in its own context. Anything larger
-  moves as a local file, through the API, or by a `share_file` link.
+  answers text up to the same size: what an agent can carry in its own context. It answers a PNG,
+  JPEG, GIF or WebP of up to `MaxInlineImageBytes` (1 MiB) as image content the model sees.
+  Anything else moves as a local file, through the API, or by a `share_file` link.
+- Every tool working on one shelf takes `shelf` last and optional: left out, it is the only shelf
+  the caller reaches, which a shelf key always is. Several reachable shelves ask for a name.
+- `RequiredArguments` is a call-tool filter both servers add, so a call missing a required argument
+  is answered naming it rather than with the SDK's bare "An error occurred invoking".
 - `ToolInstructions` is what both servers tell an agent when it connects. Tests check what each
   server actually sends: the stdio server's instructions name every tool except the admin-only
   `create_shelf`, and `/mcp`'s name every tool it offers a read-write key. Other tests check that the

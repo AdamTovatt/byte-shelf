@@ -36,5 +36,21 @@ namespace ByteShelf.Server
         // delay count the real client. Unset: only loopback proxies are trusted.
         [EnvironmentVariableName(optional: true)]
         public static readonly VariableName TrustedProxies = new VariableName("BYTESHELF_TRUSTED_PROXIES");
+
+        // Email (see Email/Email.md). With a Postmark server token, mail is sent through Postmark from
+        // EMAIL_FROM_ADDRESS, which is then required, under EMAIL_FROM_NAME (default "ByteShelf").
+        // Without one, a folder in REMOTE_CLAUDE_DEV_MAIL_DIR (set only by remote-claude on a dev
+        // server it starts) gets each message as a JSON file; with neither, mail is only logged.
+        [EnvironmentVariableName(optional: true)]
+        public static readonly VariableName PostmarkApiKey = new VariableName("POSTMARK_API_KEY");
+
+        [EnvironmentVariableName(optional: true)]
+        public static readonly VariableName EmailFromAddress = new VariableName("EMAIL_FROM_ADDRESS");
+
+        [EnvironmentVariableName(optional: true)]
+        public static readonly VariableName EmailFromName = new VariableName("EMAIL_FROM_NAME");
+
+        [EnvironmentVariableName(optional: true)]
+        public static readonly VariableName DevMailDirectory = new VariableName("REMOTE_CLAUDE_DEV_MAIL_DIR");
     }
 }

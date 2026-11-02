@@ -66,7 +66,7 @@ namespace ByteShelf.Server.Tests.Mcp
         {
             await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.AddOnly));
 
-            Assert.Contains("pass shelf = \"docs\"", client.ServerInstructions, StringComparison.Ordinal);
+            Assert.Contains("one shelf, \"docs\", which every tool works on when you leave shelf out", Regex.Replace(client.ServerInstructions!, @"\s+", " "), StringComparison.Ordinal);
             Assert.Contains("The key's access is add-only", client.ServerInstructions, StringComparison.Ordinal);
         }
 
@@ -120,6 +120,57 @@ namespace ByteShelf.Server.Tests.Mcp
         }
 
         [Fact]
+        public async Task CallTools_ShelfLeftOut_ActOnTheKeysShelf()
+        {
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+
+            AssertSucceeded(await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["path"] = "/a.txt", ["text"] = "keys shelf" }));
+            CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/a.txt" });
+
+            Assert.Equal("keys shelf", TextOf(read));
+            Assert.Equal("keys shelf", await _host.AdminClient.GetStringAsync("/api/shelves/docs/content?path=/a.txt"));
+        }
+
+        [Fact]
+        public async Task CallTool_DownloadABinaryFile_PointsToShareFile()
+        {
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+            AssertSucceeded(await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["path"] = "/a.bin", ["base64"] = Convert.ToBase64String(new byte[] { 0xff, 0xfe, 0x00 }) }));
+
+            CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/a.bin" });
+
+            Assert.Equal(true, read.IsError);
+            Assert.Contains("make a link to it with share_file", TextOf(read), StringComparison.Ordinal);
+            Assert.DoesNotContain("local file", TextOf(read), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task CallTool_DownloadAnImage_AnswersItAsAnImage()
+        {
+            byte[] png = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0xFF };
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+            AssertSucceeded(await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["path"] = "/a.png", ["base64"] = Convert.ToBase64String(png) }));
+
+            CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/a.png" });
+
+            AssertSucceeded(read);
+            ImageContentBlock image = Assert.Single(read.Content.OfType<ImageContentBlock>());
+            Assert.Equal("image/png", image.MimeType);
+            Assert.Equal(png, image.DecodedData.ToArray());
+        }
+
+        [Fact]
+        public async Task CallTool_MissingARequiredArgument_NamesIt()
+        {
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+
+            CallToolResult moved = await client.CallToolAsync("move", new Dictionary<string, object?> { ["path"] = "/a.txt" });
+
+            Assert.Equal(true, moved.IsError);
+            Assert.Equal("move needs toPath.", TextOf(moved));
+        }
+
+        [Fact]
         public async Task CallTool_UploadBase64_StoresTheBytes()
         {
             byte[] bytes = { 0x89, 0x50, 0x4E, 0x47, 0x00, 0xFF, 0xFE, 0x0A };
@@ -145,12 +196,12 @@ namespace ByteShelf.Server.Tests.Mcp
         }
 
         [Fact]
-        public async Task CallTool_ShareFile_AnswersALinkOnThePublicAddressThatServesTheFile()
+        public async Task CallTool_ShareFileWithoutAPublicUrl_AnswersALinkOnTheAddressTheAgentCalledThatServesTheFile()
         {
-            // The tools reach the API at http://localhost/ (the test's self address); the public one,
-            // APP_BASE_URL, is Development's default here, so a link on the wrong one shows.
-            Uri publicAddress = new Uri(Program.DevelopmentAppBaseUrl + "/");
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+            // The tools reach the API at http://localhost/ (the test's self address), so a link put on
+            // that one rather than on the address the agent called shows.
+            Uri publicAddress = new Uri("http://shelf.example.test/");
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite), endpoint: new Uri(publicAddress, "mcp"));
             AssertSucceeded(await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["shelf"] = "docs", ["path"] = "/a.txt", ["text"] = "shared" }));
 
             CallToolResult shared = await client.CallToolAsync("share_file", new Dictionary<string, object?> { ["shelf"] = "docs", ["path"] = "/a.txt" });
@@ -268,11 +319,11 @@ namespace ByteShelf.Server.Tests.Mcp
             return (await response.Content.ReadFromJsonAsync<CreatedShelfKey>())!.Secret;
         }
 
-        private Task<McpClient> ConnectAsync(string secret, bool asBearer = true)
+        private Task<McpClient> ConnectAsync(string secret, bool asBearer = true, Uri? endpoint = null)
         {
             HttpClientTransportOptions options = new HttpClientTransportOptions
             {
-                Endpoint = new Uri("http://localhost/mcp"),
+                Endpoint = endpoint ?? new Uri("http://localhost/mcp"),
                 TransportMode = HttpTransportMode.StreamableHttp,
                 AdditionalHeaders = asBearer
                     ? new Dictionary<string, string> { ["Authorization"] = $"Bearer {secret}" }

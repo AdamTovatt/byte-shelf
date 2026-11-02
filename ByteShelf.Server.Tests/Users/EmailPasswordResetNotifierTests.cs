@@ -1,5 +1,6 @@
 using ByteShelf.Server.Email.Models;
 using ByteShelf.Server.Email.Services;
+using ByteShelf.Server.Shared;
 using ByteShelf.Server.Users.Services;
 
 namespace ByteShelf.Server.Tests.Users
@@ -10,7 +11,7 @@ namespace ByteShelf.Server.Tests.Users
         public async Task SendResetLinkAsync_SendsALinkToTheResetPageWithTheTokenEscaped()
         {
             RecordingSender sender = new RecordingSender(succeed: true);
-            EmailPasswordResetNotifier notifier = new EmailPasswordResetNotifier(sender, "https://shelf.example.com/");
+            EmailPasswordResetNotifier notifier = new EmailPasswordResetNotifier(sender, new PublicAddress("https://shelf.example.com/"));
 
             await notifier.SendResetLinkAsync("user@example.com", "a+b/c=");
 
@@ -23,9 +24,21 @@ namespace ByteShelf.Server.Tests.Users
         [Fact]
         public async Task SendResetLinkAsync_SenderFails_Throws()
         {
-            EmailPasswordResetNotifier notifier = new EmailPasswordResetNotifier(new RecordingSender(succeed: false), "https://shelf.example.com");
+            EmailPasswordResetNotifier notifier = new EmailPasswordResetNotifier(new RecordingSender(succeed: false), new PublicAddress("https://shelf.example.com"));
 
             await Assert.ThrowsAsync<InvalidOperationException>(() => notifier.SendResetLinkAsync("user@example.com", "token"));
+        }
+
+        [Theory]
+        [InlineData("https://example.com/shelf", "https://example.com/shelf/reset-password?token=t")]
+        [InlineData(null, PublicAddress.DevelopmentUrl + "reset-password?token=t")]
+        public async Task SendResetLinkAsync_LinksBelowThePublicUrlsPath_OrOnDevelopmentsWithoutOne(string? appBaseUrl, string expected)
+        {
+            RecordingSender sender = new RecordingSender(succeed: true);
+
+            await new EmailPasswordResetNotifier(sender, new PublicAddress(appBaseUrl)).SendResetLinkAsync("user@example.com", "t");
+
+            Assert.EndsWith(expected, Assert.Single(sender.Sent).TextBody, StringComparison.Ordinal);
         }
 
         private sealed class RecordingSender : IEmailSender

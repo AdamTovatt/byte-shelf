@@ -7,7 +7,7 @@ namespace ByteShelf.Server.Email.Services
     /// Development it writes the whole message to the log, links included, so a developer can follow a
     /// password-reset link. Anywhere else it logs only that an email was asked for and could not be sent,
     /// since a reset link in a log is a way into the account for whoever reads the log.
-    /// <see cref="LoggingEmailSenderStartupWarning"/> says at startup that email is not delivered.
+    /// <see cref="EmailSenderStartupWarning"/> says at startup that email is not delivered.
     /// </summary>
     public class LoggingEmailSender : IEmailSender
     {

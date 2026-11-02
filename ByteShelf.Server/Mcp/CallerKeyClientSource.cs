@@ -7,21 +7,20 @@ namespace ByteShelf.Server.Mcp
 {
     /// <summary>
     /// The client an MCP tool call acts through on the server: this server's API, with the key the call
-    /// presented. It reaches the API at an address of its own, so the links it makes are put on the
-    /// public one instead, where the person the agent hands them to can open them.
+    /// presented. It reaches the API at an address of its own, so a link the API answers relative (no
+    /// <c>APP_BASE_URL</c>, see <see cref="Shared.PublicAddress"/>) is put on the address the agent
+    /// called <c>/mcp</c> at instead (its <c>Host</c> header as sent, which a proxy in front passes on),
+    /// where the person the agent hands it to can open it too.
     /// </summary>
     internal sealed class CallerKeyClientSource : IShelfClientSource
     {
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly SelfApi _selfApi;
-        private readonly ByteShelfHttpClientOptions _options;
 
-        /// <param name="publicAddress">The server's public address (<c>APP_BASE_URL</c>), ending in <c>/</c>.</param>
-        public CallerKeyClientSource(IHttpContextAccessor httpContextAccessor, SelfApi selfApi, Uri publicAddress)
+        public CallerKeyClientSource(IHttpContextAccessor httpContextAccessor, SelfApi selfApi)
         {
             _httpContextAccessor = httpContextAccessor;
             _selfApi = selfApi;
-            _options = new ByteShelfHttpClientOptions { LinkBaseAddress = publicAddress };
         }
 
         public Task<IByteShelfClient> OpenAsync(CancellationToken cancellationToken)
@@ -32,7 +31,14 @@ namespace ByteShelf.Server.Mcp
             string secret = ShelfKeyAuthenticationHandler.SecretOf(httpContext)
                 ?? throw new UsageException("Send a shelf key, as the bearer token or in X-Api-Key.");
 
-            return Task.FromResult<IByteShelfClient>(new ByteShelfHttpClient(_selfApi.CreateClient(), new ShelfKeyCredentials(secret), _options));
+            ByteShelfHttpClientOptions options = new ByteShelfHttpClientOptions { LinkBaseAddress = CalledAt(httpContext.Request) };
+            return Task.FromResult<IByteShelfClient>(new ByteShelfHttpClient(_selfApi.CreateClient(), new ShelfKeyCredentials(secret), options));
+        }
+
+        /// <summary>The server's root as the caller reached it, ending in <c>/</c>.</summary>
+        internal static Uri CalledAt(HttpRequest request)
+        {
+            return new Uri($"{request.Scheme}://{request.Host.ToUriComponent()}{request.PathBase.ToUriComponent()}/");
         }
     }
 }

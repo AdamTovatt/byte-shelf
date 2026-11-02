@@ -1,7 +1,9 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using ByteShelf.Server.Email;
 using ByteShelf.Server.Mcp;
+using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Users.Services;
 using ByteShelfCommon;
@@ -93,8 +95,12 @@ namespace ByteShelf.Server.Tests.TestUtilities
                     // The MCP tools call the server's own API; in memory, the in-memory server is that.
                     builder.Services.AddHttpClient(SelfApi.HttpClientName, client => client.BaseAddress = new Uri("http://localhost/"))
                         .ConfigurePrimaryHttpMessageHandler(services => ((TestServer)services.GetRequiredService<IServer>()).CreateHandler());
+
+                    // No public URL, whatever APP_BASE_URL the machine running the tests has; a test wanting one registers it.
+                    builder.Services.AddSingleton(new PublicAddress(null));
                     configureServices?.Invoke(builder.Services);
-                });
+                },
+                EmailOptions.None);
 
             await app.StartAsync();
             ServerTestHost host = new ServerTestHost(app, root);

@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using ByteShelf.Server.Shared.IO;
 
 namespace ByteShelf.Server.Shared.Root
 {

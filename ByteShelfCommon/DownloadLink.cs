@@ -20,8 +20,10 @@ namespace ByteShelfCommon
         public static readonly TimeSpan MaxLifetime = TimeSpan.FromDays(7);
 
         /// <summary>
-        /// The link. The server answers it relative to its own address; <c>ByteShelfHttpClient</c> makes
-        /// it absolute. Add <c>?download=true</c> to have a browser save the file rather than show it.
+        /// The link. The server answers it on its public URL when it has one configured, and otherwise
+        /// relative to its own root; <c>ByteShelfHttpClient</c> makes a relative one absolute on the
+        /// address it reached the server at. Add <c>?download=true</c> to have a browser save the file
+        /// rather than show it.
         /// </summary>
         public required string Url { get; init; }
 

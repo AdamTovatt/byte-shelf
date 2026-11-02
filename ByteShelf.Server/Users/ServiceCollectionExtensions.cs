@@ -14,8 +14,8 @@ namespace ByteShelf.Server.Users
     {
         /// <param name="services">The service collection.</param>
         /// <param name="root">The root whose <c>keys/</c> folder holds the JWT secret.</param>
-        /// <param name="appBaseUrl">The public URL reset links point at.</param>
-        public static IServiceCollection AddUserServices(this IServiceCollection services, RootFolder root, string appBaseUrl)
+        /// <remarks>Reset links are made on the registered <see cref="PublicAddress"/>.</remarks>
+        public static IServiceCollection AddUserServices(this IServiceCollection services, RootFolder root)
         {
             services.TryAddTimeProvider();
 
@@ -49,8 +49,7 @@ namespace ByteShelf.Server.Users
             services.AddScoped<IUserService, UserService>();
             services.AddScoped<IAuthRequestValidationService, AuthRequestValidationService>();
             services.AddScoped<IPasswordResetService, PasswordResetService>();
-            services.AddScoped<IPasswordResetNotifier>(provider =>
-                new EmailPasswordResetNotifier(provider.GetRequiredService<IEmailSender>(), appBaseUrl));
+            services.AddScoped<IPasswordResetNotifier, EmailPasswordResetNotifier>();
 
             services.AddSingleton(InitialAdminSettings.FromEnvironment());
             services.AddSingleton<ResetLinkOutbox>();

@@ -11,6 +11,7 @@ using ByteShelf.Tools.Mcp;
 using ByteShelfClient;
 using ByteShelfCommon;
 using ModelContextProtocol;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
 namespace ByteShelf.Cli.Tests
@@ -74,6 +75,7 @@ namespace ByteShelf.Cli.Tests
             { "upload_file", "description", $"up to {FileDescription.MaxLength} characters" },
             { "set_description", null, $"up to {FileDescription.MaxLength} characters" },
             { "download_file", null, $"at most {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)}" },
+            { "download_file", null, $"WebP of at most {TextFormat.Size(ByteShelfMcpTools.MaxInlineImageBytes)}" },
             { "share_file", "expiresIn", $"{DownloadLink.DefaultLifetime.TotalHours}h by default, at most {DownloadLink.MaxLifetime.TotalDays}d" },
             { "search_files", "limit", $"1 to {FileSearch.MaxLimit}; {FileSearch.DefaultLimit} by default" },
             { "list_tree", "limit", $"1 to {TreeQuery.MaxLimit}; {TreeQuery.DefaultLimit} by default" },
@@ -97,6 +99,7 @@ namespace ByteShelf.Cli.Tests
             string instructions = Regex.Replace(ToolInstructions.Text, @"\s+", " ");
 
             Assert.Contains($"up to {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)}", instructions, StringComparison.Ordinal);
+            Assert.Contains($"image of up to {TextFormat.Size(ByteShelfMcpTools.MaxInlineImageBytes)}", instructions, StringComparison.Ordinal);
             Assert.Contains($"for {DownloadLink.DefaultLifetime.TotalHours} hours", instructions, StringComparison.Ordinal);
             Assert.Contains($"(at most {DownloadLink.MaxLifetime.TotalDays} days)", instructions, StringComparison.Ordinal);
         }
@@ -114,9 +117,9 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public async Task UploadText_ThenDownloadInline_AnswersTheText()
         {
-            await _tools.UploadFileAsync("docs", "/notes/todo.md", text: "- write tests");
+            await _tools.UploadFileAsync("/notes/todo.md", text: "- write tests", shelf: "docs");
 
-            string text = await _tools.DownloadFileAsync("docs", "/notes/todo.md");
+            string text = TextOf(await _tools.DownloadFileAsync("/notes/todo.md", shelf: "docs"));
 
             Assert.Equal("- write tests", text);
             Assert.Equal("text/markdown", (await Docs.GetFileAsync("/notes/todo.md")).ContentType);
@@ -127,7 +130,7 @@ namespace ByteShelf.Cli.Tests
         {
             await File.WriteAllTextAsync(_work.File("report.csv"), "a,b");
 
-            await _tools.UploadFileAsync("docs", "/reports/", localPath: _work.File("report.csv"));
+            await _tools.UploadFileAsync("/reports/", localPath: _work.File("report.csv"), shelf: "docs");
 
             Assert.Equal(3, (await Docs.GetFileAsync("/reports/report.csv")).SizeBytes);
         }
@@ -135,7 +138,7 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public async Task UploadText_ToADirectoryPath_IsAnError()
         {
-            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("docs", "/reports/", text: "a,b"));
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("/reports/", text: "a,b", shelf: "docs"));
 
             Assert.StartsWith("Text has no file name", exception.Message, StringComparison.Ordinal);
         }
@@ -146,7 +149,7 @@ namespace ByteShelf.Cli.Tests
         [InlineData(null, "text", "dGV4dA==")]
         public async Task Upload_NotExactlyOneSource_IsAnError(string? localPath, string? text, string? base64)
         {
-            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("docs", "/a.txt", localPath, text, base64));
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("/a.txt", localPath, text, base64, shelf: "docs"));
 
             Assert.Contains("Give one of localPath, text or base64", exception.Message, StringComparison.Ordinal);
         }
@@ -154,7 +157,7 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public async Task Upload_Base64_StoresTheBytes()
         {
-            await _tools.UploadFileAsync("docs", "/a.bin", base64: "AP8K");
+            await _tools.UploadFileAsync("/a.bin", base64: "AP8K", shelf: "docs");
 
             await using Stream stored = await Docs.OpenReadAsync("/a.bin");
             using MemoryStream bytes = new MemoryStream();
@@ -168,7 +171,7 @@ namespace ByteShelf.Cli.Tests
             // Fewer characters than the cap, but two bytes each in UTF-8.
             string text = new string('ö', (ByteShelfMcpTools.MaxInlineBytes / 2) + 1);
 
-            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("docs", "/a.txt", text: text));
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("/a.txt", text: text, shelf: "docs"));
 
             Assert.StartsWith($"text holds more than the {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)}", exception.Message, StringComparison.Ordinal);
             await Assert.ThrowsAsync<ByteShelfException>(() => Docs.GetFileAsync("/a.txt"));
@@ -180,7 +183,7 @@ namespace ByteShelf.Cli.Tests
             // Not base64 at all, so only a refusal by length says it is too large.
             string base64 = new string('!', (2 * ByteShelfMcpTools.MaxInlineBytes) + 1);
 
-            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("docs", "/a.bin", base64: base64));
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("/a.bin", base64: base64, shelf: "docs"));
 
             Assert.StartsWith("base64 holds more than the", exception.Message, StringComparison.Ordinal);
         }
@@ -188,7 +191,7 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public async Task Upload_NotBase64_IsAnError()
         {
-            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("docs", "/a.bin", base64: "not base64!"));
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("/a.bin", base64: "not base64!", shelf: "docs"));
 
             Assert.StartsWith("base64 is not valid base64", exception.Message, StringComparison.Ordinal);
         }
@@ -198,8 +201,8 @@ namespace ByteShelf.Cli.Tests
         {
             await Docs.UploadAsync("/a.txt", new MemoryStream(Encoding.UTF8.GetBytes("a")));
 
-            McpException upload = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("docs", "/b.txt", localPath: "b.txt"));
-            McpException download = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadFileAsync("docs", "/a.txt", localPath: "a.txt"));
+            McpException upload = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFileAsync("/b.txt", localPath: "b.txt", shelf: "docs"));
+            McpException download = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadFileAsync("/a.txt", localPath: "a.txt", shelf: "docs"));
 
             Assert.Contains("absolute", upload.Message, StringComparison.Ordinal);
             Assert.Contains("absolute", download.Message, StringComparison.Ordinal);
@@ -210,7 +213,7 @@ namespace ByteShelf.Cli.Tests
         {
             await Docs.UploadAsync("/a.txt", new MemoryStream(Encoding.UTF8.GetBytes("saved")));
 
-            string answer = await _tools.DownloadFileAsync("docs", "/a.txt", localPath: _work.Path);
+            string answer = TextOf(await _tools.DownloadFileAsync("/a.txt", localPath: _work.Path, shelf: "docs"));
 
             Assert.Equal($"Saved {_work.File("a.txt")}", answer);
             Assert.Equal("saved", await File.ReadAllTextAsync(_work.File("a.txt")));
@@ -221,7 +224,7 @@ namespace ByteShelf.Cli.Tests
         {
             await Docs.UploadAsync("/image.bin", new MemoryStream(new byte[] { 0xff, 0xfe, 0x00 }));
 
-            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadFileAsync("docs", "/image.bin"));
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadFileAsync("/image.bin", shelf: "docs"));
 
             Assert.Contains("local file", exception.Message, StringComparison.Ordinal);
         }
@@ -232,17 +235,124 @@ namespace ByteShelf.Cli.Tests
             byte[] large = Encoding.UTF8.GetBytes(new string('a', ByteShelfMcpTools.MaxInlineBytes + 1));
             await Docs.UploadAsync("/large.txt", new MemoryStream(large));
 
-            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadFileAsync("docs", "/large.txt"));
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadFileAsync("/large.txt", shelf: "docs"));
 
             Assert.Contains("more than the", exception.Message, StringComparison.Ordinal);
         }
 
         [Fact]
+        public async Task DownloadInline_AnImage_AnswersItAsAnImageWithItsType()
+        {
+            byte[] png = { 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff };
+            await Docs.UploadAsync("/photo.png", new MemoryStream(png), new UploadOptions { ContentType = "image/png" });
+
+            List<ContentBlock> answer = (await _tools.DownloadFileAsync("/photo.png", shelf: "docs")).ToList();
+
+            ImageContentBlock image = Assert.Single(answer.OfType<ImageContentBlock>());
+            Assert.Equal("image/png", image.MimeType);
+            Assert.Equal(png, image.DecodedData.ToArray());
+            Assert.Contains("/photo.png", TextOf(answer), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task DownloadInline_AnImageOverItsCap_IsAnErrorPointingElsewhere()
+        {
+            await Docs.UploadAsync("/photo.jpg", new MemoryStream(new byte[ByteShelfMcpTools.MaxInlineImageBytes + 1]), new UploadOptions { ContentType = "image/jpeg" });
+
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadFileAsync("/photo.jpg", shelf: "docs"));
+
+            Assert.Contains($"more than the {TextFormat.Size(ByteShelfMcpTools.MaxInlineImageBytes)} answered here as an image", exception.Message, StringComparison.Ordinal);
+            Assert.Contains("share_file", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task ShelfLeftOut_ReachingOneShelf_WorksOnIt()
+        {
+            await _tools.UploadFileAsync("/a.txt", text: "only shelf");
+
+            Assert.Equal("only shelf", TextOf(await _tools.DownloadFileAsync("/a.txt")));
+        }
+
+        [Fact]
+        public async Task ShelfLeftOut_ReachingSeveralShelves_AsksForOneByName()
+        {
+            await _clients.Client.CreateShelfAsync("photos");
+
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.ListDirectoryAsync());
+
+            Assert.Equal("Name the shelf: you reach docs, photos.", exception.Message);
+        }
+
+        [Fact]
+        public async Task ShelfBlank_ReachingOneShelf_CountsAsLeftOut()
+        {
+            await _tools.UploadFileAsync("/a.txt", text: "blank shelf", shelf: "");
+
+            Assert.Equal("blank shelf", TextOf(await _tools.DownloadFileAsync("/a.txt", shelf: " ")));
+        }
+
+        [Fact]
+        public async Task ShelfLeftOut_ReachingNoShelf_SaysSo()
+        {
+            ByteShelfMcpTools tools = new ByteShelfMcpTools(new InMemoryClientSource(), ToolHost.Local);
+
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => tools.ListDirectoryAsync());
+
+            Assert.Equal("You reach no shelf, so there is none to work on.", exception.Message);
+        }
+
+        [Fact]
+        public async Task DownloadInline_TextStoredAsAnImage_AnswersTheText()
+        {
+            await Docs.UploadAsync("/notes.png", new MemoryStream(Encoding.UTF8.GetBytes("not a picture")), new UploadOptions { ContentType = "image/png" });
+
+            List<ContentBlock> answer = (await _tools.DownloadFileAsync("/notes.png", shelf: "docs")).ToList();
+
+            Assert.Empty(answer.OfType<ImageContentBlock>());
+            Assert.Equal("not a picture", TextOf(answer));
+        }
+
+        [Fact]
+        public async Task DownloadInline_AJpegStoredAsPng_AnswersItAsTheJpegItIs()
+        {
+            byte[] jpeg = { 0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10 };
+            await Docs.UploadAsync("/photo.png", new MemoryStream(jpeg), new UploadOptions { ContentType = "image/png" });
+
+            ImageContentBlock image = Assert.Single((await _tools.DownloadFileAsync("/photo.png", shelf: "docs")).OfType<ImageContentBlock>());
+
+            Assert.Equal("image/jpeg", image.MimeType);
+        }
+
+        [Fact]
+        public async Task DownloadInline_StoredAsAnImageButNotOneAndOverTheTextCap_IsAnError()
+        {
+            await Docs.UploadAsync("/big.png", new MemoryStream(new byte[ByteShelfMcpTools.MaxInlineBytes + 1]), new UploadOptions { ContentType = "image/png" });
+
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadFileAsync("/big.png", shelf: "docs"));
+
+            Assert.StartsWith($"/big.png is not a {ByteShelfMcpTools.InlineImageKinds} image", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Theory]
+        [InlineData(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }, "image/png")]
+        [InlineData(new byte[] { 0xFF, 0xD8, 0xFF, 0xDB }, "image/jpeg")]
+        [InlineData(new byte[] { 0x47, 0x49, 0x46, 0x38, 0x37, 0x61 }, "image/gif")]
+        [InlineData(new byte[] { 0x47, 0x49, 0x46, 0x38, 0x39, 0x61 }, "image/gif")]
+        [InlineData(new byte[] { 0x52, 0x49, 0x46, 0x46, 0x10, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50 }, "image/webp")]
+        [InlineData(new byte[] { 0x52, 0x49, 0x46, 0x46, 0x10, 0x00, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45 }, null)]
+        [InlineData(new byte[] { 0x89, 0x50, 0x4E, 0x47 }, null)]
+        [InlineData(new byte[0], null)]
+        public void ImageTypeOf_KnowsEachKindBySignature(byte[] content, string? expected)
+        {
+            Assert.Equal(expected, ByteShelfMcpTools.ImageTypeOf(content));
+        }
+
+        [Fact]
         public async Task CreateDirectory_ThenListDirectory_ShowsIt()
         {
-            await _tools.CreateDirectoryAsync("docs", "/a/b", CancellationToken.None);
+            await _tools.CreateDirectoryAsync("/a/b", shelf: "docs", CancellationToken.None);
 
-            string listing = await _tools.ListDirectoryAsync("docs", "/a");
+            string listing = await _tools.ListDirectoryAsync("/a", shelf: "docs");
 
             Assert.Equal($"/a  (1 directories, 0 files){Environment.NewLine}  b/", listing);
         }
@@ -252,8 +362,8 @@ namespace ByteShelf.Cli.Tests
         {
             ShelfFile file = await Docs.UploadAsync("/a/b.txt", new MemoryStream(Encoding.UTF8.GetBytes("b")));
 
-            string ofFile = await _tools.GetInfoAsync("docs", "/a/b.txt", CancellationToken.None);
-            string ofDirectory = await _tools.GetInfoAsync("docs", "/a", CancellationToken.None);
+            string ofFile = await _tools.GetInfoAsync("/a/b.txt", shelf: "docs", CancellationToken.None);
+            string ofDirectory = await _tools.GetInfoAsync("/a", shelf: "docs", CancellationToken.None);
 
             Assert.Contains($"id           {file.Id:D}", ofFile, StringComparison.Ordinal);
             Assert.StartsWith("/a/  (id ", ofDirectory, StringComparison.Ordinal);
@@ -262,33 +372,33 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public async Task Move_AFile_MovesIt()
         {
-            await _tools.UploadFileAsync("docs", "/a.txt", text: "a");
+            await _tools.UploadFileAsync("/a.txt", text: "a", shelf: "docs");
 
-            string answer = await _tools.MoveAsync("docs", "/a.txt", "/b/c.txt", CancellationToken.None);
+            string answer = await _tools.MoveAsync("/a.txt", "/b/c.txt", shelf: "docs", CancellationToken.None);
 
             Assert.Equal("Moved to /b/c.txt", answer);
-            Assert.Equal("a", await _tools.DownloadFileAsync("docs", "/b/c.txt"));
+            Assert.Equal("a", TextOf(await _tools.DownloadFileAsync("/b/c.txt", shelf: "docs")));
         }
 
         [Fact]
         public async Task Delete_ListTrash_Restore_PutsTheDirectoryBack()
         {
-            await _tools.UploadFileAsync("docs", "/a/b.txt", text: "b");
-            await _tools.DeleteAsync("docs", "/a", CancellationToken.None);
+            await _tools.UploadFileAsync("/a/b.txt", text: "b", shelf: "docs");
+            await _tools.DeleteAsync("/a", shelf: "docs", CancellationToken.None);
             TrashEntry entry = Assert.Single(await Docs.GetTrashAsync());
 
             string trash = await _tools.ListTrashAsync("docs", CancellationToken.None);
-            await _tools.RestoreAsync("docs", entry.DeletionId, CancellationToken.None);
+            await _tools.RestoreAsync(entry.DeletionId, shelf: "docs", CancellationToken.None);
 
             Assert.StartsWith(entry.DeletionId.ToString("D"), trash, StringComparison.Ordinal);
-            Assert.Equal("b", await _tools.DownloadFileAsync("docs", "/a/b.txt"));
+            Assert.Equal("b", TextOf(await _tools.DownloadFileAsync("/a/b.txt", shelf: "docs")));
         }
 
         [Fact]
         public async Task EmptyTrash_ForgetsEveryDeletion()
         {
-            await _tools.UploadFileAsync("docs", "/a.txt", text: "a");
-            await _tools.DeleteAsync("docs", "/a.txt", CancellationToken.None);
+            await _tools.UploadFileAsync("/a.txt", text: "a", shelf: "docs");
+            await _tools.DeleteAsync("/a.txt", shelf: "docs", CancellationToken.None);
 
             await _tools.EmptyTrashAsync("docs", CancellationToken.None);
 
@@ -298,10 +408,10 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public async Task UploadWithDescription_ThenSearchByIt_FindsTheFile()
         {
-            await _tools.UploadFileAsync("docs", "/scans/0042.pdf", text: "a", description: "Receipt for the new bike");
-            await _tools.UploadFileAsync("docs", "/scans/0043.pdf", text: "b");
+            await _tools.UploadFileAsync("/scans/0042.pdf", text: "a", description: "Receipt for the new bike", shelf: "docs");
+            await _tools.UploadFileAsync("/scans/0043.pdf", text: "b", shelf: "docs");
 
-            string found = await _tools.SearchFilesAsync("docs", text: "bike");
+            string found = await _tools.SearchFilesAsync(text: "bike", shelf: "docs");
 
             Assert.StartsWith("/scans/0042.pdf  1 B", found, StringComparison.Ordinal);
             Assert.DoesNotContain("0043", found, StringComparison.Ordinal);
@@ -310,11 +420,11 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public async Task SearchFiles_MorePagesFollow_SaysWhatToPassAsAfter()
         {
-            await _tools.UploadFileAsync("docs", "/a.txt", text: "a");
-            await _tools.UploadFileAsync("docs", "/b.txt", text: "b");
+            await _tools.UploadFileAsync("/a.txt", text: "a", shelf: "docs");
+            await _tools.UploadFileAsync("/b.txt", text: "b", shelf: "docs");
 
-            string first = await _tools.SearchFilesAsync("docs", limit: 1);
-            string second = await _tools.SearchFilesAsync("docs", limit: 1, after: "/a.txt");
+            string first = await _tools.SearchFilesAsync(limit: 1, shelf: "docs");
+            string second = await _tools.SearchFilesAsync(limit: 1, after: "/a.txt", shelf: "docs");
 
             Assert.EndsWith($"{Environment.NewLine}More follow: call again with after = /a.txt", first, StringComparison.Ordinal);
             Assert.StartsWith("/b.txt", second, StringComparison.Ordinal);
@@ -324,9 +434,9 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public async Task SetDescription_Text_SetsItAndAnswersTheRecord()
         {
-            await _tools.UploadFileAsync("docs", "/a.txt", text: "a");
+            await _tools.UploadFileAsync("/a.txt", text: "a", shelf: "docs");
 
-            string described = await _tools.SetDescriptionAsync("docs", "/a.txt", "Draft");
+            string described = await _tools.SetDescriptionAsync("/a.txt", "Draft", shelf: "docs");
 
             Assert.EndsWith("description  Draft", described, StringComparison.Ordinal);
             Assert.Equal("Draft", (await Docs.GetFileAsync("/a.txt")).Description);
@@ -335,9 +445,9 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public async Task SetDescription_Without_RemovesIt()
         {
-            await _tools.UploadFileAsync("docs", "/a.txt", text: "a", description: "Draft");
+            await _tools.UploadFileAsync("/a.txt", text: "a", description: "Draft", shelf: "docs");
 
-            await _tools.SetDescriptionAsync("docs", "/a.txt");
+            await _tools.SetDescriptionAsync("/a.txt", shelf: "docs");
 
             Assert.Null((await Docs.GetFileAsync("/a.txt")).Description);
         }
@@ -345,11 +455,11 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public async Task ListTree_Pages_EndWithTheCursorToCallAgainWith()
         {
-            await _tools.UploadFileAsync("docs", "/a/b.txt", text: "b");
-            await _tools.UploadFileAsync("docs", "/c.txt", text: "c");
+            await _tools.UploadFileAsync("/a/b.txt", text: "b", shelf: "docs");
+            await _tools.UploadFileAsync("/c.txt", text: "c", shelf: "docs");
 
-            string first = await _tools.ListTreeAsync("docs", limit: 2);
-            string second = await _tools.ListTreeAsync("docs", limit: 2, after: "/a/b.txt");
+            string first = await _tools.ListTreeAsync(limit: 2, shelf: "docs");
+            string second = await _tools.ListTreeAsync(limit: 2, after: "/a/b.txt", shelf: "docs");
 
             Assert.Equal(new[] { "/a/", "/a/b.txt  1 B", "More follow: call again with after = /a/b.txt" }, first.Split(Environment.NewLine));
             Assert.Equal("/c.txt  1 B", second);
@@ -363,8 +473,8 @@ namespace ByteShelf.Cli.Tests
             await File.WriteAllTextAsync(_work.File("site/index.html"), "<p>");
             await File.WriteAllTextAsync(_work.File("site/css/a.css"), "p{}");
 
-            string uploaded = await _tools.UploadFolderAsync("docs", "/web/", _work.File("site"));
-            string saved = await _tools.DownloadDirectoryAsync("docs", "/web/site", _work.File("copy"));
+            string uploaded = await _tools.UploadFolderAsync("/web/", _work.File("site"), shelf: "docs");
+            string saved = await _tools.DownloadDirectoryAsync("/web/site", _work.File("copy"), shelf: "docs");
 
             Assert.Equal("Uploaded 2 files (6 B) to docs:/web/site.", uploaded);
             Assert.Equal($"Saved 2 files (6 B) to {_work.File("copy")}.", saved);
@@ -380,7 +490,7 @@ namespace ByteShelf.Cli.Tests
             await File.WriteAllTextAsync(_work.File("site/a.txt"), "aaa");
             await File.WriteAllTextAsync(_work.File("site/b.txt"), "bbb");
 
-            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFolderAsync("small", "/", _work.File("site")));
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.UploadFolderAsync("/", _work.File("site"), shelf: "small"));
 
             Assert.StartsWith($"Uploaded 1 file (3 B) to small:/site.{Environment.NewLine}Stopped before the end: ", exception.Message, StringComparison.Ordinal);
         }
@@ -388,9 +498,9 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public async Task DownloadDirectory_IntoAFolderThatExists_SavesItInsideUnderItsName()
         {
-            await _tools.UploadFileAsync("docs", "/reports/a.txt", text: "a");
+            await _tools.UploadFileAsync("/reports/a.txt", text: "a", shelf: "docs");
 
-            await _tools.DownloadDirectoryAsync("docs", "/reports", _work.Path);
+            await _tools.DownloadDirectoryAsync("/reports", _work.Path, shelf: "docs");
 
             Assert.Equal("a", await File.ReadAllTextAsync(_work.File("reports/a.txt")));
         }
@@ -398,9 +508,9 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public async Task DownloadDirectory_RelativeLocalPath_IsAnErrorAndSavesNothing()
         {
-            await _tools.UploadFileAsync("docs", "/a/b.txt", text: "b");
+            await _tools.UploadFileAsync("/a/b.txt", text: "b", shelf: "docs");
 
-            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadDirectoryAsync("docs", "/a", "copy"));
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadDirectoryAsync("/a", "copy", shelf: "docs"));
 
             Assert.Equal("'copy' is relative; give an absolute local path.", exception.Message);
             Assert.False(Directory.Exists(Path.GetFullPath("copy")));
@@ -409,9 +519,9 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public async Task ShareFile_ExpiresIn_AnswersTheLinkAndWhenItRunsOut()
         {
-            await _tools.UploadFileAsync("docs", "/a.txt", text: "a");
+            await _tools.UploadFileAsync("/a.txt", text: "a", shelf: "docs");
 
-            string shared = await _tools.ShareFileAsync("docs", "/a.txt", "30m");
+            string shared = await _tools.ShareFileAsync("/a.txt", "30m", shelf: "docs");
 
             Assert.StartsWith("https://", shared, StringComparison.Ordinal);
             Assert.Contains("Works for anyone who has it until ", shared, StringComparison.Ordinal);
@@ -420,9 +530,9 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public async Task ShareFile_ExpiresInNotALifetime_IsAnErrorSayingHowToWriteOne()
         {
-            await _tools.UploadFileAsync("docs", "/a.txt", text: "a");
+            await _tools.UploadFileAsync("/a.txt", text: "a", shelf: "docs");
 
-            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.ShareFileAsync("docs", "/a.txt", "tomorrow"));
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.ShareFileAsync("/a.txt", "tomorrow", shelf: "docs"));
 
             Assert.Contains("30m, 12h or 7d", exception.Message, StringComparison.Ordinal);
         }
@@ -446,6 +556,11 @@ namespace ByteShelf.Cli.Tests
             McpException exception = await Assert.ThrowsAsync<McpException>(() => new ByteShelfMcpTools(clients, ToolHost.Local).ListShelvesAsync(CancellationToken.None));
 
             Assert.Equal("Could not reach the server: No route to host.", exception.Message);
+        }
+
+        private static string TextOf(IEnumerable<ContentBlock> answer)
+        {
+            return string.Concat(answer.OfType<TextContentBlock>().Select(block => block.Text));
         }
     }
 }

@@ -472,6 +472,18 @@ namespace ByteShelfClient.Tests
             Assert.Equal("https://files.example.com/shelf/api/downloads/abc", link.Url);
         }
 
+        [Fact]
+        public async Task CreateDownloadLinkAsync_ServerAnswersOnItsPublicUrl_KeepsThatLink()
+        {
+            using ScriptedServer server = new ScriptedServer(_ => ScriptedServer.Json("{\"url\":\"https://public.example.com/api/downloads/abc\",\"expiresAt\":\"2026-11-02T12:00:00+00:00\"}"));
+            using HttpClient http = server.CreateClient();
+            ByteShelfHttpClientOptions options = new ByteShelfHttpClientOptions { LinkBaseAddress = new Uri("https://files.example.com/shelf/") };
+
+            DownloadLink link = await new ByteShelfHttpClient(http, new ShelfKeyCredentials("secret"), options).Shelf("docs").CreateDownloadLinkAsync("/a.txt");
+
+            Assert.Equal("https://public.example.com/api/downloads/abc", link.Url);
+        }
+
         private static HttpResponseMessage CancelThenAnswer(CancellationTokenSource cancel, HttpResponseMessage answer)
         {
             cancel.Cancel();

@@ -18,9 +18,10 @@ namespace ByteShelfClient.Http
         public int ChunkBytes { get; init; } = 8 * 1024 * 1024;
 
         /// <summary>
-        /// The address download links are made absolute against, ending in <c>/</c>, for a client that
-        /// reaches the server at another address than the people the links are for, such as the server
-        /// calling itself. The client's base address when left out.
+        /// The address a download link the server answers relative is made absolute against, ending in
+        /// <c>/</c>, for a client that reaches the server at another address than the people the links
+        /// are for, such as the server calling itself. The client's base address when left out. A link
+        /// the server answers on its configured public URL is kept as it is.
         /// </summary>
         public Uri? LinkBaseAddress { get; init; }
     }

@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using ByteShelf.Server.Backup.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Shared.Database;
+using ByteShelf.Server.Shared.IO;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Repositories;
 using ByteShelf.Server.Storage.Services;

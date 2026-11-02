@@ -1,8 +1,7 @@
 using ByteShelf.Server.Email.Models;
 using ByteShelf.Server.Email.Services;
+using ByteShelf.Server.Tests.TestUtilities;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using Moq;
 
 namespace ByteShelf.Server.Tests.Email
 {
@@ -23,9 +22,9 @@ namespace ByteShelf.Server.Tests.Email
         [Fact]
         public async Task SendAsync_OutsideDevelopment_LogsThatItWasNotSentWithoutTheLink()
         {
-            RecordingLogger logger = new RecordingLogger();
+            RecordingLogger<LoggingEmailSender> logger = new RecordingLogger<LoggingEmailSender>();
 
-            await new LoggingEmailSender(logger, EnvironmentNamed(Environments.Production)).SendAsync(ResetEmail);
+            await new LoggingEmailSender(logger, HostEnvironments.Named(Environments.Production)).SendAsync(ResetEmail);
 
             string logged = Assert.Single(logger.Messages);
             Assert.DoesNotContain(Token, logged, StringComparison.Ordinal);
@@ -36,37 +35,11 @@ namespace ByteShelf.Server.Tests.Email
         [Fact]
         public async Task SendAsync_InDevelopment_LogsTheLinkToFollow()
         {
-            RecordingLogger logger = new RecordingLogger();
+            RecordingLogger<LoggingEmailSender> logger = new RecordingLogger<LoggingEmailSender>();
 
-            await new LoggingEmailSender(logger, EnvironmentNamed(Environments.Development)).SendAsync(ResetEmail);
+            await new LoggingEmailSender(logger, HostEnvironments.Named(Environments.Development)).SendAsync(ResetEmail);
 
             Assert.Contains(Token, Assert.Single(logger.Messages), StringComparison.Ordinal);
-        }
-
-        private static IHostEnvironment EnvironmentNamed(string name)
-        {
-            return Mock.Of<IHostEnvironment>(environment => environment.EnvironmentName == name);
-        }
-
-        private sealed class RecordingLogger : ILogger<LoggingEmailSender>
-        {
-            public List<string> Messages { get; } = new List<string>();
-
-            public IDisposable? BeginScope<TState>(TState state)
-                where TState : notnull
-            {
-                return null;
-            }
-
-            public bool IsEnabled(LogLevel logLevel)
-            {
-                return true;
-            }
-
-            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-            {
-                Messages.Add(formatter(state, exception));
-            }
         }
     }
 }

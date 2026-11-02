@@ -2,6 +2,8 @@ using System.Security.Cryptography;
 using System.Text;
 using ByteShelf.Server.Access.Services;
 using ByteShelf.Server.ChangeLog.Repositories;
+using ByteShelf.Server.Email;
+using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
@@ -53,7 +55,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
             ServiceCollection services = new ServiceCollection();
             services.AddSingleton<TimeProvider>(Clock);
             services.AddLogging(builder => builder.SetMinimumLevel(LogLevel.Warning));
-            Program.AddDomainServices(services, TestRoot.Root, AppBaseUrl);
+            Program.AddDomainServices(services, TestRoot.Root, new PublicAddress(AppBaseUrl), EmailOptions.None);
             ConfigureServices(services);
 
             // Not ValidateOnBuild: the auth registrations need routing, which only the web host adds.

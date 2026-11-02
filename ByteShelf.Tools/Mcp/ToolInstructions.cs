@@ -3,11 +3,12 @@ namespace ByteShelf.Tools.Mcp
     /// <summary>What both MCP servers tell an agent ByteShelf is and how its tools fit together, sent when it connects.</summary>
     internal static class ToolInstructions
     {
-        public const string Text = """
+        public const string Text = $"""
             ByteShelf is a self-hosted file store. Files live on shelves: each shelf is its own tree of
-            directories and files, with its own trash and quota. Every tool names the shelf it works on
-            and takes paths that start with / (the shelf's root is /). list_shelves shows the shelves
-            you can reach, and shelf_info one shelf's usage and quota.
+            directories and files, with its own trash and quota. Tools take paths that start with /
+            (the shelf's root is /) and a shelf to work on, which you can leave out when you reach
+            only one shelf. list_shelves shows the shelves you can reach, and shelf_info one shelf's
+            usage and quota.
 
             Looking around: list_directory shows one directory, list_tree everything under one (down to
             a depth if you give one), search_files finds files under a directory by text in the name or
@@ -16,9 +17,10 @@ namespace ByteShelf.Tools.Mcp
             "More follow: call again with after = <cursor>"; pass that cursor as after for the next
             page.
 
-            Reading: download_file answers a UTF-8 file of up to 256 KiB as text. share_file makes a
-            link anyone can open without signing in, for 24 hours or the time asked for (at most 7
-            days); use it to hand a person a file, or to fetch a large or binary one.
+            Reading: download_file answers a UTF-8 file of up to 256 KiB as text, and a
+            {ByteShelfMcpTools.InlineImageKinds} image of up to 1 MiB as an image you can see.
+            share_file makes a link anyone can open without signing in, for 24 hours or the time asked
+            for (at most 7 days); use it to hand a person a file, or to fetch anything else.
 
             Storing: upload_file stores text, or a binary file's contents as base64, each up to 256 KiB,
             creating missing directories. It never replaces a file unless overwrite is true, and then

@@ -109,8 +109,9 @@ namespace ByteShelfClient.Http
                 ByteShelfJsonContext.Default.DownloadLink,
                 cancellationToken).ConfigureAwait(false);
 
-            // The server answers a path from its own root; relative to the base address, it stays right for
-            // a server behind a path prefix it does not know about.
+            // The server answers a link on its public URL when it has one, which is kept as it is, or else a
+            // path from its own root; relative to the base address, that stays right for a server behind a
+            // path prefix it does not know about.
             Uri linkBase = _options.LinkBaseAddress ?? _connection.BaseAddress;
             return new DownloadLink { Url = new Uri(linkBase, link.Url.TrimStart('/')).AbsoluteUri, ExpiresAt = link.ExpiresAt };
         }

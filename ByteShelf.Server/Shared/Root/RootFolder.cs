@@ -1,3 +1,4 @@
+using ByteShelf.Server.Shared.IO;
 using Microsoft.Data.Sqlite;
 
 namespace ByteShelf.Server.Shared.Root

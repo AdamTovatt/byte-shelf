@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Net.Http.Json;
 using System.Text;
 using ByteShelf.Server.Backup.Services;
+using ByteShelf.Server.Email;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
@@ -55,7 +56,8 @@ namespace ByteShelf.Server.Tests.Backup
                 {
                     builder.WebHost.UseTestServer();
                     builder.Logging.SetMinimumLevel(LogLevel.Warning);
-                });
+                },
+                EmailOptions.None);
             await restored.StartAsync();
             using HttpClient client = restored.GetTestClient();
 

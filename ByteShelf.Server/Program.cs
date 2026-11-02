@@ -7,6 +7,7 @@ using ByteShelf.Server.Invalidation;
 using ByteShelf.Server.Jobs;
 using ByteShelf.Server.Mcp;
 using ByteShelf.Server.Replication;
+using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Json;
@@ -26,9 +27,6 @@ namespace ByteShelf.Server
 {
     public class Program
     {
-        /// <summary>Where reset links point in Development when <c>APP_BASE_URL</c> is not set.</summary>
-        internal const string DevelopmentAppBaseUrl = "http://localhost:5190";
-
         /// <summary>
         /// The longest request line the server takes. Paths travel in the query string, and a search
         /// carries two (<c>under</c> and <c>after</c>) besides its text. Percent-encoded, a UTF-16 unit
@@ -119,27 +117,30 @@ namespace ByteShelf.Server
         }
 
         /// <summary>
-        /// Migrates the root's database and builds the full application on it. Separate from
-        /// <see cref="RunApplication"/> so the in-process HTTP tests build the same pipeline on a root
-        /// of their own; <paramref name="configureForTests"/> runs once every service is registered, so a
-        /// test can replace or remove one.
-        /// </summary>
-        /// <summary>
         /// The features that hold and change the data, which the service tests build on their own; the
         /// web host adds the rest (live updates, version, replication, MCP, rate limits) beside them.
         /// </summary>
-        internal static void AddDomainServices(IServiceCollection services, RootFolder root, string appBaseUrl)
+        internal static void AddDomainServices(IServiceCollection services, RootFolder root, PublicAddress publicAddress, EmailOptions email)
         {
+            services.AddSingleton(publicAddress);
             services.AddDatabaseServices(root);
-            services.AddEmailServices();
-            services.AddUserServices(root, appBaseUrl);
+            services.AddEmailServices(email);
+            services.AddUserServices(root);
             services.AddJobServices();
             services.AddChangeLogServices();
             services.AddStorageServices();
             services.AddAccessServices();
         }
 
-        internal static WebApplication BuildApplication(string[] args, RootFolder root, Action<WebApplicationBuilder>? configureForTests = null)
+        /// <summary>
+        /// Migrates the root's database and builds the full application on it. Separate from
+        /// <see cref="RunApplication"/> so the in-process HTTP tests build the same pipeline on a root
+        /// of their own; <paramref name="configureForTests"/> runs once every service is registered, so a
+        /// test can replace or remove one. <paramref name="email"/> is read from the environment when not
+        /// given; a test gives <see cref="EmailOptions.None"/>, so it never sends through a token the
+        /// machine running it happens to hold.
+        /// </summary>
+        internal static WebApplication BuildApplication(string[] args, RootFolder root, Action<WebApplicationBuilder>? configureForTests = null, EmailOptions? email = null)
         {
             WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
             builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestLineSize = MaxRequestLineBytes);
@@ -153,12 +154,12 @@ namespace ByteShelf.Server
             ConfigureForwardedHeaders(builder.Services);
 
             // One line per feature; adding a feature = add a folder, add one line here or in AddDomainServices.
-            string appBaseUrl = ResolveAppBaseUrl(builder.Environment);
-            AddDomainServices(builder.Services, root, appBaseUrl);
+            PublicAddress publicAddress = PublicAddress.Resolve(EnvironmentVariables.AppBaseUrl.GetValueOrDefault(), builder.Environment);
+            AddDomainServices(builder.Services, root, publicAddress, email ?? EmailOptions.FromEnvironment());
             builder.Services.AddInvalidationServices();
             builder.Services.AddVersionServices();
-            builder.Services.AddReplicationServices(appBaseUrl);
-            builder.Services.AddMcpServices(appBaseUrl);
+            builder.Services.AddReplicationServices(publicAddress.Absolute.AbsoluteUri);
+            builder.Services.AddMcpServices();
             builder.Services.AddRateLimitingServices();
             configureForTests?.Invoke(builder);
 
@@ -203,28 +204,10 @@ namespace ByteShelf.Server
         }
 
         /// <summary>
-        /// The public URL reset links point at. Required outside Development: a link to localhost in a
-        /// real user's inbox is a broken link.
-        /// </summary>
-        private static string ResolveAppBaseUrl(IHostEnvironment environment)
-        {
-            string? configured = EnvironmentVariables.AppBaseUrl.GetValueOrDefault();
-            if (!string.IsNullOrWhiteSpace(configured))
-            {
-                return configured;
-            }
-
-            if (!environment.IsDevelopment())
-            {
-                throw new InvalidOperationException("APP_BASE_URL must be set to the server's public URL outside Development.");
-            }
-
-            return DevelopmentAppBaseUrl;
-        }
-
-        /// <summary>
         /// Trusts <c>X-Forwarded-For</c> and <c>X-Forwarded-Proto</c> from the proxies listed in
-        /// <c>BYTESHELF_TRUSTED_PROXIES</c> (loopback is always trusted).
+        /// <c>BYTESHELF_TRUSTED_PROXIES</c> (loopback is always trusted). Not <c>X-Forwarded-Host</c>: only
+        /// a Development server without <c>APP_BASE_URL</c> reads the host, and a proxy passing one through
+        /// from the client would let the client choose it.
         /// </summary>
         private static void ConfigureForwardedHeaders(IServiceCollection services)
         {

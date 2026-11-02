@@ -85,30 +85,19 @@ namespace ByteShelf.Tools
             }
         }
 
-        /// <summary>A file's content as text, for an answer that carries it inline.</summary>
-        /// <exception cref="UsageException">It is larger than <paramref name="maxBytes"/> or not UTF-8 text.</exception>
-        public static async Task<string> ReadTextAsync(IShelfClient shelf, string path, int maxBytes, CancellationToken cancellationToken)
+        /// <summary>
+        /// A file's whole content in memory, for an answer that carries it inline; the caller has checked
+        /// its size. Read by id, so it is the file whose record the caller holds.
+        /// </summary>
+        public static async Task<byte[]> ReadAllAsync(IShelfClient shelf, ShelfFile file, CancellationToken cancellationToken)
         {
-            ShelfFile file = await shelf.GetFileAsync(path, cancellationToken);
-            if (file.SizeBytes > maxBytes)
-            {
-                throw new UsageException($"{path} is {file.SizeBytes} bytes, more than the {maxBytes} answered inline; save it to a local file instead.");
-            }
-
-            using MemoryStream buffer = new MemoryStream();
+            using MemoryStream buffer = new MemoryStream(checked((int)file.SizeBytes));
             await using (Stream content = await shelf.OpenReadAsync(file.Id, cancellationToken))
             {
                 await content.CopyToAsync(buffer, cancellationToken);
             }
 
-            try
-            {
-                return new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
-            }
-            catch (DecoderFallbackException exception)
-            {
-                throw new UsageException($"{path} is not UTF-8 text; save it to a local file instead.", exception);
-            }
+            return buffer.ToArray();
         }
 
         private static Task<ShelfFile> UploadAsync(IShelfClient shelf, string path, Stream content, UploadOptions options, CancellationToken cancellationToken)

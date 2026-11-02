@@ -1,27 +1,28 @@
 using ByteShelf.Server.Email.Models;
 using ByteShelf.Server.Email.Services;
+using ByteShelf.Server.Shared;
 
 namespace ByteShelf.Server.Users.Services
 {
     /// <summary>
     /// Sends the password-reset link through <see cref="IEmailSender"/>. The link points at the
-    /// frontend's <c>/reset-password</c> route on the configured app base URL.
+    /// frontend's <c>/reset-password</c> route on the server's <see cref="PublicAddress"/>.
     /// </summary>
     public class EmailPasswordResetNotifier : IPasswordResetNotifier
     {
         private readonly IEmailSender _emailSender;
-        private readonly string _appBaseUrl;
+        private readonly PublicAddress _publicAddress;
 
-        public EmailPasswordResetNotifier(IEmailSender emailSender, string appBaseUrl)
+        public EmailPasswordResetNotifier(IEmailSender emailSender, PublicAddress publicAddress)
         {
             _emailSender = emailSender;
-            _appBaseUrl = appBaseUrl;
+            _publicAddress = publicAddress;
         }
 
         /// <inheritdoc />
         public async Task SendResetLinkAsync(string email, string resetToken)
         {
-            string resetUrl = $"{_appBaseUrl.TrimEnd('/')}/reset-password?token={Uri.EscapeDataString(resetToken)}";
+            string resetUrl = _publicAddress.AbsoluteLinkTo($"/reset-password?token={Uri.EscapeDataString(resetToken)}");
             string lifetimeText = FormatLifetime(PasswordResetService.TokenLifetime);
 
             string textBody = $"You requested a password reset. Visit this link to set a new password: {resetUrl}";

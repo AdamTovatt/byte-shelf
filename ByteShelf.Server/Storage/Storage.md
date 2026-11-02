@@ -60,8 +60,10 @@ an altered or expired one, or one whose file is in the trash, answers 404; a res
 id, so its unexpired links work again. A file stored over the linked one is a new file, so the link no
 longer reaches it. Creating or serving a link is recorded nowhere. A link keeps working until it
 runs out even if the access it was made with is taken away meanwhile; nothing takes one link back,
-but removing the secret file and restarting ends them all. The server answers the link as a path
-from its own root, and the clients make it absolute against the address they reach it by.
+but removing the secret file and restarting ends them all. `DownloadLinks` makes the link with
+`PublicAddress.LinkTo`: absolute on `APP_BASE_URL` when that is set, which clients keep as it is;
+otherwise (Development only) a path from the server's root, which each client makes absolute against
+the address it reaches the server by.
 
 ## Uploads (`UploadService`)
 

@@ -36,14 +36,21 @@ to, as bound: a server bound to a single interface's address is called there, si
 not be listening. A listen-on-everything host (`+`, `*`, `0.0.0.0`, `[::]`) is called at loopback.
 HTTPS is never used: the certificate would not name the address called. A server with no plain-HTTP
 address (HTTPS or a Unix socket only) cannot run its tools, and says so. A link `share_file` makes is
-put on the server's public address, `APP_BASE_URL`, not on the address it called itself at, so the
-person the agent hands it to can open it.
+never on the address the server called itself at: the API answers it on `APP_BASE_URL` when that is
+set (`Shared/PublicAddress`), and otherwise (Development) `CallerKeyClientSource` puts it on the
+address the agent called `/mcp` at, by its `Host` header as sent (`X-Forwarded-Host` is not
+believed: nothing outside Development reads the host). Either way the person the agent hands it to
+can open it.
+
+The key reaches one shelf, so every tool's `shelf` may be left out and means that shelf (the tools
+take the only shelf a caller reaches). A call missing an argument the tool requires is answered
+naming it (`RequiredArguments`), not with the SDK's bare "An error occurred invoking".
 
 A local path means nothing on the server, so a tool given one (`upload_file`'s `localPath`,
 `download_file`'s) refuses it and says to give the contents instead: `upload_file` takes text or a
 binary file as base64, each up to 256 KiB, a size an agent can carry in its own context.
-`download_file` answers text of up to 256 KiB; for anything larger or binary, `share_file` makes a
-link.
+`download_file` answers text of up to 256 KiB, and a PNG, JPEG, GIF or WebP image of up to 1 MiB as
+image content the agent sees; for anything else it says to make a link with `share_file`.
 
 ## `/llms.txt`
 
