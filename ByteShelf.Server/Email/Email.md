@@ -21,7 +21,8 @@ that kind:
    writes each message to the log, links included, so a developer can follow a password-reset link.
    Anywhere else it logs only that an email was asked for and not sent, never its body: a reset link
    in a log would let whoever reads the log into the account. So outside Development nobody
-   receives a reset link, and a forgotten password cannot be reset.
+   receives a reset link, and a forgotten password can be reset only with the server's
+   `--reset-password` ([Users](../Users/Users.md#from-the-servers-command-line)).
 
 Values are trimmed, and blank ones count as unset. While mail is not sent through Postmark,
 `EmailSenderStartupWarning` logs at startup where it goes instead. Tests pass `EmailOptions.None`,

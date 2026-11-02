@@ -8,6 +8,18 @@ namespace ByteShelf.Server.Replication
 {
     public static class ServiceCollectionExtensions
     {
+        /// <summary>
+        /// <see cref="ReplicationState"/>, which says whether this server is a replica and so refuses
+        /// writes: part of <see cref="AddReplicationServices"/>, and alone for work on a root without the
+        /// web host, such as the server's user commands.
+        /// </summary>
+        public static IServiceCollection AddReplicationState(this IServiceCollection services)
+        {
+            services.AddScoped<IReplicationSourceRepository, ReplicationSourceRepository>();
+            services.AddScoped<ReplicationState>();
+            return services;
+        }
+
         /// <param name="services">The application's services.</param>
         /// <param name="publicUrl">This server's public URL, which pairing codes made here name.</param>
         public static IServiceCollection AddReplicationServices(this IServiceCollection services, string publicUrl)
@@ -35,9 +47,8 @@ namespace ByteShelf.Server.Replication
 
             services.AddScoped<IServerInstanceRepository, ServerInstanceRepository>();
             services.AddScoped<IReplicaRepository, ReplicaRepository>();
-            services.AddScoped<IReplicationSourceRepository, ReplicationSourceRepository>();
+            services.AddReplicationState();
             services.AddScoped<IReplicationCopyRepository, ReplicationCopyRepository>();
-            services.AddScoped<ReplicationState>();
             services.AddScoped<PrimaryClient>();
             services.AddScoped<ReplicaApplier>();
             services.AddScoped<ReplicationPairing>();

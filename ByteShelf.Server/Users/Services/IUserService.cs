@@ -14,6 +14,9 @@ namespace ByteShelf.Server.Users.Services
 
         Task<User?> GetUserByIdAsync(Guid userId);
 
+        /// <summary>The user with <paramref name="email"/>, matched without regard to case; null when there is none.</summary>
+        Task<User?> GetUserByEmailAsync(string email);
+
         /// <summary>Creates a user account and its local login in one transaction.</summary>
         /// <exception cref="Exceptions.DuplicateEmailException">The email is already taken.</exception>
         Task<User> CreateUserAsync(string email, string displayName, string password, IEnumerable<string>? roles = null);

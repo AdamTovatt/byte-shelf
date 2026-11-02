@@ -12,15 +12,44 @@ x64 (`Directory.Build.targets`). Elsewhere (musl, 32-bit arm, Windows on arm) th
 
 1. Publish: `dotnet publish ByteShelf.Server -c Release -o <folder>`, and install that folder with
    updaemon (or run the `ByteShelf.Server` executable in it under any service manager).
-2. Set `BYTESHELF_ROOT` to an empty folder the service user owns, `APP_BASE_URL` to the public URL,
-   and `INITIAL_ADMIN_EMAIL` with `INITIAL_ADMIN_PASSWORD` for the first start (table below).
+2. Set `BYTESHELF_ROOT` to an empty folder the service user owns and `APP_BASE_URL` to the public URL
+   (table below).
 3. Choose where it listens with `ASPNETCORE_URLS`, such as `http://127.0.0.1:5000` behind a reverse
    proxy. Unset, Kestrel listens on `http://localhost:5000`.
-4. Start it. The first start creates the root, migrates its database, generates its secrets and
-   creates the admin; sign in at `APP_BASE_URL` and remove the two `INITIAL_ADMIN_*` variables.
+4. Start it. The first start creates the root, migrates its database and generates its secrets, and
+   logs that there are no users yet.
+5. Create the first admin on the server's machine, as the service user, while it runs:
+   `BYTESHELF_ROOT=<root> ByteShelf.Server --create-user <email> --name "<name>" --admin`, which asks
+   for the password (see [Users from the command line](#users-from-the-command-line)). Then sign in at
+   `APP_BASE_URL`.
+
+Setting `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` before the first start creates that admin
+instead of step 5; remove them once it exists.
 
 Every start migrates the database first. `ByteShelf.Server --migrate-only` (with `BYTESHELF_ROOT`)
 only migrates it and exits, for running migrations as their own step before a start.
+
+## Users from the command line
+
+For when no admin can sign in, the server's executable changes users of its root directly, with the
+server running or stopped. Run it on the server's machine, as the user the server runs as, with
+`BYTESHELF_ROOT` set to the root:
+
+```
+ByteShelf.Server --create-user <email> --name "<display name>" [--admin]
+ByteShelf.Server --reset-password <email>
+ByteShelf.Server --set-admin <email>
+ByteShelf.Server --unset-admin <email>
+```
+
+A new password is never an argument, which other users of the machine could read: it is typed twice
+at the terminal without being shown, or read as one line from stdin when stdin is redirected
+(`< password-file`). The commands go through the same rules as the API: password length, a taken
+email, never removing the last admin. A reset ends every session and reset link of that user, and the
+change log records each change, so replicas follow. A replica refuses them; run them on its primary.
+They never migrate the database, which the running server may be using: a database an older version
+left is refused until this version has started on it or `--migrate-only` has run. Exit codes: 0 done,
+1 refused or failed (the reason is logged), 2 the arguments are wrong or `BYTESHELF_ROOT` is missing.
 
 ## Environment variables
 
@@ -31,7 +60,7 @@ only migrates it and exits, for running migrations as their own step before a st
 | `POSTMARK_API_KEY` | to send email | A Postmark server token. Without it no email is sent (see [Email](#email)). |
 | `EMAIL_FROM_ADDRESS` | with `POSTMARK_API_KEY` | The address mail is from, a sender confirmed in Postmark. The server refuses to start with a token and no address. |
 | `EMAIL_FROM_NAME` | no | The name mail is from. `ByteShelf` by default. |
-| `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD` | first start | Create the first admin while there are no users; ignored afterwards and can be removed. |
+| `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD` | no | Create the first admin while there are no users; ignored afterwards and can be removed. Without them, create it with `--create-user`. |
 | `INITIAL_ADMIN_DISPLAY_NAME` | no | The first admin's display name; the email's local part otherwise. |
 | `BYTESHELF_RESTORE_WINDOW_DAYS` | no | How long a deletion can be restored before it is purged. 30 by default. |
 | `BYTESHELF_TRUSTED_PROXIES` | behind a proxy | Comma-separated IPs or CIDR ranges of the reverse proxies in front of the server. Their `X-Forwarded-For` and `X-Forwarded-Proto` are believed, so rate limits and the sign-in delay count each client rather than the proxy. Loopback is always trusted. |
@@ -52,8 +81,9 @@ server's settings, so a link arrives as written. A send Postmark refuses is logg
 
 Without a token no email is sent, and the server says so at startup. A user who asks for a password
 reset gets the same answer as ever, but no link reaches them: outside Development the server logs
-only that a reset email was asked for, never the link. So a forgotten password cannot be reset; an
-admin can still make a new account. In Development the link is written to the log instead. A dev
+only that a reset email was asked for, never the link. So a forgotten password cannot be reset by
+email; on the server's machine `--reset-password` sets a new one
+([Users from the command line](#users-from-the-command-line)). In Development the link is written to the log instead. A dev
 server started by remote-claude gets `REMOTE_CLAUDE_DEV_MAIL_DIR`, and each email is then written
 there as a file for remote-claude to show ([Email](ByteShelf.Server/Email/Email.md)). Reset links
 wait in an outbox in memory that holds 100: when it is full a new link is dropped with a warning,
@@ -118,7 +148,8 @@ of the primary and follows it ([Replication](ByteShelf.Server/Replication/Replic
 reach the primary's `APP_BASE_URL`, which must be the address the primary answers at (the replica
 follows no redirects); nothing needs to reach the replica but its own admins and readers.
 
-1. Start the replica on a new, empty root with its own initial admin, and create no shelves on it. Not
+1. Start the replica on a new, empty root with its own first admin (step 5 of
+   [Installing](#installing)), and create no shelves on it. Not
    a copy of the primary's root: that would be the same instance, and pairing would be refused.
 2. On the primary, as an admin, on the Replication page, make a pairing code. It works once, for
    15 minutes.

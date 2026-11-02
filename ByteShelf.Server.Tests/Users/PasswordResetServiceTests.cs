@@ -4,6 +4,7 @@ using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Repositories;
 using ByteShelf.Server.Users.Services;
 using EasyReasy.Auth;
+using EasyReasy.Database;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ByteShelf.Server.Tests.Users
@@ -120,6 +121,64 @@ namespace ByteShelf.Server.Tests.Users
         }
 
         [Fact]
+        public async Task SetPasswordAsync_SetsItAndEndsEverySessionAndResetLink()
+        {
+            User user = await UserService.CreateUserAsync(Email, "Known", "old-password");
+            RefreshTokenCreationResult session = await Services.GetRequiredService<IRefreshTokenService>().CreateRefreshTokenWithFamilyAsync(
+                user.Id.ToString("D"), AuthRequestValidationService.AuthType, null, RefreshTokenClaims.SerializeRoles(Array.Empty<string>()));
+            await ResetService.RequestResetAsync(Email);
+            ResetLink link = (await TryTakeLinkAsync())!;
+
+            Assert.True(await ResetService.SetPasswordAsync(user.Id, "new-password"));
+
+            Assert.Equal(user.Id, (await UserService.ValidateCredentialsAsync(Email, "new-password"))?.User.Id);
+            StoredRefreshToken? stored = await Services.GetRequiredService<IRefreshTokenStore>().GetByTokenHashAsync(HashToken(session.RawToken));
+            Assert.True(stored?.IsInvalidated);
+            Assert.False(await ResetService.CompleteResetAsync(link.Token, "other-password"));
+        }
+
+        [Fact]
+        public async Task SetPasswordAsync_UnknownUser_ReturnsFalse()
+        {
+            Assert.False(await ResetService.SetPasswordAsync(Guid.NewGuid(), "new-password"));
+        }
+
+        [Fact]
+        public async Task SetPasswordAsync_TooShortPassword_ThrowsAndKeepsTheOldOne()
+        {
+            User user = await UserService.CreateUserAsync(Email, "Known", "old-password");
+
+            await Assert.ThrowsAsync<ArgumentException>(() => ResetService.SetPasswordAsync(user.Id, "short"));
+
+            Assert.NotNull(await UserService.ValidateCredentialsAsync(Email, "old-password"));
+        }
+
+        [Fact]
+        public async Task SetPasswordAsync_DroppingTheSessionsFails_StillReportsTheNewPassword()
+        {
+            User user = await UserService.CreateUserAsync(Email, "Known", "old-password");
+            IPasswordResetService resetService = ActivatorUtilities.CreateInstance<PasswordResetService>(Services, new EndingSessionsFails(UserService));
+
+            Assert.True(await resetService.SetPasswordAsync(user.Id, "new-password"));
+
+            Assert.NotNull(await UserService.ValidateCredentialsAsync(Email, "new-password"));
+        }
+
+        [Fact]
+        public async Task SetPasswordAsync_LogsTheLoginWithTheNewHash()
+        {
+            User user = await UserService.CreateUserAsync(Email, "Known", "old-password");
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            await ResetService.SetPasswordAsync(user.Id, "new-password");
+
+            ChangeLogEntry entry = Assert.Single(await ChangeLog.GetAfterAsync(before, 100));
+            Assert.Equal((ChangeEntityType.UserLogin, ChangeAction.Updated), (entry.EntityType, entry.Action));
+            UserCredentials stored = (await Services.GetRequiredService<IUserLoginRepository>().GetCredentialsByEmailAsync(Email))!;
+            Assert.Equal(stored.PasswordHash, ChangePayload.Deserialize<UserLogin>(entry.Payload!).Credential);
+        }
+
+        [Fact]
         public async Task CompleteResetAsync_ValidToken_LogsTheLoginWithTheNewHash()
         {
             await UserService.CreateUserAsync(Email, "Known", "old-password");
@@ -156,6 +215,65 @@ namespace ByteShelf.Server.Tests.Users
         private static string HashToken(string rawToken)
         {
             return Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(rawToken)));
+        }
+
+        /// <summary>The real user service, except that ending a user's sessions fails.</summary>
+        private sealed class EndingSessionsFails(IUserService inner) : IUserService
+        {
+            public Task<int> EndSessionsAsync(Guid userId)
+            {
+                throw new InvalidOperationException("The refresh token store is unreachable.");
+            }
+
+            public Task<UserCredentials?> ValidateCredentialsAsync(string email, string password)
+            {
+                return inner.ValidateCredentialsAsync(email, password);
+            }
+
+            public Task<User?> GetUserByIdAsync(Guid userId)
+            {
+                return inner.GetUserByIdAsync(userId);
+            }
+
+            public Task<User?> GetUserByEmailAsync(string email)
+            {
+                return inner.GetUserByEmailAsync(email);
+            }
+
+            public Task<User> CreateUserAsync(string email, string displayName, string password, IEnumerable<string>? roles = null)
+            {
+                return inner.CreateUserAsync(email, displayName, password, roles);
+            }
+
+            public Task<bool> UpdatePasswordAsync(Guid userId, string currentPassword, string newPassword, string? keepSessionFamilyId = null)
+            {
+                return inner.UpdatePasswordAsync(userId, currentPassword, newPassword, keepSessionFamilyId);
+            }
+
+            public Task<IReadOnlyList<User>> GetAllUsersAsync()
+            {
+                return inner.GetAllUsersAsync();
+            }
+
+            public Task UpdateRolesAsync(Guid userId, IEnumerable<string> roles)
+            {
+                return inner.UpdateRolesAsync(userId, roles);
+            }
+
+            public Task DeleteUserAsync(Guid userId)
+            {
+                return inner.DeleteUserAsync(userId);
+            }
+
+            public Task<bool> RemoveUserAsync(Guid userId, DateTimeOffset at, IDbSession session)
+            {
+                return inner.RemoveUserAsync(userId, at, session);
+            }
+
+            public Task<int> GetUserCountAsync()
+            {
+                return inner.GetUserCountAsync();
+            }
         }
     }
 }

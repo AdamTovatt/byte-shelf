@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 namespace ByteShelf.Server.Tests.TestUtilities
 {
     /// <summary>A logger that keeps each message it is given, formatted, for a test to read.</summary>
-    public sealed class RecordingLogger<T> : ILogger<T>
+    public class RecordingLogger : ILogger
     {
         public List<string> Messages { get; } = new List<string>();
 
@@ -22,5 +22,10 @@ namespace ByteShelf.Server.Tests.TestUtilities
         {
             Messages.Add(formatter(state, exception));
         }
+    }
+
+    /// <summary>A <see cref="RecordingLogger"/> to inject where an <see cref="ILogger{T}"/> is asked for.</summary>
+    public sealed class RecordingLogger<T> : RecordingLogger, ILogger<T>
+    {
     }
 }

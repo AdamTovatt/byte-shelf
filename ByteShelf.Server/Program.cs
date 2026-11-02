@@ -17,6 +17,7 @@ using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Shared.StaticFiles;
 using ByteShelf.Server.Storage;
 using ByteShelf.Server.Users;
+using ByteShelf.Server.Users.Services;
 using ByteShelf.Server.Version;
 using ByteShelfCommon;
 using EasyReasy.Auth;
@@ -58,6 +59,18 @@ namespace ByteShelf.Server
                     EnvironmentVariables.ByteShelfRoot.GetValueOrDefault(),
                     args.ElementAtOrDefault(backup + 1),
                     loggerFactory.CreateLogger<Program>());
+                return;
+            }
+
+            if (UserCommand.Flags.Any(args.Contains))
+            {
+                // Beside BYTESHELF_ROOT no setting is needed: no web host, no email.
+                using ILoggerFactory loggerFactory = CreateStartupLoggerFactory();
+                Environment.ExitCode = UserCommand.RunAsync(
+                    args,
+                    EnvironmentVariables.ByteShelfRoot.GetValueOrDefault(),
+                    new ConsolePasswordReader(),
+                    loggerFactory).GetAwaiter().GetResult();
                 return;
             }
 

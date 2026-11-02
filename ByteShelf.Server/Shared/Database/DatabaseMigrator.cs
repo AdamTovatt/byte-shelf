@@ -17,19 +17,7 @@ namespace ByteShelf.Server.Shared.Database
         {
             DatabaseTypeHandlers.RegisterAll();
 
-            UpgradeEngine upgrader = DeployChanges.To
-                .SqliteDatabase(connectionString)
-                .WithScriptsEmbeddedInAssembly(
-                    Assembly.GetExecutingAssembly(),
-                    (string scriptName) =>
-                    {
-                        return scriptName.Contains("Migrations") && scriptName.Split('.').Last() == "sql";
-                    })
-                .WithTransactionPerScript()
-                .LogToNowhere()
-                .Build();
-
-            DatabaseUpgradeResult result = upgrader.PerformUpgrade();
+            DatabaseUpgradeResult result = Upgrader(connectionString).PerformUpgrade();
 
             if (!result.Successful)
             {
@@ -45,6 +33,31 @@ namespace ByteShelf.Server.Shared.Database
             }
 
             logger.LogInformation("Database is up to date.");
+        }
+
+        /// <summary>
+        /// Whether every migration this build carries has run on the database behind
+        /// <paramref name="connectionString"/>, without changing it: for work beside a running server,
+        /// which must not upgrade the database under it.
+        /// </summary>
+        public static bool IsUpToDate(string connectionString)
+        {
+            return !Upgrader(connectionString).IsUpgradeRequired();
+        }
+
+        private static UpgradeEngine Upgrader(string connectionString)
+        {
+            return DeployChanges.To
+                .SqliteDatabase(connectionString)
+                .WithScriptsEmbeddedInAssembly(
+                    Assembly.GetExecutingAssembly(),
+                    (string scriptName) =>
+                    {
+                        return scriptName.Contains("Migrations") && scriptName.Split('.').Last() == "sql";
+                    })
+                .WithTransactionPerScript()
+                .LogToNowhere()
+                .Build();
         }
     }
 }

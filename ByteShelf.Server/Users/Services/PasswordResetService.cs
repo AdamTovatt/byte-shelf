@@ -101,31 +101,76 @@ namespace ByteShelf.Server.Users.Services
 
             await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
             {
-                if (!await _tokenRepository.MarkAsUsedAsync(record.Id, now, session))
+                if (!await _tokenRepository.MarkAsUsedAsync(record.Id, now, session)
+                    || !await ReplaceCredentialAsync(record.UserId, passwordHash, now, session))
                 {
                     return false;
                 }
 
-                if (!await _userLoginRepository.UpdateCredentialAsync(record.UserId, UserLoginRepository.LocalProvider, passwordHash, now, session))
-                {
-                    return false;
-                }
-
-                await _tokenRepository.InvalidateAllForUserAsync(record.UserId, now, session);
                 await session.CommitAsync();
             }
 
-            // A reset means the old password may have been compromised: every session ends, so only the
-            // holder of the new password stays signed in. The new credential alone already refuses their
-            // refreshes (CredentialStamp); this also drops the stored tokens. Runs after the commit: the
-            // password change must not be rolled back if this fails.
-            int revokedFamilies = await _userService.EndSessionsAsync(record.UserId);
-            if (revokedFamilies > 0)
+            await EndSessionsAsync(record.UserId);
+            return true;
+        }
+
+        /// <inheritdoc />
+        public async Task<bool> SetPasswordAsync(Guid userId, string newPassword)
+        {
+            PasswordPolicy.Validate(newPassword);
+            string passwordHash = _passwordHasher.HashPassword(newPassword);
+
+            await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
             {
-                _logger.LogInformation("Password reset revoked {Count} active session(s) for user {UserId}.", revokedFamilies, record.UserId);
+                if (!await ReplaceCredentialAsync(userId, passwordHash, _timeProvider.GetUtcNow(), session))
+                {
+                    return false;
+                }
+
+                await session.CommitAsync();
             }
 
+            await EndSessionsAsync(userId);
             return true;
+        }
+
+        /// <summary>
+        /// Gives the user's login <paramref name="passwordHash"/>, and ends every reset link of theirs; false
+        /// when there is no such login. A password set without the current one, by a reset link or by
+        /// whoever runs the server, is followed by <see cref="EndSessionsAsync"/> once it commits.
+        /// </summary>
+        private async Task<bool> ReplaceCredentialAsync(Guid userId, string passwordHash, DateTimeOffset now, IDbSession session)
+        {
+            if (!await _userLoginRepository.UpdateCredentialAsync(userId, UserLoginRepository.LocalProvider, passwordHash, now, session))
+            {
+                return false;
+            }
+
+            await _tokenRepository.InvalidateAllForUserAsync(userId, now, session);
+            return true;
+        }
+
+        /// <summary>
+        /// A password set without the current one means the old one may have been compromised: every
+        /// session ends, so only the holder of the new password stays signed in. The new credential alone
+        /// already refuses their refreshes (CredentialStamp); this also drops the stored tokens. Runs after
+        /// the commit, and a failure here is logged rather than thrown: the password has changed, which the
+        /// caller must be told, and the sessions it would drop can no longer refresh anyway.
+        /// </summary>
+        private async Task EndSessionsAsync(Guid userId)
+        {
+            try
+            {
+                int revokedFamilies = await _userService.EndSessionsAsync(userId);
+                if (revokedFamilies > 0)
+                {
+                    _logger.LogInformation("Setting a new password revoked {Count} active session(s) for user {UserId}.", revokedFamilies, userId);
+                }
+            }
+            catch (Exception exception)
+            {
+                _logger.LogError(exception, "The password of user {UserId} changed, but dropping their sessions failed; they cannot refresh with the old password.", userId);
+            }
         }
     }
 }

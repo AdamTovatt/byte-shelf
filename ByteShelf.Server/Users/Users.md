@@ -1,7 +1,7 @@
 # Users
 
 People who sign in: email and password, refresh tokens, roles, the first admin, password change,
-and password reset. Every change to a user and to their logins, password hash included, is in the
+password reset, and the server's user commands. Every change to a user and to their logins, password hash included, is in the
 change log (see [ChangeLog.md](../ChangeLog/ChangeLog.md)).
 
 ## Identity (two tables)
@@ -69,7 +69,8 @@ working until one of them is used, which invalidates the rest and ends every ses
 
 Reset emails go through Postmark when it is configured ([Email](../Email/Email.md)). Without it the
 link goes into remote-claude's dev mail folder when one is set; else, in Development, to the log;
-anywhere else it is neither sent nor logged, and a forgotten password cannot be reset. The outbox
+anywhere else it is neither sent nor logged, and a forgotten password cannot be reset by email, only
+with `--reset-password` on the server's machine ([below](#from-the-servers-command-line)). The outbox
 holds at most 100 links waiting to be sent: when it is full a new link is dropped (with a warning in
 the log) and the user has to ask again.
 It lives in memory, so links still waiting are lost on a restart, and a send that fails is logged
@@ -82,7 +83,23 @@ The access token names its session, so the server moves that one session onto th
 
 `InitialAccountSeeder` creates an admin from `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD`
 (display name from `INITIAL_ADMIN_DISPLAY_NAME`, else the email's local part) while there are no
-users, and does nothing once there are, so both can be removed after the first start.
+users, and does nothing once there are, so both can be removed after the first start. Both are
+optional: without them it logs how to create the first admin with `--create-user`.
+
+## From the server's command line
+
+`UserCommand` runs `ByteShelf.Server --create-user`, `--reset-password`, `--set-admin` and
+`--unset-admin` against `BYTESHELF_ROOT`, with the server running or stopped, for whoever can run the
+server's executable on its machine (DEPLOYMENT.md). It builds the domain services the API uses
+(`Program.AddDomainServices`) without the web host, so the rules and the change log are the API's:
+`IUserService` creates users and changes roles (the last admin is kept), and
+`IPasswordResetService.SetPasswordAsync` sets a password as a reset link does, ending the user's
+sessions and reset links. A replica refuses them, as its API refuses writes, and so does a database
+with migrations still to run: the server may be running on it, so they never migrate it. Passwords
+come from `IPasswordReader`: stdin when redirected, else typed twice at the terminal, never an
+argument. A new user's email and name, and a user to change, are checked before the password is asked
+for. The command closes its pooled connections before it exits, so with the server stopped SQLite
+removes the `-wal` and `-shm` files it made rather than leaving them owned by whoever ran it.
 
 ## Cleanup
 

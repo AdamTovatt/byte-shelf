@@ -7,7 +7,8 @@ namespace ByteShelf.Server.Users.Services
     /// <summary>
     /// First-run seeding: creates the admin account from <see cref="InitialAdminSettings"/> — but only
     /// while there are no users, so the settings are inert on every later boot and can be removed once
-    /// the admin exists. The display name falls back to the email's local part.
+    /// the admin exists. The display name falls back to the email's local part. The settings are
+    /// optional: without them it logs how to create the first admin with <see cref="UserCommand"/>.
     /// </summary>
     public class InitialAccountSeeder : IHostedService
     {
@@ -35,9 +36,13 @@ namespace ByteShelf.Server.Users.Services
 
             if (string.IsNullOrWhiteSpace(_settings.Email) || string.IsNullOrWhiteSpace(_settings.Password))
             {
-                // Not fatal: a replica receives its users from its primary, and nothing else is
-                // reachable without a user anyway.
-                _logger.LogWarning("There are no users and INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD are not both set, so no admin was created.");
+                // Not fatal: a replica receives its users from its primary, and the first admin can be
+                // created beside the running server.
+                _logger.LogWarning(
+                    "There are no users. Create the first admin on this machine with BYTESHELF_ROOT set to this root: "
+                    + "{Command}, giving --admin (it asks for the password), "
+                    + "or set INITIAL_ADMIN_EMAIL and INITIAL_ADMIN_PASSWORD and restart.",
+                    UserCommand.CreateUserUsage);
                 return;
             }
 

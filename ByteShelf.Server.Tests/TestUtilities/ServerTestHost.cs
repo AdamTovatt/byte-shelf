@@ -140,6 +140,12 @@ namespace ByteShelf.Server.Tests.TestUtilities
             return host;
         }
 
+        /// <summary>Stops the server, leaving its root in place until the host is disposed, for work on a root no server runs on.</summary>
+        public async Task StopAsync()
+        {
+            await _app.StopAsync();
+        }
+
         public async ValueTask DisposeAsync()
         {
             AnonymousClient.Dispose();
@@ -150,17 +156,23 @@ namespace ByteShelf.Server.Tests.TestUtilities
             await TestRoot.DisposeAsync();
         }
 
-        /// <summary>A new client signed in as <paramref name="email"/> with <see cref="Password"/>.</summary>
-        public async Task<HttpClient> CreateSignedInClientAsync(string email)
+        /// <summary>A new client signed in as <paramref name="email"/> with <paramref name="password"/>, <see cref="Password"/> unless given.</summary>
+        public async Task<HttpClient> CreateSignedInClientAsync(string email, string password = Password)
         {
             HttpClient client = _app.GetTestClient();
-            await SignInAsync(client, email);
+            await SignInAsync(client, email, password);
             return client;
         }
 
-        private async Task SignInAsync(HttpClient client, string email)
+        /// <summary>The server's answer to signing in as <paramref name="email"/> with <paramref name="password"/>, whatever it is.</summary>
+        public Task<HttpResponseMessage> TrySignInAsync(string email, string password)
         {
-            HttpResponseMessage login = await AnonymousClient.PostAsJsonAsync("/api/auth/login", new { username = email, password = Password });
+            return AnonymousClient.PostAsJsonAsync("/api/auth/login", new { username = email, password });
+        }
+
+        private async Task SignInAsync(HttpClient client, string email, string password = Password)
+        {
+            HttpResponseMessage login = await TrySignInAsync(email, password);
             login.EnsureSuccessStatusCode();
             using JsonDocument body = JsonDocument.Parse(await login.Content.ReadAsStringAsync());
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", body.RootElement.GetProperty("token").GetString());

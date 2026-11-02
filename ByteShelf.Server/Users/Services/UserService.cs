@@ -72,6 +72,13 @@ namespace ByteShelf.Server.Users.Services
         }
 
         /// <inheritdoc />
+        public async Task<User?> GetUserByEmailAsync(string email)
+        {
+            UserCredentials? credentials = await _userLoginRepository.GetCredentialsByEmailAsync(email);
+            return credentials?.User;
+        }
+
+        /// <inheritdoc />
         public async Task<User> CreateUserAsync(string email, string displayName, string password, IEnumerable<string>? roles = null)
         {
             UserFields.ValidateEmail(email);
