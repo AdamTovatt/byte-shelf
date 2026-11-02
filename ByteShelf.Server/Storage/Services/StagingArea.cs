@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Models;
+using ByteShelfCommon;
 
 namespace ByteShelf.Server.Storage.Services
 {
@@ -84,6 +85,15 @@ namespace ByteShelf.Server.Storage.Services
             await using FileStream file = new FileStream(GetPath(uploadId), FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1, FileOptions.Asynchronous | FileOptions.SequentialScan);
             byte[] hash = await SHA256.HashDataAsync(file, cancellationToken);
             return Convert.ToHexStringLower(hash);
+        }
+
+        /// <summary>Whether the staged bytes start as an age file (<see cref="FileEncryption.StartsAsAgeFile"/>).</summary>
+        public async Task<bool> StartsAsAgeFileAsync(Guid uploadId, CancellationToken cancellationToken)
+        {
+            await using FileStream file = new FileStream(GetPath(uploadId), FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: 1, FileOptions.Asynchronous);
+            byte[] start = new byte[FileEncryption.AgeHeader.Length];
+            int read = await file.ReadAtLeastAsync(start, start.Length, throwOnEndOfStream: false, cancellationToken);
+            return FileEncryption.StartsAsAgeFile(start.AsSpan(0, read));
         }
 
         /// <summary>Makes sure an upload's staging file exists, so a zero-byte upload has something to finish.</summary>

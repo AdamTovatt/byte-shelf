@@ -38,19 +38,19 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public async Task DownloadToFile_TwoDownloadsToOnePath_NeitherBreaksTheOther()
         {
-            await UploadAsync("/one.txt", "first");
-            await UploadAsync("/two.txt", "second");
+            ShelfFile one = await UploadAsync("/one.txt", "first");
+            ShelfFile two = await UploadAsync("/two.txt", "second");
             TaskCompletionSource reading = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             TaskCompletionSource release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            IShelfClient shelf = ShelfStandIn.Over(Docs, (method, args) => method.Name == nameof(IShelfClient.OpenReadAsync) && args![0]!.ToString() == "/one.txt"
+            IShelfClient shelf = ShelfStandIn.Over(Docs, (method, args) => method.Name == nameof(IShelfClient.OpenReadAsync) && ((EntryReference)args![0]!).Id == one.Id
                 ? Task.FromResult<Stream>(new HeldStream(Encoding.UTF8.GetBytes("first"), reading, release.Task))
                 : null);
             string target = _work.File("a.txt");
 
             // The first holds its side file open, mid-download, while the second runs from start to end.
-            Task<string> first = Transfers.DownloadToFileAsync(shelf, "/one.txt", target, overwrite: true, CancellationToken.None);
+            Task<string> first = Transfers.DownloadToFileAsync(shelf, one, target, overwrite: true, EncryptedFiles.SavedAsTheyAre, CancellationToken.None);
             await reading.Task;
-            await Transfers.DownloadToFileAsync(shelf, "/two.txt", target, overwrite: true, CancellationToken.None);
+            await Transfers.DownloadToFileAsync(shelf, two, target, overwrite: true, EncryptedFiles.SavedAsTheyAre, CancellationToken.None);
             string secondSaved = await File.ReadAllTextAsync(target);
             release.SetResult();
             await first;

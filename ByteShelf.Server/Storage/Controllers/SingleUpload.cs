@@ -12,10 +12,10 @@ namespace ByteShelf.Server.Storage.Controllers
         /// </summary>
         /// <param name="whenLengthMissing">What the 411 says to do instead.</param>
         /// <exception cref="LengthRequiredException">The request has no <c>Content-Length</c>.</exception>
-        public static StartUploadRequest Of(HttpRequest request, string path, bool overwrite, string? description, string whenLengthMissing)
+        public static StartUploadRequest Of(HttpRequest request, string path, bool overwrite, string? description, bool encrypted, string whenLengthMissing)
         {
             long length = request.ContentLength ?? throw new LengthRequiredException(whenLengthMissing);
-            return new StartUploadRequest { Path = path, SizeBytes = length, ContentType = request.ContentType, Overwrite = overwrite, Description = description };
+            return new StartUploadRequest { Path = path, SizeBytes = length, ContentType = request.ContentType, Overwrite = overwrite, Description = description, Encrypted = encrypted };
         }
     }
 }

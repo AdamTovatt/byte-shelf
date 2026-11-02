@@ -56,6 +56,10 @@ file goes the other way through `create_upload_link`, whose link the agent's she
 sends it to with `curl -T`; the link acts as the key, checked again when it is used, and is put on
 the same address a `share_file` link is.
 
+A password never goes through a tool call, so the tools leave encrypted files alone: `download_file`
+refuses one saying so, `download_directory` leaves them out, and the server refuses links to them and
+plain files under an encrypted directory.
+
 ## `/llms.txt`
 
 Open to anyone, built in from `Mcp/llms.txt`: what ByteShelf is, and how an agent reaches it over

@@ -95,6 +95,22 @@ give a lifetime up to 24 hours, with an optional description and `Overwrite`. Ma
 so a read key cannot, and the link acts with the client's access, checked again when it is used. Its
 URL is made absolute as a download link's is.
 
+## Encryption
+
+`ByteShelfClient.Encryption` encrypts with a password as every ByteShelf client does: an age file
+(c2sp.org/age) with a scrypt recipient, which `age -d` opens too. `AgeEncryption` encrypts and
+decrypts streams; it follows the specification, passes its official test vectors, reads what typage
+(age in JavaScript) writes and the other way round, and needs the platform's ChaCha20-Poly1305
+(`IsSupported`). Store an encrypted file with `UploadOptions.Encrypted`. A directory is encrypted
+with `EncryptDirectoryAsync` and a check from `FolderPassword.CreateCheckAsync`; from then on every
+file stored under it must be encrypted with its password, which `FolderPassword.MatchesAsync` tells
+against the check that `GetEncryptionAsync` or a listing's `EncryptedBy` answers. Files already
+there stay as they are until the client encrypts them in place. `RemoveDirectoryEncryptionAsync`
+ends the rule and leaves the files encrypted. The server keeps the rule
+([Storage](../ByteShelf.Server/Storage/Storage.md#encryption-shelfencryption)), and so does the
+in-memory client. Neither kind of link reaches an encrypted file: making a download link to one, or
+an upload link under an encrypted directory or over an encrypted file, throws a conflict.
+
 ## In tests
 
 `InMemoryByteShelfClient` keeps everything in memory and follows the server's rules for paths,

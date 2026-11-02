@@ -11,5 +11,11 @@ namespace ByteShelfCommon
 
         /// <summary>The files directly inside it.</summary>
         public required IReadOnlyList<ShelfFile> Files { get; init; }
+
+        /// <summary>
+        /// The encrypted directory the listed one is (or is inside), whose password every file stored
+        /// here is encrypted with from its encryption on; null when it is not encrypted.
+        /// </summary>
+        public EncryptedFolder? EncryptedBy { get; init; }
     }
 }

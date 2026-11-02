@@ -45,6 +45,50 @@ namespace ByteShelf.Server.Storage.Controllers
             return Ok(await _directoryService.MoveAsync(Shelf, EntryReference.From(path, id), request.ToPath));
         }
 
+        /// <summary>
+        /// The encrypted directory a file stored at <c>path</c> (a file's or a directory's, existing or
+        /// not) would be under, with its check; <c>encryptedBy</c> is null when there is none.
+        /// </summary>
+        [HttpGet("encryption")]
+        [ShelfAccess(ShelfOperation.Read)]
+        [ProducesResponseType(typeof(PathEncryption), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        public async Task<IActionResult> GetEncryption([FromQuery] string path)
+        {
+            return Ok(await _directoryService.GetEncryptionAsync(Shelf, path));
+        }
+
+        /// <summary>
+        /// Encrypts a directory: from now on every file stored under it must be encrypted with the
+        /// password the body's <c>check</c> was. Its files are not touched; a client encrypts them. 409
+        /// when it is encrypted already, or inside or above an encrypted directory; 400 for a check that is
+        /// not base64 of an age file of at most 1024 bytes.
+        /// </summary>
+        [HttpPut("encryption")]
+        [ShelfAccess(ShelfOperation.Write)]
+        [ProducesResponseType(typeof(ShelfDirectory), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 409)]
+        public async Task<IActionResult> Encrypt([FromQuery] string? path, [FromQuery] Guid? id, [FromBody] SetFolderEncryptionRequest request)
+        {
+            return Ok(await _directoryService.EncryptAsync(Shelf, EntryReference.From(path, id), request.Check));
+        }
+
+        /// <summary>
+        /// Stops encrypting a directory: files stored under it may be plain again. The files there stay
+        /// encrypted until a client decrypts them. 409 when it is not encrypted itself.
+        /// </summary>
+        [HttpDelete("encryption")]
+        [ShelfAccess(ShelfOperation.Write)]
+        [ProducesResponseType(typeof(ShelfDirectory), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 409)]
+        public async Task<IActionResult> RemoveEncryption([FromQuery] string? path, [FromQuery] Guid? id)
+        {
+            return Ok(await _directoryService.RemoveEncryptionAsync(Shelf, EntryReference.From(path, id)));
+        }
+
         /// <summary>Moves a directory and everything in it to the trash as one deletion.</summary>
         [HttpDelete]
         [ShelfAccess(ShelfOperation.Write)]

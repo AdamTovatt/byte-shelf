@@ -25,6 +25,9 @@ npm run build      # into dist/, which a published server serves
 
 Before the first `npm run test:e2e`, install its browser with `npx playwright install chromium`.
 
+`src/lib/encryption/interop.test.ts` checks typage (`age-encryption`) decrypts `dotnet.age`, an age
+file ByteShelfClient wrote; ByteShelfClient's tests check the other way round.
+
 `src/types/api.ts` is generated from the server's OpenAPI document, never edited by hand. After an API
 change, start the server in schema-only mode (it needs no root or database) where codegen reads it,
 then generate:

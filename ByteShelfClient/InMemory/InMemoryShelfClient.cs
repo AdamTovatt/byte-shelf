@@ -61,6 +61,7 @@ namespace ByteShelfClient.InMemory
                     Directory = shelf.ToShelfDirectory(listed),
                     Directories = shelf.LiveChildDirectories(listed.Id).OrderBy(child => child.Name, StoredOrder.Instance).Select(shelf.ToListedDirectory).ToList(),
                     Files = shelf.LiveFilesIn(listed.Id).OrderBy(file => file.Name, StoredOrder.Instance).Select(shelf.ToShelfFile).ToList(),
+                    EncryptedBy = shelf.ToEncryptedFolder(shelf.EncryptedFolderOf(listed.Id)),
                 };
             });
         }
@@ -99,7 +100,7 @@ namespace ByteShelfClient.InMemory
             await content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
             byte[] bytes = buffer.ToArray();
 
-            return await Run(cancellationToken, shelf => Store(shelf, upload.Path, bytes, upload.ContentType, upload.Description, upload.Overwrite)).ConfigureAwait(false);
+            return await Run(cancellationToken, shelf => Store(shelf, upload, bytes)).ConfigureAwait(false);
         }
 
         public Task<ShelfFile> SetDescriptionAsync(EntryReference file, string? description, CancellationToken cancellationToken = default)
@@ -159,22 +160,86 @@ namespace ByteShelfClient.InMemory
         {
             ArgumentNullException.ThrowIfNull(file);
             TimeSpan normalized = DownloadLink.Lifetime.Normalize(lifetime);
-            return Run(cancellationToken, shelf => new DownloadLink
+            return Run(cancellationToken, shelf =>
             {
-                Url = $"https://byteshelf.invalid/api/downloads/{shelf.GetFile(file).Id:N}{Guid.NewGuid():N}",
-                ExpiresAt = _store.Now + normalized,
+                FileNode linked = shelf.GetFile(file);
+                if (linked.Encrypted)
+                {
+                    throw InMemoryErrors.Conflict($"'{shelf.ToShelfFile(linked).Path}' is encrypted with a password, so it is opened in a client that has the password, never by a link.");
+                }
+
+                return new DownloadLink
+                {
+                    Url = $"https://byteshelf.invalid/api/downloads/{linked.Id:N}{Guid.NewGuid():N}",
+                    ExpiresAt = _store.Now + normalized,
+                };
             });
         }
 
         public Task<UploadLink> CreateUploadLinkAsync(string path, UploadLinkOptions? options = null, CancellationToken cancellationToken = default)
         {
             NormalizedUploadLinkRequest request = (options ?? new UploadLinkOptions()).Normalize(path);
-            return Run(cancellationToken, _ => new UploadLink
+            return Run(cancellationToken, shelf =>
             {
-                Url = $"https://byteshelf.invalid/api/upload-links/{Guid.NewGuid():N}",
-                ExpiresAt = _store.Now + request.Lifetime,
-                Path = request.Path,
-                Overwrite = request.Overwrite,
+                shelf.RequireLinkTarget(request.Path);
+                return new UploadLink
+                {
+                    Url = $"https://byteshelf.invalid/api/upload-links/{Guid.NewGuid():N}",
+                    ExpiresAt = _store.Now + request.Lifetime,
+                    Path = request.Path,
+                    Overwrite = request.Overwrite,
+                };
+            });
+        }
+
+        public Task<PathEncryption> GetEncryptionAsync(string path, CancellationToken cancellationToken = default)
+        {
+            string normalizedPath = ShelfPath.Normalize(path);
+            return Run(cancellationToken, shelf => new PathEncryption { EncryptedBy = shelf.ToEncryptedFolder(shelf.EncryptedFolderFor(normalizedPath)) });
+        }
+
+        public Task<ShelfDirectory> EncryptDirectoryAsync(EntryReference directory, string check, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(directory);
+            return Run(cancellationToken, shelf =>
+            {
+                // As the server's ShelfEncryption.EncryptAsync.
+                byte[] bytes = InMemoryErrors.Checked(() => FileEncryption.DecodeCheck(check));
+                DirectoryNode encrypted = shelf.GetDirectory(directory);
+                string path = shelf.PathOf(encrypted);
+                if (encrypted.EncryptionCheck != null)
+                {
+                    throw InMemoryErrors.Conflict($"'{path}' is encrypted already. Remove its encryption first to give it another password.");
+                }
+
+                if (encrypted.ParentId is Guid parentId && shelf.EncryptedFolderOf(parentId) is DirectoryNode above)
+                {
+                    throw InMemoryErrors.Conflict($"'{path}' is inside the encrypted folder '{shelf.PathOf(above)}', whose password covers it.");
+                }
+
+                if (shelf.Descendants(encrypted).Any(descendant => descendant.IsLive && descendant.EncryptionCheck != null))
+                {
+                    throw InMemoryErrors.Conflict($"A folder under '{path}' is encrypted with its own password. Remove its encryption first.");
+                }
+
+                encrypted.EncryptionCheck = bytes;
+                return shelf.ToShelfDirectory(encrypted);
+            });
+        }
+
+        public Task<ShelfDirectory> RemoveDirectoryEncryptionAsync(EntryReference directory, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(directory);
+            return Run(cancellationToken, shelf =>
+            {
+                DirectoryNode plain = shelf.GetDirectory(directory);
+                if (plain.EncryptionCheck == null)
+                {
+                    throw InMemoryErrors.Conflict($"'{shelf.PathOf(plain)}' is not an encrypted folder.");
+                }
+
+                plain.EncryptionCheck = null;
+                return shelf.ToShelfDirectory(plain);
             });
         }
 
@@ -199,6 +264,7 @@ namespace ByteShelfClient.InMemory
 
                 DateTimeOffset now = _store.Now;
                 (DirectoryNode parent, string name) = shelf.PrepareDestination(normalizedPath, now);
+                shelf.RequireMove(movedDirectoryId: null, moved.DirectoryId, parent.Id, shelf.ToShelfFile(moved).Path);
                 moved.DirectoryId = parent.Id;
                 moved.Name = name;
                 moved.UpdatedAt = now;
@@ -232,6 +298,7 @@ namespace ByteShelfClient.InMemory
 
                 EnsurePathsFit(shelf, moved, normalizedPath);
                 (DirectoryNode parent, string name) = shelf.PrepareDestination(normalizedPath, _store.Now);
+                shelf.RequireMove(moved.Id, moved.ParentId!.Value, parent.Id, currentPath);
                 moved.ParentId = parent.Id;
                 moved.Name = name;
                 return shelf.ToShelfDirectory(moved);
@@ -309,6 +376,16 @@ namespace ByteShelfClient.InMemory
                 }
 
                 shelf.EnsureNameAvailable(container.Id, name, path, mayReplaceFile: false);
+
+                // As the server's ShelfEncryption.RequireRestoreAsync.
+                bool holdsPlainFile = shelf.Files.Any(file => file.DeletionId == deletionId && !file.Encrypted);
+                bool holdsEncryptedDirectory = shelf.Directories.Any(directory => directory.DeletionId == deletionId && directory.EncryptionCheck != null);
+                if (shelf.EncryptedFolderOf(container.Id) is DirectoryNode folder && (holdsPlainFile || holdsEncryptedDirectory))
+                {
+                    throw InMemoryErrors.Conflict(
+                        $"'{path}' cannot be restored: the folder it was in is now under the encrypted folder '{shelf.PathOf(folder)}', and what it holds is not encrypted with that folder's password.");
+                }
+
                 DateTimeOffset now = _store.Now;
                 foreach (DirectoryNode directory in shelf.Directories.Where(directory => directory.DeletionId == deletionId))
                 {
@@ -439,11 +516,19 @@ namespace ByteShelfClient.InMemory
         }
 
         /// <summary>Stores a file as an upload does on the server: refuses up front, then replaces and creates what it needs.</summary>
-        private ShelfFile Store(InMemoryShelf shelf, string normalizedPath, byte[] bytes, string contentType, string? description, bool overwrite)
+        private ShelfFile Store(InMemoryShelf shelf, NormalizedUpload upload, byte[] bytes)
         {
+            string normalizedPath = upload.Path;
+            bool overwrite = upload.Overwrite;
             if (normalizedPath == ShelfPath.Root)
             {
                 throw InMemoryErrors.Invalid("A file cannot be stored at the root itself; give it a name.");
+            }
+
+            shelf.RequireStore(normalizedPath, upload.Encrypted);
+            if (upload.Encrypted && !FileEncryption.StartsAsAgeFile(bytes))
+            {
+                throw InMemoryErrors.Invalid($"'{normalizedPath}' was sent as encrypted, but it is not an age file.");
             }
 
             DirectoryNode? existingDirectory = shelf.FindDirectory(ShelfPath.GetParent(normalizedPath));
@@ -477,12 +562,13 @@ namespace ByteShelfClient.InMemory
                 Id = Guid.NewGuid(),
                 DirectoryId = directory.Id,
                 Name = name,
-                ContentType = contentType,
+                ContentType = upload.ContentType,
                 Content = bytes,
                 Sha256 = Sha256Of(bytes),
                 CreatedAt = now,
                 UpdatedAt = now,
-                Description = description ?? replaced?.Description,
+                Description = upload.Description ?? replaced?.Description,
+                Encrypted = upload.Encrypted,
             };
 
             shelf.Files.Add(stored);

@@ -16,6 +16,7 @@ AOT-compatible.
 | `DownloadLink` | A link to a file's contents that works without a token until it runs out, and the bounds of its lifetime (`Lifetime`: a day by default, at most 7 days). |
 | `UploadLink`, `CreateUploadLinkRequest`, `NormalizedUploadLinkRequest` | A link that stores one file sent to it without a token, and asking for one (`Lifetime`: 15 minutes by default, at most 24 hours). |
 | `LinkLifetime` | One kind of link's lifetime rule: its default, its bounds and `Normalize`. |
+| `FileEncryption`, `EncryptedFolder`, `PathEncryption`, `SetFolderEncryptionRequest` | Password encryption: how an age file starts, an encrypted directory's check text, an encrypted directory with its check, what a path is encrypted under, and encrypting a directory. |
 | `ShelfDirectory`, `DirectoryListing`, `ListedDirectory` | A directory, what one holds, and a directory in a listing with the size and count of the files under it. |
 | `TreeQuery`, `DirectoryTree` | What to list of everything under a directory (a depth, a page), and one page of it. |
 | `StoredOrder` | The order names and paths are listed in: by code point, as the server's database sorts them. |

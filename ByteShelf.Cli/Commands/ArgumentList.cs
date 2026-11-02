@@ -20,7 +20,7 @@ namespace ByteShelf.Cli.Commands
         {
             "--email", "--name", "--quota", "--type", "--description",
             "--min-size", "--max-size", "--created-from", "--created-before", "--updated-from", "--updated-before",
-            "--sha256", "--limit", "--after", "--expires", "--depth",
+            "--sha256", "--limit", "--after", "--expires", "--depth", "--password-file",
         };
 
         private readonly List<string> _positionals = new List<string>();

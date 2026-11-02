@@ -14,6 +14,7 @@ namespace ByteShelf.Server.Storage.Services
         private readonly IUploadRepository _uploadRepository;
         private readonly IFileRepository _fileRepository;
         private readonly ShelfTree _shelfTree;
+        private readonly ShelfEncryption _encryption;
         private readonly ITrashService _trashService;
         private readonly StagingArea _stagingArea;
         private readonly ObjectStore _objectStore;
@@ -27,6 +28,7 @@ namespace ByteShelf.Server.Storage.Services
             IUploadRepository uploadRepository,
             IFileRepository fileRepository,
             ShelfTree shelfTree,
+            ShelfEncryption encryption,
             ITrashService trashService,
             StagingArea stagingArea,
             ObjectStore objectStore,
@@ -39,6 +41,7 @@ namespace ByteShelf.Server.Storage.Services
             _uploadRepository = uploadRepository;
             _fileRepository = fileRepository;
             _shelfTree = shelfTree;
+            _encryption = encryption;
             _trashService = trashService;
             _stagingArea = stagingArea;
             _objectStore = objectStore;
@@ -176,6 +179,7 @@ namespace ByteShelf.Server.Storage.Services
                 ReceivedBytes = 0,
                 Overwrite = overwrite,
                 Description = FileDescription.Normalize(request.Description),
+                Encrypted = request.Encrypted,
                 IsResumable = isResumable,
                 CreatedAt = now,
                 LastActivityAt = now,
@@ -185,7 +189,7 @@ namespace ByteShelf.Server.Storage.Services
             {
                 // Refuse up front what finishing would refuse anyway, before any byte is sent. Finishing
                 // checks again, since the shelf can change while the bytes arrive.
-                await EnsureTargetAcceptsAsync(shelf.Id, normalizedPath, overwrite, session);
+                await EnsureTargetAcceptsAsync(shelf.Id, normalizedPath, overwrite, upload.Encrypted, session);
 
                 Shelf current = await _shelfRepository.GetByIdAsync(shelf.Id, session)
                     ?? throw new NotFoundException($"There is no shelf '{shelf.Name}'.");
@@ -217,6 +221,12 @@ namespace ByteShelf.Server.Storage.Services
         /// </summary>
         private async Task<ShelfFile> FinishAsync(UploadRecord upload, CancellationToken cancellationToken)
         {
+            // The server cannot tell a right password, but it can tell what is no age file at all.
+            if (upload.Encrypted && !await _stagingArea.StartsAsAgeFileAsync(upload.Id, cancellationToken))
+            {
+                throw new ArgumentException($"'{upload.Path}' was sent as encrypted, but it is not an age file.");
+            }
+
             string sha256 = await _stagingArea.ComputeSha256Async(upload.Id, cancellationToken);
 
             using (await _objectStore.LockAsync(sha256, CancellationToken.None))
@@ -226,7 +236,7 @@ namespace ByteShelf.Server.Storage.Services
                 {
                     await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
                     {
-                        await EnsureTargetAcceptsAsync(upload.ShelfId, upload.Path, upload.Overwrite, session);
+                        await EnsureTargetAcceptsAsync(upload.ShelfId, upload.Path, upload.Overwrite, upload.Encrypted, session);
 
                         string directoryPath = ShelfPath.GetParent(upload.Path);
                         string name = ShelfPath.GetName(upload.Path);
@@ -253,6 +263,7 @@ namespace ByteShelf.Server.Storage.Services
                             // A new version of a file is still that file: it keeps what it was
                             // described as unless the upload says anew.
                             Description = upload.Description ?? replaced?.Description,
+                            Encrypted = upload.Encrypted,
                         };
 
                         await _fileRepository.InsertAsync(file, session);
@@ -276,8 +287,10 @@ namespace ByteShelf.Server.Storage.Services
         }
 
         /// <summary>Throws unless a file may be stored at <paramref name="normalizedPath"/> as things stand.</summary>
-        private async Task EnsureTargetAcceptsAsync(Guid shelfId, string normalizedPath, bool overwrite, IDbSession session)
+        private async Task EnsureTargetAcceptsAsync(Guid shelfId, string normalizedPath, bool overwrite, bool encrypted, IDbSession session)
         {
+            await _encryption.RequireStoreAsync(shelfId, normalizedPath, encrypted, session);
+
             DirectoryRecord? directory = await _shelfTree.FindDirectoryAsync(shelfId, ShelfPath.GetParent(normalizedPath), session);
             if (directory == null)
             {

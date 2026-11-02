@@ -75,6 +75,28 @@ namespace ByteShelfClient
         /// </summary>
         Task<UploadLink> CreateUploadLinkAsync(string path, UploadLinkOptions? options = null, CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// The encrypted directory a file stored at <paramref name="path"/> (existing or not) would be
+        /// under, with its check, whose password the file must be encrypted with; its
+        /// <see cref="PathEncryption.EncryptedBy"/> is null when there is none.
+        /// </summary>
+        Task<PathEncryption> GetEncryptionAsync(string path, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Encrypts a directory with the password <paramref name="check"/> was made with
+        /// (<see cref="Encryption.FolderPassword.CreateCheckAsync"/>): from now on every file stored under it
+        /// must be encrypted with that password (<see cref="UploadOptions.Encrypted"/>). Its files are not
+        /// touched; encrypt them afterwards. Refused (<c>conflict</c>) when it is encrypted already, or is
+        /// inside or above an encrypted directory. Needs write access.
+        /// </summary>
+        Task<ShelfDirectory> EncryptDirectoryAsync(EntryReference directory, string check, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Stops encrypting a directory: files stored under it may be plain again. The files there stay
+        /// encrypted; decrypt them afterwards. Refused (<c>conflict</c>) when it is not encrypted itself.
+        /// </summary>
+        Task<ShelfDirectory> RemoveDirectoryEncryptionAsync(EntryReference directory, CancellationToken cancellationToken = default);
+
         /// <summary>Creates a directory and any missing directory above it; an existing one is answered as it is.</summary>
         Task<ShelfDirectory> CreateDirectoryAsync(string path, CancellationToken cancellationToken = default);
 

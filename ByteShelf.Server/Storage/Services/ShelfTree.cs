@@ -25,6 +25,22 @@ namespace ByteShelf.Server.Storage.Services
         /// <summary>The live directory at <paramref name="normalizedPath"/>, or null when any part of it is missing.</summary>
         public async Task<DirectoryRecord?> FindDirectoryAsync(Guid shelfId, string normalizedPath, IDbSession? session = null)
         {
+            (DirectoryRecord deepest, bool reached) = await WalkAsync(shelfId, normalizedPath, session);
+            return reached ? deepest : null;
+        }
+
+        /// <summary>
+        /// The live directory at <paramref name="normalizedPath"/>, or the deepest one on the way to it
+        /// when part of it is missing: what a path not yet created will be under.
+        /// </summary>
+        public async Task<DirectoryRecord> FindNearestDirectoryAsync(Guid shelfId, string normalizedPath, IDbSession? session = null)
+        {
+            return (await WalkAsync(shelfId, normalizedPath, session)).Deepest;
+        }
+
+        /// <summary>Walks down from the root by name: the deepest live directory on the way, and whether it is the path's own.</summary>
+        private async Task<(DirectoryRecord Deepest, bool Reached)> WalkAsync(Guid shelfId, string normalizedPath, IDbSession? session)
+        {
             DirectoryRecord current = await _directoryRepository.GetRootAsync(shelfId, session);
 
             foreach (string name in ShelfPath.GetNames(normalizedPath))
@@ -32,13 +48,13 @@ namespace ByteShelf.Server.Storage.Services
                 DirectoryRecord? child = await _directoryRepository.GetLiveChildAsync(current.Id, name, session);
                 if (child == null)
                 {
-                    return null;
+                    return (current, false);
                 }
 
                 current = child;
             }
 
-            return current;
+            return (current, true);
         }
 
         /// <summary>The live directory a reference names on the shelf.</summary>

@@ -15,6 +15,9 @@ namespace ByteShelf.Server.Storage.Models
 
         /// <summary>Free text about the file, as <see cref="ByteShelfCommon.FileDescription.Normalize"/> left it; null for none.</summary>
         public string? Description { get; init; }
+
+        /// <summary>Whether the contents are an age file encrypted with a password, which only a client can open.</summary>
+        public bool Encrypted { get; init; }
         public DateTimeOffset? DeletedAt { get; init; }
         public Guid? DeletionId { get; init; }
     }

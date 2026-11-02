@@ -30,6 +30,7 @@ namespace ByteShelf.Server.Storage
             services.AddScoped<ITrashRepository, TrashRepository>();
 
             services.AddScoped<ShelfTree>();
+            services.AddScoped<ShelfEncryption>();
             services.AddScoped<ObjectCollector>();
             services.AddScoped<IShelfService, ShelfService>();
             services.AddScoped<ITrashService, TrashService>();

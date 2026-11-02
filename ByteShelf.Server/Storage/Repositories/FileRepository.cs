@@ -23,12 +23,13 @@ namespace ByteShelf.Server.Storage.Repositories
             created_at AS {nameof(FileEntity.CreatedAt)},
             updated_at AS {nameof(FileEntity.UpdatedAt)},
             description,
+            encrypted,
             deleted_at AS {nameof(FileEntity.DeletedAt)},
             deletion_id AS {nameof(FileEntity.DeletionId)}";
 
         private const string InsertSql = @"
-            INSERT INTO file (id, shelf_id, directory_id, name, content_type, size_bytes, sha256, created_at, updated_at, description, deleted_at, deletion_id, name_fold, description_fold, media_type)
-            VALUES (@Id, @ShelfId, @DirectoryId, @Name, @ContentType, @SizeBytes, @Sha256, @CreatedAt, @UpdatedAt, @Description, @DeletedAt, @DeletionId, @NameFold, @DescriptionFold, @MediaType)";
+            INSERT INTO file (id, shelf_id, directory_id, name, content_type, size_bytes, sha256, created_at, updated_at, description, encrypted, deleted_at, deletion_id, name_fold, description_fold, media_type)
+            VALUES (@Id, @ShelfId, @DirectoryId, @Name, @ContentType, @SizeBytes, @Sha256, @CreatedAt, @UpdatedAt, @Description, @Encrypted, @DeletedAt, @DeletionId, @NameFold, @DescriptionFold, @MediaType)";
 
         private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict(InsertSql);
 
@@ -260,6 +261,16 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<bool> DeletionHoldsPlainFileAsync(Guid deletionId, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string query = $"SELECT EXISTS (SELECT 1 FROM file WHERE deletion_id = @{nameof(deletionId)} AND encrypted = 0)";
+                return await dbSession.Connection.ExecuteScalarAsync<bool>(query, new { deletionId }, transaction: dbSession.Transaction);
+            }, session);
+        }
+
+        /// <inheritdoc />
         public async Task<int> RestoreDeletionAsync(Guid deletionId, DateTimeOffset restoredAt, IDbSession session)
         {
             string query = $@"
@@ -397,6 +408,7 @@ namespace ByteShelf.Server.Storage.Repositories
                 file.CreatedAt,
                 file.UpdatedAt,
                 file.Description,
+                file.Encrypted,
                 file.DeletedAt,
                 file.DeletionId,
                 NameFold = NameFold(file.Name),
@@ -434,6 +446,7 @@ namespace ByteShelf.Server.Storage.Repositories
             public DateTimeOffset CreatedAt { get; set; }
             public DateTimeOffset UpdatedAt { get; set; }
             public string? Description { get; set; }
+            public bool Encrypted { get; set; }
             public DateTimeOffset? DeletedAt { get; set; }
             public Guid? DeletionId { get; set; }
 
@@ -451,6 +464,7 @@ namespace ByteShelf.Server.Storage.Repositories
                     CreatedAt = CreatedAt,
                     UpdatedAt = UpdatedAt,
                     Description = Description,
+                    Encrypted = Encrypted,
                     DeletedAt = DeletedAt,
                     DeletionId = DeletionId,
                 };

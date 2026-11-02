@@ -1,4 +1,5 @@
 using ByteShelfClient;
+using ByteShelfClient.Encryption;
 using ByteShelfCommon;
 
 namespace ByteShelf.Tools
@@ -32,6 +33,10 @@ namespace ByteShelf.Tools
                 HttpRequestException unreachable => new Failure($"Could not reach the server: {unreachable.Message}", isMisuse: false),
                 OperationCanceledException => new Failure("The server did not answer in time.", isMisuse: false),
                 IOException or UnauthorizedAccessException or TimeoutException => new Failure(exception.Message, isMisuse: false),
+
+                // A wrong password is given wrongly; a damaged file is broken.
+                AgeException age => new Failure(age.Message, isMisuse: age.Failure == AgeFailure.NoMatch),
+                PlatformNotSupportedException => new Failure(exception.Message, isMisuse: false),
                 _ => null,
             };
         }

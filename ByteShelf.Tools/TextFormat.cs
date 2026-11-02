@@ -48,19 +48,31 @@ namespace ByteShelf.Tools
             text.Append(listing.Directory.Path).Append("  (")
                 .Append(listing.Directories.Count).Append(" directories, ")
                 .Append(listing.Files.Count).Append(" files)");
+            if (listing.EncryptedBy is EncryptedFolder folder)
+            {
+                text.Append("  encrypted with the password of ").Append(folder.Directory.Path);
+            }
 
             foreach (ListedDirectory listed in listing.Directories)
             {
                 text.AppendLine().Append("  ").Append(listed.Directory.Name).Append("/  ")
-                    .Append(Size(listed.SizeBytes)).Append(" in ").Append(CountOf(listed.FileCount, "file", "files"));
+                    .Append(Size(listed.SizeBytes)).Append(" in ").Append(CountOf(listed.FileCount, "file", "files"))
+                    .Append(EncryptedMark(listed.Directory.Encrypted));
             }
 
             foreach (ShelfFile file in listing.Files)
             {
-                text.AppendLine().Append("  ").Append(file.Name).Append("  ").Append(Size(file.SizeBytes)).Append("  ").Append(Time(file.UpdatedAt));
+                text.AppendLine().Append("  ").Append(file.Name).Append("  ").Append(Size(file.SizeBytes)).Append("  ").Append(Time(file.UpdatedAt))
+                    .Append(EncryptedMark(file.Encrypted));
             }
 
             return text.ToString();
+        }
+
+        /// <summary>What follows an encrypted entry on its line.</summary>
+        private static string EncryptedMark(bool encrypted)
+        {
+            return encrypted ? "  (encrypted)" : string.Empty;
         }
 
         public static string File(ShelfFile file)
@@ -81,6 +93,11 @@ namespace ByteShelf.Tools
                 lines.Add(Field("description", file.Description));
             }
 
+            if (file.Encrypted)
+            {
+                lines.Add(Field("encrypted", "with a password, as an age file; size and sha256 are of the encrypted bytes"));
+            }
+
             return Lines(lines);
         }
 
@@ -94,10 +111,11 @@ namespace ByteShelf.Tools
 
         /// <summary>What a folder transfer did, each file or folder it left out, and what stopped it early.</summary>
         /// <param name="verb">What was done, such as "Uploaded".</param>
-        public static string FolderTransfer(FolderTransferResult result, string verb)
+        /// <param name="where">How the files relate to the target: "to" for a transfer, "under" for what was done in place.</param>
+        public static string FolderTransfer(FolderTransferResult result, string verb, string where = "to")
         {
             string files = result.Files == 1 ? "1 file" : $"{result.Files} files";
-            List<string> lines = new List<string> { $"{verb} {files} ({Size(result.Bytes)}) to {result.Target}." };
+            List<string> lines = new List<string> { $"{verb} {files} ({Size(result.Bytes)}) {where} {result.Target}." };
             if (result.LeftOut.Count > 0)
             {
                 lines.Add(LeftOut(result) + ":");
@@ -137,7 +155,9 @@ namespace ByteShelf.Tools
         public static string Tree(DirectoryTree tree, Func<string, string> more)
         {
             List<string> lines = tree.InOrder()
-                .Select(entry => entry.File == null ? entry.Path + "/" : $"{entry.Path}  {Size(entry.File.SizeBytes)}")
+                .Select(entry => entry.File == null
+                    ? entry.Path + "/" + EncryptedMark(entry.Directory!.Encrypted)
+                    : $"{entry.Path}  {Size(entry.File.SizeBytes)}{EncryptedMark(entry.File.Encrypted)}")
                 .ToList();
 
             if (lines.Count == 0)
@@ -174,14 +194,14 @@ namespace ByteShelf.Tools
                 return "No files found.";
             }
 
-            IEnumerable<string> lines = results.Files.Select(file => $"{file.Path}  {Size(file.SizeBytes)}  {Time(file.UpdatedAt)}");
+            IEnumerable<string> lines = results.Files.Select(file => $"{file.Path}  {Size(file.SizeBytes)}  {Time(file.UpdatedAt)}{EncryptedMark(file.Encrypted)}");
             return Lines(results.NextCursor == null ? lines : lines.Append(more(results.NextCursor)));
         }
 
         public static string Directory(ShelfDirectory directory)
         {
             string path = directory.Path == ShelfPath.Root ? ShelfPath.Root : directory.Path + ShelfPath.Separator;
-            return $"{path}  (id {directory.Id:D})";
+            return $"{path}  (id {directory.Id:D}){EncryptedMark(directory.Encrypted)}";
         }
 
         public static string Entry(Entry entry)
@@ -198,6 +218,11 @@ namespace ByteShelf.Tools
         public static string Saved(string localPath)
         {
             return $"Saved {localPath}";
+        }
+
+        public static string SavedEncrypted(string localPath)
+        {
+            return $"Saved {localPath}, encrypted as it is stored; --decrypt saves it decrypted, and age -d opens it too.";
         }
 
         public static string Moved(Entry entry)

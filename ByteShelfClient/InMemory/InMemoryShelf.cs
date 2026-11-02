@@ -70,19 +70,26 @@ namespace ByteShelfClient.InMemory
         /// <summary>The live directory at <paramref name="normalizedPath"/>, or null when any part of it is missing.</summary>
         public DirectoryNode? FindDirectory(string normalizedPath)
         {
+            (DirectoryNode deepest, bool reached) = Walk(normalizedPath);
+            return reached ? deepest : null;
+        }
+
+        /// <summary>Walks down from the root by name: the deepest live directory on the way, and whether it is the path's own.</summary>
+        private (DirectoryNode Deepest, bool Reached) Walk(string normalizedPath)
+        {
             DirectoryNode current = Root;
             foreach (string name in ShelfPath.GetNames(normalizedPath))
             {
                 DirectoryNode? child = LiveChildDirectories(current.Id).FirstOrDefault(directory => directory.Name == name);
                 if (child == null)
                 {
-                    return null;
+                    return (current, false);
                 }
 
                 current = child;
             }
 
-            return current;
+            return (current, true);
         }
 
         public DirectoryNode GetDirectory(EntryReference reference)
@@ -181,6 +188,70 @@ namespace ByteShelfClient.InMemory
             return PathOf(Directories.First(directory => directory.Id == directoryId));
         }
 
+        /// <summary>The directory itself when it is encrypted, else its nearest encrypted ancestor; null for none.</summary>
+        public DirectoryNode? EncryptedFolderOf(Guid directoryId)
+        {
+            for (DirectoryNode? current = Directories.First(directory => directory.Id == directoryId); current != null; current = Directories.FirstOrDefault(parent => parent.Id == current.ParentId))
+            {
+                if (current.EncryptionCheck != null)
+                {
+                    return current;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>The encrypted directory a file in <paramref name="normalizedDirectoryPath"/> is, or would be, under.</summary>
+        public DirectoryNode? EncryptedFolderFor(string normalizedDirectoryPath)
+        {
+            return EncryptedFolderOf(Walk(normalizedDirectoryPath).Deepest.Id);
+        }
+
+        public EncryptedFolder? ToEncryptedFolder(DirectoryNode? folder)
+        {
+            return folder?.EncryptionCheck is byte[] check
+                ? new EncryptedFolder { Directory = ToShelfDirectory(folder), Check = Convert.ToBase64String(check) }
+                : null;
+        }
+
+        /// <summary>As the server's ShelfEncryption.RequireStoreAsync: never a plain file under an encrypted directory.</summary>
+        public void RequireStore(string normalizedPath, bool encrypted)
+        {
+            if (!encrypted && EncryptedFolderFor(ShelfPath.GetParent(normalizedPath)) is DirectoryNode folder)
+            {
+                throw InMemoryErrors.Conflict(
+                    $"'{normalizedPath}' is under the encrypted folder '{PathOf(folder)}': store it encrypted with that folder's password, as the byteshelf CLI does.");
+            }
+        }
+
+        /// <summary>As the server's ShelfEncryption.RequireMoveAsync: into an encrypted directory only from inside it.</summary>
+        public void RequireMove(Guid? movedDirectoryId, Guid currentParentId, Guid destinationParentId, string pathForMessage)
+        {
+            DirectoryNode? destination = EncryptedFolderOf(destinationParentId);
+            if (destination != null && EncryptedFolderOf(movedDirectoryId ?? currentParentId)?.Id != destination.Id)
+            {
+                throw InMemoryErrors.Conflict(
+                    $"'{pathForMessage}' cannot move into the encrypted folder '{PathOf(destination)}' from outside it, since it is not encrypted with that folder's password. Store it there anew instead.");
+            }
+        }
+
+        /// <summary>As the server's ShelfEncryption.RequireLinkTargetAsync: a link sends a plain file.</summary>
+        public void RequireLinkTarget(string normalizedPath)
+        {
+            string parentPath = ShelfPath.GetParent(normalizedPath);
+            if (EncryptedFolderFor(parentPath) is DirectoryNode folder)
+            {
+                throw InMemoryErrors.Conflict($"An upload link sends a plain file, and '{normalizedPath}' is under the encrypted folder '{PathOf(folder)}'.");
+            }
+
+            if (FindDirectory(parentPath) is DirectoryNode parent
+                && LiveFilesIn(parent.Id).Any(file => file.Name == ShelfPath.GetName(normalizedPath) && file.Encrypted))
+            {
+                throw InMemoryErrors.Conflict($"'{normalizedPath}' is encrypted, and an upload link would replace it with a plain file.");
+            }
+        }
+
         /// <summary>Every directory under <paramref name="directory"/>, live or in the trash, deepest last.</summary>
         public IEnumerable<DirectoryNode> Descendants(DirectoryNode directory)
         {
@@ -230,6 +301,7 @@ namespace ByteShelfClient.InMemory
                 CreatedAt = file.CreatedAt,
                 UpdatedAt = file.UpdatedAt,
                 Description = file.Description,
+                Encrypted = file.Encrypted,
             };
         }
 
@@ -243,6 +315,7 @@ namespace ByteShelfClient.InMemory
                 Path = PathOf(directory),
                 Name = directory.Name,
                 CreatedAt = directory.CreatedAt,
+                Encrypted = directory.EncryptionCheck != null,
             };
         }
 
@@ -276,6 +349,7 @@ namespace ByteShelfClient.InMemory
             public required Guid? ParentId { get; set; }
             public required string Name { get; set; }
             public required DateTimeOffset CreatedAt { get; init; }
+            public byte[]? EncryptionCheck { get; set; }
             public DateTimeOffset? DeletedAt { get; set; }
             public Guid? DeletionId { get; set; }
             public bool IsLive => DeletedAt == null;
@@ -292,6 +366,7 @@ namespace ByteShelfClient.InMemory
             public required DateTimeOffset CreatedAt { get; init; }
             public required DateTimeOffset UpdatedAt { get; set; }
             public string? Description { get; set; }
+            public bool Encrypted { get; init; }
             public DateTimeOffset? DeletedAt { get; set; }
             public Guid? DeletionId { get; set; }
             public bool IsLive => DeletedAt == null;

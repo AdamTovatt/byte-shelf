@@ -12,6 +12,7 @@ namespace ByteShelf.Server.Storage.Services
         private readonly IDbSessionFactory _sessionFactory;
         private readonly IFileRepository _fileRepository;
         private readonly ShelfTree _shelfTree;
+        private readonly ShelfEncryption _encryption;
         private readonly ObjectStore _objectStore;
         private readonly ITrashService _trashService;
         private readonly TimeProvider _timeProvider;
@@ -20,6 +21,7 @@ namespace ByteShelf.Server.Storage.Services
             IDbSessionFactory sessionFactory,
             IFileRepository fileRepository,
             ShelfTree shelfTree,
+            ShelfEncryption encryption,
             ObjectStore objectStore,
             ITrashService trashService,
             TimeProvider timeProvider)
@@ -27,6 +29,7 @@ namespace ByteShelf.Server.Storage.Services
             _sessionFactory = sessionFactory;
             _fileRepository = fileRepository;
             _shelfTree = shelfTree;
+            _encryption = encryption;
             _objectStore = objectStore;
             _trashService = trashService;
             _timeProvider = timeProvider;
@@ -82,6 +85,7 @@ namespace ByteShelf.Server.Storage.Services
 
                 DateTimeOffset now = _timeProvider.GetUtcNow();
                 (DirectoryRecord parent, string name) = await _shelfTree.PrepareDestinationAsync(shelf.Id, normalizedPath, now, session);
+                await _encryption.RequireMoveAsync(movedDirectoryId: null, file.DirectoryId, parent.Id, current.Path, session);
                 FileRecord moved = await _fileRepository.MoveAsync(file.Id, parent.Id, name, now, session)
                     ?? throw new NotFoundException($"There is no file '{reference}' on this shelf.");
                 await session.CommitAsync();

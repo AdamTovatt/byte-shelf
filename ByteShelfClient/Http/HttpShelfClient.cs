@@ -77,8 +77,8 @@ namespace ByteShelfClient.Http
             await using UploadSource source = await UploadSource.OpenAsync(content, cancellationToken).ConfigureAwait(false);
 
             return source.SizeBytes <= _options.SingleRequestMaxBytes && upload.Description == null
-                ? await PutAsync(upload.Path, source, upload.ContentType, upload.Overwrite, cancellationToken).ConfigureAwait(false)
-                : await UploadInChunksAsync(upload.Path, source, upload.ContentType, upload.Overwrite, upload.Description, cancellationToken).ConfigureAwait(false);
+                ? await PutAsync(upload, source, cancellationToken).ConfigureAwait(false)
+                : await UploadInChunksAsync(upload, source, cancellationToken).ConfigureAwait(false);
         }
 
         public Task<ShelfFile> SetDescriptionAsync(EntryReference file, string? description, CancellationToken cancellationToken = default)
@@ -155,6 +155,37 @@ namespace ByteShelfClient.Http
                 response.Dispose();
                 throw;
             }
+        }
+
+        public Task<PathEncryption> GetEncryptionAsync(string path, CancellationToken cancellationToken = default)
+        {
+            return _connection.SendAsync(
+                HttpMethod.Get,
+                $"{_base}/directories/encryption?{EntryReference.ForPath(ShelfPath.Normalize(path)).ToQuery()}",
+                ByteShelfJsonContext.Default.PathEncryption,
+                cancellationToken);
+        }
+
+        public Task<ShelfDirectory> EncryptDirectoryAsync(EntryReference directory, string check, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(directory);
+            return _connection.SendAsync(
+                HttpMethod.Put,
+                $"{_base}/directories/encryption?{directory.ToQuery()}",
+                new SetFolderEncryptionRequest { Check = check },
+                ByteShelfJsonContext.Default.SetFolderEncryptionRequest,
+                ByteShelfJsonContext.Default.ShelfDirectory,
+                cancellationToken);
+        }
+
+        public Task<ShelfDirectory> RemoveDirectoryEncryptionAsync(EntryReference directory, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(directory);
+            return _connection.SendAsync(
+                HttpMethod.Delete,
+                $"{_base}/directories/encryption?{directory.ToQuery()}",
+                ByteShelfJsonContext.Default.ShelfDirectory,
+                cancellationToken);
         }
 
         public Task<ShelfDirectory> CreateDirectoryAsync(string path, CancellationToken cancellationToken = default)
@@ -262,16 +293,16 @@ namespace ByteShelfClient.Http
         }
 
         /// <summary>Sends the whole file in one streamed request, which cannot be repeated after a refused token.</summary>
-        private async Task<ShelfFile> PutAsync(string path, UploadSource source, string contentType, bool overwrite, CancellationToken cancellationToken)
+        private async Task<ShelfFile> PutAsync(NormalizedUpload upload, UploadSource source, CancellationToken cancellationToken)
         {
-            string uri = $"{_base}/content?{EntryReference.ForPath(path).ToQuery()}&overwrite={(overwrite ? "true" : "false")}";
+            string uri = $"{_base}/content?{EntryReference.ForPath(upload.Path).ToQuery()}&overwrite={(upload.Overwrite ? "true" : "false")}&encrypted={(upload.Encrypted ? "true" : "false")}";
 
             using HttpResponseMessage response = await _connection.SendRawAsync(
                 () =>
                 {
                     StreamContent body = new StreamContent(source.Stream);
                     body.Headers.ContentLength = source.SizeBytes;
-                    body.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
+                    body.Headers.ContentType = MediaTypeHeaderValue.Parse(upload.ContentType);
                     return new HttpRequestMessage(HttpMethod.Put, uri) { Content = body };
                 },
                 cancellationToken,
@@ -286,12 +317,20 @@ namespace ByteShelfClient.Http
         /// upload stands, up to <see cref="MaxResumes"/> times in a row. Any other failure aborts the
         /// upload, so its reservation against the quota does not linger until it expires.
         /// </summary>
-        private async Task<ShelfFile> UploadInChunksAsync(string path, UploadSource source, string contentType, bool overwrite, string? description, CancellationToken cancellationToken)
+        private async Task<ShelfFile> UploadInChunksAsync(NormalizedUpload upload, UploadSource source, CancellationToken cancellationToken)
         {
             UploadSession session = await _connection.SendAsync(
                 HttpMethod.Post,
                 $"{_base}/uploads",
-                new StartUploadRequest { Path = path, SizeBytes = source.SizeBytes, ContentType = contentType, Overwrite = overwrite, Description = description },
+                new StartUploadRequest
+                {
+                    Path = upload.Path,
+                    SizeBytes = source.SizeBytes,
+                    ContentType = upload.ContentType,
+                    Overwrite = upload.Overwrite,
+                    Description = upload.Description,
+                    Encrypted = upload.Encrypted,
+                },
                 ByteShelfJsonContext.Default.StartUploadRequest,
                 ByteShelfJsonContext.Default.UploadSession,
                 cancellationToken).ConfigureAwait(false);

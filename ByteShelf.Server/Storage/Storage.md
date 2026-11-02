@@ -26,7 +26,7 @@ path that is not allowed is a 400.
 
 | Method and route | What it does |
 |---|---|
-| `GET entries?path=` | Lists a directory (the root without `path` or `id`). Each of its `directories` is the `directory` with the `sizeBytes` and `fileCount` of the live files under it at any depth (`ListedDirectory`), summed in the same query (a recursive walk per child), so listing the root walks the whole shelf. |
+| `GET entries?path=` | Lists a directory (the root without `path` or `id`). Each of its `directories` is the `directory` with the `sizeBytes` and `fileCount` of the live files under it at any depth (`ListedDirectory`), summed in the same query (a recursive walk per child), so listing the root walks the whole shelf. `encryptedBy` is the encrypted directory it is or is inside, null for none. |
 | `GET tree?under=&depth=&limit=&after=` | One page of the live directories and files under `under` (the root by default), at any depth or down to `depth` levels (1: what it holds directly), together by path in code point order: `limit` (1 to 1000, 100 by default) entries, and `nextCursor` to pass as `after` for the next page. 400 for a depth below 1 or a limit out of range, 404 when `under` is missing or names a file. |
 | `GET files?path=` | A file's record. |
 | `DELETE files?path=` | Moves a file to the trash; answers the deletion. |
@@ -36,11 +36,14 @@ path that is not allowed is a 400.
 | `POST directories` | Creates the directory at the body's `path` and any missing one above it; an existing one is answered as it is. |
 | `POST directories/move?path=` | Moves or renames a directory with everything in it to the body's `toPath`. 400 for the root, a destination of `/` or inside itself, or one that would make a path under it longer than `ShelfPath.MaxPathLength`; 409 when the path is taken. |
 | `DELETE directories?path=` | Moves a directory and everything live under it to the trash as one deletion; 400 for the root. |
+| `GET directories/encryption?path=` | The encrypted directory a file at `path` (existing or not) would be under, with its `check`; `encryptedBy` is null for none. See "Encryption" below. |
+| `PUT directories/encryption?path=` | Encrypts a directory with the body's `check` (base64 of an age file of at most `FileEncryption.MaxCheckBytes`); 400 for a check that is not one, 409 when it is encrypted already or inside or above an encrypted directory. |
+| `DELETE directories/encryption?path=` | Stops encrypting a directory; 409 when it is not encrypted itself. |
 | `GET content?path=` (and `HEAD`) | Streams the contents (`HEAD`: only the headers); `Range`, `If-None-Match` and `If-Range` work, the ETag is the SHA-256. Served with `X-Content-Type-Options: nosniff` and, except for a PDF (Chrome's viewer does not run sandboxed), a sandboxing `Content-Security-Policy`. `download=true` adds a file name. |
-| `POST download-link?path=&expiresInMinutes=` | A link to the contents that works without a token for `expiresInMinutes` (1 to 10080, 1440 by default), to open, save or share the file (see below). Making one is a read; 400 for a lifetime outside those bounds. |
-| `PUT content?path=&overwrite=` | Stores the body in one request. Needs `Content-Length` (411 without); the `Content-Type` is stored, or without one the type the path's extension names (`ContentTypes.ForUpload`), so `curl -T` stores a PDF as one. 409 when the path is taken and `overwrite` is not set, 507 over quota. |
-| `POST upload-link` | A link that stores one file sent to it without a token, from the body's `path`, `overwrite`, `description` and `expiresInMinutes` (1 to 1440, 15 by default); see "Upload links" below. Needs `Add`, or `Write` with `overwrite`; 400 for the root or a request `CreateUploadLinkRequest.Normalize` refuses. |
-| `POST uploads` | Starts a resumable upload from the body's `path`, `sizeBytes`, `contentType` (optional, typed as `PUT content` is), `overwrite` (false by default) and the file's `description` if it has one (a single `PUT` has no body to carry one); reserves the size against the quota. |
+| `POST download-link?path=&expiresInMinutes=` | A link to the contents that works without a token for `expiresInMinutes` (1 to 10080, 1440 by default), to open, save or share the file (see below). Making one is a read; 400 for a lifetime outside those bounds, 409 for an encrypted file. |
+| `PUT content?path=&overwrite=&encrypted=` | Stores the body in one request. Needs `Content-Length` (411 without); the `Content-Type` is stored, or without one the type the path's extension names (`ContentTypes.ForUpload`), so `curl -T` stores a PDF as one. `encrypted=true` marks the body as an age file (400 when it does not start as one). 409 when the path is taken and `overwrite` is not set, or for a plain file under an encrypted directory; 507 over quota. |
+| `POST upload-link` | A link that stores one file sent to it without a token, from the body's `path`, `overwrite`, `description` and `expiresInMinutes` (1 to 1440, 15 by default); see "Upload links" below. Needs `Add`, or `Write` with `overwrite`; 400 for the root or a request `CreateUploadLinkRequest.Normalize` refuses, 409 for a path under an encrypted directory or over an encrypted file. |
+| `POST uploads` | Starts a resumable upload from the body's `path`, `sizeBytes`, `contentType` (optional, typed as `PUT content` is), `overwrite` (false by default), `encrypted` (as on `PUT content`, checked when it completes) and the file's `description` if it has one (a single `PUT` has no body to carry one); reserves the size against the quota. |
 | `GET uploads/{id}` | Progress: `receivedBytes` is where the next chunk starts. |
 | `PUT uploads/{id}?offset=` | Appends a chunk of at most `UploadLimits.MaxChunkBytes` (64 MiB, 413 above); 409 when `offset` is not `receivedBytes`. |
 | `POST uploads/{id}/complete` | Stores the file once every byte has arrived. 409 when the path was taken meanwhile; the upload is kept. |
@@ -85,7 +88,9 @@ whose grant was taken away or lowered stops its links at once (404 when the make
 access, 403 when it may no longer store there). A link that may not overwrite is refused (409) once
 its path is taken, so it stores at most one file; one that may overwrite replaces the file on every
 use until it runs out, 15 minutes by default and at most 24 hours (`UploadLink.Lifetime.Normalize`).
-A replica refuses the `PUT`, as it refuses every write.
+A replica refuses the `PUT`, as it refuses every write. A link sends a plain file, so it is refused
+(409) under an encrypted directory or over an encrypted file, when it is made and again when it is
+used, so a directory encrypted after the link was made stops it too.
 
 ## Link tokens (`Shared/Auth/LinkTokens`)
 
@@ -150,6 +155,32 @@ depth stops the walk, and asks for one row past the page of directories and of f
 `DirectoryTree.Page` in Common merges them by path and sets the cursor, for the in-memory client too.
 A directory's path sorts before those of what it holds, so a client saving a tree page by page meets each
 directory before its files.
+
+## Encryption (`ShelfEncryption`)
+
+Files are encrypted with a password in the clients, never on the server: the password and the
+plaintext never reach it. An encrypted file's contents are an age file (c2sp.org/age) with a scrypt
+recipient, which `age -d` opens anywhere; only the contents are encrypted, so names, sizes (of the
+encrypted bytes), directories and descriptions stay as they are and search keeps finding them, and
+the content type is the decrypted file's. A file is stored as encrypted with `encrypted=true` on
+`PUT content` or in `POST uploads`, and the server checks it starts as an age file (400 otherwise);
+it cannot check the password. The flag is on the file row and its change log entry, so replicas
+carry it.
+
+A directory is encrypted with a `check`: an age file of `FileEncryption.CheckText` encrypted with its
+password, which a client decrypts to tell a wrong password before it encrypts anything with it. It
+reveals nothing the encrypted files do not. From then on one rule holds, in `ShelfEncryption` and
+mirrored by the in-memory client: no new plain file comes under an encrypted directory, and its
+subtree has one password. Plain files already there stay plain until a client encrypts them. So a
+plain upload under one is refused (409), whether the directory is the file's
+own or an ancestor, existing directories or not; a directory is never encrypted inside or above
+another; nothing moves into one from outside it, encrypted or not, since its password could differ
+(moving out is fine, and the file stays encrypted); a deletion holding a plain file or an encrypted
+directory is not restored into one; and upload links, which send plain files, are refused under one
+or over an encrypted file, when made and again when used. A download link is never made to an
+encrypted file. Encrypting a directory touches none of its files: a client encrypts them after, and
+removing its encryption decrypts nothing, so a client decrypts them after; the server only records
+the mark.
 
 ## Moves (`FileService`, `DirectoryService`)
 

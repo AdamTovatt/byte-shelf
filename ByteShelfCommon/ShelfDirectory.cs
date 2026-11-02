@@ -20,5 +20,12 @@ namespace ByteShelfCommon
 
         /// <summary>When the directory was created.</summary>
         public required DateTimeOffset CreatedAt { get; init; }
+
+        /// <summary>
+        /// Whether the directory itself is marked encrypted with a password: from then on the server
+        /// stores only encrypted files under it, at any depth (<see cref="FileEncryption"/>). Plain files
+        /// already there stay plain until a client encrypts them in place.
+        /// </summary>
+        public bool Encrypted { get; init; }
     }
 }

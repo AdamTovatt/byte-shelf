@@ -36,4 +36,9 @@
     <ProjectReference Include="..\ByteShelfCommon\ByteShelfCommon.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- For the age tests, which check scrypt and header parsing on their own. -->
+    <InternalsVisibleTo Include="ByteShelfClient.Tests" />
+  </ItemGroup>
+
 </Project>

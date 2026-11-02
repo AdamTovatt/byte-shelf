@@ -21,6 +21,7 @@ namespace ByteShelf.Server.Storage.Services
                 CreatedAt = file.CreatedAt,
                 UpdatedAt = file.UpdatedAt,
                 Description = file.Description,
+                Encrypted = file.Encrypted,
             };
         }
 
@@ -34,7 +35,16 @@ namespace ByteShelf.Server.Storage.Services
                 Path = path,
                 Name = directory.Name,
                 CreatedAt = directory.CreatedAt,
+                Encrypted = directory.EncryptionCheck != null,
             };
+        }
+
+        /// <summary>An encrypted directory with its check; null for one that is not encrypted.</summary>
+        public static EncryptedFolder? ToEncryptedFolder(DirectoryRecord? directory, string path)
+        {
+            return directory?.EncryptionCheck is byte[] check
+                ? new EncryptedFolder { Directory = ToShelfDirectory(directory, path), Check = Convert.ToBase64String(check) }
+                : null;
         }
 
         public static ListedDirectory ToListedDirectory(DirectoryWithTotals listed, string path)

@@ -9,6 +9,7 @@ using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
+using ByteShelfClient.Encryption;
 using ByteShelfCommon;
 using Microsoft.Extensions.Time.Testing;
 
@@ -134,6 +135,20 @@ namespace ByteShelf.Server.Tests.Storage
 
             Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
             Assert.Equal("first", await _host.AdminClient.GetStringAsync("/api/shelves/docs/content?path=/a.txt"));
+        }
+
+        [Fact]
+        public async Task Link_FolderEncryptedSinceItWasMade_Returns409AndStoresNothing()
+        {
+            (await _host.AdminClient.PostAsJsonAsync("/api/shelves/docs/directories", new CreateDirectoryRequest { Path = "/secret" })).EnsureSuccessStatusCode();
+            UploadLink link = await CreateLinkAsync(_host.AdminClient, new CreateUploadLinkRequest { Path = "/secret/a.txt" });
+            string check = await FolderPassword.CreateCheckAsync("pw", CancellationToken.None, workFactor: 10);
+            (await _host.AdminClient.PutAsJsonAsync("/api/shelves/docs/directories/encryption?path=/secret", new SetFolderEncryptionRequest { Check = check })).EnsureSuccessStatusCode();
+
+            HttpResponseMessage response = await PutAsync(link, "plain");
+
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await _host.AdminClient.GetAsync("/api/shelves/docs/content?path=/secret/a.txt")).StatusCode);
         }
 
         [Fact]

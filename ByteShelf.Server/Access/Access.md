@@ -29,9 +29,9 @@ asks the same resolver which tools to offer a key ([Mcp](../Mcp/Mcp.md)).
 
 | Operation | Endpoints | Who may |
 |---|---|---|
-| `Read` | list, list a tree, search, file records, content, a download link, the shelf's info, the trash list | every caller with access |
+| `Read` | list, list a tree, search, file records, content, a download link, the shelf's info, the trash list, what a path is encrypted under | every caller with access |
 | `Add` | store a new file (with a description), create directories, every upload endpoint, an upload link | `addOnly` and `readWrite` keys, `readWrite` users |
-| `Write` | overwrite, move, describe a stored file, delete, restore, empty the trash | `readWrite` keys and users |
+| `Write` | overwrite, move, describe a stored file, delete, restore, empty the trash, encrypt a directory or stop encrypting it | `readWrite` keys and users |
 | `Administer` | rename, quota and delete the shelf; its grants and keys | admins |
 
 Storing with `overwrite`, as a single `PUT`, an upload or an upload link, needs `Write` (`ShelfAccess.RequireStore`).

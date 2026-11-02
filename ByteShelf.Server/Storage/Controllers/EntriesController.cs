@@ -24,14 +24,16 @@ namespace ByteShelf.Server.Storage.Controllers
         private readonly IUploadService _uploadService;
         private readonly DownloadLinks _downloadLinks;
         private readonly UploadLinks _uploadLinks;
+        private readonly ShelfEncryption _encryption;
 
-        public EntriesController(IDirectoryService directoryService, IFileService fileService, IUploadService uploadService, DownloadLinks downloadLinks, UploadLinks uploadLinks)
+        public EntriesController(IDirectoryService directoryService, IFileService fileService, IUploadService uploadService, DownloadLinks downloadLinks, UploadLinks uploadLinks, ShelfEncryption encryption)
         {
             _directoryService = directoryService;
             _fileService = fileService;
             _uploadService = uploadService;
             _downloadLinks = downloadLinks;
             _uploadLinks = uploadLinks;
+            _encryption = encryption;
         }
 
         /// <summary>Lists a directory: the root when neither path nor id is given.</summary>
@@ -135,7 +137,8 @@ namespace ByteShelf.Server.Storage.Controllers
         /// <summary>
         /// A link to a file's contents that needs no token for <c>expiresInMinutes</c> (24 hours by
         /// default, at most 7 days): for a browser to open or save, which a plain link cannot send a token
-        /// with, or to share the file. Making one is a read; 400 for a lifetime outside those bounds.
+        /// with, or to share the file. Making one is a read; 400 for a lifetime outside those bounds, 409
+        /// for an encrypted file.
         /// </summary>
         [HttpPost("download-link")]
         [ShelfAccess(ShelfOperation.Read)]
@@ -143,9 +146,11 @@ namespace ByteShelf.Server.Storage.Controllers
         [ProducesResponseType(typeof(DownloadLink), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 409)]
         public async Task<IActionResult> CreateDownloadLink([FromQuery] string? path, [FromQuery] Guid? id, [FromQuery] int? expiresInMinutes)
         {
             ShelfFile file = await _fileService.GetFileAsync(Shelf, EntryReference.From(path, id));
+            ShelfEncryption.RequireDownloadLinkTarget(file);
             return Ok(_downloadLinks.Create(Shelf.Id, file.Id, expiresInMinutes is int minutes ? TimeSpan.FromMinutes(minutes) : null));
         }
 
@@ -160,33 +165,38 @@ namespace ByteShelf.Server.Storage.Controllers
         [ProducesResponseType(typeof(UploadLink), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 403)]
-        public IActionResult CreateUploadLink([FromBody] CreateUploadLinkRequest request)
+        [ProducesResponseType(typeof(ErrorResponse), 409)]
+        public async Task<IActionResult> CreateUploadLink([FromBody] CreateUploadLinkRequest request)
         {
             Access.RequireStore(request.Overwrite);
-            return Ok(_uploadLinks.Create(Shelf.Id, Access.Caller.Reference, request.Normalize()));
+            NormalizedUploadLinkRequest normalized = request.Normalize();
+            await _encryption.RequireLinkTargetAsync(Shelf.Id, normalized.Path);
+            return Ok(_uploadLinks.Create(Shelf.Id, Access.Caller.Reference, normalized));
         }
 
         /// <summary>
         /// Stores the request body as the file at <c>path</c> in one streamed request. Needs
         /// <c>Content-Length</c>, which is reserved against the quota before the body is read; the
         /// <c>Content-Type</c> is stored with the file. Replacing a file with <c>overwrite</c> needs
-        /// write access.
+        /// write access. <c>encrypted</c> says the body is an age file encrypted with a password, which
+        /// a file under an encrypted directory must be (409 otherwise; 400 for a body that is no age file).
         /// </summary>
         [HttpPut("content")]
         [ShelfAccess(ShelfOperation.Add)]
         [DisableRequestSizeLimit]
         [ProducesResponseType(typeof(ShelfFile), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 403)]
         [ProducesResponseType(typeof(ErrorResponse), 409)]
         [ProducesResponseType(typeof(ErrorResponse), 411)]
         [ProducesResponseType(typeof(ErrorResponse), 507)]
-        public async Task<IActionResult> PutContent([FromQuery] string path, [FromQuery] bool overwrite = false, CancellationToken cancellationToken = default)
+        public async Task<IActionResult> PutContent([FromQuery] string path, [FromQuery] bool overwrite = false, [FromQuery] bool encrypted = false, CancellationToken cancellationToken = default)
         {
             Access.RequireStore(overwrite);
 
             // The request's body is the contents, so it carries no description.
             StartUploadRequest request = SingleUpload.Of(
-                Request, path, overwrite, description: null, "A single upload needs Content-Length. Send content of unknown length as a resumable upload.");
+                Request, path, overwrite, description: null, encrypted, "A single upload needs Content-Length. Send content of unknown length as a resumable upload.");
             return Ok(await _uploadService.StoreAsync(Shelf, request, Access.Caller.Id, Request.Body, cancellationToken));
         }
     }

@@ -13,6 +13,7 @@ namespace ByteShelf.Server.Storage.Services
         private readonly IDirectoryRepository _directoryRepository;
         private readonly IFileRepository _fileRepository;
         private readonly ShelfTree _shelfTree;
+        private readonly ShelfEncryption _encryption;
         private readonly ITrashService _trashService;
         private readonly TimeProvider _timeProvider;
 
@@ -21,6 +22,7 @@ namespace ByteShelf.Server.Storage.Services
             IDirectoryRepository directoryRepository,
             IFileRepository fileRepository,
             ShelfTree shelfTree,
+            ShelfEncryption encryption,
             ITrashService trashService,
             TimeProvider timeProvider)
         {
@@ -28,6 +30,7 @@ namespace ByteShelf.Server.Storage.Services
             _directoryRepository = directoryRepository;
             _fileRepository = fileRepository;
             _shelfTree = shelfTree;
+            _encryption = encryption;
             _trashService = trashService;
             _timeProvider = timeProvider;
         }
@@ -50,7 +53,46 @@ namespace ByteShelf.Server.Storage.Services
                         .Select(child => StorageContracts.ToListedDirectory(child, ShelfPath.Combine(path, child.Directory.Name)))
                         .ToList(),
                     Files = files.Select(file => StorageContracts.ToShelfFile(file, path)).ToList(),
+                    EncryptedBy = await _encryption.DescribeFolderOfAsync(directory.Id, session),
                 };
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task<PathEncryption> GetEncryptionAsync(Shelf shelf, string path)
+        {
+            string normalizedPath = ShelfPath.Normalize(path);
+
+            await using (IDbSession session = await _sessionFactory.CreateSessionAsync())
+            {
+                DirectoryRecord? folder = await _encryption.FolderForAsync(shelf.Id, normalizedPath, session);
+                return new PathEncryption { EncryptedBy = await _encryption.DescribeAsync(folder, session) };
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task<ShelfDirectory> EncryptAsync(Shelf shelf, EntryReference reference, string check)
+        {
+            await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+            {
+                DirectoryRecord directory = await _shelfTree.GetDirectoryAsync(shelf.Id, reference, session);
+                string path = await _shelfTree.GetDirectoryPathAsync(directory.Id, session);
+                DirectoryRecord encrypted = await _encryption.EncryptAsync(directory, path, check, _timeProvider.GetUtcNow(), session);
+                await session.CommitAsync();
+                return StorageContracts.ToShelfDirectory(encrypted, path);
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task<ShelfDirectory> RemoveEncryptionAsync(Shelf shelf, EntryReference reference)
+        {
+            await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+            {
+                DirectoryRecord directory = await _shelfTree.GetDirectoryAsync(shelf.Id, reference, session);
+                string path = await _shelfTree.GetDirectoryPathAsync(directory.Id, session);
+                DirectoryRecord plain = await _encryption.RemoveAsync(directory, path, _timeProvider.GetUtcNow(), session);
+                await session.CommitAsync();
+                return StorageContracts.ToShelfDirectory(plain, path);
             }
         }
 
@@ -123,6 +165,7 @@ namespace ByteShelf.Server.Storage.Services
 
                 DateTimeOffset now = _timeProvider.GetUtcNow();
                 (DirectoryRecord parent, string name) = await _shelfTree.PrepareDestinationAsync(shelf.Id, normalizedPath, now, session);
+                await _encryption.RequireMoveAsync(directory.Id, directory.ParentId!.Value, parent.Id, currentPath, session);
                 DirectoryRecord moved = await _directoryRepository.MoveAsync(directory.Id, parent.Id, name, now, session)
                     ?? throw new NotFoundException($"There is no directory '{reference}' on this shelf.");
                 await session.CommitAsync();

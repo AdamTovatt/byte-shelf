@@ -9,6 +9,7 @@ using ByteShelf.Cli.Tests.TestUtilities;
 using ByteShelf.Tools;
 using ByteShelf.Tools.Mcp;
 using ByteShelfClient;
+using ByteShelfClient.Encryption;
 using ByteShelfCommon;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
@@ -561,6 +562,42 @@ namespace ByteShelf.Cli.Tests
             Assert.Contains("from 1 minute to 24 hours", exception.Message, StringComparison.Ordinal);
         }
 
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task DownloadFile_Encrypted_IsRefusedSayingPasswordsNeverGoThroughToolCalls(bool toLocalFile)
+        {
+            await StoreEncryptedAsync("/secret.txt");
+
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadFileAsync("/secret.txt", localPath: toLocalFile ? _work.Path : null, shelf: "docs"));
+
+            Assert.Contains("passwords never go through tool calls", exception.Message, StringComparison.Ordinal);
+            Assert.False(File.Exists(_work.File("secret.txt")));
+        }
+
+        [Fact]
+        public async Task DownloadDirectory_EncryptedFile_IsLeftOutAndTheRestSaved()
+        {
+            await StoreEncryptedAsync("/mixed/secret.txt");
+            await _tools.UploadFileAsync("/mixed/plain.txt", text: "plain", shelf: "docs");
+
+            string answer = await _tools.DownloadDirectoryAsync("/mixed", _work.Path, shelf: "docs");
+
+            Assert.Contains("secret.txt: it is encrypted with a password", answer, StringComparison.Ordinal);
+            Assert.True(File.Exists(Path.Combine(_work.Path, "mixed", "plain.txt")));
+            Assert.Empty(Directory.GetFiles(Path.Combine(_work.Path, "mixed"), "secret*"));
+        }
+
+        [Fact]
+        public async Task ListDirectory_MarksWhatIsEncrypted()
+        {
+            await StoreEncryptedAsync("/a/secret.txt");
+
+            string listing = await _tools.ListDirectoryAsync("/a", shelf: "docs");
+
+            Assert.EndsWith("(encrypted)", listing.Split(Environment.NewLine)[1], StringComparison.Ordinal);
+        }
+
         [Fact]
         public async Task ShareFile_ExpiresInNotALifetime_IsAnErrorSayingHowToWriteOne()
         {
@@ -590,6 +627,11 @@ namespace ByteShelf.Cli.Tests
             McpException exception = await Assert.ThrowsAsync<McpException>(() => new ByteShelfMcpTools(clients, ToolHost.Local).ListShelvesAsync(CancellationToken.None));
 
             Assert.Equal("Could not reach the server: No route to host.", exception.Message);
+        }
+
+        private Task<ShelfFile> StoreEncryptedAsync(string path)
+        {
+            return Transfers.UploadAsync(Docs, path, new MemoryStream(Encoding.UTF8.GetBytes("secret")), new UploadOptions(), new Encryptor("pw", 10), CancellationToken.None);
         }
 
         private static string TextOf(IEnumerable<ContentBlock> answer)

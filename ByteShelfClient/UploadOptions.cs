@@ -18,5 +18,12 @@ namespace ByteShelfClient
         /// is always sent as a resumable upload, the kind that carries it.
         /// </summary>
         public string? Description { get; init; }
+
+        /// <summary>
+        /// The contents are an age file encrypted with a password (<see cref="Encryption.AgeEncryption"/>).
+        /// A file under an encrypted directory must be, with the directory's password; the server checks
+        /// it starts as an age file but cannot check the password.
+        /// </summary>
+        public bool Encrypted { get; init; }
     }
 }

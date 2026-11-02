@@ -51,7 +51,7 @@ namespace ByteShelf.Server.Storage.Controllers
 
             ShelfAccess access = await _uploadLinkAccess.ResolveAsync(grant, NotValid);
             StartUploadRequest request = SingleUpload.Of(
-                Request, grant.Path, grant.Overwrite, grant.Description, "An upload link needs Content-Length: send a file, as curl -T does, not a stream of unknown length.");
+                Request, grant.Path, grant.Overwrite, grant.Description, encrypted: false, "An upload link needs Content-Length: send a file, as curl -T does, not a stream of unknown length.");
 
             return Ok(await _uploadService.StoreAsync(access.Shelf, request, access.Caller.Id, Request.Body, cancellationToken));
         }

@@ -36,6 +36,9 @@ the same words:
   JPEG, GIF or WebP of up to `MaxInlineImageBytes` (1 MiB) as image content the model sees.
   Anything else moves as a local file, through the API, or by a link: `share_file` to fetch one,
   `create_upload_link` to have one sent in, answered with the `curl` command that sends it.
+- `Encrypting` encrypts and decrypts what is stored, in place, for the CLI's `encrypt` and `decrypt`;
+  `Transfers` and `FolderTransfers` take a password to encrypt on the way up and decrypt on the way
+  down. The MCP tools never take one: they refuse encrypted contents and leave them out.
 - Every tool working on one shelf takes `shelf` last and optional: left out, it is the only shelf
   the caller reaches, which a shelf key always is. Several reachable shelves ask for a name.
 - `RequiredArguments` is a call-tool filter both servers add, so a call missing a required argument

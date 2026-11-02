@@ -42,6 +42,8 @@ SHA-256, so `sha256sum` verifies it, and identical contents are stored once.
 - Files live in real **directories** and are addressed by path (`/invoices/2026/march.pdf`) or id.
 - A delete moves things to the **trash**, restorable for 30 days by default, then purged; anyone
   with write access can empty a shelf's trash sooner.
+- A file or a directory can be **encrypted** with a password in a client, so the server holds only
+  its encrypted contents ([Encryption](ByteShelf.Server/Storage/Storage.md#encryption-shelfencryption)).
 
 ## Running it
 

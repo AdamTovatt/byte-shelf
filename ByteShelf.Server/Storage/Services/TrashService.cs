@@ -20,6 +20,7 @@ namespace ByteShelf.Server.Storage.Services
         private readonly IFileRepository _fileRepository;
         private readonly ITrashRepository _trashRepository;
         private readonly ShelfTree _shelfTree;
+        private readonly ShelfEncryption _encryption;
         private readonly ObjectCollector _objectCollector;
         private readonly StorageOptions _options;
         private readonly TimeProvider _timeProvider;
@@ -30,6 +31,7 @@ namespace ByteShelf.Server.Storage.Services
             IFileRepository fileRepository,
             ITrashRepository trashRepository,
             ShelfTree shelfTree,
+            ShelfEncryption encryption,
             ObjectCollector objectCollector,
             StorageOptions options,
             TimeProvider timeProvider)
@@ -39,6 +41,7 @@ namespace ByteShelf.Server.Storage.Services
             _fileRepository = fileRepository;
             _trashRepository = trashRepository;
             _shelfTree = shelfTree;
+            _encryption = encryption;
             _objectCollector = objectCollector;
             _options = options;
             _timeProvider = timeProvider;
@@ -116,6 +119,7 @@ namespace ByteShelf.Server.Storage.Services
                 }
 
                 await _shelfTree.EnsureNameAvailableAsync(container.Id, entry.Name, path, mayReplaceFile: false, session);
+                await _encryption.RequireRestoreAsync(container.Id, deletionId, path, session);
 
                 DateTimeOffset now = _timeProvider.GetUtcNow();
                 await _directoryRepository.RestoreDeletionAsync(deletionId, now, session);

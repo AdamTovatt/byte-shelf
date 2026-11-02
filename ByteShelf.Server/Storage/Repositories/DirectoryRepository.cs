@@ -18,12 +18,13 @@ namespace ByteShelf.Server.Storage.Repositories
             name,
             created_at AS {nameof(DirectoryEntity.CreatedAt)},
             updated_at AS {nameof(DirectoryEntity.UpdatedAt)},
+            encryption_check AS {nameof(DirectoryEntity.EncryptionCheck)},
             deleted_at AS {nameof(DirectoryEntity.DeletedAt)},
             deletion_id AS {nameof(DirectoryEntity.DeletionId)}";
 
         private const string InsertSql = @"
-            INSERT INTO directory (id, shelf_id, parent_id, name, created_at, updated_at, deleted_at, deletion_id)
-            VALUES (@Id, @ShelfId, @ParentId, @Name, @CreatedAt, @UpdatedAt, @DeletedAt, @DeletionId)";
+            INSERT INTO directory (id, shelf_id, parent_id, name, created_at, updated_at, encryption_check, deleted_at, deletion_id)
+            VALUES (@Id, @ShelfId, @ParentId, @Name, @CreatedAt, @UpdatedAt, @EncryptionCheck, @DeletedAt, @DeletionId)";
 
         private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict(InsertSql);
 
@@ -220,6 +221,71 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<DirectoryRecord?> SetEncryptionCheckAsync(Guid id, byte[]? check, DateTimeOffset at, IDbSession session)
+        {
+            string query = $@"
+                UPDATE directory
+                SET encryption_check = @{nameof(check)}, updated_at = @{nameof(at)}
+                WHERE id = @{nameof(id)} AND deleted_at IS NULL
+                RETURNING {SelectColumns}";
+
+            DirectoryEntity? updated = await session.Connection.QuerySingleOrDefaultAsync<DirectoryEntity>(
+                query, new { id, check, at }, transaction: session.Transaction);
+
+            if (updated == null)
+            {
+                return null;
+            }
+
+            DirectoryRecord record = updated.ToDomain();
+            await _changeLog.AppendAsync(ChangeEntityType.Directory, id, ChangeAction.Updated, record, at, session);
+            return record;
+        }
+
+        /// <inheritdoc />
+        public async Task<DirectoryRecord?> GetEncryptedAncestorOrSelfAsync(Guid id, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string query = $@"
+                    WITH RECURSIVE ancestor (node_id, up_id, depth) AS (
+                        SELECT id, parent_id, 0 FROM directory WHERE id = @{nameof(id)}
+                        UNION ALL
+                        SELECT d.id, d.parent_id, a.depth + 1 FROM directory d JOIN ancestor a ON d.id = a.up_id
+                    )
+                    SELECT {SelectColumns}
+                    FROM directory JOIN ancestor ON directory.id = ancestor.node_id
+                    WHERE directory.encryption_check IS NOT NULL
+                    ORDER BY ancestor.depth
+                    LIMIT 1";
+
+                DirectoryEntity? entity = await dbSession.Connection.QuerySingleOrDefaultAsync<DirectoryEntity>(
+                    query, new { id }, transaction: dbSession.Transaction);
+
+                return entity?.ToDomain();
+            }, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<bool> HasEncryptedLiveDescendantAsync(Guid id, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string query = $@"
+                    WITH RECURSIVE subtree (node_id) AS (
+                        SELECT id FROM directory WHERE parent_id = @{nameof(id)} AND deleted_at IS NULL
+                        UNION ALL
+                        SELECT d.id FROM directory d JOIN subtree s ON d.parent_id = s.node_id WHERE d.deleted_at IS NULL
+                    )
+                    SELECT EXISTS (
+                        SELECT 1 FROM directory JOIN subtree ON directory.id = subtree.node_id
+                        WHERE directory.encryption_check IS NOT NULL)";
+
+                return await dbSession.Connection.ExecuteScalarAsync<bool>(query, new { id }, transaction: dbSession.Transaction);
+            }, session);
+        }
+
+        /// <inheritdoc />
         public async Task<IReadOnlyList<Guid>> SoftDeleteSubtreeAsync(Guid id, Guid deletionId, DateTimeOffset deletedAt, IDbSession session)
         {
             // Only live rows are taken: anything under it already in the trash stays in its own
@@ -255,6 +321,16 @@ namespace ByteShelf.Server.Storage.Repositories
                 query, new { shelfId }, transaction: session.Transaction);
 
             await _changeLog.AppendAsync<DirectoryRecord>(ChangeEntityType.Directory, rootId, ChangeAction.Purged, null, deletedAt, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<bool> DeletionHoldsEncryptedDirectoryAsync(Guid deletionId, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string query = $"SELECT EXISTS (SELECT 1 FROM directory WHERE deletion_id = @{nameof(deletionId)} AND encryption_check IS NOT NULL)";
+                return await dbSession.Connection.ExecuteScalarAsync<bool>(query, new { deletionId }, transaction: dbSession.Transaction);
+            }, session);
         }
 
         /// <inheritdoc />
@@ -381,6 +457,7 @@ namespace ByteShelf.Server.Storage.Repositories
                 directory.Name,
                 directory.CreatedAt,
                 directory.UpdatedAt,
+                directory.EncryptionCheck,
                 directory.DeletedAt,
                 directory.DeletionId,
             };
@@ -415,6 +492,7 @@ namespace ByteShelf.Server.Storage.Repositories
             public string Name { get; set; } = string.Empty;
             public DateTimeOffset CreatedAt { get; set; }
             public DateTimeOffset UpdatedAt { get; set; }
+            public byte[]? EncryptionCheck { get; set; }
             public DateTimeOffset? DeletedAt { get; set; }
             public Guid? DeletionId { get; set; }
 
@@ -428,6 +506,7 @@ namespace ByteShelf.Server.Storage.Repositories
                     Name = Name,
                     CreatedAt = CreatedAt,
                     UpdatedAt = UpdatedAt,
+                    EncryptionCheck = EncryptionCheck,
                     DeletedAt = DeletedAt,
                     DeletionId = DeletionId,
                 };

@@ -44,6 +44,18 @@ namespace ByteShelf.Server.Storage.Repositories
         /// </summary>
         Task<IReadOnlyList<string>> GetRelativePathsLongerThanAsync(Guid id, int utf8Bytes, IDbSession? session = null);
 
+        /// <summary>
+        /// Sets a live directory's encryption check, or clears it with null, logged as an update; null
+        /// when the directory is not live.
+        /// </summary>
+        Task<DirectoryRecord?> SetEncryptionCheckAsync(Guid id, byte[]? check, DateTimeOffset at, IDbSession session);
+
+        /// <summary>The directory itself when it is encrypted, else its nearest encrypted ancestor; null when neither is.</summary>
+        Task<DirectoryRecord?> GetEncryptedAncestorOrSelfAsync(Guid id, IDbSession? session = null);
+
+        /// <summary>Whether any live directory under <paramref name="id"/>, at any depth, is encrypted.</summary>
+        Task<bool> HasEncryptedLiveDescendantAsync(Guid id, IDbSession? session = null);
+
         /// <summary>Puts a live directory under <paramref name="parentId"/> as <paramref name="name"/>; null when it is not live.</summary>
         Task<DirectoryRecord?> MoveAsync(Guid id, Guid parentId, string name, DateTimeOffset movedAt, IDbSession session);
 
@@ -57,6 +69,9 @@ namespace ByteShelf.Server.Storage.Repositories
 
         /// <summary>Removes a shelf's root directory row, for deleting an empty shelf.</summary>
         Task DeleteRootAsync(Guid shelfId, DateTimeOffset deletedAt, IDbSession session);
+
+        /// <summary>Whether a deletion holds any encrypted directory.</summary>
+        Task<bool> DeletionHoldsEncryptedDirectoryAsync(Guid deletionId, IDbSession? session = null);
 
         /// <summary>Brings back every directory of a deletion; answers how many.</summary>
         Task<int> RestoreDeletionAsync(Guid deletionId, DateTimeOffset restoredAt, IDbSession session);

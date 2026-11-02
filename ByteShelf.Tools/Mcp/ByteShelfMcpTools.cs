@@ -39,6 +39,11 @@ namespace ByteShelf.Tools.Mcp
 
         private const string ShelfDescription = "The shelf's name; leave it out when you reach only one shelf, as a shelf key does.";
 
+        /// <summary>Why a tool never reads an encrypted file's contents, after the file's path.</summary>
+        internal const string EncryptedReason = "it is encrypted with a password, and passwords never go through tool calls; a person can get it with 'byteshelf get <shelf>:<path> --decrypt'.";
+
+        private static readonly EncryptedFiles NeverDecrypted = EncryptedFiles.LeftOut(EncryptedReason);
+
         /// <summary>The stored media types that say a file is one of <see cref="InlineImageKinds"/>, so it is read up to <see cref="MaxInlineImageBytes"/>.</summary>
         private static readonly HashSet<string> InlineImageTypes = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -233,9 +238,18 @@ namespace ByteShelf.Tools.Mcp
             [Description(ShelfDescription)] string? shelf = null,
             CancellationToken cancellationToken = default)
         {
-            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => localPath == null
-                ? await ReadInlineAsync(shelfClient, path, cancellationToken)
-                : new ContentBlock[] { Text(TextFormat.Saved(await Transfers.DownloadToFileAsync(shelfClient, path, Absolute(localPath), overwrite, cancellationToken))) });
+            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) =>
+            {
+                ShelfFile file = await shelfClient.GetFileAsync(path, cancellationToken);
+                if (file.Encrypted)
+                {
+                    throw new McpException($"{file.Path}: {EncryptedReason}");
+                }
+
+                return localPath == null
+                    ? await ReadInlineAsync(shelfClient, file, cancellationToken)
+                    : new ContentBlock[] { Text(TextFormat.Saved(await Transfers.DownloadToFileAsync(shelfClient, file, Absolute(localPath), overwrite, NeverDecrypted, cancellationToken))) };
+            });
         }
 
         [McpServerTool(Name = "list_tree", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -285,7 +299,7 @@ namespace ByteShelf.Tools.Mcp
             return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, shelfName) =>
             {
                 ShelfLocation location = ShelfLocation.Of(shelfName, path);
-                return FolderAnswer(await FolderTransfers.DownloadAsync(shelfClient, location, Absolute(localPath), overwrite, cancellationToken), "Saved");
+                return FolderAnswer(await FolderTransfers.DownloadAsync(shelfClient, location, Absolute(localPath), overwrite, cancellationToken, NeverDecrypted), "Saved");
             });
         }
 
@@ -386,9 +400,9 @@ namespace ByteShelf.Tools.Mcp
         /// <see cref="MaxInlineBytes"/>.
         /// </summary>
         /// <exception cref="UsageException">It is larger than that, or neither an image nor text; the message says where to get it instead.</exception>
-        private async Task<IEnumerable<ContentBlock>> ReadInlineAsync(IShelfClient shelf, string path, CancellationToken cancellationToken)
+        private async Task<IEnumerable<ContentBlock>> ReadInlineAsync(IShelfClient shelf, ShelfFile file, CancellationToken cancellationToken)
         {
-            ShelfFile file = await shelf.GetFileAsync(path, cancellationToken);
+            string path = file.Path;
             bool storedAsImage = InlineImageTypes.Contains(ContentTypes.MediaTypeOf(file.ContentType));
             int maxBytes = storedAsImage ? MaxInlineImageBytes : MaxInlineBytes;
             if (file.SizeBytes > maxBytes)

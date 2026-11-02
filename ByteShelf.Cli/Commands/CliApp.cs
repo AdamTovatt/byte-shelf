@@ -5,6 +5,7 @@ using System.Text.Json.Serialization.Metadata;
 using ByteShelf.Cli.Connection;
 using ByteShelf.Tools;
 using ByteShelfClient;
+using ByteShelfClient.Encryption;
 using ByteShelfCommon;
 using ByteShelfCommon.Serialization;
 
@@ -22,13 +23,22 @@ namespace ByteShelf.Cli.Commands
 
         private readonly IClientSource _clients;
         private readonly Terminal _terminal;
+        private readonly int _encryptionWorkFactor;
         private readonly IReadOnlyList<Command> _commands;
         private bool _json;
 
+        /// <summary>The CLI as it runs: it encrypts at age's default work factor.</summary>
         public CliApp(IClientSource clients, Terminal terminal)
+            : this(clients, terminal, AgeEncryption.DefaultWorkFactor)
+        {
+        }
+
+        /// <param name="encryptionWorkFactor">The scrypt work factor it encrypts with; only tests give a lower one, to run fast.</param>
+        internal CliApp(IClientSource clients, Terminal terminal, int encryptionWorkFactor)
         {
             _clients = clients;
             _terminal = terminal;
+            _encryptionWorkFactor = encryptionWorkFactor;
             _commands = new[]
             {
                 new Command(Section.SigningIn, "login", "<server-url> --email <email> | --key", "sign in as a user, or with a shelf key; the password or key is read from the terminal or stdin", LoginAsync),
@@ -44,8 +54,10 @@ namespace ByteShelf.Cli.Commands
                 new Command(Section.Files, "ls", "<shelf>[:<path>]", "what a directory holds", ListAsync),
                 new Command(Section.Files, "stat", "<shelf>:<path>", "a file's record, or a directory's", StatAsync),
                 new Command(Section.Files, "tree", "<shelf>[:<path>] [--depth <n>] [--limit <n>] [--after <cursor>]", "everything under a directory, by path, at any depth or down to --depth levels", TreeAsync),
-                new Command(Section.Files, "put", "<local-file>|<local-folder>|- <shelf>:<path> [--overwrite] [--type <content-type>] [--description <text>]", "store a file, - for stdin, or a whole folder; a path ending in / keeps the local name", PutAsync),
-                new Command(Section.Files, "get", "<shelf>:<path> [<local-file>|<local-folder>|-] [--overwrite]", "save a file, - for stdout, or a whole directory", GetAsync),
+                new Command(Section.Files, "put", "<local-file>|<local-folder>|- <shelf>:<path> [--overwrite] [--type <content-type>] [--description <text>] [--encrypt] [--password-file <file>]", "store a file, - for stdin, or a whole folder; a path ending in / keeps the local name; encrypted with the folder's password under an encrypted folder, or with a new one given --encrypt", PutAsync),
+                new Command(Section.Files, "get", "<shelf>:<path> [<local-file>|<local-folder>|-] [--overwrite] [--decrypt] [--password-file <file>]", "save a file, - for stdout, or a whole directory; an encrypted file is saved as its .age file unless --decrypt or --password-file decrypts it", GetAsync),
+                new Command(Section.Files, "encrypt", "<shelf>:<path> [--password-file <file>]", "encrypt a file, or a folder and every file under it, with a password that never leaves this machine; a lost password cannot be recovered", EncryptAsync),
+                new Command(Section.Files, "decrypt", "<shelf>:<path> [--password-file <file>]", "remove a file's or a folder's encryption", DecryptAsync),
                 new Command(Section.Files, "describe", "<shelf>:<path> <text> | --clear", "set a file's description, which find matches too", DescribeAsync),
                 new Command(Section.Files, "share", "<shelf>:<path> [--expires <30m|12h|7d>]", string.Create(CultureInfo.InvariantCulture, $"a link to a file that works without signing in; {DownloadLink.Lifetime.Default.TotalHours} hours by default, at most {DownloadLink.Lifetime.Max.TotalDays} days"), ShareAsync),
                 new Command(
@@ -292,17 +304,27 @@ namespace ByteShelf.Cli.Commands
                 ContentType = arguments.Value("--type"),
                 Description = arguments.Value("--description"),
             };
+            bool encrypt = arguments.Flag("--encrypt");
+            Func<PasswordUse, string> password = PasswordFrom(arguments, source == "-", cancellationToken);
             arguments.EnsureAllUsed();
             IShelfClient shelf = await ShelfAsync(location.Shelf, cancellationToken);
+            bool isFolder = source != "-" && Directory.Exists(source);
+            string target = source == "-" ? location.Path : location.FilePathFor(Path.GetFileName(Path.TrimEndingDirectorySeparator(source)));
 
-            if (source != "-" && Directory.Exists(source))
+            // Under an encrypted folder the files must be encrypted with its password; elsewhere only when asked.
+            EncryptedFolder? folder = (await shelf.GetEncryptionAsync(target, cancellationToken)).EncryptedBy;
+            Encryptor? encryptWith = folder != null
+                ? new Encryptor(await Encrypting.FolderPasswordAsync(folder, password, cancellationToken), _encryptionWorkFactor)
+                : encrypt ? new Encryptor(password(PasswordUse.New), _encryptionWorkFactor) : null;
+
+            if (isFolder)
             {
                 if (options.ContentType != null || options.Description != null)
                 {
                     throw new UsageException("--type and --description are for one file, not a folder.");
                 }
 
-                FolderDone(await FolderTransfers.UploadAsync(shelf, source, location, options.Overwrite, cancellationToken), "Uploaded");
+                FolderDone(await FolderTransfers.UploadAsync(shelf, source, location, options.Overwrite, cancellationToken, encryptWith), "Uploaded");
                 return;
             }
 
@@ -310,11 +332,11 @@ namespace ByteShelf.Cli.Commands
             if (source == "-")
             {
                 await using Stream input = _terminal.OpenInput();
-                stored = await Transfers.UploadStreamAsync(shelf, location, input, "Standard input", options, cancellationToken);
+                stored = await Transfers.UploadStreamAsync(shelf, location, input, "Standard input", options, cancellationToken, encryptWith);
             }
             else
             {
-                stored = await Transfers.UploadFileAsync(shelf, source, location, options, cancellationToken);
+                stored = await Transfers.UploadFileAsync(shelf, source, location, options, cancellationToken, encryptWith);
             }
 
             Print(stored, ByteShelfJsonContext.Default.ShelfFile, TextFormat.Stored);
@@ -325,30 +347,90 @@ namespace ByteShelf.Cli.Commands
             ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
             string? target = arguments.Optional(1);
             bool overwrite = arguments.Flag("--overwrite");
+            // A password file alone asks to decrypt too.
+            bool decryptAsked = arguments.Flag("--decrypt");
+            bool passwordFileGiven = arguments.Value("--password-file") != null;
+            Func<PasswordUse, string> password = PasswordFrom(arguments, readsInput: false, cancellationToken);
             arguments.EnsureAllUsed();
+            bool decrypt = decryptAsked || passwordFileGiven;
             IShelfClient shelf = await ShelfAsync(location.Shelf, cancellationToken);
 
-            if (location.Path == ShelfPath.Root || (await Entries.GetAsync(shelf, location.Path, cancellationToken)).Directory != null)
+            Entry? entry = location.Path == ShelfPath.Root ? null : await Entries.GetAsync(shelf, location.Path, cancellationToken);
+            if (entry?.File is not ShelfFile file)
             {
                 if (target == "-")
                 {
                     throw new UsageException($"'{location}' is a directory; save it to a local folder, not to stdout.");
                 }
 
-                FolderDone(await FolderTransfers.DownloadAsync(shelf, location, target, overwrite, cancellationToken), "Saved");
+                EncryptedFiles encrypted = decrypt
+                    ? EncryptedFiles.DecryptedWith(await Encrypting.ExistingPasswordAsync(shelf, location.Path, password, cancellationToken))
+                    : EncryptedFiles.SavedAsTheyAre;
+                FolderDone(await FolderTransfers.DownloadAsync(shelf, location, target, overwrite, cancellationToken, encrypted), "Saved");
                 return;
             }
 
+            // An encrypted file is saved as the age file it is stored as, unless asked to decrypt it.
+            EncryptedFiles fileEncrypted = file.Encrypted && decrypt ? EncryptedFiles.DecryptedWith(password(PasswordUse.Existing)) : EncryptedFiles.SavedAsTheyAre;
             if (target == "-")
             {
-                await using Stream content = await shelf.OpenReadAsync(location.Path, cancellationToken);
                 await using Stream output = _terminal.OpenOutput();
-                await content.CopyToAsync(output, cancellationToken);
+                await Transfers.WriteAsync(shelf, file, output, fileEncrypted, cancellationToken);
                 return;
             }
 
-            string saved = await Transfers.DownloadToFileAsync(shelf, location.Path, target ?? ShelfPath.GetName(location.Path), overwrite, cancellationToken);
-            Done(TextFormat.Saved(saved));
+            string saved = await Transfers.DownloadToFileAsync(shelf, file, target ?? ".", overwrite, fileEncrypted, cancellationToken);
+            Done(fileEncrypted.KeepsEncrypted(file) ? TextFormat.SavedEncrypted(saved) : TextFormat.Saved(saved));
+        }
+
+        private async Task EncryptAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
+            Func<PasswordUse, string> password = PasswordFrom(arguments, readsInput: false, cancellationToken);
+            arguments.EnsureAllUsed();
+
+            FolderDone(await Encrypting.EncryptAsync(await ShelfAsync(location.Shelf, cancellationToken), location, password, _encryptionWorkFactor, cancellationToken), "Encrypted", "under");
+        }
+
+        private async Task DecryptAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
+            Func<PasswordUse, string> password = PasswordFrom(arguments, readsInput: false, cancellationToken);
+            arguments.EnsureAllUsed();
+
+            FolderDone(await Encrypting.DecryptAsync(await ShelfAsync(location.Shelf, cancellationToken), location, password, cancellationToken), "Decrypted", "under");
+        }
+
+        /// <summary>
+        /// Where a command's password comes from, asked only once it is needed: the first line of
+        /// <c>--password-file</c>, or the terminal without echo (or the next line of piped input), a new
+        /// one typed twice. Never an argument, which would land in the shell's history.
+        /// </summary>
+        /// <param name="readsInput">Whether the command's standard input is its contents, which leaves the file the only way.</param>
+        private Func<PasswordUse, string> PasswordFrom(ArgumentList arguments, bool readsInput, CancellationToken cancellationToken)
+        {
+            string? file = arguments.Value("--password-file");
+            return use =>
+            {
+                if (file != null)
+                {
+                    string? line = File.Exists(file) ? File.ReadLines(file).FirstOrDefault() : throw new UsageException($"There is no password file {Path.GetFullPath(file)}.");
+                    return string.IsNullOrEmpty(line) ? throw new UsageException($"The password file {Path.GetFullPath(file)} is empty.") : line;
+                }
+
+                if (readsInput)
+                {
+                    throw new UsageException("Standard input carries the contents, so give the password with --password-file.");
+                }
+
+                string password = _terminal.ReadSecret("Password: ", cancellationToken);
+                if (use == PasswordUse.New && _terminal.ReadSecret("Password again: ", cancellationToken) != password)
+                {
+                    throw new UsageException("The two passwords differ.");
+                }
+
+                return password;
+            };
         }
 
         private async Task DescribeAsync(ArgumentList arguments, CancellationToken cancellationToken)
@@ -424,9 +506,9 @@ namespace ByteShelf.Cli.Commands
 
         /// <summary>Prints what a folder transfer did; one that did not reach everything fails, so a script sees it.</summary>
         /// <exception cref="IOException">Something was left out, or the transfer stopped early.</exception>
-        private void FolderDone(FolderTransferResult result, string verb)
+        private void FolderDone(FolderTransferResult result, string verb, string where = "to")
         {
-            Done(TextFormat.FolderTransfer(result, verb));
+            Done(TextFormat.FolderTransfer(result, verb, where));
             if (!result.IsComplete)
             {
                 throw new IOException(TextFormat.FolderTransferFailure(result));

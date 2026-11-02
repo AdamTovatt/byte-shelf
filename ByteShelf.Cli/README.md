@@ -39,6 +39,17 @@ behind and replaces nothing. `get … -` is the exception: it writes to standard
 arrive, so a mismatch is reported (exit code 1) only after they have gone out. Check the exit code
 before trusting what was piped.
 
+`encrypt` encrypts a file, or a folder and every file under it, with a password that never leaves
+the machine, and `decrypt` removes it; either can be run again to finish one that stopped. A folder
+holding a file encrypted with another password is refused before anything changes. Each file costs a
+password derivation of about a second, and a run again checks each file already encrypted the same
+way, so a large folder takes a while. Files put under an encrypted folder are encrypted with its
+password, checked first, and `put --encrypt` encrypts a file elsewhere with a new one. `get` saves an
+encrypted file as its `.age` file, which `age -d` opens, and a folder's encrypted files the same way,
+unless `--decrypt` or a `--password-file` asks to decrypt them; a folder's password is checked first.
+The password is read from the terminal without echo, a new one twice, or from the first line of
+`--password-file`; never from an argument. A lost password cannot be recovered.
+
 `mkdir` creates a directory with any missing parents, `rm` moves a file or a directory to the trash,
 `trash` lists what can be restored, `restore` brings a deletion back, and `empty-trash` deletes the
 trash for good. `shelves` lists the shelves you can reach and `whoami` says who commands act as.

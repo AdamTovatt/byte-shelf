@@ -21,4 +21,11 @@
     <ProjectReference Include="..\ByteShelfClient\ByteShelfClient.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- age's official test vectors, from C2SP CCTV (its license allows copies without attribution). -->
+    <None Include="Encryption\AgeVectors\*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- An age file typage (the web UI's age) encrypted; the web client's tests open one this library wrote. -->
+    <None Include="Encryption\Interop\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

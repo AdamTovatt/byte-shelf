@@ -35,5 +35,11 @@ namespace ByteShelfCommon
 
         /// <summary>What the file is, in free text; null when it has none. Search matches it.</summary>
         public string? Description { get; init; }
+
+        /// <summary>
+        /// Whether the contents are an age file encrypted with a password (<see cref="FileEncryption"/>):
+        /// a client asks for the password and decrypts them; the server never can.
+        /// </summary>
+        public bool Encrypted { get; init; }
     }
 }

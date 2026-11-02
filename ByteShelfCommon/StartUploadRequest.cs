@@ -21,5 +21,11 @@ namespace ByteShelfCommon
         /// has no body but the contents: describe the file afterwards.
         /// </summary>
         public string? Description { get; init; }
+
+        /// <summary>
+        /// Whether the contents are an age file encrypted with a password, as a client made them
+        /// (<see cref="FileEncryption"/>). The server checks they start as one.
+        /// </summary>
+        public bool Encrypted { get; init; }
     }
 }

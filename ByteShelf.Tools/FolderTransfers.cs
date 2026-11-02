@@ -1,4 +1,5 @@
 using ByteShelfClient;
+using ByteShelfClient.Encryption;
 using ByteShelfCommon;
 
 namespace ByteShelf.Tools
@@ -59,8 +60,9 @@ namespace ByteShelf.Tools
         /// Stores the local folder <paramref name="localFolder"/> and everything in it at
         /// <paramref name="location"/>, under the folder's own name when that names a directory.
         /// </summary>
+        /// <param name="encryptor">Encrypts every file, as a folder under an encrypted directory must be; null stores them as they are.</param>
         /// <exception cref="UsageException">There is no such local folder, or it is a symbolic link.</exception>
-        public static async Task<FolderTransferResult> UploadAsync(IShelfClient shelf, string localFolder, ShelfLocation location, bool overwrite, CancellationToken cancellationToken)
+        public static async Task<FolderTransferResult> UploadAsync(IShelfClient shelf, string localFolder, ShelfLocation location, bool overwrite, CancellationToken cancellationToken, Encryptor? encryptor = null)
         {
             DirectoryInfo folder = new DirectoryInfo(Path.TrimEndingDirectorySeparator(Path.GetFullPath(localFolder)));
             if (!folder.Exists)
@@ -78,7 +80,7 @@ namespace ByteShelf.Tools
             await StopOnAsync(result, cancellationToken, async () =>
             {
                 await shelf.CreateDirectoryAsync(path, cancellationToken);
-                await UploadFolderAsync(shelf, folder, path, overwrite, result, cancellationToken);
+                await UploadFolderAsync(shelf, folder, path, overwrite, encryptor, result, cancellationToken);
             });
 
             return result;
@@ -89,6 +91,7 @@ namespace ByteShelf.Tools
         /// under it as a local folder: <paramref name="localTarget"/>, or inside it under the directory's
         /// name when it is a folder that exists, or that name in the working folder when null.
         /// </summary>
+        /// <param name="encrypted">What to do with encrypted files; null saves them as they are (<see cref="EncryptedFiles.SavedAsTheyAre"/>), as age files.</param>
         /// <param name="pageSize">How many entries to ask for at a time; tests make it small to page over few files.</param>
         public static async Task<FolderTransferResult> DownloadAsync(
             IShelfClient shelf,
@@ -96,8 +99,10 @@ namespace ByteShelf.Tools
             string? localTarget,
             bool overwrite,
             CancellationToken cancellationToken,
+            EncryptedFiles? encrypted = null,
             int pageSize = TreeQuery.MaxLimit)
         {
+            encrypted ??= EncryptedFiles.SavedAsTheyAre;
             string name = location.Path == ShelfPath.Root ? location.Shelf : ShelfPath.GetName(location.Path);
             string root = Path.GetFullPath(localTarget == null ? name : Directory.Exists(localTarget) ? Path.Combine(localTarget, name) : localTarget);
             FolderTransferResult result = new FolderTransferResult(root);
@@ -114,7 +119,7 @@ namespace ByteShelf.Tools
                     {
                         await RunAsync(entry.Path, result, () => entry.File == null
                             ? SaveDirectoryAsync(entry.Path, names)
-                            : SaveFileAsync(shelf, entry.File, names, overwrite, result, cancellationToken));
+                            : SaveFileAsync(shelf, entry.File, names, overwrite, encrypted, result, cancellationToken));
                     }
 
                     after = page.NextCursor;
@@ -131,20 +136,20 @@ namespace ByteShelf.Tools
             return Task.CompletedTask;
         }
 
-        private static async Task SaveFileAsync(IShelfClient shelf, ShelfFile file, LocalNames names, bool overwrite, FolderTransferResult result, CancellationToken cancellationToken)
+        private static async Task SaveFileAsync(IShelfClient shelf, ShelfFile file, LocalNames names, bool overwrite, EncryptedFiles encrypted, FolderTransferResult result, CancellationToken cancellationToken)
         {
-            string target = names.Claim(file.Path, isDirectory: false);
+            string target = names.Claim(encrypted.NameFor(file, file.Path), isDirectory: false);
             if (Directory.Exists(target))
             {
                 throw new UsageException("a local folder of that name is in the way.");
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            await Transfers.DownloadToFileAsync(shelf, file.Path, target, overwrite, cancellationToken);
+            await Transfers.DownloadToFileAsync(shelf, file, target, overwrite, encrypted, cancellationToken);
             result.Add(file.SizeBytes);
         }
 
-        private static async Task UploadFolderAsync(IShelfClient shelf, DirectoryInfo folder, string shelfPath, bool overwrite, FolderTransferResult result, CancellationToken cancellationToken)
+        private static async Task UploadFolderAsync(IShelfClient shelf, DirectoryInfo folder, string shelfPath, bool overwrite, Encryptor? encryptor, FolderTransferResult result, CancellationToken cancellationToken)
         {
             foreach (FileSystemInfo entry in folder.EnumerateFileSystemInfos().OrderBy(entry => entry.Name, StringComparer.Ordinal))
             {
@@ -159,18 +164,18 @@ namespace ByteShelf.Tools
                     if (entry is DirectoryInfo subfolder)
                     {
                         await shelf.CreateDirectoryAsync(path, cancellationToken);
-                        await UploadFolderAsync(shelf, subfolder, path, overwrite, result, cancellationToken);
+                        await UploadFolderAsync(shelf, subfolder, path, overwrite, encryptor, result, cancellationToken);
                         return;
                     }
 
-                    ShelfFile stored = await Transfers.UploadFileAsync(shelf, entry.FullName, path, new UploadOptions { Overwrite = overwrite }, cancellationToken);
+                    ShelfFile stored = await Transfers.UploadFileAsync(shelf, entry.FullName, path, new UploadOptions { Overwrite = overwrite }, cancellationToken, encryptor);
                     result.Add(stored.SizeBytes);
                 });
             }
         }
 
         /// <summary>Runs the transfer, keeping a failure that stops it in the result rather than losing what was done.</summary>
-        private static async Task StopOnAsync(FolderTransferResult result, CancellationToken cancellationToken, Func<Task> transfer)
+        internal static async Task StopOnAsync(FolderTransferResult result, CancellationToken cancellationToken, Func<Task> transfer)
         {
             try
             {
@@ -183,7 +188,7 @@ namespace ByteShelf.Tools
         }
 
         /// <summary>Runs one entry's step; a failure of that entry alone is reported and the transfer goes on.</summary>
-        private static async Task RunAsync(string what, FolderTransferResult result, Func<Task> step)
+        internal static async Task RunAsync(string what, FolderTransferResult result, Func<Task> step)
         {
             try
             {
@@ -200,7 +205,7 @@ namespace ByteShelf.Tools
             return exception switch
             {
                 ByteShelfException refused => refused.Code is not (ErrorCodes.Unauthenticated or ErrorCodes.PermissionDenied or ErrorCodes.QuotaExceeded or ErrorCodes.ReadOnlyReplica),
-                UsageException or ArgumentException or IOException or UnauthorizedAccessException => true,
+                UsageException or ArgumentException or IOException or UnauthorizedAccessException or AgeException => true,
                 _ => false,
             };
         }

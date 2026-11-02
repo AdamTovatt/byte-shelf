@@ -50,6 +50,9 @@ namespace ByteShelf.Server.Storage.Repositories
         /// </summary>
         Task<IReadOnlyList<(FileRecord File, string Path)>> GetLiveSubtreeAsync(Guid directoryId, string directoryPath, int? maxDepth, string? after, int maxRows, IDbSession? session = null);
 
+        /// <summary>Whether a deletion holds any file that is not encrypted.</summary>
+        Task<bool> DeletionHoldsPlainFileAsync(Guid deletionId, IDbSession? session = null);
+
         /// <summary>Brings back every file of a deletion; answers how many.</summary>
         Task<int> RestoreDeletionAsync(Guid deletionId, DateTimeOffset restoredAt, IDbSession session);
 

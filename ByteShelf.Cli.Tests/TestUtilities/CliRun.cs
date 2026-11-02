@@ -27,7 +27,8 @@ namespace ByteShelf.Cli.Tests.TestUtilities
         /// <param name="commandLine">The words after <c>byteshelf</c>.</param>
         /// <param name="input">Standard input, as text lines and as bytes.</param>
         /// <param name="cancellationToken">Stands for Ctrl+C.</param>
-        public static async Task<CliRun> RunAsync(IClientSource clients, string[] commandLine, string input = "", CancellationToken cancellationToken = default)
+        /// <param name="encryptionWorkFactor">The work factor the CLI encrypts with; null for its own default.</param>
+        public static async Task<CliRun> RunAsync(IClientSource clients, string[] commandLine, string input = "", CancellationToken cancellationToken = default, int? encryptionWorkFactor = null)
         {
             using StringReader inputText = new StringReader(input);
             using StringWriter output = new StringWriter();
@@ -41,7 +42,8 @@ namespace ByteShelf.Cli.Tests.TestUtilities
                 () => new MemoryStream(System.Text.Encoding.UTF8.GetBytes(input)),
                 () => binaryOutput);
 
-            int exitCode = await new CliApp(clients, terminal).RunAsync(commandLine, cancellationToken);
+            CliApp app = encryptionWorkFactor is int workFactor ? new CliApp(clients, terminal, workFactor) : new CliApp(clients, terminal);
+            int exitCode = await app.RunAsync(commandLine, cancellationToken);
             return new CliRun(exitCode, output.ToString().TrimEnd(), error.ToString().TrimEnd(), binaryOutput.ToArray());
         }
     }

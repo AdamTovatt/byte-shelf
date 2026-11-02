@@ -98,6 +98,23 @@ namespace ByteShelf.Server.Tests.Replication
         }
 
         [Fact]
+        public async Task Sync_EncryptedDirectoryAndFile_ReachTheReplicaMarkedSo()
+        {
+            await _pair.PairAsync();
+            (await _pair.Primary.AdminClient.PostAsJsonAsync("/api/shelves/docs/directories", new CreateDirectoryRequest { Path = "/secret" })).EnsureSuccessStatusCode();
+            // The server checks only that a check or an encrypted file starts as an age file.
+            string check = Convert.ToBase64String(Encoding.ASCII.GetBytes("age-encryption.org/v1\nthe check"));
+            (await _pair.Primary.AdminClient.PutAsJsonAsync("/api/shelves/docs/directories/encryption?path=/secret", new SetFolderEncryptionRequest { Check = check })).EnsureSuccessStatusCode();
+            (await _pair.Primary.AdminClient.PutAsync("/api/shelves/docs/content?path=/secret/a.txt&encrypted=true", new StringContent("age-encryption.org/v1\nthe file"))).EnsureSuccessStatusCode();
+
+            await _pair.SyncAsync();
+
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            DirectoryListing listing = (await replica.GetFromJsonAsync<DirectoryListing>("/api/shelves/docs/entries?path=/secret"))!;
+            Assert.Equal(("/secret", check, true), (listing.EncryptedBy?.Directory.Path, listing.EncryptedBy?.Check, Assert.Single(listing.Files).Encrypted));
+        }
+
+        [Fact]
         public async Task Sync_FilePurgedOnThePrimary_StaysInTheReplicasTrash()
         {
             await _pair.PairAsync();
