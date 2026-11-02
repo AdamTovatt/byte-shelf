@@ -12,13 +12,17 @@ export type FileSearchResults = components['schemas']['FileSearchResults'];
 
 /**
  * A directory or a file in a listing, as the shelf page and its dialogs act on it. A directory
- * carries the size of every file under it, as its listing gives it.
+ * carries the size and count of the files under it, and how many of them are encrypted, as its
+ * listing gives them.
  */
-export type Entry = { kind: 'directory'; value: ShelfDirectory; sizeBytes: number } | { kind: 'file'; value: ShelfFile };
+export type Entry =
+  | { kind: 'directory'; value: ShelfDirectory; sizeBytes: number; fileCount: number; encryptedFileCount: number }
+  | { kind: 'file'; value: ShelfFile };
 
 /** A listed directory as an entry. */
 export function directoryEntry(listed: ListedDirectory): Entry {
-  return { kind: 'directory', value: listed.directory, sizeBytes: listed.sizeBytes };
+  const { directory, sizeBytes, fileCount, encryptedFileCount } = listed;
+  return { kind: 'directory', value: directory, sizeBytes, fileCount, encryptedFileCount };
 }
 
 /** An entry's size: a file's own, or a directory's with everything under it. */

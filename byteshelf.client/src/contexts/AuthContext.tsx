@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 import { useQueryClient } from '@tanstack/react-query';
 import { hasSession, isSessionStorageKey, saveTokens, signOut } from '../services/authService';
 import type { AuthResponse } from '../services/authTypes';
+import { forgetPasswords } from '../lib/encryption/passwords';
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -21,6 +22,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     function onStorage(event: StorageEvent): void {
       if (isSessionStorageKey(event.key)) {
         queryClient.clear();
+        if (!hasSession()) forgetPasswords();
         setIsAuthenticated(hasSession());
       }
     }
@@ -30,13 +32,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [queryClient]);
 
   const login = useCallback((response: AuthResponse) => {
-    // Drop any cached data from a prior session, so an account never inherits another's queries.
+    // Drop any cached data and passwords from a prior session, so an account never inherits another's.
     queryClient.clear();
+    forgetPasswords();
     saveTokens(response);
     setIsAuthenticated(true);
   }, [queryClient]);
 
   const logout = useCallback(async () => {
+    forgetPasswords();
     await signOut();
     setIsAuthenticated(false);
     queryClient.clear();

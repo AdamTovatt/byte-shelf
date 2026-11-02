@@ -221,7 +221,7 @@ namespace ByteShelfClient.InMemory
             if (!encrypted && EncryptedFolderFor(ShelfPath.GetParent(normalizedPath)) is DirectoryNode folder)
             {
                 throw InMemoryErrors.Conflict(
-                    $"'{normalizedPath}' is under the encrypted folder '{PathOf(folder)}': store it encrypted with that folder's password, as the byteshelf CLI does.");
+                    $"'{normalizedPath}' is under the encrypted folder '{PathOf(folder)}': store it encrypted with that folder's password, as the web UI and the byteshelf CLI do.");
             }
         }
 
@@ -328,6 +328,7 @@ namespace ByteShelfClient.InMemory
                 Directory = ToShelfDirectory(directory),
                 SizeBytes = files.Sum(file => file.Content.LongLength),
                 FileCount = files.Count,
+                EncryptedFileCount = files.Count(file => file.Encrypted),
             };
         }
 

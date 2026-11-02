@@ -39,7 +39,7 @@ namespace ByteShelf.Tools.Mcp
             tool calls. download_file refuses an encrypted file, download_directory leaves them out, no
             link is made to one, and nothing can be stored in an encrypted directory through these
             tools. Names, sizes and descriptions stay visible, so search still finds them; a person opens
-            them with the byteshelf CLI.
+            them in the web UI or with the byteshelf CLI.
 
             A refusal ends with its code in parentheses, such as (not_found), (conflict) or
             (permission_denied).

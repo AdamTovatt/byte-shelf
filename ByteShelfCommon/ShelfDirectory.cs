@@ -26,6 +26,6 @@ namespace ByteShelfCommon
         /// stores only encrypted files under it, at any depth (<see cref="FileEncryption"/>). Plain files
         /// already there stay plain until a client encrypts them in place.
         /// </summary>
-        public bool Encrypted { get; init; }
+        public required bool Encrypted { get; init; }
     }
 }

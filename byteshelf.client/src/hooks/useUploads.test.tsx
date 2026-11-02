@@ -19,7 +19,8 @@ describe('uploads', () => {
   const last = () => states[states.length - 1];
 
   function Probe() {
-    uploads = useUploads('docs', (_upload, state) => states.push(state));
+    // Encrypted at a low work factor: age's default takes about a second a file.
+    uploads = useUploads('docs', (_upload, state) => states.push(state), 10);
     return null;
   }
 
@@ -54,6 +55,24 @@ describe('uploads', () => {
       'PUT /api/shelves/docs/content?path=%2Fa.txt&overwrite=false',
       'PUT /api/shelves/docs/content?path=%2Fa.txt&overwrite=true',
     ]);
+  });
+
+  it('sends a file for an encrypted folder as an age file marked encrypted, typed as itself', async () => {
+    let body = '';
+    let type = '';
+    const sent = stubServer(async (request) => {
+      body = new TextDecoder().decode(await request.arrayBuffer());
+      type = request.headers.get('Content-Type') ?? '';
+      return json(storedFile);
+    });
+
+    await act(async () => uploads.upload([new File(['secret'], 'a.txt', { type: 'text/plain' })], '/', 'pw'));
+    await vi.waitFor(() => expect(last()?.status).toBe('done'), { timeout: 10000 });
+
+    expect(sent[0].split(' Bearer')[0]).toBe('PUT /api/shelves/docs/content?path=%2Fa.txt&overwrite=false&encrypted=true');
+    expect(body.startsWith('age-encryption.org/v1\n')).toBe(true);
+    expect(body).not.toContain('secret');
+    expect(type).toBe('text/plain');
   });
 
   it('reports any other refusal as failed, with its reason', async () => {

@@ -251,6 +251,21 @@ namespace ByteShelf.Server.Tests.Client
         }
 
         [Fact]
+        public async Task ListAsync_CountsTheEncryptedFilesUnderEachDirectoryAtAnyDepth()
+        {
+            await UploadTextAsync("/mixed/plain.txt", "plain");
+            await UploadEncryptedAsync("/mixed/deeper/a.txt", "a");
+            await UploadEncryptedAsync("/mixed/deeper/b.txt", "b");
+            await UploadTextAsync("/other/plain.txt", "plain");
+
+            DirectoryListing root = await Shelf.ListAsync();
+
+            Assert.Equal(
+                new[] { ("mixed", 3, 2), ("other", 1, 0) },
+                root.Directories.Select(listed => (listed.Directory.Name, listed.FileCount, listed.EncryptedFileCount)));
+        }
+
+        [Fact]
         public async Task RemoveDirectoryEncryptionAsync_NotEncrypted_ThrowsConflict()
         {
             await Shelf.CreateDirectoryAsync("/plain");

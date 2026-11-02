@@ -29,6 +29,10 @@ import { useSelection, type SelectionClickModifiers } from '../hooks/useSelectio
 import { useFilePicker } from '../hooks/useFilePicker';
 import { MobileTopBarActions, MobileTopBarOverlay } from '../components/layout/MobileTopBar';
 import { useUploads } from '../hooks/useUploads';
+import { encryptionActions, useEncryption } from '../hooks/useEncryption';
+import { saveBlob, saveFrom, showBlob } from '../lib/localBlobs';
+import { openTabWithoutPasswords } from '../lib/encryption/passwords';
+import { showActionToast } from '../components/actionToast';
 import { formatBytes, formatTime } from '../lib/format';
 import { joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../lib/shelfPaths';
 import { copyWhenReady } from '../lib/clipboard';
@@ -46,6 +50,7 @@ export function ShelfPage() {
   const navigate = useNavigate();
   const { data: listing, isLoading, error } = useListing(shelf, path);
   const uploads = useUploads(shelf);
+  const encryption = useEncryption(shelf);
   const deleteEntry = useDeleteEntry(shelf);
   const restore = useRestoreDeletion(shelf);
   const [creatingDirectory, setCreatingDirectory] = useState(false);
@@ -60,13 +65,23 @@ export function ShelfPage() {
   const searching = searchText.trim() !== '';
   const found = useFileSearch(shelf, path, useDebouncedValue(searchText, SEARCH_DELAY_MS));
 
-  const picker = useFilePicker((files) => uploads.upload(files, path));
+  /** Uploads into this folder; in an encrypted one, encrypted with its password, asked for if this tab has not unlocked it. */
+  async function upload(files: File[]): Promise<void> {
+    const folder = listing?.encryptedBy;
+    if (!folder) return uploads.upload(files, path);
+    await runOrToast(async () => {
+      const password = await encryption.folderPassword(folder);
+      if (password !== null) uploads.upload(files, path, password);
+    }, 'Could not upload');
+  }
+
+  const picker = useFilePicker((files) => void upload(files));
 
   function onDrop(event: DragEvent<HTMLDivElement>): void {
     event.preventDefault();
     setDragging(false);
     const files = Array.from(event.dataTransfer.files);
-    if (files.length > 0) uploads.upload(files, path);
+    if (files.length > 0) void upload(files);
   }
 
   /**
@@ -76,7 +91,8 @@ export function ShelfPage() {
    * saves the file instead.
    */
   async function openInTab(file: ShelfFile): Promise<void> {
-    const tab = window.open('', '_blank');
+    if (file.encrypted) return openDecrypted(file);
+    const tab = openTabWithoutPasswords();
     if (!tab) return save([file]);
     await runOrToast(async () => {
       try {
@@ -95,12 +111,27 @@ export function ShelfPage() {
   async function save(files: ShelfFile[]): Promise<void> {
     await runOrToast(async () => {
       for (const file of files) {
-        const anchor = document.createElement('a');
-        anchor.href = `${(await createDownloadLink(shelf, file.id, OPEN_LINK_MINUTES)).url}?download=true`;
-        anchor.download = '';
-        anchor.click();
+        if (file.encrypted) {
+          const plain = await encryption.contents(file);
+          if (plain) saveBlob(plain, file.name);
+          continue;
+        }
+        saveFrom(`${(await createDownloadLink(shelf, file.id, OPEN_LINK_MINUTES)).url}?download=true`, '');
       }
     }, files.length === 1 ? 'Could not save the file' : 'Could not save the files');
+  }
+
+  /**
+   * Opens an encrypted file from its contents decrypted here, never through a link. Asking for the
+   * password can take long enough for the browser to block the tab; a toast then opens it from a
+   * fresh click.
+   */
+  async function openDecrypted(file: ShelfFile): Promise<void> {
+    await runOrToast(async () => {
+      const plain = await encryption.contents(file);
+      if (!plain || showBlob(plain, file.name)) return;
+      showActionToast({ message: `${file.name} is unlocked`, action: 'Open', onAction: () => showBlob(plain, file.name), duration: 15000 });
+    }, 'Could not open the file');
   }
 
   /** Opens a row: a folder by going into it, a file in a new tab. */
@@ -151,24 +182,17 @@ export function ShelfPage() {
     if (removed.length === 0) return;
 
     const what = removed.length === 1 ? removed[0].entry.value.name : `${removed.length} items`;
-    toast((t) => (
-      <span className="flex items-center gap-3">
-        <span>Moved {what} to the trash</span>
-        <Button
-          size="sm"
-          variant="secondary"
-          icon={<Icon icon={iconMap.undo} size={14} />}
-          onClick={() => {
-            toast.dismiss(t.id);
-            for (const { entry, deletionId } of removed) {
-              void runOrToast(() => restore.mutateAsync(deletionId), `Could not restore ${entry.value.name}`);
-            }
-          }}
-        >
-          Undo
-        </Button>
-      </span>
-    ), { duration: 8000 });
+    showActionToast({
+      message: `Moved ${what} to the trash`,
+      action: 'Undo',
+      icon: <Icon icon={iconMap.undo} size={14} />,
+      onAction: () => {
+        for (const { entry, deletionId } of removed) {
+          void runOrToast(() => restore.mutateAsync(deletionId), `Could not restore ${entry.value.name}`);
+        }
+      },
+      duration: 8000,
+    });
   }
 
   const entries: Entry[] = useMemo(() => (listing
@@ -212,6 +236,10 @@ export function ShelfPage() {
   }, [dialogOpen, selecting, clearSelection, selectAll, canSelectAll]);
 
   function row(entry: Entry, options: { label?: string; selectable?: boolean } = {}) {
+    // A link would hand on only encrypted bytes, so an encrypted file has none. Only a listing's rows
+    // know whether they are under an encrypted folder.
+    const encrypted = entry.value.encrypted;
+    const actions = encryptionActions(entry, !options.selectable ? 'unknown' : listing?.encryptedBy ? 'encrypted' : 'plain');
     return (
       <EntryRow
         key={entry.value.id}
@@ -226,7 +254,9 @@ export function ShelfPage() {
         onPrefetch={entry.kind === 'directory' ? () => prefetchListing(entry.value.path) : undefined}
         onDownload={entry.kind === 'file' ? () => void save([entry.value]) : undefined}
         onDescribe={entry.kind === 'file' ? () => setDescribing(entry.value) : undefined}
-        onCopyLink={entry.kind === 'file' ? () => void copyLink(entry.value) : undefined}
+        onCopyLink={entry.kind === 'file' && !encrypted ? () => void copyLink(entry.value) : undefined}
+        onEncrypt={actions.encrypt ? () => void encryption.encrypt(entry) : undefined}
+        onRemoveEncryption={actions.removeEncryption ? () => void encryption.removeEncryption(entry) : undefined}
         onRename={() => setRenaming(entry)}
         onMove={() => setMoving([entry])}
         onDelete={() => void remove([entry])}
@@ -342,6 +372,7 @@ export function ShelfPage() {
       {renaming && <RenameDialog shelf={shelf} entry={renaming} onClose={() => setRenaming(null)} />}
       {moving && <MoveDialog shelf={shelf} entries={moving} onClose={() => setMoving(null)} />}
       {describing && <DescriptionDialog shelf={shelf} file={describing} onClose={() => setDescribing(null)} />}
+      {encryption.dialog}
     </div>
   );
 }
@@ -438,12 +469,14 @@ interface EntryRowProps {
   onDownload?: () => void;
   onDescribe?: () => void;
   onCopyLink?: () => void;
+  onEncrypt?: () => void;
+  onRemoveEncryption?: () => void;
   onRename: () => void;
   onMove: () => void;
   onDelete: () => void;
 }
 
-function EntryRow({ entry, label, selection, onOpen, onPrefetch, onDownload, onDescribe, onCopyLink, onRename, onMove, onDelete }: EntryRowProps) {
+function EntryRow({ entry, label, selection, onOpen, onPrefetch, onDownload, onDescribe, onCopyLink, onEncrypt, onRemoveEncryption, onRename, onMove, onDelete }: EntryRowProps) {
   const isFile = entry.kind === 'file';
   const name = entry.value.name;
   const selected = selection?.selected ?? false;
@@ -481,6 +514,7 @@ function EntryRow({ entry, label, selection, onOpen, onPrefetch, onDownload, onD
       >
         <Icon icon={isFile ? getFileIcon(name) : iconMap.folder} size={18} className="shrink-0 text-muted" />
         <span className="min-w-0 truncate text-body-md text-fg">{label ?? name}</span>
+        {entry.value.encrypted && <Icon icon={iconMap.lock} size={14} className="shrink-0 text-muted" aria-label="Encrypted" />}
         {isFile && (
           <span className="ml-auto hidden shrink-0 pl-2 text-body-sm text-muted sm:inline">
             {formatBytes(entry.value.sizeBytes)} · {formatTime(entry.value.updatedAt)}
@@ -491,6 +525,8 @@ function EntryRow({ entry, label, selection, onOpen, onPrefetch, onDownload, onD
         {onDownload && <DropdownItem icon={<Icon icon={iconMap.download} size={16} />} onClick={onDownload}>Download</DropdownItem>}
         {onCopyLink && <DropdownItem icon={<Icon icon={iconMap.copy} size={16} />} onClick={onCopyLink}>Copy link</DropdownItem>}
         {onDescribe && <DropdownItem icon={<Icon icon={iconMap.edit} size={16} />} onClick={onDescribe}>Description</DropdownItem>}
+        {onEncrypt && <DropdownItem icon={<Icon icon={iconMap.lock} size={16} />} onClick={onEncrypt}>Encrypt</DropdownItem>}
+        {onRemoveEncryption && <DropdownItem icon={<Icon icon={iconMap.unlock} size={16} />} onClick={onRemoveEncryption}>Remove encryption</DropdownItem>}
         <DropdownItem icon={<Icon icon={iconMap.rename} size={16} />} onClick={onRename}>Rename</DropdownItem>
         <DropdownItem icon={<Icon icon={iconMap.move} size={16} />} onClick={onMove}>Move</DropdownItem>
         <DropdownItem icon={<Icon icon={iconMap.delete} size={16} />} variant="danger" onClick={onDelete}>Delete</DropdownItem>

@@ -407,6 +407,7 @@ namespace ByteShelf.Cli.Tests
                         Sha256 = new string('0', 64),
                         CreatedAt = DateTimeOffset.UtcNow,
                         UpdatedAt = DateTimeOffset.UtcNow,
+                        Encrypted = false,
                     };
                     return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(record, ByteShelfJsonContext.Default.ShelfFile), Encoding.UTF8, "application/json") };
                 }

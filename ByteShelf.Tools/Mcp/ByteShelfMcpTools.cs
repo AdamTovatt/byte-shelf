@@ -40,7 +40,7 @@ namespace ByteShelf.Tools.Mcp
         private const string ShelfDescription = "The shelf's name; leave it out when you reach only one shelf, as a shelf key does.";
 
         /// <summary>Why a tool never reads an encrypted file's contents, after the file's path.</summary>
-        internal const string EncryptedReason = "it is encrypted with a password, and passwords never go through tool calls; a person can get it with 'byteshelf get <shelf>:<path> --decrypt'.";
+        internal const string EncryptedReason = "it is encrypted with a password, and passwords never go through tool calls; a person can open it in the web UI, or get it with 'byteshelf get <shelf>:<path> --decrypt'.";
 
         private static readonly EncryptedFiles NeverDecrypted = EncryptedFiles.LeftOut(EncryptedReason);
 

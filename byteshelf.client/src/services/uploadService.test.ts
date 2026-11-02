@@ -58,6 +58,24 @@ describe('uploads', () => {
     expect(progress).toEqual([CHUNK_BYTES, CHUNK_BYTES + 1]);
   });
 
+  it('marks an encrypted file encrypted, in the query of one request or the start of chunks, and a plain one in neither', async () => {
+    const bodies: unknown[] = [];
+    const sent = stubServer(async (request) => {
+      if (request.method === 'POST' && new URL(request.url).pathname.endsWith('/uploads')) bodies.push(await request.json());
+      return acceptingServer(request);
+    });
+
+    await uploadFile({ shelf: 'docs', path: '/a', file: new Blob(['a']), overwrite: false, encrypted: true });
+    await uploadFile({ shelf: 'docs', path: '/b', file: new Blob(['b']), overwrite: false, encrypted: false });
+    await uploadFile({ shelf: 'docs', path: '/big', file: new Blob([new Uint8Array(CHUNK_BYTES + 1)]), overwrite: false, encrypted: true });
+
+    expect(routes(sent).slice(0, 2)).toEqual([
+      'PUT /api/shelves/docs/content?path=%2Fa&overwrite=false&encrypted=true',
+      'PUT /api/shelves/docs/content?path=%2Fb&overwrite=false',
+    ]);
+    expect(bodies).toEqual([expect.objectContaining({ path: '/big', encrypted: true })]);
+  });
+
   it('aborts the upload when a chunk fails, and throws the failure', async () => {
     const sent = stubServer(async (request) => {
       if (request.method === 'PUT') return json({ message: 'Disk full.', code: 'quota_exceeded' }, 507);

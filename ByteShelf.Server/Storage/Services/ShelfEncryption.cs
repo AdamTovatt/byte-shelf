@@ -60,7 +60,7 @@ namespace ByteShelf.Server.Storage.Services
             {
                 string folderPath = await _shelfTree.GetDirectoryPathAsync(folder.Id, session);
                 throw new ConflictException(
-                    $"'{normalizedPath}' is under the encrypted folder '{folderPath}': store it encrypted with that folder's password, as the byteshelf CLI does.");
+                    $"'{normalizedPath}' is under the encrypted folder '{folderPath}': store it encrypted with that folder's password, as the web UI and the byteshelf CLI do.");
             }
         }
 

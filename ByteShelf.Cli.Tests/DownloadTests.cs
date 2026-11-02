@@ -78,6 +78,7 @@ namespace ByteShelf.Cli.Tests
                 Sha256 = kept.Sha256,
                 CreatedAt = kept.CreatedAt,
                 UpdatedAt = kept.UpdatedAt,
+                Encrypted = kept.Encrypted,
             };
             IShelfClient shelf = ShelfStandIn.Over(Docs, (method, _) => method.Name == nameof(IShelfClient.ListTreeAsync)
                 ? Task.FromResult(new DirectoryTree { Directory = directory, Directories = Array.Empty<ShelfDirectory>(), Files = new[] { escaping, kept } })
@@ -179,6 +180,7 @@ namespace ByteShelf.Cli.Tests
                 Sha256 = new string('0', 64),
                 CreatedAt = DateTimeOffset.UtcNow,
                 UpdatedAt = DateTimeOffset.UtcNow,
+                Encrypted = false,
             };
         }
 

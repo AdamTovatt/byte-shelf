@@ -100,7 +100,7 @@ URL is made absolute as a download link's is.
 `ByteShelfClient.Encryption` encrypts with a password as every ByteShelf client does: an age file
 (c2sp.org/age) with a scrypt recipient, which `age -d` opens too. `AgeEncryption` encrypts and
 decrypts streams; it follows the specification, passes its official test vectors, reads what typage
-(age in JavaScript) writes and the other way round, and needs the platform's ChaCha20-Poly1305
+(age in JavaScript, which the web UI depends on) writes and the other way round, and needs the platform's ChaCha20-Poly1305
 (`IsSupported`). Store an encrypted file with `UploadOptions.Encrypted`. A directory is encrypted
 with `EncryptDirectoryAsync` and a check from `FolderPassword.CreateCheckAsync`; from then on every
 file stored under it must be encrypted with its password, which `FolderPassword.MatchesAsync` tells

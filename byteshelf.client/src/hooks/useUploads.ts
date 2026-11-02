@@ -3,6 +3,7 @@ import { ApiError } from '../services/apiClient';
 import { ERROR_CODES } from '../services/errorCodes';
 import { uploadFile } from '../services/uploadService';
 import { joinPath } from '../lib/shelfPaths';
+import { DEFAULT_WORK_FACTOR, encryptBlob } from '../lib/encryption/age';
 import { getErrorMessage } from '../ui';
 import { reportUpload } from '../components/uploadToasts';
 import { useInvalidateShelf } from './useShelfQueries';
@@ -11,6 +12,8 @@ export interface Upload {
   id: number;
   file: File;
   path: string;
+  /** Encrypts the file with this before it is sent, as a file in an encrypted folder must be. */
+  password?: string;
 }
 
 /** Where an upload is: told to the reporter each time it changes. */
@@ -25,8 +28,9 @@ export type UploadReporter = (upload: Upload, state: UploadState) => void;
 /**
  * Uploads files to a shelf one at a time, telling `report` (toasts, by default) how each one goes. A
  * file whose name is taken is offered for replacing; nothing is ever overwritten unasked.
+ * `workFactor` is what an encrypted upload is encrypted at; only tests lower it.
  */
-export function useUploads(shelf: string, report: UploadReporter = reportUpload) {
+export function useUploads(shelf: string, report: UploadReporter = reportUpload, workFactor = DEFAULT_WORK_FACTOR) {
   const nextId = useRef(1);
   const queue = useRef<Promise<void>>(Promise.resolve());
   const invalidate = useInvalidateShelf();
@@ -37,11 +41,13 @@ export function useUploads(shelf: string, report: UploadReporter = reportUpload)
       queue.current = queue.current.then(async () => {
         report(upload, { status: 'uploading', sentBytes: 0 });
         try {
+          const { file, password } = upload;
           await uploadFile({
             shelf,
             path: upload.path,
-            file: upload.file,
+            file: password === undefined ? file : await encryptBlob(file, password, file.type, workFactor),
             overwrite,
+            encrypted: password !== undefined,
             onProgress: (sentBytes) => report(upload, { status: 'uploading', sentBytes }),
           });
           report(upload, { status: 'done' });
@@ -58,10 +64,10 @@ export function useUploads(shelf: string, report: UploadReporter = reportUpload)
     }
 
     return {
-      /** Uploads `files` into the directory at `directory`, each under its own name. */
-      upload(files: File[], directory: string): void {
-        for (const file of files) run({ id: nextId.current++, file, path: joinPath(directory, file.name) }, false);
+      /** Uploads `files` into the directory at `directory`, each under its own name, encrypted with `password` when one is given. */
+      upload(files: File[], directory: string, password?: string): void {
+        for (const file of files) run({ id: nextId.current++, file, path: joinPath(directory, file.name), password }, false);
       },
     };
-  }, [shelf, report, invalidate]);
+  }, [shelf, report, workFactor, invalidate]);
 }

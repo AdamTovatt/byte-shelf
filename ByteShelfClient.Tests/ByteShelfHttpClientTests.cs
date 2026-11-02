@@ -510,7 +510,7 @@ namespace ByteShelfClient.Tests
         /// <summary>What completing the six-byte upload of /a.txt answers.</summary>
         private static string FileJson()
         {
-            return $"{{\"id\":\"{Guid.NewGuid():D}\",\"shelfId\":\"{Guid.Empty:D}\",\"directoryId\":\"{Guid.Empty:D}\",\"path\":\"/a.txt\",\"name\":\"a.txt\",\"contentType\":\"text/plain\",\"sizeBytes\":6,\"sha256\":\"{new string('0', 64)}\",\"createdAt\":\"2026-01-01T00:00:00Z\",\"updatedAt\":\"2026-01-01T00:00:00Z\"}}";
+            return $"{{\"id\":\"{Guid.NewGuid():D}\",\"shelfId\":\"{Guid.Empty:D}\",\"directoryId\":\"{Guid.Empty:D}\",\"path\":\"/a.txt\",\"name\":\"a.txt\",\"contentType\":\"text/plain\",\"sizeBytes\":6,\"sha256\":\"{new string('0', 64)}\",\"createdAt\":\"2026-01-01T00:00:00Z\",\"updatedAt\":\"2026-01-01T00:00:00Z\",\"encrypted\":false}}";
         }
 
         private static ScriptedServer ServingWithSha256(byte[] content, string sha256)

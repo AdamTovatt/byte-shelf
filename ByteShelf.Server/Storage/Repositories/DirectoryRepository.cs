@@ -97,21 +97,22 @@ namespace ByteShelf.Server.Storage.Repositories
                         FROM directory JOIN tree ON directory.parent_id = tree.node_id
                         WHERE directory.deleted_at IS NULL
                     ),
-                    totals(top_id, size_bytes, file_count) AS (
-                        SELECT tree.top_id, COALESCE(SUM(file.size_bytes), 0), COUNT(file.id)
+                    totals(top_id, size_bytes, file_count, encrypted_file_count) AS (
+                        SELECT tree.top_id, COALESCE(SUM(file.size_bytes), 0), COUNT(file.id), COALESCE(SUM(file.encrypted), 0)
                         FROM tree LEFT JOIN file ON file.directory_id = tree.node_id AND file.deleted_at IS NULL
                         GROUP BY tree.top_id
                     )
                     SELECT {SelectColumns},
                         totals.size_bytes AS {nameof(DirectoryTotalsEntity.SizeBytes)},
-                        totals.file_count AS {nameof(DirectoryTotalsEntity.FileCount)}
+                        totals.file_count AS {nameof(DirectoryTotalsEntity.FileCount)},
+                        totals.encrypted_file_count AS {nameof(DirectoryTotalsEntity.EncryptedFileCount)}
                     FROM directory JOIN totals ON directory.id = totals.top_id
                     ORDER BY name";
 
                 IEnumerable<DirectoryTotalsEntity> entities = await dbSession.Connection.QueryAsync<DirectoryTotalsEntity>(
                     query, new { parentId }, transaction: dbSession.Transaction);
 
-                return (IReadOnlyList<DirectoryWithTotals>)entities.Select(entity => new DirectoryWithTotals(entity.ToDomain(), entity.SizeBytes, entity.FileCount)).ToList();
+                return (IReadOnlyList<DirectoryWithTotals>)entities.Select(entity => new DirectoryWithTotals(entity.ToDomain(), entity.SizeBytes, entity.FileCount, entity.EncryptedFileCount)).ToList();
             }, session);
         }
 
@@ -482,6 +483,7 @@ namespace ByteShelf.Server.Storage.Repositories
         {
             public long SizeBytes { get; set; }
             public int FileCount { get; set; }
+            public int EncryptedFileCount { get; set; }
         }
 
         internal class DirectoryEntity

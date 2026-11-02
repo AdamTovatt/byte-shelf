@@ -19,7 +19,7 @@ permissions: read, add-only (read, and store new files, never replace or remove)
   create_upload_link for a link that stores one file sent to it with curl. Add it to
   Claude Code with this server's address and the key:
   `claude mcp add --transport http byteshelf https://<this-server>/mcp --header "Authorization: Bearer bsk_..."`
-- Files and folders can be encrypted with a password (as age files) by the CLI. The
+- Files and folders can be encrypted with a password (as age files) in the web UI and with the CLI. The
   tools never read their contents, since a password never goes through a tool call.
 - `byteshelf --mcp`: the same tools over stdio on the agent's own machine, signed in as the CLI is,
   plus moving local files and whole folders. Add it with `claude mcp add byteshelf -- byteshelf --mcp`.

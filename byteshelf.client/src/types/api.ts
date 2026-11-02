@@ -3317,6 +3317,8 @@ export interface components {
             sizeBytes: number;
             /** Format: int32 */
             fileCount: number;
+            /** Format: int32 */
+            encryptedFileCount: number;
         };
         LoginAuthRequest: {
             username?: string;
@@ -3416,7 +3418,7 @@ export interface components {
             name: string;
             /** Format: date-time */
             createdAt: string;
-            encrypted?: boolean;
+            encrypted: boolean;
         };
         ShelfFile: {
             /** Format: uuid */
@@ -3436,7 +3438,7 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             description?: string | null;
-            encrypted?: boolean;
+            encrypted: boolean;
         };
         ShelfInfo: {
             /** Format: uuid */

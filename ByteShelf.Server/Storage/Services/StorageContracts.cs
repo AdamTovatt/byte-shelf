@@ -54,6 +54,7 @@ namespace ByteShelf.Server.Storage.Services
                 Directory = ToShelfDirectory(listed.Directory, path),
                 SizeBytes = listed.SizeBytes,
                 FileCount = listed.FileCount,
+                EncryptedFileCount = listed.EncryptedFileCount,
             };
         }
 

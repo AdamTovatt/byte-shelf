@@ -10,6 +10,8 @@ export interface UploadRequest {
   path: string;
   file: Blob;
   overwrite: boolean;
+  /** The file is an age file encrypted with a password, typed as what it holds. */
+  encrypted?: boolean;
   /** Told how many bytes the server has after each request. */
   onProgress?: (sentBytes: number) => void;
   signal?: AbortSignal;
@@ -20,11 +22,12 @@ export interface UploadRequest {
 
 /** Stores a file; a failed chunk aborts the upload, so its reservation against the quota is released at once. */
 export async function uploadFile(request: UploadRequest): Promise<ShelfFile> {
-  const { shelf, path, file, overwrite, onProgress, signal } = request;
+  const { shelf, path, file, overwrite, encrypted = false, onProgress, signal } = request;
   const contentType = file.type || 'application/octet-stream';
 
   if (file.size <= CHUNK_BYTES) {
     const query = new URLSearchParams({ path, overwrite: String(overwrite) });
+    if (encrypted) query.set('encrypted', 'true');
     const response = await authorizedFetch(apiUrl('/api/shelves/{shelf}/content', { shelf }, query), {
       method: 'PUT',
       headers: { 'Content-Type': contentType },
@@ -39,7 +42,7 @@ export async function uploadFile(request: UploadRequest): Promise<ShelfFile> {
 
   const session = await unwrapResponse(apiClient.POST('/api/shelves/{shelf}/uploads', {
     params: { path: { shelf } },
-    body: { path, sizeBytes: file.size, contentType, overwrite },
+    body: { path, sizeBytes: file.size, contentType, overwrite, encrypted },
     signal,
   }));
   const uploadPath = { path: { shelf, uploadId: session.id } };

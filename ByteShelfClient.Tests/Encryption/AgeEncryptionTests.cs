@@ -137,6 +137,24 @@ namespace ByteShelfClient.Tests.Encryption
             Assert.Equal(AgeFailure.Header, exception.Failure);
         }
 
+        /// <summary>
+        /// typage-check.txt is a folder check the web UI's age.ts makes (typage at work factor 10, of its
+        /// CHECK_TEXT) for this password, so a check text that drifts from <see cref="FileEncryption.CheckText"/>
+        /// fails here. byteshelf.client's interop test matches the check this library makes the same way.
+        /// </summary>
+        [Fact]
+        public async Task FolderPasswordMatches_ACheckTypageMade_AnswersTrueForItsPasswordOnly()
+        {
+            EncryptedFolder folder = new EncryptedFolder
+            {
+                Directory = new ShelfDirectory { Id = Guid.NewGuid(), ShelfId = Guid.NewGuid(), Path = "/vault", Name = "vault", CreatedAt = DateTimeOffset.UnixEpoch, Encrypted = true },
+                Check = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Encryption", "Interop", "typage-check.txt")).Trim(),
+            };
+
+            Assert.True(await FolderPassword.MatchesAsync(folder, "correct horse ☃ räksmörgås"));
+            Assert.False(await FolderPassword.MatchesAsync(folder, "another password"));
+        }
+
         [Fact]
         public async Task FolderPasswordMatches_ACheckOfOtherText_IsAPayloadFailure()
         {

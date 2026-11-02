@@ -48,3 +48,50 @@ test('a file uploaded in one tab appears in another and downloads intact', async
   expect(saved.suggestedFilename()).toBe('hello.txt');
   expect(await readFile((await saved.path())!, 'utf8')).toBe('hello from the browser test');
 });
+
+// What only a browser shows for encryption: typage encrypting there, the password dialogs, and a
+// decrypted download from a local blob in a tab that never had the password.
+test('a folder encrypted in the browser keeps its files encrypted and opens them with its password', async ({ browser }) => {
+  const owner = await signIn(browser);
+  await owner.getByRole('button', { name: 'New shelf' }).click();
+  await owner.getByLabel('Name').fill('vault');
+  await owner.getByRole('button', { name: 'Create' }).click();
+  await expect(owner).toHaveURL('/shelves/vault');
+
+  await owner.getByRole('button', { name: 'Add', exact: true }).click();
+  await owner.getByRole('button', { name: 'New folder' }).click();
+  await owner.getByLabel('Name').fill('secret');
+  await owner.getByRole('button', { name: 'Create' }).click();
+  await owner.getByRole('button', { name: 'Actions for secret' }).click();
+  await owner.getByRole('button', { name: 'Encrypt' }).click();
+  await owner.getByLabel('Password', { exact: true }).fill('correct horse');
+  await owner.getByLabel('Password again').fill('correct horse');
+  await owner.getByRole('button', { name: 'Next' }).click();
+  await expect(owner.getByText('A lost password cannot be recovered', { exact: false })).toBeVisible();
+  await owner.getByRole('button', { name: 'Encrypt' }).click();
+  await expect(owner.getByText('Encrypting secret: done')).toBeVisible({ timeout: 15_000 });
+
+  // This tab unlocked the folder by encrypting it, so the upload asks for nothing.
+  await owner.getByRole('button', { name: 'secret', exact: true }).dblclick();
+  await expect(owner).toHaveURL('/shelves/vault/files/secret');
+  await owner.getByTestId('file-input').setInputFiles({ name: 'note.txt', mimeType: 'text/plain', buffer: Buffer.from('for my eyes only') });
+  await expect(owner.getByText('Uploaded note.txt')).toBeVisible({ timeout: 15_000 });
+  const stored = await owner.evaluate(async () => {
+    const response = await fetch('/api/shelves/vault/content?path=/secret/note.txt', { headers: { Authorization: `Bearer ${localStorage.getItem('byteshelf_auth_token')}` } });
+    return response.text();
+  });
+  expect(stored.startsWith('age-encryption.org/v1\n')).toBe(true);
+  expect(stored).not.toContain('for my eyes only');
+
+  const reader = await signIn(browser);
+  await reader.goto('/shelves/vault/files/secret');
+  await reader.getByRole('button', { name: 'Actions for note.txt' }).click();
+  await reader.getByRole('button', { name: 'Download' }).click();
+  await reader.getByLabel('Password', { exact: true }).fill('correct horse');
+  const download = reader.waitForEvent('download');
+  await reader.getByRole('button', { name: 'Unlock' }).click();
+  const saved = await download;
+
+  expect(saved.suggestedFilename()).toBe('note.txt');
+  expect(await readFile((await saved.path())!, 'utf8')).toBe('for my eyes only');
+});
