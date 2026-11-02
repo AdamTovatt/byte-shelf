@@ -4,6 +4,7 @@ using ByteShelf.Server.Access.Auth;
 using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Access.Services;
 using ByteShelf.Server.Replication.Services;
+using ByteShelf.Server.Shared;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
 using ByteShelfCommon;
@@ -40,7 +41,8 @@ namespace ByteShelf.Server.Mcp
             }
 
             options.ToolCollection = offered;
-            options.ServerInstructions = InstructionsFor(shelf.Name, key.Permission, isReplica);
+            Uri server = services.GetRequiredService<PublicAddress>().Configured ?? CallerKeyClientSource.CalledAt(httpContext.Request);
+            options.ServerInstructions = InstructionsFor(shelf.Name, key.Permission, isReplica, server);
         }
 
         /// <summary>
@@ -72,19 +74,43 @@ namespace ByteShelf.Server.Mcp
             };
         }
 
-        internal static string InstructionsFor(string shelf, ShelfKeyPermission permission, bool isReplica)
+        /// <param name="server">The server's root, ending in <c>/</c>, for the curl commands.</param>
+        internal static string InstructionsFor(string shelf, ShelfKeyPermission permission, bool isReplica, Uri server)
         {
             string reach = isReplica
                 ? "This server is a replica, a read-only copy of another, so only reading tools are offered."
                 : $"The key's access is {PermissionNames.Of(permission)}, and only the tools it allows are offered.";
+            // What the key may do here decides which ways in are shown: the same rule as the tools offered.
+            bool stores = !isReplica && permission != ShelfKeyPermission.Read;
+            bool overwrites = stores && permission == ShelfKeyPermission.ReadWrite;
+            string content = $"{server.AbsoluteUri}api/shelves/{shelf}/content?path=/reports/q3.pdf";
+            string download = $"""  curl -fsS -H "Authorization: Bearer $BYTESHELF_KEY" -o q3.pdf "{content}" """.TrimEnd();
+
+            string files = stores
+                ? "The server cannot reach your files: give upload_file the contents as text or base64, and\nread with download_file or a share_file link."
+                : "The server cannot reach your files: read with download_file or a share_file link.";
+            string streaming = stores
+                ? $"""
+                    {"  "}curl -fsS -H "Authorization: Bearer $BYTESHELF_KEY" -T ./q3.pdf "{content}"
+                    {download}
+                    The first stores ({(overwrites ? "add &overwrite=true to replace a file" : "never over a file already there")}), the second saves.
+                    Without the key, create_upload_link and share_file make links that need none.
+                    """
+                : $"""
+                    {download}
+                    Without the key, share_file makes a link that needs none.
+                    """;
 
             return $"""
                 {ToolInstructions.Text}
 
                 This server is the ByteShelf server itself, reached with a shelf key. The key reaches one
                 shelf, "{shelf}", which every tool works on when you leave shelf out. {reach}
-                The server cannot reach your files: give upload_file the contents as text or base64, and
-                read with download_file or a share_file link.
+                {files}
+
+                A shell that holds the key (here in $BYTESHELF_KEY) can stream a file of any size through
+                the API instead, the path URL-encoded:
+                {streaming}
                 """;
         }
     }

@@ -4,6 +4,8 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using ByteShelf.Server.Shared;
+using ByteShelf.Server.Shared.Auth;
+using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
@@ -178,7 +180,7 @@ namespace ByteShelf.Server.Tests.Storage
         {
             await using TestRoot root = TestRoot.Create();
             FakeTimeProvider clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 31, 12, 0, 0, 700, TimeSpan.Zero));
-            DownloadLinks links = new DownloadLinks(root.Root, clock, Unconfigured);
+            DownloadLinks links = LinksOn(root.Root, clock);
 
             DownloadLink link = links.Create(Guid.NewGuid(), Guid.NewGuid(), TimeSpan.FromMinutes(10));
             clock.SetUtcNow(link.ExpiresAt - TimeSpan.FromMilliseconds(1));
@@ -233,7 +235,7 @@ namespace ByteShelf.Server.Tests.Storage
         public async Task Create_LifetimeOutOfBounds_ThrowsArgumentException()
         {
             await using TestRoot root = TestRoot.Create();
-            DownloadLinks links = new DownloadLinks(root.Root, TimeProvider.System, Unconfigured);
+            DownloadLinks links = LinksOn(root.Root, TimeProvider.System);
 
             Assert.Throws<ArgumentException>(() => links.Create(Guid.NewGuid(), Guid.NewGuid(), TimeSpan.FromDays(8)));
         }
@@ -253,7 +255,7 @@ namespace ByteShelf.Server.Tests.Storage
         {
             await using TestRoot root = TestRoot.Create();
             FakeTimeProvider clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 31, 12, 0, 0, TimeSpan.Zero));
-            DownloadLinks links = new DownloadLinks(root.Root, clock, Unconfigured);
+            DownloadLinks links = LinksOn(root.Root, clock);
             Guid shelfId = Guid.NewGuid();
             Guid fileId = Guid.NewGuid();
             string token = TokenOf(links.Create(shelfId, fileId, TimeSpan.FromDays(7)));
@@ -271,9 +273,9 @@ namespace ByteShelf.Server.Tests.Storage
         {
             await using TestRoot first = TestRoot.Create();
             await using TestRoot second = TestRoot.Create();
-            string token = TokenOf(new DownloadLinks(first.Root, TimeProvider.System, Unconfigured).Create(Guid.NewGuid(), Guid.NewGuid(), DownloadLink.DefaultLifetime));
+            string token = TokenOf(LinksOn(first.Root, TimeProvider.System).Create(Guid.NewGuid(), Guid.NewGuid(), DownloadLink.Lifetime.Default));
 
-            Assert.False(new DownloadLinks(second.Root, TimeProvider.System, Unconfigured).TryRead(token, out _, out _));
+            Assert.False(LinksOn(second.Root, TimeProvider.System).TryRead(token, out _, out _));
         }
 
         [Fact]
@@ -281,9 +283,9 @@ namespace ByteShelf.Server.Tests.Storage
         {
             await using TestRoot root = TestRoot.Create();
             Guid fileId = Guid.NewGuid();
-            string token = TokenOf(new DownloadLinks(root.Root, TimeProvider.System, Unconfigured).Create(Guid.NewGuid(), fileId, DownloadLink.DefaultLifetime));
+            string token = TokenOf(LinksOn(root.Root, TimeProvider.System).Create(Guid.NewGuid(), fileId, DownloadLink.Lifetime.Default));
 
-            bool read = new DownloadLinks(root.Root, TimeProvider.System, Unconfigured).TryRead(token, out _, out Guid readFileId);
+            bool read = LinksOn(root.Root, TimeProvider.System).TryRead(token, out _, out Guid readFileId);
 
             Assert.Equal((true, fileId), (read, readFileId));
         }
@@ -296,18 +298,23 @@ namespace ByteShelf.Server.Tests.Storage
         {
             await using TestRoot root = TestRoot.Create();
 
-            Assert.False(new DownloadLinks(root.Root, TimeProvider.System, Unconfigured).TryRead(token, out _, out _));
+            Assert.False(LinksOn(root.Root, TimeProvider.System).TryRead(token, out _, out _));
         }
 
         [Fact]
         public async Task TryRead_SignedPartChanged_IsRefused()
         {
             await using TestRoot root = TestRoot.Create();
-            DownloadLinks links = new DownloadLinks(root.Root, TimeProvider.System, Unconfigured);
-            byte[] bytes = Base64Url.DecodeFromChars(TokenOf(links.Create(Guid.NewGuid(), Guid.NewGuid(), DownloadLink.DefaultLifetime)));
+            DownloadLinks links = LinksOn(root.Root, TimeProvider.System);
+            byte[] bytes = Base64Url.DecodeFromChars(TokenOf(links.Create(Guid.NewGuid(), Guid.NewGuid(), DownloadLink.Lifetime.Default)));
             bytes[20] ^= 1;
 
             Assert.False(links.TryRead(Base64Url.EncodeToString(bytes), out _, out _));
+        }
+
+        private static DownloadLinks LinksOn(RootFolder root, TimeProvider clock)
+        {
+            return new DownloadLinks(new LinkTokens(root, clock), Unconfigured);
         }
 
         private static string TokenOf(DownloadLink link)

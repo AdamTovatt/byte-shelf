@@ -40,13 +40,15 @@ namespace ByteShelf.Server.Storage.Services
                 DirectoryRecord directory = await _shelfTree.GetDirectoryAsync(shelf.Id, reference, session);
                 string path = await _shelfTree.GetDirectoryPathAsync(directory.Id, session);
 
-                IReadOnlyList<DirectoryRecord> directories = await _directoryRepository.GetLiveChildrenAsync(directory.Id, session);
+                IReadOnlyList<DirectoryWithTotals> directories = await _directoryRepository.GetLiveChildrenAsync(directory.Id, session);
                 IReadOnlyList<FileRecord> files = await _fileRepository.GetLiveInDirectoryAsync(directory.Id, session);
 
                 return new DirectoryListing
                 {
                     Directory = StorageContracts.ToShelfDirectory(directory, path),
-                    Directories = directories.Select(child => StorageContracts.ToShelfDirectory(child, ShelfPath.Combine(path, child.Name))).ToList(),
+                    Directories = directories
+                        .Select(child => StorageContracts.ToListedDirectory(child, ShelfPath.Combine(path, child.Directory.Name)))
+                        .ToList(),
                     Files = files.Select(file => StorageContracts.ToShelfFile(file, path)).ToList(),
                 };
             }

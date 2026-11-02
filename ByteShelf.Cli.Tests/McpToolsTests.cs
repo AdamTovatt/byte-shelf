@@ -76,7 +76,9 @@ namespace ByteShelf.Cli.Tests
             { "set_description", null, $"up to {FileDescription.MaxLength} characters" },
             { "download_file", null, $"at most {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)}" },
             { "download_file", null, $"WebP of at most {TextFormat.Size(ByteShelfMcpTools.MaxInlineImageBytes)}" },
-            { "share_file", "expiresIn", $"{DownloadLink.DefaultLifetime.TotalHours}h by default, at most {DownloadLink.MaxLifetime.TotalDays}d" },
+            { "share_file", "expiresIn", $"{DownloadLink.Lifetime.Default.TotalHours}h by default, at most {DownloadLink.Lifetime.Max.TotalDays}d" },
+            { "create_upload_link", "expiresIn", $"{UploadLink.Lifetime.Default.TotalMinutes}m by default, at most {UploadLink.Lifetime.Max.TotalHours}h" },
+            { "create_upload_link", "description", $"up to {FileDescription.MaxLength} characters" },
             { "search_files", "limit", $"1 to {FileSearch.MaxLimit}; {FileSearch.DefaultLimit} by default" },
             { "list_tree", "limit", $"1 to {TreeQuery.MaxLimit}; {TreeQuery.DefaultLimit} by default" },
         };
@@ -100,8 +102,10 @@ namespace ByteShelf.Cli.Tests
 
             Assert.Contains($"up to {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)}", instructions, StringComparison.Ordinal);
             Assert.Contains($"image of up to {TextFormat.Size(ByteShelfMcpTools.MaxInlineImageBytes)}", instructions, StringComparison.Ordinal);
-            Assert.Contains($"for {DownloadLink.DefaultLifetime.TotalHours} hours", instructions, StringComparison.Ordinal);
-            Assert.Contains($"(at most {DownloadLink.MaxLifetime.TotalDays} days)", instructions, StringComparison.Ordinal);
+            Assert.Contains($"for {DownloadLink.Lifetime.Default.TotalHours} hours", instructions, StringComparison.Ordinal);
+            Assert.Contains($"(at most {DownloadLink.Lifetime.Max.TotalDays} days)", instructions, StringComparison.Ordinal);
+            Assert.Contains($"for {UploadLink.Lifetime.Default.TotalMinutes} minutes", instructions, StringComparison.Ordinal);
+            Assert.Contains($"(at most {UploadLink.Lifetime.Max.TotalHours} hours)", instructions, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -354,7 +358,18 @@ namespace ByteShelf.Cli.Tests
 
             string listing = await _tools.ListDirectoryAsync("/a", shelf: "docs");
 
-            Assert.Equal($"/a  (1 directories, 0 files){Environment.NewLine}  b/", listing);
+            Assert.Equal($"/a  (1 directories, 0 files){Environment.NewLine}  b/  0 B in 0 files", listing);
+        }
+
+        [Fact]
+        public async Task ListDirectory_ShowsWhatIsUnderEachDirectory()
+        {
+            await _tools.UploadFileAsync("/a/b/one.txt", text: "abc", shelf: "docs");
+            await _tools.UploadFileAsync("/a/b/c/two.txt", text: "de", shelf: "docs");
+
+            string listing = await _tools.ListDirectoryAsync("/a", shelf: "docs");
+
+            Assert.Equal($"/a  (1 directories, 0 files){Environment.NewLine}  b/  5 B in 2 files", listing);
         }
 
         [Fact]
@@ -525,6 +540,25 @@ namespace ByteShelf.Cli.Tests
 
             Assert.StartsWith("https://", shared, StringComparison.Ordinal);
             Assert.Contains("Works for anyone who has it until ", shared, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task CreateUploadLink_AnswersTheLinkWhatItStoresAndTheCurlCommand()
+        {
+            string answer = await _tools.CreateUploadLinkAsync("/in/q3.pdf", expiresIn: "2h", shelf: "docs");
+
+            string[] lines = answer.Split(Environment.NewLine);
+            Assert.StartsWith("https://", lines[0], StringComparison.Ordinal);
+            Assert.StartsWith("Stores one file at /in/q3.pdf for anyone who has it until ", lines[1], StringComparison.Ordinal);
+            Assert.Equal($"curl -fsS -T <local file> '{lines[0]}'", lines[^1]);
+        }
+
+        [Fact]
+        public async Task CreateUploadLink_ExpiresInPastTheMost_IsAnErrorNamingTheBounds()
+        {
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.CreateUploadLinkAsync("/a.txt", expiresIn: "2d", shelf: "docs"));
+
+            Assert.Contains("from 1 minute to 24 hours", exception.Message, StringComparison.Ordinal);
         }
 
         [Fact]

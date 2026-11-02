@@ -34,7 +34,8 @@ the same words:
 - `upload_file` takes text or base64 of up to `MaxInlineBytes` (256 KiB), and `download_file`
   answers text up to the same size: what an agent can carry in its own context. It answers a PNG,
   JPEG, GIF or WebP of up to `MaxInlineImageBytes` (1 MiB) as image content the model sees.
-  Anything else moves as a local file, through the API, or by a `share_file` link.
+  Anything else moves as a local file, through the API, or by a link: `share_file` to fetch one,
+  `create_upload_link` to have one sent in, answered with the `curl` command that sends it.
 - Every tool working on one shelf takes `shelf` last and optional: left out, it is the only shelf
   the caller reaches, which a shelf key always is. Several reachable shelves ask for a name.
 - `RequiredArguments` is a call-tool filter both servers add, so a call missing a required argument

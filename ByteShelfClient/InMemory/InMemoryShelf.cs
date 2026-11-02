@@ -246,6 +246,18 @@ namespace ByteShelfClient.InMemory
             };
         }
 
+        /// <summary>The directory as its parent's listing shows it, with the live files under it at any depth.</summary>
+        public ListedDirectory ToListedDirectory(DirectoryNode directory)
+        {
+            List<FileNode> files = LiveSubtree(directory).SelectMany(node => LiveFilesIn(node.Id)).ToList();
+            return new ListedDirectory
+            {
+                Directory = ToShelfDirectory(directory),
+                SizeBytes = files.Sum(file => file.Content.LongLength),
+                FileCount = files.Count,
+            };
+        }
+
         /// <summary>The lowercase-hex SHA-256 of <paramref name="content"/>, as the server stores it.</summary>
         public static string Sha256Of(byte[] content)
         {

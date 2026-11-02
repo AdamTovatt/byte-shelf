@@ -150,7 +150,25 @@ namespace ByteShelf.Tools.Mcp
             CancellationToken cancellationToken = default)
         {
             return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.Link(
-                await shelfClient.CreateDownloadLinkAsync(path, LinkLifetimes.Parse(expiresIn), cancellationToken)));
+                await shelfClient.CreateDownloadLinkAsync(path, LinkLifetimes.ForDownload(expiresIn), cancellationToken)));
+        }
+
+        [McpServerTool(Name = "create_upload_link", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Add)]
+        [Description("Makes a link that stores one file at a path when anyone who has it PUTs the contents to it, without signing in, until it runs out: for a file too large to pass through this conversation, or one a person or another program will send. Answers the link and a curl command that uses it. The link acts with your access, checked again when it is used. A path that is taken is refused unless overwrite is true (which needs write access), and then the old file goes to the trash.")]
+        public Task<string> CreateUploadLinkAsync(
+            [Description("Where to store the file, its name included. Missing directories are created.")] string path,
+            [Description("Replace a file already at the path.")] bool overwrite = false,
+            [Description("The stored file's description, up to 2000 characters.")] string? description = null,
+            [Description("How long the link works, in " + LinkLifetimes.Examples + "; 15m by default, at most 24h.")] string? expiresIn = null,
+            [Description(ShelfDescription)] string? shelf = null,
+            CancellationToken cancellationToken = default)
+        {
+            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) =>
+            {
+                UploadLinkOptions options = new UploadLinkOptions { Overwrite = overwrite, Description = description, Lifetime = LinkLifetimes.ForUpload(expiresIn) };
+                return TextFormat.Link(await shelfClient.CreateUploadLinkAsync(path, options, cancellationToken));
+            });
         }
 
         [McpServerTool(Name = "set_description", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]

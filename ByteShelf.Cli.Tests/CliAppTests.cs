@@ -571,7 +571,7 @@ namespace ByteShelf.Cli.Tests
             CliRun run = await RunAsync("mkdir", "docs:/a/b");
 
             Assert.Equal(CliApp.Succeeded, run.ExitCode);
-            Assert.Equal("b", Assert.Single((await Docs.ListAsync("/a")).Directories).Name);
+            Assert.Equal("b", Assert.Single((await Docs.ListAsync("/a")).Directories).Directory.Name);
         }
 
         [Fact]

@@ -5,7 +5,7 @@ namespace ByteShelfCommon.Tests
         [Fact]
         public void NormalizeLifetime_None_IsADay()
         {
-            Assert.Equal(TimeSpan.FromHours(24), DownloadLink.NormalizeLifetime(null));
+            Assert.Equal(TimeSpan.FromHours(24), DownloadLink.Lifetime.Normalize(null));
         }
 
         [Theory]
@@ -14,7 +14,7 @@ namespace ByteShelfCommon.Tests
         [InlineData(7 * 24 * 60)]
         public void NormalizeLifetime_WholeMinutesWithinTheBounds_IsKept(int minutes)
         {
-            Assert.Equal(TimeSpan.FromMinutes(minutes), DownloadLink.NormalizeLifetime(TimeSpan.FromMinutes(minutes)));
+            Assert.Equal(TimeSpan.FromMinutes(minutes), DownloadLink.Lifetime.Normalize(TimeSpan.FromMinutes(minutes)));
         }
 
         [Theory]
@@ -25,7 +25,7 @@ namespace ByteShelfCommon.Tests
         [InlineData((7 * 24 * 3600) + 60)]
         public void NormalizeLifetime_OutsideTheBoundsOrNotWholeMinutes_ThrowsArgumentException(int seconds)
         {
-            Assert.Throws<ArgumentException>(() => DownloadLink.NormalizeLifetime(TimeSpan.FromSeconds(seconds)));
+            Assert.Throws<ArgumentException>(() => DownloadLink.Lifetime.Normalize(TimeSpan.FromSeconds(seconds)));
         }
     }
 }

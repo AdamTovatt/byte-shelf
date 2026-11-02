@@ -81,20 +81,36 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<IReadOnlyList<DirectoryRecord>> GetLiveChildrenAsync(Guid parentId, IDbSession? session = null)
+        public async Task<IReadOnlyList<DirectoryWithTotals>> GetLiveChildrenAsync(Guid parentId, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>
             {
+                // Each child heads its own walk (top_id), so one pass sums every child's subtree. A
+                // trashed directory holds only trashed entries, so it is not walked into.
                 string query = $@"
-                    SELECT {SelectColumns}
-                    FROM directory
-                    WHERE parent_id = @{nameof(parentId)} AND deleted_at IS NULL
+                    WITH RECURSIVE tree(top_id, node_id) AS (
+                        SELECT id, id FROM directory
+                        WHERE parent_id = @{nameof(parentId)} AND deleted_at IS NULL
+                        UNION ALL
+                        SELECT tree.top_id, directory.id
+                        FROM directory JOIN tree ON directory.parent_id = tree.node_id
+                        WHERE directory.deleted_at IS NULL
+                    ),
+                    totals(top_id, size_bytes, file_count) AS (
+                        SELECT tree.top_id, COALESCE(SUM(file.size_bytes), 0), COUNT(file.id)
+                        FROM tree LEFT JOIN file ON file.directory_id = tree.node_id AND file.deleted_at IS NULL
+                        GROUP BY tree.top_id
+                    )
+                    SELECT {SelectColumns},
+                        totals.size_bytes AS {nameof(DirectoryTotalsEntity.SizeBytes)},
+                        totals.file_count AS {nameof(DirectoryTotalsEntity.FileCount)}
+                    FROM directory JOIN totals ON directory.id = totals.top_id
                     ORDER BY name";
 
-                IEnumerable<DirectoryEntity> entities = await dbSession.Connection.QueryAsync<DirectoryEntity>(
+                IEnumerable<DirectoryTotalsEntity> entities = await dbSession.Connection.QueryAsync<DirectoryTotalsEntity>(
                     query, new { parentId }, transaction: dbSession.Transaction);
 
-                return (IReadOnlyList<DirectoryRecord>)entities.Select(entity => entity.ToDomain()).ToList();
+                return (IReadOnlyList<DirectoryWithTotals>)entities.Select(entity => new DirectoryWithTotals(entity.ToDomain(), entity.SizeBytes, entity.FileCount)).ToList();
             }, session);
         }
 
@@ -383,6 +399,12 @@ namespace ByteShelf.Server.Storage.Repositories
         internal sealed class DirectoryTreeEntity : DirectoryEntity
         {
             public string FullPath { get; set; } = string.Empty;
+        }
+
+        internal sealed class DirectoryTotalsEntity : DirectoryEntity
+        {
+            public long SizeBytes { get; set; }
+            public int FileCount { get; set; }
         }
 
         internal class DirectoryEntity

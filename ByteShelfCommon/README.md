@@ -13,8 +13,10 @@ AOT-compatible.
 | `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps, description. |
 | `SetDescriptionRequest`, `FileDescription` | Setting a file's description, and its rules. |
 | `FileSearch`, `FileSearchResults` | What to look for among a shelf's files, and one page of what was found. |
-| `DownloadLink` | A link to a file's contents that works without a token until it runs out, and the bounds of its lifetime (a day by default, at most 7 days). |
-| `ShelfDirectory`, `DirectoryListing` | A directory, and what one holds. |
+| `DownloadLink` | A link to a file's contents that works without a token until it runs out, and the bounds of its lifetime (`Lifetime`: a day by default, at most 7 days). |
+| `UploadLink`, `CreateUploadLinkRequest`, `NormalizedUploadLinkRequest` | A link that stores one file sent to it without a token, and asking for one (`Lifetime`: 15 minutes by default, at most 24 hours). |
+| `LinkLifetime` | One kind of link's lifetime rule: its default, its bounds and `Normalize`. |
+| `ShelfDirectory`, `DirectoryListing`, `ListedDirectory` | A directory, what one holds, and a directory in a listing with the size and count of the files under it. |
 | `TreeQuery`, `DirectoryTree` | What to list of everything under a directory (a depth, a page), and one page of it. |
 | `StoredOrder` | The order names and paths are listed in: by code point, as the server's database sorts them. |
 | `CreateDirectoryRequest`, `MoveRequest` | Creates a directory; moves or renames a file or directory. |
@@ -46,11 +48,17 @@ AOT-compatible.
   negative and ranges not empty (a range includes its start and excludes its end), a content type
   that is one media type or a family such as `image/*`, and a SHA-256 of 64 hex digits. `Fold` is
   how search compares text, both sides: normalization form C, then invariant lowercase.
-- `ContentTypes` checks the media type stored with a file, `PasswordPolicy` a password,
+- `ContentTypes` checks the media type stored with a file, and `ForUpload` picks it when an upload
+  gives none: the one its path's extension names, else `application/octet-stream`.
+- `NormalizedUploadLinkRequest.Create` checks an upload link's request: a file's path (never the
+  root), a description, a lifetime within `UploadLink.Lifetime`, and at most 4,096 bytes of UTF-8 for
+  the path and description together, since the link's URL carries both.
+- `PasswordPolicy` checks a password,
   `UserFields` an email and display name, `DisplayText` short names such as a key's, and
   `UserRoles` a user's roles.
 - The server applies every rule, and so does the in-memory client in ByteShelfClient. The HTTP
-  client applies `ShelfPath`, `ContentTypes`, `FileDescription` and `FileSearch` before sending,
+  client applies `ShelfPath`, `ContentTypes`, `FileDescription`, `FileSearch`, the link lifetimes
+  and `NormalizedUploadLinkRequest` before sending,
   since they shape the request, and leaves the rest to the server.
 
 ## JSON

@@ -10,9 +10,12 @@ namespace ByteShelf.Server.Storage.Services
     /// </summary>
     public interface IUploadService
     {
-        /// <summary>Stores <paramref name="content"/> at <paramref name="path"/> in one go: a single streamed PUT.</summary>
+        /// <summary>
+        /// Stores <paramref name="content"/> as <paramref name="request"/> describes in one go: a single
+        /// streamed PUT, to the API or through an upload link.
+        /// </summary>
         /// <param name="startedBy">Who stores it, recorded on the upload as <see cref="UploadRecord.StartedBy"/>.</param>
-        Task<ShelfFile> StoreAsync(Shelf shelf, string path, string? contentType, long sizeBytes, bool overwrite, string startedBy, Stream content, CancellationToken cancellationToken);
+        Task<ShelfFile> StoreAsync(Shelf shelf, StartUploadRequest request, string startedBy, Stream content, CancellationToken cancellationToken);
 
         /// <param name="startedBy">Who starts it, recorded as <see cref="UploadRecord.StartedBy"/>.</param>
         Task<UploadSession> StartAsync(Shelf shelf, StartUploadRequest request, string startedBy);

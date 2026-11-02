@@ -29,7 +29,7 @@ namespace ByteShelf.Tools
             }
 
             await using FileStream content = new FileStream(localPath, FileMode.Open, FileAccess.Read, FileShare.Read, CopyBufferBytes, useAsync: true);
-            return await UploadAsync(shelf, path, content, options, cancellationToken);
+            return await shelf.UploadAsync(path, content, options, cancellationToken);
         }
 
         /// <summary>Stores <paramref name="content"/>, which has no name of its own, at <paramref name="location"/>.</summary>
@@ -42,7 +42,7 @@ namespace ByteShelf.Tools
                 throw new UsageException($"{source} has no file name; end the path with one.");
             }
 
-            return UploadAsync(shelf, location.Path, content, options, cancellationToken);
+            return shelf.UploadAsync(location.Path, content, options, cancellationToken);
         }
 
         /// <summary>
@@ -98,11 +98,6 @@ namespace ByteShelf.Tools
             }
 
             return buffer.ToArray();
-        }
-
-        private static Task<ShelfFile> UploadAsync(IShelfClient shelf, string path, Stream content, UploadOptions options, CancellationToken cancellationToken)
-        {
-            return shelf.UploadAsync(path, content, options with { ContentType = options.ContentType ?? ContentTypes.ForFileName(path) }, cancellationToken);
         }
     }
 }

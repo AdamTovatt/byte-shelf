@@ -80,6 +80,17 @@ namespace ByteShelf.Server.Tests.Storage
             Assert.Equal(ErrorCodes.InvalidRequest, (await response.Content.ReadFromJsonAsync<ErrorResponse>())?.Code);
         }
 
+        [Theory]
+        [InlineData("/q3.pdf", "application/pdf")]
+        [InlineData("/notes.unknown", ContentTypes.Default)]
+        public async Task PutContent_WithoutAContentType_IsTypedByTheExtension(string path, string expected)
+        {
+            // As curl -T sends it: a length and no type.
+            HttpResponseMessage response = await _host.AdminClient.PutAsync($"/api/shelves/docs/content?path={path}", new ByteArrayContent(new byte[] { 1 }));
+
+            Assert.Equal(expected, (await response.Content.ReadFromJsonAsync<ShelfFile>())!.ContentType);
+        }
+
         [Fact]
         public async Task PutDescription_OverTheLimit_Returns400AndKeepsTheFileUndescribed()
         {

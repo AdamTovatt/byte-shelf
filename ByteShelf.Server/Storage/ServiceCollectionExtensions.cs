@@ -1,5 +1,6 @@
 using System.Globalization;
 using ByteShelf.Server.Shared;
+using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Storage.Repositories;
 using ByteShelf.Server.Storage.Services;
 using EasyReasy.EnvironmentVariables;
@@ -16,7 +17,10 @@ namespace ByteShelf.Server.Storage
             services.AddSingleton<ObjectStore>();
             services.AddSingleton<StagingArea>();
             services.AddSingleton<UploadLocks>();
+            services.AddSingleton<LinkTokens>();
             services.AddSingleton<DownloadLinks>();
+            services.AddSingleton<UploadLinks>();
+            services.AddScoped<UploadLinkAccess>();
             services.AddSingleton<MaintenanceGate>();
 
             services.AddScoped<IShelfRepository, ShelfRepository>();

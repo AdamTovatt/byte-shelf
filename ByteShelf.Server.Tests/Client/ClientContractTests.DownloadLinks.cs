@@ -17,7 +17,7 @@ namespace ByteShelf.Server.Tests.Client
             // A scheme, not just absolute: on Unix a path such as /api/x parses as an absolute file URI.
             Assert.Matches("^https?://", link.Url);
             // The server cuts the expiry to the whole second its token keeps.
-            Assert.InRange(link.ExpiresAt, before + DownloadLink.DefaultLifetime - TimeSpan.FromSeconds(1), DateTimeOffset.UtcNow + DownloadLink.DefaultLifetime);
+            Assert.InRange(link.ExpiresAt, before + DownloadLink.Lifetime.Default - TimeSpan.FromSeconds(1), DateTimeOffset.UtcNow + DownloadLink.Lifetime.Default);
         }
 
         [Fact]

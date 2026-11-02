@@ -115,7 +115,7 @@ namespace ByteShelf.Server.Tests.Storage
             Shelf shelf = await CreateShelfAsync(quotaBytes: 10);
 
             await Assert.ThrowsAsync<QuotaExceededException>(() => UploadService.StoreAsync(
-                shelf, "/big", null, 11, false, Uploader, new UnreadableStream(), CancellationToken.None));
+                shelf, Single("/big", 11), Uploader, new UnreadableStream(), CancellationToken.None));
         }
 
         [Fact]
@@ -230,7 +230,7 @@ namespace ByteShelf.Server.Tests.Storage
             byte[] body = Encoding.UTF8.GetBytes("eleven char");
 
             await Assert.ThrowsAsync<UploadOverflowException>(() => UploadService.StoreAsync(
-                shelf, "/file", null, 5, false, Uploader, new MemoryStream(body), CancellationToken.None));
+                shelf, Single("/file", 5), Uploader, new MemoryStream(body), CancellationToken.None));
 
             Assert.Equal(0, (await GetUsageAsync(shelf)).TotalBytes);
             Assert.Empty(StagingArea.List());
@@ -243,7 +243,7 @@ namespace ByteShelf.Server.Tests.Storage
             Shelf shelf = await CreateShelfAsync();
 
             await Assert.ThrowsAsync<ArgumentException>(() => UploadService.StoreAsync(
-                shelf, "/file", null, 50, false, Uploader, new MemoryStream(new byte[10]), CancellationToken.None));
+                shelf, Single("/file", 50), Uploader, new MemoryStream(new byte[10]), CancellationToken.None));
 
             Assert.Equal(0, (await GetUsageAsync(shelf)).TotalBytes);
         }
@@ -284,7 +284,7 @@ namespace ByteShelf.Server.Tests.Storage
             Shelf shelf = await CreateShelfAsync();
 
             await Assert.ThrowsAsync<ArgumentException>(() => UploadService.StoreAsync(
-                shelf, "/a", "not a media type", 1, false, Uploader, new MemoryStream(new byte[1]), CancellationToken.None));
+                shelf, Single("/a", 1, "not a media type"), Uploader, new MemoryStream(new byte[1]), CancellationToken.None));
         }
 
         [Fact]

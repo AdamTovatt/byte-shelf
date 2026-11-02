@@ -28,7 +28,7 @@ export function MoveDialog({ shelf, entries, onClose }: MoveDialogProps) {
 
   const isMovingOrInside = (path: string) =>
     entries.some((entry) => entry.kind === 'directory' && (path === entry.value.path || path.startsWith(`${entry.value.path}/`)));
-  const folders = (listing?.directories ?? []).filter((directory) => !isMovingOrInside(directory.path));
+  const folders = (listing?.directories ?? []).map((listed) => listed.directory).filter((directory) => !isMovingOrInside(directory.path));
   const alreadyThere = entries.every((entry) => parentPath(entry.value.path) === folder);
   const title = entries.length === 1 ? `Move ${entries[0].value.name}` : `Move ${entries.length} items`;
 

@@ -51,6 +51,17 @@ namespace ByteShelfCommon
             return (parameters < 0 ? contentType : contentType[..parameters]).Trim().ToLowerInvariant();
         }
 
+        /// <summary>
+        /// The type to store a file at <paramref name="path"/> with: <paramref name="contentType"/>, or
+        /// when none is given the type its extension names (<see cref="ForFileName"/>), or else
+        /// <see cref="Default"/>. Every upload is typed by this, on the server and in every client.
+        /// </summary>
+        /// <exception cref="ArgumentException">The value given is not a media type.</exception>
+        public static string ForUpload(string? contentType, string path)
+        {
+            return Normalize(string.IsNullOrWhiteSpace(contentType) ? ForFileName(path) : contentType);
+        }
+
         /// <summary>The type to store: <see cref="Default"/> when none is given.</summary>
         /// <exception cref="ArgumentException">The value is not a media type.</exception>
         public static string Normalize(string? contentType)

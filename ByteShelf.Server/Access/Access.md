@@ -30,11 +30,11 @@ asks the same resolver which tools to offer a key ([Mcp](../Mcp/Mcp.md)).
 | Operation | Endpoints | Who may |
 |---|---|---|
 | `Read` | list, list a tree, search, file records, content, a download link, the shelf's info, the trash list | every caller with access |
-| `Add` | store a new file (with a description), create directories, every upload endpoint | `addOnly` and `readWrite` keys, `readWrite` users |
+| `Add` | store a new file (with a description), create directories, every upload endpoint, an upload link | `addOnly` and `readWrite` keys, `readWrite` users |
 | `Write` | overwrite, move, describe a stored file, delete, restore, empty the trash | `readWrite` keys and users |
 | `Administer` | rename, quota and delete the shelf; its grants and keys | admins |
 
-Storing with `overwrite`, as a single `PUT` or an upload, needs `Write` (`ShelfAccess.RequireStore`).
+Storing with `overwrite`, as a single `PUT`, an upload or an upload link, needs `Write` (`ShelfAccess.RequireStore`).
 An upload records who started it; only that caller, or one with `Write`, may look at, continue,
 complete or abort it (`ShelfAccess.RequireUpload`), so an add-only key cannot touch another caller's
 upload. `GET /api/shelves` lists the shelves the caller can see; creating a shelf is admin only.
@@ -44,6 +44,12 @@ is a signed link from `download-link`, which needs `Read`, so every key may make
 included. It names one file for the lifetime its maker picked, at most 7 days. Whoever holds the
 link may read that file until it runs out, even if the access it was made with is taken away
 meanwhile ([Storage](../Storage/Storage.md#download-links-downloadlinks)).
+
+The one route that stores without a caller is `PUT /api/upload-links/{token}`, a signed link from
+`upload-link`, which needs `Add` (`Write` for one that overwrites). It acts as its maker: the key or
+user it names is looked up and asked `ShelfAccessResolver` again when it is used, so a link stops
+working once its key is deleted or its maker may no longer store there, unlike a download link
+([Storage](../Storage/Storage.md#upload-links-uploadlinks)).
 
 ## Endpoints
 

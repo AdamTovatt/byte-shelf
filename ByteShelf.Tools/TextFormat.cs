@@ -49,9 +49,10 @@ namespace ByteShelf.Tools
                 .Append(listing.Directories.Count).Append(" directories, ")
                 .Append(listing.Files.Count).Append(" files)");
 
-            foreach (ShelfDirectory directory in listing.Directories)
+            foreach (ListedDirectory listed in listing.Directories)
             {
-                text.AppendLine().Append("  ").Append(directory.Name).Append('/');
+                text.AppendLine().Append("  ").Append(listed.Directory.Name).Append("/  ")
+                    .Append(Size(listed.SizeBytes)).Append(" in ").Append(CountOf(listed.FileCount, "file", "files"));
             }
 
             foreach (ShelfFile file in listing.Files)
@@ -151,6 +152,18 @@ namespace ByteShelf.Tools
         public static string Link(DownloadLink link)
         {
             return Lines(new[] { link.Url, $"Works for anyone who has it until {Time(link.ExpiresAt)}." });
+        }
+
+        public static string Link(UploadLink link)
+        {
+            string taken = link.Overwrite ? "A file already there is replaced." : "Refused if the path is taken by then.";
+            return Lines(new[]
+            {
+                link.Url,
+                $"Stores one file at {link.Path} for anyone who has it until {Time(link.ExpiresAt)}. {taken}",
+                "Send a file with (curl -T sends its Content-Length, which the link needs):",
+                $"curl -fsS -T <local file> '{link.Url}'",
+            });
         }
 
         /// <summary>One line per file found, then <paramref name="more"/> of the cursor when a page follows.</summary>

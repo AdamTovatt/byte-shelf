@@ -13,6 +13,8 @@ namespace ByteShelfCommon.Serialization
     [JsonSerializable(typeof(ErrorResponse))]
     [JsonSerializable(typeof(ShelfFile))]
     [JsonSerializable(typeof(DownloadLink))]
+    [JsonSerializable(typeof(UploadLink))]
+    [JsonSerializable(typeof(CreateUploadLinkRequest))]
     [JsonSerializable(typeof(ShelfDirectory))]
     [JsonSerializable(typeof(DirectoryListing))]
     [JsonSerializable(typeof(DirectoryTree))]

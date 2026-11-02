@@ -59,7 +59,7 @@ namespace ByteShelfClient.InMemory
                 return new DirectoryListing
                 {
                     Directory = shelf.ToShelfDirectory(listed),
-                    Directories = shelf.LiveChildDirectories(listed.Id).OrderBy(child => child.Name, StoredOrder.Instance).Select(shelf.ToShelfDirectory).ToList(),
+                    Directories = shelf.LiveChildDirectories(listed.Id).OrderBy(child => child.Name, StoredOrder.Instance).Select(shelf.ToListedDirectory).ToList(),
                     Files = shelf.LiveFilesIn(listed.Id).OrderBy(file => file.Name, StoredOrder.Instance).Select(shelf.ToShelfFile).ToList(),
                 };
             });
@@ -158,11 +158,23 @@ namespace ByteShelfClient.InMemory
         public Task<DownloadLink> CreateDownloadLinkAsync(EntryReference file, TimeSpan? lifetime = null, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(file);
-            TimeSpan normalized = DownloadLink.NormalizeLifetime(lifetime);
+            TimeSpan normalized = DownloadLink.Lifetime.Normalize(lifetime);
             return Run(cancellationToken, shelf => new DownloadLink
             {
                 Url = $"https://byteshelf.invalid/api/downloads/{shelf.GetFile(file).Id:N}{Guid.NewGuid():N}",
                 ExpiresAt = _store.Now + normalized,
+            });
+        }
+
+        public Task<UploadLink> CreateUploadLinkAsync(string path, UploadLinkOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            NormalizedUploadLinkRequest request = (options ?? new UploadLinkOptions()).Normalize(path);
+            return Run(cancellationToken, _ => new UploadLink
+            {
+                Url = $"https://byteshelf.invalid/api/upload-links/{Guid.NewGuid():N}",
+                ExpiresAt = _store.Now + request.Lifetime,
+                Path = request.Path,
+                Overwrite = request.Overwrite,
             });
         }
 

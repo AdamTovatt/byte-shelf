@@ -82,7 +82,8 @@ send instructions saying what ByteShelf is and how the tools fit together.
 It signs in as the CLI does, and its tools cover shelves, files, directories and the trash: listing a
 directory or its whole tree, searching, uploading a local file, text or base64 (up to 256 KiB) given
 in the call, or a whole local folder, describing a file, sharing one by a link (not marked
-read-only, so a host asks first: the link hands the file on), downloading a file to a local file, as
+read-only, so a host asks first: the link hands the file on), making a link someone can send one
+file to with `curl`, downloading a file to a local file, as
 text (UTF-8, up to 256 KiB) or as an image the agent sees (PNG, JPEG, GIF or WebP, up to 1 MiB), or
 a whole directory to a local folder, moving, deleting, restoring and emptying the trash. A tool's
 `shelf` can be left out when the login reaches only one shelf, as a key always does. Local paths

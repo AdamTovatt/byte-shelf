@@ -37,6 +37,17 @@ namespace ByteShelf.Server.Tests.Client
             Assert.Equal("shared", await _host.AnonymousClient.GetStringAsync(new Uri(link.Url)));
         }
 
+        [Fact]
+        public async Task CreateUploadLinkAsync_Link_StoresTheFileWithoutSigningIn()
+        {
+            UploadLink link = await Shelf.CreateUploadLinkAsync("/in/a.txt", new UploadLinkOptions { Description = "sent in" });
+
+            Assert.StartsWith(_http.BaseAddress!.AbsoluteUri, link.Url, StringComparison.Ordinal);
+            (await _host.AnonymousClient.PutAsync(new Uri(link.Url), new StringContent("received"))).EnsureSuccessStatusCode();
+            ShelfFile stored = await Shelf.GetFileAsync("/in/a.txt");
+            Assert.Equal(("received", "sent in"), (await ReadTextAsync("/in/a.txt"), stored.Description));
+        }
+
         protected override async Task<IByteShelfClient> CreateAdminClientAsync()
         {
             _http = _host.CreateClient();

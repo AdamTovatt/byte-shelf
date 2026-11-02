@@ -47,7 +47,7 @@ namespace ByteShelf.Cli.Commands
                 new Command(Section.Files, "put", "<local-file>|<local-folder>|- <shelf>:<path> [--overwrite] [--type <content-type>] [--description <text>]", "store a file, - for stdin, or a whole folder; a path ending in / keeps the local name", PutAsync),
                 new Command(Section.Files, "get", "<shelf>:<path> [<local-file>|<local-folder>|-] [--overwrite]", "save a file, - for stdout, or a whole directory", GetAsync),
                 new Command(Section.Files, "describe", "<shelf>:<path> <text> | --clear", "set a file's description, which find matches too", DescribeAsync),
-                new Command(Section.Files, "share", "<shelf>:<path> [--expires <30m|12h|7d>]", string.Create(CultureInfo.InvariantCulture, $"a link to a file that works without signing in; {DownloadLink.DefaultLifetime.TotalHours} hours by default, at most {DownloadLink.MaxLifetime.TotalDays} days"), ShareAsync),
+                new Command(Section.Files, "share", "<shelf>:<path> [--expires <30m|12h|7d>]", string.Create(CultureInfo.InvariantCulture, $"a link to a file that works without signing in; {DownloadLink.Lifetime.Default.TotalHours} hours by default, at most {DownloadLink.Lifetime.Max.TotalDays} days"), ShareAsync),
                 new Command(
                     Section.Files,
                     "find",
@@ -369,7 +369,7 @@ namespace ByteShelf.Cli.Commands
         private async Task ShareAsync(ArgumentList arguments, CancellationToken cancellationToken)
         {
             ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
-            TimeSpan? lifetime = LinkLifetimes.Parse(arguments.Value("--expires"));
+            TimeSpan? lifetime = LinkLifetimes.ForDownload(arguments.Value("--expires"));
             arguments.EnsureAllUsed();
 
             DownloadLink link = await (await ShelfAsync(location.Shelf, cancellationToken)).CreateDownloadLinkAsync(location.Path, lifetime, cancellationToken);

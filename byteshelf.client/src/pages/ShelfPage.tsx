@@ -34,7 +34,7 @@ import { joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../
 import { copyWhenReady } from '../lib/clipboard';
 import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
-import { createDownloadLink, type Entry, type FileSearchResults, type ShelfFile } from '../services/shelfService';
+import { createDownloadLink, directoryEntry, entrySizeBytes, type Entry, type FileSearchResults, type ShelfFile } from '../services/shelfService';
 
 // Its toasts and dialogs stay here with the page rather than in their own modules: splitting them out
 // would only reshape working code (final review, item 51).
@@ -173,7 +173,7 @@ export function ShelfPage() {
 
   const entries: Entry[] = useMemo(() => (listing
     ? [
-        ...listing.directories.map((value): Entry => ({ kind: 'directory', value })),
+        ...listing.directories.map(directoryEntry),
         ...listing.files.map((value): Entry => ({ kind: 'file', value })),
       ]
     : []), [listing]);
@@ -182,7 +182,7 @@ export function ShelfPage() {
   // other as the pointer or focus reaches it (onPrefetch below).
   const prefetchListing = usePrefetchListing(shelf);
   useEffect(() => {
-    listing?.directories.slice(0, PREFETCHED_SUBFOLDERS).forEach((directory) => prefetchListing(directory.path));
+    listing?.directories.slice(0, PREFETCHED_SUBFOLDERS).forEach((listed) => prefetchListing(listed.directory.path));
   }, [listing, prefetchListing]);
 
   // Only the folder's own list selects; search results open on a click as before. A search hides
@@ -266,6 +266,7 @@ export function ShelfPage() {
 
   const selectionActions = {
     count: selection.count,
+    sizeBytes: selected.reduce((total, entry) => total + entrySizeBytes(entry), 0),
     onDownload: selectedFiles.length === selected.length ? () => void save(selectedFiles) : undefined,
     onMove: () => setMoving(selected),
     onDelete: () => void remove(selected),
@@ -383,6 +384,8 @@ interface SelectionBarProps {
   /** Over the search row from md up, or over the phone's top bar. */
   placement: 'row' | 'topBar';
   count: number;
+  /** The size of every selected file and of every file under a selected folder. */
+  sizeBytes: number;
   /** Saves the selection; absent when it holds a folder, which cannot be saved as one file. */
   onDownload?: () => void;
   onMove: () => void;
@@ -395,7 +398,7 @@ interface SelectionBarProps {
  * FileSelectionToolbar. On a narrow screen the buttons keep only their icons, their names read out
  * but not shown, so all of them fit on a phone.
  */
-function SelectionBar({ placement, count, onDownload, onMove, onDelete, onClear }: SelectionBarProps) {
+function SelectionBar({ placement, count, sizeBytes, onDownload, onMove, onDelete, onClear }: SelectionBarProps) {
   const label = (text: string) => <span className="sr-only sm:not-sr-only">{text}</span>;
 
   return (
@@ -404,7 +407,7 @@ function SelectionBar({ placement, count, onDownload, onMove, onDelete, onClear 
       aria-label="Selected items"
       className={cn('absolute inset-0 flex items-center gap-2', placement === 'row' ? 'rounded-lg bg-surface px-3' : 'bg-panel px-4')}
     >
-      <span className="whitespace-nowrap text-body-sm text-fg">{count} selected</span>
+      <span className="whitespace-nowrap text-body-sm text-fg">{count} selected ({formatBytes(sizeBytes)})</span>
       <div className="flex-1" />
       {onDownload && (
         <Button variant="secondary" size="sm" icon={<Icon icon={iconMap.download} size={16} />} onClick={onDownload}>{label('Download')}</Button>

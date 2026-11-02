@@ -9,6 +9,9 @@ namespace ByteShelf.Server.Access.Repositories
         /// <summary>The key whose secret hashes to <paramref name="secretSha256"/>, or null.</summary>
         Task<ShelfKey?> GetBySecretSha256Async(string secretSha256, IDbSession? session = null);
 
+        /// <summary>The key with <paramref name="id"/>, or null once it is deleted.</summary>
+        Task<ShelfKey?> GetByIdAsync(Guid id, IDbSession? session = null);
+
         /// <summary>The shelf's keys, oldest first.</summary>
         Task<IReadOnlyList<ShelfKey>> GetForShelfAsync(Guid shelfId, IDbSession? session = null);
 

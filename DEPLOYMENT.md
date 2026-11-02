@@ -35,11 +35,12 @@ only migrates it and exits, for running migrations as their own step before a st
 | `ASPNETCORE_URLS` | no | Where Kestrel listens. |
 
 Two secrets are generated into `keys/` on first start, readable by the owner only: `jwt-secret`
-signs sign-ins, `download-link-secret` signs download links: the web UI's five-minute ones and the
-share links any key or user with read access can make for up to 7 days. They travel with the root,
+signs sign-ins, `link-secret` signs links that work without signing in: the web UI's five-minute
+download links, the share links any key or user with read access can make for up to 7 days, and the
+upload links any key or user that may store can make for up to 24 hours. They travel with the root,
 so a copied or restored root keeps its sign-ins and its unexpired links, share links included. A
-single link cannot be taken back; deleting `download-link-secret` and restarting ends every link at
-once, and a new secret is generated.
+single link cannot be taken back; deleting `link-secret` and restarting ends every link at once, and
+a new secret is generated.
 
 ## Email
 

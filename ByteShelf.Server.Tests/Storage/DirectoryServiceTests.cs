@@ -20,7 +20,7 @@ namespace ByteShelf.Server.Tests.Storage
 
             Assert.Equal("/", listing.Directory.Path);
             Assert.Null(listing.Directory.ParentId);
-            Assert.Equal(new[] { "/sub" }, listing.Directories.Select(directory => directory.Path));
+            Assert.Equal(new[] { "/sub" }, listing.Directories.Select(listed => listed.Directory.Path));
             Assert.Equal(new[] { "/a.txt", "/b.txt" }, listing.Files.Select(file => file.Path));
         }
 
@@ -31,7 +31,7 @@ namespace ByteShelf.Server.Tests.Storage
             await StoreTextAsync(shelf, "/sub/c.txt", "c");
             DirectoryListing root = await DirectoryService.ListAsync(shelf, EntryReference.ForPath("/"));
 
-            DirectoryListing listing = await DirectoryService.ListAsync(shelf, EntryReference.ForId(root.Directories[0].Id));
+            DirectoryListing listing = await DirectoryService.ListAsync(shelf, EntryReference.ForId(root.Directories[0].Directory.Id));
 
             Assert.Equal("/sub", listing.Directory.Path);
             Assert.Equal("/sub/c.txt", Assert.Single(listing.Files).Path);
@@ -55,7 +55,7 @@ namespace ByteShelf.Server.Tests.Storage
             Assert.Equal("/a/b/c", created.Path);
             Assert.Equal("c", created.Name);
             DirectoryListing middle = await DirectoryService.ListAsync(shelf, EntryReference.ForPath("/a/b"));
-            Assert.Equal(created.Id, Assert.Single(middle.Directories).Id);
+            Assert.Equal(created.Id, Assert.Single(middle.Directories).Directory.Id);
         }
 
         [Fact]

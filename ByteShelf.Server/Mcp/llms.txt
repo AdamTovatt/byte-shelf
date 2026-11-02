@@ -15,7 +15,8 @@ permissions: read, add-only (read, and store new files, never replace or remove)
   allows (only reading ones on a replica). The server tells the agent the shelf's name when it
   connects, and every tool works on that shelf when shelf is left out. It cannot read or write the
   agent's own files: upload text or base64 (up to 256 KiB), read text of up to 256 KiB or a PNG,
-  JPEG, GIF or WebP image of up to 1 MiB, and use share_file for a link to anything else. Add it to
+  JPEG, GIF or WebP image of up to 1 MiB, and use share_file for a link to anything else, or
+  create_upload_link for a link that stores one file sent to it with curl. Add it to
   Claude Code with this server's address and the key:
   `claude mcp add --transport http byteshelf https://<this-server>/mcp --header "Authorization: Bearer bsk_..."`
 - `byteshelf --mcp`: the same tools over stdio on the agent's own machine, signed in as the CLI is,
@@ -36,6 +37,13 @@ permissions: read, add-only (read, and store new files, never replace or remove)
 
 - Shelf endpoints are under `/api/shelves/{shelf}` and take the key in `X-Api-Key` or as a bearer
   token. Errors answer `{ "code": ..., "message": ... }` with a code such as `not_found`.
+- Stream a file of any size up and down with the key, the path URL-encoded (add `&overwrite=true` to
+  the upload to replace a file):
+  `curl -fsS -H "Authorization: Bearer $BYTESHELF_KEY" -T ./q3.pdf "https://<this-server>/api/shelves/<shelf>/content?path=/reports/q3.pdf"`
+  `curl -fsS -H "Authorization: Bearer $BYTESHELF_KEY" -o q3.pdf "https://<this-server>/api/shelves/<shelf>/content?path=/reports/q3.pdf"`
+- `POST /api/shelves/<shelf>/upload-link` with `{ "path": "/in/q3.pdf" }` answers a link that
+  stores one file PUT to it without the key (`curl -fsS -T ./q3.pdf "<link>"`), for 15 minutes or
+  `expiresInMinutes` (at most 1440); `overwrite` and `description` are optional.
 - [Storage endpoints](https://github.com/AdamTovatt/byte-shelf/blob/master/ByteShelf.Server/Storage/Storage.md)
 - [Who may do what](https://github.com/AdamTovatt/byte-shelf/blob/master/ByteShelf.Server/Access/Access.md)
 - [ByteShelfClient, the .NET client](https://github.com/AdamTovatt/byte-shelf/blob/master/ByteShelfClient/README.md)

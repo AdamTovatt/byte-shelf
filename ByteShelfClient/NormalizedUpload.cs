@@ -9,9 +9,10 @@ namespace ByteShelfClient
         public static NormalizedUpload Of(string path, UploadOptions? options)
         {
             options ??= new UploadOptions();
+            string normalizedPath = ShelfPath.Normalize(path);
             return new NormalizedUpload(
-                ShelfPath.Normalize(path),
-                ContentTypes.Normalize(options.ContentType),
+                normalizedPath,
+                ContentTypes.ForUpload(options.ContentType, normalizedPath),
                 FileDescription.Normalize(options.Description),
                 options.Overwrite);
         }

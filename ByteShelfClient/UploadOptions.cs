@@ -6,7 +6,10 @@ namespace ByteShelfClient
         /// <summary>Replace a file already at the path, moving it to the trash; needs write access.</summary>
         public bool Overwrite { get; init; }
 
-        /// <summary>The media type stored with the file; <c>application/octet-stream</c> when left out.</summary>
+        /// <summary>
+        /// The media type stored with the file; when left out, the one the path's extension names, else
+        /// <c>application/octet-stream</c> (<see cref="ByteShelfCommon.ContentTypes.ForUpload"/>).
+        /// </summary>
         public string? ContentType { get; init; }
 
         /// <summary>

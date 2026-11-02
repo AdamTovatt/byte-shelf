@@ -48,10 +48,8 @@ namespace ByteShelf.Server.Storage.Services
         }
 
         /// <inheritdoc />
-        public async Task<ShelfFile> StoreAsync(Shelf shelf, string path, string? contentType, long sizeBytes, bool overwrite, string startedBy, Stream content, CancellationToken cancellationToken)
+        public async Task<ShelfFile> StoreAsync(Shelf shelf, StartUploadRequest request, string startedBy, Stream content, CancellationToken cancellationToken)
         {
-            // A single upload's request carries no description: its body is the contents.
-            StartUploadRequest request = new StartUploadRequest { Path = path, SizeBytes = sizeBytes, ContentType = contentType, Overwrite = overwrite };
             UploadRecord upload = await BeginAsync(shelf, request, startedBy, isResumable: false);
 
             using (await _uploadLocks.AcquireAsync(upload.Id, CancellationToken.None))
@@ -173,7 +171,7 @@ namespace ByteShelf.Server.Storage.Services
                 ShelfId = shelf.Id,
                 StartedBy = startedBy,
                 Path = normalizedPath,
-                ContentType = ContentTypes.Normalize(request.ContentType),
+                ContentType = ContentTypes.ForUpload(request.ContentType, normalizedPath),
                 SizeBytes = sizeBytes,
                 ReceivedBytes = 0,
                 Overwrite = overwrite,

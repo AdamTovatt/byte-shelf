@@ -23,13 +23,15 @@ namespace ByteShelf.Server.Storage.Controllers
         private readonly IFileService _fileService;
         private readonly IUploadService _uploadService;
         private readonly DownloadLinks _downloadLinks;
+        private readonly UploadLinks _uploadLinks;
 
-        public EntriesController(IDirectoryService directoryService, IFileService fileService, IUploadService uploadService, DownloadLinks downloadLinks)
+        public EntriesController(IDirectoryService directoryService, IFileService fileService, IUploadService uploadService, DownloadLinks downloadLinks, UploadLinks uploadLinks)
         {
             _directoryService = directoryService;
             _fileService = fileService;
             _uploadService = uploadService;
             _downloadLinks = downloadLinks;
+            _uploadLinks = uploadLinks;
         }
 
         /// <summary>Lists a directory: the root when neither path nor id is given.</summary>
@@ -148,6 +150,23 @@ namespace ByteShelf.Server.Storage.Controllers
         }
 
         /// <summary>
+        /// A link anyone holding it can store one file through, at the body's <c>path</c>, without a
+        /// token, for <c>expiresInMinutes</c> (15 by default, at most 24 hours). It acts as the caller,
+        /// whose access is checked now and again when the link is used: one that may overwrite needs
+        /// write access. 400 for a request <see cref="CreateUploadLinkRequest.Normalize"/> refuses.
+        /// </summary>
+        [HttpPost("upload-link")]
+        [ShelfAccess(ShelfOperation.Add)]
+        [ProducesResponseType(typeof(UploadLink), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 403)]
+        public IActionResult CreateUploadLink([FromBody] CreateUploadLinkRequest request)
+        {
+            Access.RequireStore(request.Overwrite);
+            return Ok(_uploadLinks.Create(Shelf.Id, Access.Caller.Reference, request.Normalize()));
+        }
+
+        /// <summary>
         /// Stores the request body as the file at <c>path</c> in one streamed request. Needs
         /// <c>Content-Length</c>, which is reserved against the quota before the body is read; the
         /// <c>Content-Type</c> is stored with the file. Replacing a file with <c>overwrite</c> needs
@@ -165,10 +184,10 @@ namespace ByteShelf.Server.Storage.Controllers
         {
             Access.RequireStore(overwrite);
 
-            long length = Request.ContentLength
-                ?? throw new LengthRequiredException("A single upload needs Content-Length. Send content of unknown length as a resumable upload.");
-
-            return Ok(await _uploadService.StoreAsync(Shelf, path, Request.ContentType, length, overwrite, Access.Caller.Id, Request.Body, cancellationToken));
+            // The request's body is the contents, so it carries no description.
+            StartUploadRequest request = SingleUpload.Of(
+                Request, path, overwrite, description: null, "A single upload needs Content-Length. Send content of unknown length as a resumable upload.");
+            return Ok(await _uploadService.StoreAsync(Shelf, request, Access.Caller.Id, Request.Body, cancellationToken));
         }
     }
 }

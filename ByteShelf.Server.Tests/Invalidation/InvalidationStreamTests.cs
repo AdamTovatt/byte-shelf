@@ -93,7 +93,7 @@ namespace ByteShelf.Server.Tests.Invalidation
         {
             ShelfInfo theirs = await CreateShelfAsync("theirs");
             ShelfInfo mine = await CreateShelfAsync("mine");
-            (await _host.AdminClient.PutAsJsonAsync($"/api/shelves/mine/access/{_host.MemberId}", new SetShelfAccessRequest { Permission = ShelfAccessPermission.Read })).EnsureSuccessStatusCode();
+            await _host.GrantMemberAsync("mine", ShelfAccessPermission.Read);
 
             using HttpResponseMessage memberResponse = await OpenAsync(_host.MemberClient);
             using HttpResponseMessage adminResponse = await OpenAsync(_host.AdminClient);
@@ -107,7 +107,7 @@ namespace ByteShelf.Server.Tests.Invalidation
             // the streams open, so the reads end at a shelf made after the uploads: everything before it,
             // the upload to their shelf included, has been sent by then.
             ShelfInfo end = await CreateShelfAsync("end");
-            (await _host.AdminClient.PutAsJsonAsync($"/api/shelves/end/access/{_host.MemberId}", new SetShelfAccessRequest { Permission = ShelfAccessPermission.Read })).EnsureSuccessStatusCode();
+            await _host.GrantMemberAsync("end", ShelfAccessPermission.Read);
             IReadOnlyList<string> heardByMember = await ReadUntilAsync(member, end.Id);
             IReadOnlyList<string> heardByAdmin = await ReadUntilAsync(admin, end.Id);
 

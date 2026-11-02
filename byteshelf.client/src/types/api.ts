@@ -1106,6 +1106,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shelves/{shelf}/upload-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["CreateUploadLinkRequest"];
+                    "text/json": components["schemas"]["CreateUploadLinkRequest"];
+                    "application/*+json": components["schemas"]["CreateUploadLinkRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["UploadLink"];
+                        "application/json": components["schemas"]["UploadLink"];
+                        "text/json": components["schemas"]["UploadLink"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/invalidation/stream": {
         parameters: {
             query?: never;
@@ -2223,6 +2290,100 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/upload-links/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    token: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ShelfFile"];
+                        "application/json": components["schemas"]["ShelfFile"];
+                        "text/json": components["schemas"]["ShelfFile"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Length Required */
+                411: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Server Error */
+                507: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/shelves/{shelf}/uploads": {
         parameters: {
             query?: never;
@@ -2892,6 +3053,13 @@ export interface components {
             /** Format: int64 */
             quotaBytes?: number | null;
         };
+        CreateUploadLinkRequest: {
+            path: string;
+            overwrite?: boolean;
+            description?: string | null;
+            /** Format: int32 */
+            expiresInMinutes?: number | null;
+        };
         CreateUserRequest: {
             email: string;
             displayName: string;
@@ -2904,7 +3072,7 @@ export interface components {
         };
         DirectoryListing: {
             directory: components["schemas"]["ShelfDirectory"];
-            directories: components["schemas"]["ShelfDirectory"][];
+            directories: components["schemas"]["ListedDirectory"][];
             files: components["schemas"]["ShelfFile"][];
         };
         DirectoryTree: {
@@ -2938,6 +3106,13 @@ export interface components {
             };
         } & {
             [key: string]: unknown;
+        };
+        ListedDirectory: {
+            directory: components["schemas"]["ShelfDirectory"];
+            /** Format: int64 */
+            sizeBytes: number;
+            /** Format: int32 */
+            fileCount: number;
         };
         LoginAuthRequest: {
             username?: string;
@@ -3115,6 +3290,13 @@ export interface components {
             name: string;
             /** Format: int64 */
             quotaBytes?: number | null;
+        };
+        UploadLink: {
+            url: string;
+            /** Format: date-time */
+            expiresAt: string;
+            path: string;
+            overwrite: boolean;
         };
         UploadSession: {
             /** Format: uuid */

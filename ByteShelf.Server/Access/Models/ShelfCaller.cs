@@ -1,3 +1,6 @@
+using ByteShelf.Server.Users.Models;
+using ByteShelfCommon;
+
 namespace ByteShelf.Server.Access.Models
 {
     /// <summary>
@@ -26,11 +29,22 @@ namespace ByteShelf.Server.Access.Models
         /// Who the caller is, as stored with what it starts, such as an upload: <c>user:&lt;id&gt;</c> or
         /// <c>key:&lt;id&gt;</c>.
         /// </summary>
-        public string Id => Key != null ? $"key:{Key.Id:D}" : $"user:{UserId!.Value:D}";
+        public string Id => Reference.Kind == ShelfCallerKind.Key ? $"key:{Reference.Id:D}" : $"user:{Reference.Id:D}";
+
+        /// <summary>The caller, to find again later with <c>ShelfCallers.FindAsync</c>.</summary>
+        public ShelfCallerReference Reference => Key != null
+            ? new ShelfCallerReference(ShelfCallerKind.Key, Key.Id)
+            : new ShelfCallerReference(ShelfCallerKind.User, UserId!.Value);
 
         public static ShelfCaller ForUser(Guid userId, bool isAdmin)
         {
             return new ShelfCaller(userId, isAdmin, key: null);
+        }
+
+        /// <summary>A stored user, an admin when they hold the admin role.</summary>
+        public static ShelfCaller ForUser(User user)
+        {
+            return ForUser(user.Id, user.Roles.Contains(UserRoles.Admin));
         }
 
         public static ShelfCaller ForKey(ShelfKey key)

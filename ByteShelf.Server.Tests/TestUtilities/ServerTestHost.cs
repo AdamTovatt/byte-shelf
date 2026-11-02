@@ -62,7 +62,6 @@ namespace ByteShelf.Server.Tests.TestUtilities
             return _app.GetTestServer().CreateHandler();
         }
 
-        /// <summary>A client sending <paramref name="secret"/> as its shelf key on every request.</summary>
         /// <summary>Creates a shelf as the admin and answers it.</summary>
         public async Task<ShelfInfo> CreateShelfAsync(string name)
         {
@@ -71,6 +70,30 @@ namespace ByteShelf.Server.Tests.TestUtilities
             return (await response.Content.ReadFromJsonAsync<ShelfInfo>())!;
         }
 
+        /// <summary>Creates a key to <paramref name="shelf"/> as the admin, and answers it with its secret.</summary>
+        public async Task<CreatedShelfKey> CreateKeyAsync(string shelf, ShelfKeyPermission permission)
+        {
+            HttpResponseMessage response = await AdminClient.PostAsJsonAsync(
+                $"/api/shelves/{shelf}/keys", new CreateShelfKeyRequest { Name = "test program", Permission = permission });
+            response.EnsureSuccessStatusCode();
+            return (await response.Content.ReadFromJsonAsync<CreatedShelfKey>())!;
+        }
+
+        /// <summary>A client sending a new key to <paramref name="shelf"/> with <paramref name="permission"/>.</summary>
+        public async Task<HttpClient> CreateKeyClientAsync(string shelf, ShelfKeyPermission permission)
+        {
+            return CreateKeyClient((await CreateKeyAsync(shelf, permission)).Secret);
+        }
+
+        /// <summary>Grants the member <paramref name="permission"/> on <paramref name="shelf"/>, or changes it, as the admin.</summary>
+        public async Task GrantMemberAsync(string shelf, ShelfAccessPermission permission)
+        {
+            HttpResponseMessage response = await AdminClient.PutAsJsonAsync(
+                $"/api/shelves/{shelf}/access/{MemberId}", new SetShelfAccessRequest { Permission = permission });
+            response.EnsureSuccessStatusCode();
+        }
+
+        /// <summary>A client sending <paramref name="secret"/> as its shelf key on every request.</summary>
         public HttpClient CreateKeyClient(string secret)
         {
             HttpClient client = _app.GetTestClient();

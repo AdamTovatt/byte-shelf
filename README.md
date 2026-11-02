@@ -25,7 +25,7 @@ One folder, named by `BYTESHELF_ROOT`, holds the whole instance:
   byteshelf.db              the SQLite database: shelves, directories, files, users, the change log
   objects/ab/cd/<sha256>    file contents, stored whole and never modified
   staging/                  uploads in progress
-  keys/                     secrets the server generates for itself (the JWT and download-link keys)
+  keys/                     secrets the server generates for itself (jwt-secret, and link-secret for download and upload links)
 ```
 
 Nothing lives outside it, so a zip of a stopped server's root is a complete copy; `--backup` writes a

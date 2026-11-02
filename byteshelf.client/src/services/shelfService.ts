@@ -5,12 +5,26 @@ export type ShelfInfo = components['schemas']['ShelfInfo'];
 export type DirectoryListing = components['schemas']['DirectoryListing'];
 export type ShelfFile = components['schemas']['ShelfFile'];
 export type ShelfDirectory = components['schemas']['ShelfDirectory'];
+export type ListedDirectory = components['schemas']['ListedDirectory'];
 export type TrashEntry = components['schemas']['TrashEntry'];
 export type DownloadLink = components['schemas']['DownloadLink'];
 export type FileSearchResults = components['schemas']['FileSearchResults'];
 
-/** A directory or a file in a listing, as the shelf page and its dialogs act on it. */
-export type Entry = { kind: 'directory'; value: ShelfDirectory } | { kind: 'file'; value: ShelfFile };
+/**
+ * A directory or a file in a listing, as the shelf page and its dialogs act on it. A directory
+ * carries the size of every file under it, as its listing gives it.
+ */
+export type Entry = { kind: 'directory'; value: ShelfDirectory; sizeBytes: number } | { kind: 'file'; value: ShelfFile };
+
+/** A listed directory as an entry. */
+export function directoryEntry(listed: ListedDirectory): Entry {
+  return { kind: 'directory', value: listed.directory, sizeBytes: listed.sizeBytes };
+}
+
+/** An entry's size: a file's own, or a directory's with everything under it. */
+export function entrySizeBytes(entry: Entry): number {
+  return entry.kind === 'file' ? entry.value.sizeBytes : entry.sizeBytes;
+}
 
 function shelfPath(shelf: string) {
   return { path: { shelf } };

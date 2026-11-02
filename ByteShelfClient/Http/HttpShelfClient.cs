@@ -102,18 +102,38 @@ namespace ByteShelfClient.Http
         public async Task<DownloadLink> CreateDownloadLinkAsync(EntryReference file, TimeSpan? lifetime = null, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(file);
-            int minutes = (int)DownloadLink.NormalizeLifetime(lifetime).TotalMinutes;
+            int minutes = (int)DownloadLink.Lifetime.Normalize(lifetime).TotalMinutes;
             DownloadLink link = await _connection.SendAsync(
                 HttpMethod.Post,
                 $"{_base}/download-link?{file.ToQuery()}&expiresInMinutes={minutes}",
                 ByteShelfJsonContext.Default.DownloadLink,
                 cancellationToken).ConfigureAwait(false);
 
-            // The server answers a link on its public URL when it has one, which is kept as it is, or else a
-            // path from its own root; relative to the base address, that stays right for a server behind a
-            // path prefix it does not know about.
+            return link with { Url = Absolute(link.Url) };
+        }
+
+        public async Task<UploadLink> CreateUploadLinkAsync(string path, UploadLinkOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            UploadLink link = await _connection.SendAsync(
+                HttpMethod.Post,
+                $"{_base}/upload-link",
+                (options ?? new UploadLinkOptions()).Normalize(path).ToRequest(),
+                ByteShelfJsonContext.Default.CreateUploadLinkRequest,
+                ByteShelfJsonContext.Default.UploadLink,
+                cancellationToken).ConfigureAwait(false);
+
+            return link with { Url = Absolute(link.Url) };
+        }
+
+        /// <summary>
+        /// A link as the server answered it, made absolute: the server answers a link on its public URL
+        /// when it has one, which is kept as it is, or else a path from its own root; relative to the base
+        /// address, that stays right for a server behind a path prefix it does not know about.
+        /// </summary>
+        private string Absolute(string url)
+        {
             Uri linkBase = _options.LinkBaseAddress ?? _connection.BaseAddress;
-            return new DownloadLink { Url = new Uri(linkBase, link.Url.TrimStart('/')).AbsoluteUri, ExpiresAt = link.ExpiresAt };
+            return new Uri(linkBase, url.TrimStart('/')).AbsoluteUri;
         }
 
         public async Task<Stream> OpenReadAsync(EntryReference file, CancellationToken cancellationToken = default)

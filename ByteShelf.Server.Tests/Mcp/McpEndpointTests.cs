@@ -7,6 +7,7 @@ using ByteShelf.Tools;
 using ByteShelf.Tools.Mcp;
 using ByteShelf.Server.Replication.Models;
 using ByteShelf.Server.Replication.Repositories;
+using ByteShelf.Server.Shared;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using Microsoft.Extensions.DependencyInjection;
@@ -24,7 +25,7 @@ namespace ByteShelf.Server.Tests.Mcp
             "download_file", "get_info", "list_directory", "list_shelves", "list_trash", "list_tree", "search_files", "share_file", "shelf_info",
         };
 
-        private static readonly string[] AddTools = { "create_directory", "upload_file" };
+        private static readonly string[] AddTools = { "create_directory", "create_upload_link", "upload_file" };
 
         private static readonly string[] WriteTools = { "delete", "empty_trash", "move", "restore", "set_description" };
 
@@ -214,6 +215,55 @@ namespace ByteShelf.Server.Tests.Mcp
         }
 
         [Fact]
+        public async Task CallTool_CreateUploadLinkWithAnAddOnlyKey_AnswersALinkThatStoresTheFileWithoutTheKey()
+        {
+            Uri publicAddress = new Uri("http://shelf.example.test/");
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.AddOnly), endpoint: new Uri(publicAddress, "mcp"));
+
+            CallToolResult created = await client.CallToolAsync(
+                "create_upload_link", new Dictionary<string, object?> { ["path"] = "/in/q3.pdf", ["description"] = "Q3 report" });
+
+            AssertSucceeded(created);
+            Uri link = new Uri(TextOf(created).Split(Environment.NewLine)[0]);
+            Assert.Equal(publicAddress.GetLeftPart(UriPartial.Authority), link.GetLeftPart(UriPartial.Authority));
+            (await _host.AnonymousClient.PutAsync(link.PathAndQuery, new ByteArrayContent(new byte[] { 1, 2, 3 }))).EnsureSuccessStatusCode();
+            ShelfFile stored = (await _host.AdminClient.GetFromJsonAsync<ShelfFile>("/api/shelves/docs/files?path=/in/q3.pdf"))!;
+            Assert.Equal((3L, "application/pdf", "Q3 report"), (stored.SizeBytes, stored.ContentType, stored.Description));
+        }
+
+        [Theory]
+        [InlineData(ShelfKeyPermission.Read, false, null)]
+        [InlineData(ShelfKeyPermission.AddOnly, true, "never over a file already there")]
+        [InlineData(ShelfKeyPermission.ReadWrite, true, "add &overwrite=true to replace a file")]
+        public async Task Instructions_GiveCurlCommandsForWhatTheKeyMayDoOnTheAddressTheAgentCalled(ShelfKeyPermission permission, bool stores, string? overwriting)
+        {
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", permission), endpoint: new Uri("http://shelf.example.test/mcp"));
+            string instructions = client.ServerInstructions!;
+            string content = "\"http://shelf.example.test/api/shelves/docs/content?path=/reports/q3.pdf\"";
+
+            Assert.Contains($"-o q3.pdf {content}", instructions, StringComparison.Ordinal);
+            Assert.Equal(stores, instructions.Contains($"-T ./q3.pdf {content}", StringComparison.Ordinal));
+            Assert.Equal(stores, instructions.Contains("give upload_file the contents", StringComparison.Ordinal));
+            Assert.Equal(permission == ShelfKeyPermission.ReadWrite, instructions.Contains("&overwrite=true", StringComparison.Ordinal));
+            if (overwriting != null)
+            {
+                Assert.Contains(overwriting, instructions, StringComparison.Ordinal);
+            }
+        }
+
+        [Fact]
+        public async Task Instructions_WithAPublicUrl_GiveCurlCommandsOnIt()
+        {
+            await using ServerTestHost host = await ServerTestHost.StartAsync(services => services.AddSingleton(new PublicAddress("https://files.example.com/shelf")));
+            await host.CreateShelfAsync("docs");
+            string secret = (await host.CreateKeyAsync("docs", ShelfKeyPermission.Read)).Secret;
+
+            await using McpClient client = await ConnectAsync(secret, endpoint: new Uri("http://shelf.example.test/mcp"), host: host);
+
+            Assert.Contains("-o q3.pdf \"https://files.example.com/shelf/api/shelves/docs/content?path=/reports/q3.pdf\"", client.ServerInstructions, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public async Task CallTool_AnotherShelf_IsNotFound()
         {
             await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
@@ -313,13 +363,10 @@ namespace ByteShelf.Server.Tests.Mcp
 
         private async Task<string> CreateKeyAsync(string shelf, ShelfKeyPermission permission)
         {
-            HttpResponseMessage response = await _host.AdminClient.PostAsJsonAsync(
-                $"/api/shelves/{shelf}/keys", new CreateShelfKeyRequest { Name = "agent", Permission = permission });
-            response.EnsureSuccessStatusCode();
-            return (await response.Content.ReadFromJsonAsync<CreatedShelfKey>())!.Secret;
+            return (await _host.CreateKeyAsync(shelf, permission)).Secret;
         }
 
-        private Task<McpClient> ConnectAsync(string secret, bool asBearer = true, Uri? endpoint = null)
+        private Task<McpClient> ConnectAsync(string secret, bool asBearer = true, Uri? endpoint = null, ServerTestHost? host = null)
         {
             HttpClientTransportOptions options = new HttpClientTransportOptions
             {
@@ -330,7 +377,7 @@ namespace ByteShelf.Server.Tests.Mcp
                     : new Dictionary<string, string> { [ShelfKeys.HeaderName] = secret },
             };
 
-            return McpClient.CreateAsync(new HttpClientTransport(options, _host.CreateClient(), ownsHttpClient: true));
+            return McpClient.CreateAsync(new HttpClientTransport(options, (host ?? _host).CreateClient(), ownsHttpClient: true));
         }
     }
 }

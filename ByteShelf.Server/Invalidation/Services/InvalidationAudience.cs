@@ -42,7 +42,7 @@ namespace ByteShelf.Server.Invalidation.Services
                 return null;
             }
 
-            ShelfCaller caller = ShelfCaller.ForUser(userId, user.Roles.Contains(UserRoles.Admin));
+            ShelfCaller caller = ShelfCaller.ForUser(user);
             HashSet<string> visible = (await _accessResolver.GetVisibleShelvesAsync(caller))
                 .Select(shelf => shelf.Id.ToString("D"))
                 .ToHashSet(StringComparer.Ordinal);

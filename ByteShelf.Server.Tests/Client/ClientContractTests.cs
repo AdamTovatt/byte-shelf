@@ -107,6 +107,16 @@ namespace ByteShelf.Server.Tests.Client
             Assert.Equal(ErrorCodes.QuotaExceeded, exception.Code);
         }
 
+        [Theory]
+        [InlineData("/q3.PDF", "application/pdf")]
+        [InlineData("/notes.unknown", ContentTypes.Default)]
+        public async Task UploadAsync_NoContentType_IsTypedByTheExtension(string path, string expected)
+        {
+            ShelfFile stored = await UploadTextAsync(path, "a");
+
+            Assert.Equal(expected, stored.ContentType);
+        }
+
         [Fact]
         public async Task UploadAsync_ContentTypeNotAMediaType_ThrowsArgumentException()
         {
@@ -158,7 +168,7 @@ namespace ByteShelf.Server.Tests.Client
             DirectoryListing listing = await Shelf.ListAsync();
 
             Assert.Equal("/", listing.Directory.Path);
-            Assert.Equal(new[] { "y", "z" }, listing.Directories.Select(directory => directory.Name));
+            Assert.Equal(new[] { "y", "z" }, listing.Directories.Select(listed => listed.Directory.Name));
             Assert.Equal(new[] { "a.txt", "b.txt" }, listing.Files.Select(file => file.Name));
         }
 
@@ -172,8 +182,28 @@ namespace ByteShelf.Server.Tests.Client
             DirectoryListing listing = await Shelf.ListAsync("/a");
 
             Assert.Equal("/a", listing.Directory.Path);
-            Assert.Equal(new[] { "b" }, listing.Directories.Select(directory => directory.Name));
+            Assert.Equal(new[] { "b" }, listing.Directories.Select(listed => listed.Directory.Name));
             Assert.Equal(new[] { "inner.txt" }, listing.Files.Select(file => file.Name));
+        }
+
+        [Fact]
+        public async Task ListAsync_Directories_CountTheLiveFilesUnderThemAtAnyDepth()
+        {
+            await UploadTextAsync("/a/one.txt", "abc");
+            await UploadTextAsync("/a/b/c/two.txt", "de");
+            await UploadTextAsync("/a/b/gone.txt", "trashed");
+            await UploadTextAsync("/a/old/gone.txt", "trashed too");
+            await Shelf.DeleteFileAsync("/a/b/gone.txt");
+            await Shelf.DeleteDirectoryAsync("/a/old");
+            await UploadTextAsync("/z/three.txt", "f");
+            await Shelf.CreateDirectoryAsync("/empty");
+            await UploadTextAsync("/top.txt", "not under a directory");
+
+            DirectoryListing listing = await Shelf.ListAsync();
+
+            Assert.Equal(
+                new[] { ("a", 5L, 2), ("empty", 0L, 0), ("z", 1L, 1) },
+                listing.Directories.Select(listed => (listed.Directory.Name, listed.SizeBytes, listed.FileCount)));
         }
 
         [Fact]

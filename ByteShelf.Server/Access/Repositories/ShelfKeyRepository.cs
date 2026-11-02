@@ -47,6 +47,20 @@ namespace ByteShelf.Server.Access.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<ShelfKey?> GetByIdAsync(Guid id, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string query = $"SELECT {SelectColumns} FROM shelf_key WHERE id = @{nameof(id)}";
+
+                ShelfKeyEntity? entity = await dbSession.Connection.QuerySingleOrDefaultAsync<ShelfKeyEntity>(
+                    query, new { id }, transaction: dbSession.Transaction);
+
+                return entity?.ToDomain();
+            }, session);
+        }
+
+        /// <inheritdoc />
         public async Task<IReadOnlyList<ShelfKey>> GetForShelfAsync(Guid shelfId, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>

@@ -20,13 +20,13 @@ cleanup. Shelves themselves are described in [Shelves.md](Shelves.md).
 All under `/api/shelves/{shelf}`, open to whoever may do the operation there; what each endpoint
 needs is in the table in [Access.md](../Access/Access.md). An existing file or directory is named by
 exactly one of the `path` and `id` query parameters. A new path is in the JSON body for
-`POST directories`, `POST uploads` and the `toPath` of a move, and in the `path` query parameter for
-`PUT content`. Errors answer an `ErrorResponse` with a `code` from `ByteShelfCommon.ErrorCodes`; a
+`POST directories`, `POST uploads`, `POST upload-link` and the `toPath` of a move, and in the `path`
+query parameter for `PUT content`. Errors answer an `ErrorResponse` with a `code` from `ByteShelfCommon.ErrorCodes`; a
 path that is not allowed is a 400.
 
 | Method and route | What it does |
 |---|---|
-| `GET entries?path=` | Lists a directory (the root without `path` or `id`). |
+| `GET entries?path=` | Lists a directory (the root without `path` or `id`). Each of its `directories` is the `directory` with the `sizeBytes` and `fileCount` of the live files under it at any depth (`ListedDirectory`), summed in the same query (a recursive walk per child), so listing the root walks the whole shelf. |
 | `GET tree?under=&depth=&limit=&after=` | One page of the live directories and files under `under` (the root by default), at any depth or down to `depth` levels (1: what it holds directly), together by path in code point order: `limit` (1 to 1000, 100 by default) entries, and `nextCursor` to pass as `after` for the next page. 400 for a depth below 1 or a limit out of range, 404 when `under` is missing or names a file. |
 | `GET files?path=` | A file's record. |
 | `DELETE files?path=` | Moves a file to the trash; answers the deletion. |
@@ -38,8 +38,9 @@ path that is not allowed is a 400.
 | `DELETE directories?path=` | Moves a directory and everything live under it to the trash as one deletion; 400 for the root. |
 | `GET content?path=` (and `HEAD`) | Streams the contents (`HEAD`: only the headers); `Range`, `If-None-Match` and `If-Range` work, the ETag is the SHA-256. Served with `X-Content-Type-Options: nosniff` and, except for a PDF (Chrome's viewer does not run sandboxed), a sandboxing `Content-Security-Policy`. `download=true` adds a file name. |
 | `POST download-link?path=&expiresInMinutes=` | A link to the contents that works without a token for `expiresInMinutes` (1 to 10080, 1440 by default), to open, save or share the file (see below). Making one is a read; 400 for a lifetime outside those bounds. |
-| `PUT content?path=&overwrite=` | Stores the body in one request. Needs `Content-Length` (411 without); the `Content-Type` is stored. 409 when the path is taken and `overwrite` is not set, 507 over quota. |
-| `POST uploads` | Starts a resumable upload from the body's `path`, `sizeBytes`, `contentType` (optional), `overwrite` (false by default) and the file's `description` if it has one (a single `PUT` has no body to carry one); reserves the size against the quota. |
+| `PUT content?path=&overwrite=` | Stores the body in one request. Needs `Content-Length` (411 without); the `Content-Type` is stored, or without one the type the path's extension names (`ContentTypes.ForUpload`), so `curl -T` stores a PDF as one. 409 when the path is taken and `overwrite` is not set, 507 over quota. |
+| `POST upload-link` | A link that stores one file sent to it without a token, from the body's `path`, `overwrite`, `description` and `expiresInMinutes` (1 to 1440, 15 by default); see "Upload links" below. Needs `Add`, or `Write` with `overwrite`; 400 for the root or a request `CreateUploadLinkRequest.Normalize` refuses. |
+| `POST uploads` | Starts a resumable upload from the body's `path`, `sizeBytes`, `contentType` (optional, typed as `PUT content` is), `overwrite` (false by default) and the file's `description` if it has one (a single `PUT` has no body to carry one); reserves the size against the quota. |
 | `GET uploads/{id}` | Progress: `receivedBytes` is where the next chunk starts. |
 | `PUT uploads/{id}?offset=` | Appends a chunk of at most `UploadLimits.MaxChunkBytes` (64 MiB, 413 above); 409 when `offset` is not `receivedBytes`. |
 | `POST uploads/{id}/complete` | Stores the file once every byte has arrived. 409 when the path was taken meanwhile; the upload is kept. |
@@ -53,9 +54,9 @@ path that is not allowed is a 400.
 One mechanism serves two uses. A plain link or an image's source cannot carry a token, so the web
 UI asks for a five-minute link before it opens or saves a file; and a link shares a file with someone
 who has no access, for the caller's pick of lifetime: a day by default, at most 7 days
-(`DownloadLink.NormalizeLifetime`). `GET` or `HEAD /api/downloads/{token}` serves the contents as `GET content`
+(`DownloadLink.Lifetime.Normalize`). `GET` or `HEAD /api/downloads/{token}` serves the contents as `GET content`
 does, `download=true` included, to anyone holding the token until it runs out. The token names the
-shelf and the file by id and when it runs out, signed with HMAC-SHA256 by `keys/download-link-secret`;
+shelf and the file by id and when it runs out, signed by `LinkTokens` (below);
 an altered or expired one, or one whose file is in the trash, answers 404; a restored file keeps its
 id, so its unexpired links work again. A file stored over the linked one is a new file, so the link no
 longer reaches it. Creating or serving a link is recorded nowhere. A link keeps working until it
@@ -64,6 +65,35 @@ but removing the secret file and restarting ends them all. `DownloadLinks` makes
 `PublicAddress.LinkTo`: absolute on `APP_BASE_URL` when that is set, which clients keep as it is;
 otherwise (Development only) a path from the server's root, which each client makes absolute against
 the address it reaches the server by.
+
+## Upload links (`UploadLinks`)
+
+A link that lets someone without access, or a program without the key, store one file: an agent
+hands it on, or uses it to move a file too large for its own context. `PUT /api/upload-links/{token}`
+(`UploadLinksController`) stores the body as a single `PUT content` by the link's maker would, with
+`Content-Length` reserved against the quota first, typed the same way, and with the description the
+link carries. The token carries what the link grants (`UploadLinkGrant`): the shelf by id, who made it
+(a key or a user, by id), the path, whether it may overwrite and the description, so nothing is
+stored when one is made. The token is signed, not encrypted: whoever holds the link can read the path
+and description in it. Since the URL carries the path and the description, together they may take
+at most 4096 bytes of UTF-8 (`NormalizedUploadLinkRequest.MaxCarriedBytes`), which keeps a link under the
+8 KiB request line common proxies accept.
+
+Unlike a download link, the maker's access is checked again on every use: the key or user is looked
+up (`ShelfCallers`) and asked `ShelfAccessResolver` as for any request, so a deleted key or a user
+whose grant was taken away or lowered stops its links at once (404 when the maker is gone or has no
+access, 403 when it may no longer store there). A link that may not overwrite is refused (409) once
+its path is taken, so it stores at most one file; one that may overwrite replaces the file on every
+use until it runs out, 15 minutes by default and at most 24 hours (`UploadLink.Lifetime.Normalize`).
+A replica refuses the `PUT`, as it refuses every write.
+
+## Link tokens (`Shared/Auth/LinkTokens`)
+
+Download and upload links are both a token after their route: the time the link runs out, what it
+grants, and an HMAC-SHA256 over both. One secret, `keys/link-secret`, signs them all, through a key
+derived from it for each kind of link (`HMAC(secret, kind)`), so a download link's token never reads
+as an upload link's. An altered or expired token answers 404. Removing the secret and restarting ends
+every link at once.
 
 ## Uploads (`UploadService`)
 

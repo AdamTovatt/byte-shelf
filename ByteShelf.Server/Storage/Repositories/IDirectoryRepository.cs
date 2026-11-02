@@ -14,8 +14,11 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <summary>The live directory called <paramref name="name"/> directly inside <paramref name="parentId"/>.</summary>
         Task<DirectoryRecord?> GetLiveChildAsync(Guid parentId, string name, IDbSession? session = null);
 
-        /// <summary>The live directories directly inside <paramref name="parentId"/>, by name.</summary>
-        Task<IReadOnlyList<DirectoryRecord>> GetLiveChildrenAsync(Guid parentId, IDbSession? session = null);
+        /// <summary>
+        /// The live directories directly inside <paramref name="parentId"/>, by name, each with the size
+        /// and count of the live files under it at any depth.
+        /// </summary>
+        Task<IReadOnlyList<DirectoryWithTotals>> GetLiveChildrenAsync(Guid parentId, IDbSession? session = null);
 
         /// <summary>
         /// The live directories under <paramref name="directoryId"/>, down to <paramref name="maxDepth"/>

@@ -13,7 +13,8 @@ HttpClient http = new HttpClient { BaseAddress = new Uri("https://files.example.
 IByteShelfClient client = new ByteShelfHttpClient(http, new ShelfKeyCredentials(secret));
 IShelfClient receipts = client.Shelf("receipts");
 
-ShelfFile stored = await receipts.UploadAsync("/2026/march.pdf", fileStream, new UploadOptions { ContentType = "application/pdf" });
+// Typed application/pdf by its extension; UploadOptions.ContentType says otherwise.
+ShelfFile stored = await receipts.UploadAsync("/2026/march.pdf", fileStream);
 await using Stream content = await receipts.OpenReadAsync(stored.Id);
 ```
 
@@ -87,6 +88,12 @@ as it is. Otherwise the server answers a path from its root, which the HTTP clie
 against the `HttpClient`'s base address, or against `ByteShelfHttpClientOptions.LinkBaseAddress` for
 a client that reaches the server at another address than the people the links are for. The in-memory client's links name the file under the reserved
 `byteshelf.invalid` domain, which nothing serves.
+
+`CreateUploadLinkAsync` makes a link that stores one file at a path when anyone holding it `PUT`s the
+contents with a `Content-Length` (`curl -T file '<link>'`), for 15 minutes unless `UploadLinkOptions`
+give a lifetime up to 24 hours, with an optional description and `Overwrite`. Making one is a store,
+so a read key cannot, and the link acts with the client's access, checked again when it is used. Its
+URL is made absolute as a download link's is.
 
 ## In tests
 

@@ -1,8 +1,5 @@
-using System.Buffers.Binary;
-using System.Buffers.Text;
-using System.Security.Cryptography;
 using ByteShelf.Server.Shared;
-using ByteShelf.Server.Shared.Root;
+using ByteShelf.Server.Shared.Auth;
 using ByteShelfCommon;
 
 namespace ByteShelf.Server.Storage.Services
@@ -10,51 +7,40 @@ namespace ByteShelf.Server.Storage.Services
     /// <summary>
     /// Signed links to one file's contents: for a browser that cannot send a token with a plain link
     /// or an image's source, and to share a file with someone who has no access. A link carries the
-    /// shelf's and the file's ids and when it runs out, signed with a key kept under the root's
-    /// <c>keys/</c>; whoever holds it may read that file until then, even if the access it was made
-    /// with is taken away meanwhile. Removing the key file and restarting ends every link at once.
+    /// shelf's and the file's ids, signed by <see cref="LinkTokens"/>; whoever holds it may read that
+    /// file until it runs out, even if the access it was made with is taken away meanwhile.
     /// </summary>
     public sealed class DownloadLinks
     {
-        public const string SecretFileName = "download-link-secret";
-
         /// <summary>The route links point at, served by <c>DownloadsController</c>; a link is this, a slash and its token.</summary>
         public const string Route = "api/downloads";
 
+        // The signing key is derived from this: changing it ends every download link made before.
+        private const string Purpose = "download";
         private const int IdBytes = 16;
-        private const int ExpiryBytes = sizeof(long);
-        private const int SignedBytes = (2 * IdBytes) + ExpiryBytes;
-        private const int SignatureBytes = HMACSHA256.HashSizeInBytes;
 
-        private readonly byte[] _key;
-        private readonly TimeProvider _timeProvider;
+        private readonly LinkTokens _tokens;
         private readonly PublicAddress _publicAddress;
 
-        public DownloadLinks(RootFolder root, TimeProvider timeProvider, PublicAddress publicAddress)
+        public DownloadLinks(LinkTokens tokens, PublicAddress publicAddress)
         {
-            _key = Convert.FromBase64String(RootKeyMaterial.GetOrCreate(root, SecretFileName, byteCount: 32));
-            _timeProvider = timeProvider;
+            _tokens = tokens;
             _publicAddress = publicAddress;
         }
 
         /// <summary>
         /// A link to the file that works for <paramref name="lifetime"/>, or for
-        /// <see cref="DownloadLink.DefaultLifetime"/> when null, made by <see cref="PublicAddress.LinkTo"/>.
-        /// The token keeps whole seconds, so the link runs out at the second the lifetime ends in, which is
-        /// the time it answers.
+        /// <c>DownloadLink.Lifetime.Default</c> when null, made by <see cref="PublicAddress.LinkTo"/>.
         /// </summary>
-        /// <exception cref="ArgumentException">The lifetime is one <see cref="DownloadLink.NormalizeLifetime"/> refuses.</exception>
+        /// <exception cref="ArgumentException">The lifetime is one <c>DownloadLink.Lifetime.Normalize</c> refuses.</exception>
         public DownloadLink Create(Guid shelfId, Guid fileId, TimeSpan? lifetime)
         {
-            long expiresAtSeconds = (_timeProvider.GetUtcNow() + DownloadLink.NormalizeLifetime(lifetime)).ToUnixTimeSeconds();
-            byte[] token = new byte[SignedBytes + SignatureBytes];
-            shelfId.TryWriteBytes(token.AsSpan(0, IdBytes));
-            fileId.TryWriteBytes(token.AsSpan(IdBytes, IdBytes));
-            BinaryPrimitives.WriteInt64BigEndian(token.AsSpan(2 * IdBytes, ExpiryBytes), expiresAtSeconds);
-            DateTimeOffset expiresAt = DateTimeOffset.FromUnixTimeSeconds(expiresAtSeconds);
-            HMACSHA256.HashData(_key, token.AsSpan(0, SignedBytes), token.AsSpan(SignedBytes));
+            byte[] payload = new byte[2 * IdBytes];
+            shelfId.TryWriteBytes(payload.AsSpan(0, IdBytes));
+            fileId.TryWriteBytes(payload.AsSpan(IdBytes, IdBytes));
 
-            return new DownloadLink { Url = _publicAddress.LinkTo($"/{Route}/" + Base64Url.EncodeToString(token)), ExpiresAt = expiresAt };
+            (string token, DateTimeOffset expiresAt) = _tokens.Create(Purpose, payload, DownloadLink.Lifetime.Normalize(lifetime));
+            return new DownloadLink { Url = _publicAddress.LinkTo($"/{Route}/{token}"), ExpiresAt = expiresAt };
         }
 
         /// <summary>The shelf and file a link's token names, when it is one of these links and has not run out.</summary>
@@ -63,28 +49,13 @@ namespace ByteShelf.Server.Storage.Services
             shelfId = Guid.Empty;
             fileId = Guid.Empty;
 
-            // TryDecodeFromChars throws on a character outside the alphabet rather than answering false.
-            byte[] bytes = new byte[SignedBytes + SignatureBytes];
-            if (!Base64Url.IsValid(token, out int length) || length != bytes.Length || !Base64Url.TryDecodeFromChars(token, bytes, out _))
+            if (!_tokens.TryRead(Purpose, token, out byte[]? payload) || payload.Length != 2 * IdBytes)
             {
                 return false;
             }
 
-            Span<byte> expected = stackalloc byte[SignatureBytes];
-            HMACSHA256.HashData(_key, bytes.AsSpan(0, SignedBytes), expected);
-            if (!CryptographicOperations.FixedTimeEquals(expected, bytes.AsSpan(SignedBytes)))
-            {
-                return false;
-            }
-
-            long expiresAt = BinaryPrimitives.ReadInt64BigEndian(bytes.AsSpan(2 * IdBytes, ExpiryBytes));
-            if (_timeProvider.GetUtcNow().ToUnixTimeSeconds() >= expiresAt)
-            {
-                return false;
-            }
-
-            shelfId = new Guid(bytes.AsSpan(0, IdBytes));
-            fileId = new Guid(bytes.AsSpan(IdBytes, IdBytes));
+            shelfId = new Guid(payload.AsSpan(0, IdBytes));
+            fileId = new Guid(payload.AsSpan(IdBytes, IdBytes));
             return true;
         }
     }

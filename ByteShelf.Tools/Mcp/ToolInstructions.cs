@@ -26,6 +26,10 @@ namespace ByteShelf.Tools.Mcp
             creating missing directories. It never replaces a file unless overwrite is true, and then
             the old one goes to the trash. create_directory makes an empty directory. Describe a file
             with set_description (or upload_file's description) so it can be found later.
+            create_upload_link makes a link that stores one file at a path when anyone who has it PUTs
+            the contents to it, for 15 minutes or the time asked for (at most 24 hours), with the curl
+            command that does it: use it for a file too large to pass here, or one a person or another
+            program will send.
 
             Changing: move renames or moves a file or directory and never overwrites. delete moves it
             to the trash; list_trash shows what can come back, restore brings a deletion back, and

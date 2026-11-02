@@ -37,6 +37,16 @@ namespace ByteShelf.Server.Storage.Services
             };
         }
 
+        public static ListedDirectory ToListedDirectory(DirectoryWithTotals listed, string path)
+        {
+            return new ListedDirectory
+            {
+                Directory = ToShelfDirectory(listed.Directory, path),
+                SizeBytes = listed.SizeBytes,
+                FileCount = listed.FileCount,
+            };
+        }
+
         public static UploadSession ToUploadSession(UploadRecord upload, StorageOptions options)
         {
             return new UploadSession

@@ -59,12 +59,21 @@ namespace ByteShelfClient
 
         /// <summary>
         /// A link to a file's contents that works without signing in for <paramref name="lifetime"/>
-        /// (<see cref="DownloadLink.DefaultLifetime"/> when null, whole minutes up to
-        /// <see cref="DownloadLink.MaxLifetime"/>), to share the file with someone who has no access.
+        /// (<c>DownloadLink.Lifetime.Default</c> when null, whole minutes up to
+        /// <c>DownloadLink.Lifetime.Max</c>), to share the file with someone who has no access.
         /// Making one is a read. A lifetime outside those bounds throws <see cref="ArgumentException"/>
         /// before anything is sent.
         /// </summary>
         Task<DownloadLink> CreateDownloadLinkAsync(EntryReference file, TimeSpan? lifetime = null, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// A link that stores one file at <paramref name="path"/> when anyone holding it <c>PUT</c>s the
+        /// contents to it, without signing in, acting with this client's access (checked again then).
+        /// Making one is a store, so a key that may only read cannot, and one that may overwrite needs
+        /// write access. Options the rules refuse throw <see cref="ArgumentException"/> before anything
+        /// is sent.
+        /// </summary>
+        Task<UploadLink> CreateUploadLinkAsync(string path, UploadLinkOptions? options = null, CancellationToken cancellationToken = default);
 
         /// <summary>Creates a directory and any missing directory above it; an existing one is answered as it is.</summary>
         Task<ShelfDirectory> CreateDirectoryAsync(string path, CancellationToken cancellationToken = default);

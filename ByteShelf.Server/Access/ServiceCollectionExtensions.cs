@@ -16,6 +16,7 @@ namespace ByteShelf.Server.Access
             services.AddScoped<IShelfGrantService, ShelfGrantService>();
             services.AddScoped<IShelfKeyService, ShelfKeyService>();
             services.AddScoped<IShelfAccessResolver, ShelfAccessResolver>();
+            services.AddScoped<ShelfCallers>();
 
             services.AddAuthentication()
                 .AddScheme<AuthenticationSchemeOptions, ShelfKeyAuthenticationHandler>(ShelfKeyAuthentication.Scheme, configureOptions: null);

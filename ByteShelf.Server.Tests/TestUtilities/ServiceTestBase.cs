@@ -92,7 +92,13 @@ namespace ByteShelf.Server.Tests.TestUtilities
         protected Task<ShelfFile> StoreTextAsync(Shelf shelf, string path, string text, bool overwrite = false)
         {
             byte[] bytes = Encoding.UTF8.GetBytes(text);
-            return UploadService.StoreAsync(shelf, path, "text/plain", bytes.Length, overwrite, Uploader, new MemoryStream(bytes), CancellationToken.None);
+            return UploadService.StoreAsync(shelf, Single(path, bytes.Length, "text/plain", overwrite), Uploader, new MemoryStream(bytes), CancellationToken.None);
+        }
+
+        /// <summary>What a single PUT of <paramref name="sizeBytes"/> to <paramref name="path"/> asks for.</summary>
+        protected static StartUploadRequest Single(string path, long sizeBytes, string? contentType = null, bool overwrite = false)
+        {
+            return new StartUploadRequest { Path = path, SizeBytes = sizeBytes, ContentType = contentType, Overwrite = overwrite };
         }
 
         protected async Task<string> ReadObjectTextAsync(string sha256)

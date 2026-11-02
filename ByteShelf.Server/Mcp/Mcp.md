@@ -22,8 +22,9 @@ For each request `McpCallerOptions` builds what the caller is offered:
   files, which this server does not. A tool without the mark is offered to no one, and a test checks
   every tool has one.
 - **Instructions**: what ByteShelf is and how the tools fit together (`ToolInstructions`), the key's
-  shelf by name, its access, and that the server cannot reach the agent's files. A test checks they
-  name every tool offered.
+  shelf by name, its access, that the server cannot reach the agent's files, and `curl` commands
+  that stream a file up and down with the key, on `APP_BASE_URL` or else the address the agent called
+  `/mcp` at. A test checks they name every tool offered.
 
 ## Acting through the API
 
@@ -50,7 +51,10 @@ A local path means nothing on the server, so a tool given one (`upload_file`'s `
 `download_file`'s) refuses it and says to give the contents instead: `upload_file` takes text or a
 binary file as base64, each up to 256 KiB, a size an agent can carry in its own context.
 `download_file` answers text of up to 256 KiB, and a PNG, JPEG, GIF or WebP image of up to 1 MiB as
-image content the agent sees; for anything else it says to make a link with `share_file`.
+image content the agent sees; for anything else it says to make a link with `share_file`. A larger
+file goes the other way through `create_upload_link`, whose link the agent's shell (or a person)
+sends it to with `curl -T`; the link acts as the key, checked again when it is used, and is put on
+the same address a `share_file` link is.
 
 ## `/llms.txt`
 

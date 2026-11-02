@@ -9,7 +9,7 @@ namespace ByteShelfCommon
         /// <summary>The exact size of the contents in bytes.</summary>
         public required long SizeBytes { get; init; }
 
-        /// <summary>The MIME type to store; <c>application/octet-stream</c> when left out.</summary>
+        /// <summary>The MIME type to store; when left out, the one the path's extension names, else <c>application/octet-stream</c> (<see cref="ContentTypes.ForUpload"/>).</summary>
         public string? ContentType { get; init; }
 
         /// <summary>Whether a file already at <see cref="Path"/> is replaced (it goes to the trash). Refused otherwise.</summary>
