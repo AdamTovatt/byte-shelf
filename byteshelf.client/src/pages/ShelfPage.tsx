@@ -27,6 +27,7 @@ import { useCreateDirectory, useDeleteEntry, useFileSearch, useListing, useMoveE
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useSelection, type SelectionClickModifiers } from '../hooks/useSelection';
 import { useFilePicker } from '../hooks/useFilePicker';
+import { MobileTopBarActions, MobileTopBarOverlay } from '../components/layout/MobileTopBar';
 import { useUploads } from '../hooks/useUploads';
 import { formatBytes, formatTime } from '../lib/format';
 import { joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../lib/shelfPaths';
@@ -52,6 +53,7 @@ export function ShelfPage() {
   const [moving, setMoving] = useState<Entry[] | null>(null);
   const [describing, setDescribing] = useState<ShelfFile | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   // Kept with the shelf and folder it was typed in, so opening another starts with no search: the
   // route, and so this component, stays the same from one shelf to the next.
   const [typed, setTyped] = useState({ shelf, path, text: '' });
@@ -224,6 +226,51 @@ export function ShelfPage() {
     );
   }
 
+  function clearSearch(): void {
+    setTyped({ shelf, path, text: '' });
+  }
+
+  /** Closing the phone's search field ends the search too: nothing would show what it is. */
+  function closeMobileSearch(): void {
+    setMobileSearchOpen(false);
+    clearSearch();
+  }
+
+  /** The search field, in its row from md up or across the phone's top bar; Escape clears it, or closes it there. */
+  function searchField({ autoFocus = false, onEscape = clearSearch }: { autoFocus?: boolean; onEscape?: () => void } = {}) {
+    return (
+      <Input
+        variant="quiet"
+        value={searchText}
+        onChange={(event) => setTyped({ shelf, path, text: event.target.value })}
+        onKeyDown={(event) => event.key === 'Escape' && onEscape()}
+        placeholder="Search"
+        aria-label="Search files in this folder and below"
+        icon={<Icon icon={iconMap.search} size={16} />}
+        endElement={searchText && (
+          <IconButton variant="ghost" size="sm" icon={iconMap.close} aria-label="Clear the search" onClick={clearSearch} />
+        )}
+        autoComplete="off"
+        autoFocus={autoFocus}
+      />
+    );
+  }
+
+  const addItems = (
+    <>
+      <DropdownItem icon={<Icon icon={iconMap.upload} size={16} />} onClick={picker.open}>Upload file</DropdownItem>
+      <DropdownItem icon={<Icon icon={iconMap.folder} size={16} />} onClick={() => setCreatingDirectory(true)}>New folder</DropdownItem>
+    </>
+  );
+
+  const selectionActions = {
+    count: selection.count,
+    onDownload: selectedFiles.length === selected.length ? () => void save(selectedFiles) : undefined,
+    onMove: () => setMoving(selected),
+    onDelete: () => void remove(selected),
+    onClear: clearSelection,
+  };
+
   return (
     <div
       className="min-h-full"
@@ -243,41 +290,38 @@ export function ShelfPage() {
       <PageLayout className="space-y-6">
         <ShelfHeader shelf={shelf} view="files" path={path} />
 
-        {/* The selection bar covers the search row rather than replacing it, so the list below never
-            moves when a row is picked. */}
-        <div className="relative">
+        {/* From md up, search and Add have a row of their own, which the selection bar covers rather
+            than replaces, so the list below never moves when a row is picked. On a phone they sit in
+            the top bar instead, and an open search field and the selection's actions cover that bar. */}
+        <div className="relative hidden md:block">
           <div className={cn('flex items-center gap-2', selecting && 'invisible')}>
-            <div className="min-w-0 flex-1">
-              <Input
-                variant="quiet"
-                value={searchText}
-                onChange={(event) => setTyped({ shelf, path, text: event.target.value })}
-                onKeyDown={(event) => event.key === 'Escape' && setTyped({ shelf, path, text: '' })}
-                placeholder="Search"
-                aria-label="Search files in this folder and below"
-                icon={<Icon icon={iconMap.search} size={16} />}
-                endElement={searchText && (
-                  <IconButton variant="ghost" size="sm" icon={iconMap.close} aria-label="Clear the search" onClick={() => setTyped({ shelf, path, text: '' })} />
-                )}
-                autoComplete="off"
-              />
-            </div>
+            <div className="min-w-0 flex-1">{searchField()}</div>
             <Dropdown align="right" trigger={<Button variant="main" icon={<Icon icon={iconMap.add} size={16} />}>Add</Button>}>
-              <DropdownItem icon={<Icon icon={iconMap.upload} size={16} />} onClick={picker.open}>Upload file</DropdownItem>
-              <DropdownItem icon={<Icon icon={iconMap.folder} size={16} />} onClick={() => setCreatingDirectory(true)}>New folder</DropdownItem>
+              {addItems}
             </Dropdown>
-            {picker.input}
           </div>
-          {selecting && (
-            <SelectionBar
-              count={selection.count}
-              onDownload={selectedFiles.length === selected.length ? () => void save(selectedFiles) : undefined}
-              onMove={() => setMoving(selected)}
-              onDelete={() => void remove(selected)}
-              onClear={clearSelection}
-            />
-          )}
+          {selecting && <SelectionBar placement="row" {...selectionActions} />}
         </div>
+        <MobileTopBarActions>
+          <IconButton variant="ghost" icon={iconMap.search} aria-label="Search" onClick={() => setMobileSearchOpen(true)} />
+          <Dropdown align="right" trigger={<IconButton variant="ghost" icon={iconMap.add} aria-label="Add" />}>
+            {addItems}
+          </Dropdown>
+        </MobileTopBarActions>
+        {mobileSearchOpen && (
+          <MobileTopBarOverlay>
+            <div className="absolute inset-0 flex items-center gap-2 bg-panel px-2">
+              <IconButton variant="ghost" icon={iconMap.chevronLeft} aria-label="Close the search" onClick={closeMobileSearch} />
+              <div className="min-w-0 flex-1">{searchField({ autoFocus: true, onEscape: closeMobileSearch })}</div>
+            </div>
+          </MobileTopBarOverlay>
+        )}
+        {selecting && (
+          <MobileTopBarOverlay>
+            <SelectionBar placement="topBar" {...selectionActions} />
+          </MobileTopBarOverlay>
+        )}
+        {picker.input}
 
         {searching ? (
           <SearchResults results={found.data} isLoading={found.isLoading} error={found.error} text={searchText.trim()} row={(file) => row({ kind: 'file', value: file }, { label: relativeTo(path, file.path) })} />
@@ -343,6 +387,8 @@ function isTypingTarget(target: EventTarget | null): boolean {
 }
 
 interface SelectionBarProps {
+  /** Over the search row from md up, or over the phone's top bar. */
+  placement: 'row' | 'topBar';
   count: number;
   /** Saves the selection; absent when it holds a folder, which cannot be saved as one file. */
   onDownload?: () => void;
@@ -356,11 +402,15 @@ interface SelectionBarProps {
  * FileSelectionToolbar. On a narrow screen the buttons keep only their icons, their names read out
  * but not shown, so all of them fit on a phone.
  */
-function SelectionBar({ count, onDownload, onMove, onDelete, onClear }: SelectionBarProps) {
+function SelectionBar({ placement, count, onDownload, onMove, onDelete, onClear }: SelectionBarProps) {
   const label = (text: string) => <span className="sr-only sm:not-sr-only">{text}</span>;
 
   return (
-    <div role="toolbar" aria-label="Selected items" className="absolute inset-0 flex items-center gap-2 rounded-lg bg-surface px-3">
+    <div
+      role="toolbar"
+      aria-label="Selected items"
+      className={cn('absolute inset-0 flex items-center gap-2', placement === 'row' ? 'rounded-lg bg-surface px-3' : 'bg-panel px-4')}
+    >
       <span className="whitespace-nowrap text-body-sm text-fg">{count} selected</span>
       <div className="flex-1" />
       {onDownload && (
