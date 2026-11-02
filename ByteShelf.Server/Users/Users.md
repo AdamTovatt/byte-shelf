@@ -102,9 +102,11 @@ server's executable on its machine (DEPLOYMENT.md). It builds the domain service
 `IPasswordResetService.SetPasswordAsync` sets a password as a reset link does, ending the user's
 sessions and reset links. A replica refuses them, as its API refuses writes. `RootCommand` frames them,
 as it does the replication commands: it refuses a database with migrations still to run (the server
-may be running on it, so they never migrate it), and closes the pooled connections. Passwords
-come from `IPasswordReader`: stdin when redirected, else typed twice at the terminal, never an
-argument. A new user's email and name, and a user to change, are checked before the password is asked
+may be running on it, so they never migrate it), and closes the pooled connections. A root with no
+database yet is created and migrated for `--create-user` only (`StartsARoot`), so the first admin can
+be made before the first start, and removed again when the command does not finish; the other
+commands refuse it. Passwords come from `IPasswordReader`: stdin when redirected, else typed twice at
+the terminal, never an argument. A new user's email and name, and a user to change, are checked before the password is asked
 for. Closing the connections before it exits means that with the server stopped SQLite removes the
 `-wal` and `-shm` files it made rather than leaving them owned by whoever ran it.
 

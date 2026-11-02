@@ -57,7 +57,7 @@ namespace ByteShelf.Server.Replication.Services
                 return RootCommand.Usage;
             }
 
-            return await RootCommand.RunAsync(rootPath, logger, async root =>
+            return await RootCommand.RunAsync(rootPath, logger, change.StartsARoot, async root =>
             {
                 await using ServiceProvider services = BuildServices(root, address, loggerFactory, configureServices);
                 await using AsyncServiceScope scope = services.CreateAsyncScope();
@@ -112,6 +112,12 @@ namespace ByteShelf.Server.Replication.Services
             {
             }
 
+            /// <summary>
+            /// Whether it may run before the server's first start, making the root when there is no database
+            /// yet. Following a primary may, so a new replica is paired before it starts.
+            /// </summary>
+            public virtual bool StartsARoot => false;
+
             public abstract Task<string> ApplyAsync(IServiceProvider services);
 
             internal sealed record ShowStatus : ReplicationChange
@@ -134,6 +140,8 @@ namespace ByteShelf.Server.Replication.Services
 
             internal sealed record Follow(string Code, string Name) : ReplicationChange
             {
+                public override bool StartsARoot => true;
+
                 public override async Task<string> ApplyAsync(IServiceProvider services)
                 {
                     ReplicationStatus status = await services.GetRequiredService<ReplicationPairing>().PairAsync(

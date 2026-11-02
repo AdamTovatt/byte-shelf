@@ -4,11 +4,32 @@ using ByteShelfCommon;
 
 namespace ByteShelf.Tools
 {
-    /// <summary>Whether a password asked for is a new one, to be typed twice, or one to check against what it opens.</summary>
-    internal enum PasswordUse
+    /// <summary>
+    /// What a password is asked for: a new one, to be typed twice, or one to check against what it opens.
+    /// When it is an encrypted folder's password, it carries the folder's path, so the person asked is
+    /// told which password is wanted.
+    /// </summary>
+    internal sealed class PasswordUse
     {
-        New,
-        Existing,
+        public static readonly PasswordUse New = new PasswordUse(isNew: true, folderPath: null);
+
+        public static readonly PasswordUse Existing = new PasswordUse(isNew: false, folderPath: null);
+
+        private PasswordUse(bool isNew, string? folderPath)
+        {
+            IsNew = isNew;
+            FolderPath = folderPath;
+        }
+
+        public bool IsNew { get; }
+
+        /// <summary>The path of the encrypted folder whose password it is, when it is one's.</summary>
+        public string? FolderPath { get; }
+
+        public static PasswordUse Of(EncryptedFolder folder)
+        {
+            return new PasswordUse(isNew: false, folder.Directory.Path);
+        }
     }
 
     /// <summary>
@@ -162,7 +183,7 @@ namespace ByteShelf.Tools
         /// <exception cref="UsageException">It is not the folder's password.</exception>
         public static async Task<string> FolderPasswordAsync(EncryptedFolder folder, Func<PasswordUse, string> password, CancellationToken cancellationToken)
         {
-            string given = password(PasswordUse.Existing);
+            string given = password(PasswordUse.Of(folder));
             if (!await FolderPassword.MatchesAsync(folder, given, cancellationToken))
             {
                 throw new UsageException($"That is not the password of the encrypted folder '{folder.Directory.Path}'.");

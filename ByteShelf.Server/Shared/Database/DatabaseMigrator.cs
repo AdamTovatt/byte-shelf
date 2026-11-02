@@ -1,5 +1,6 @@
 using System.Data.Common;
 using System.Reflection;
+using ByteShelf.Server.Shared.Root;
 using DbUp;
 using DbUp.Engine;
 using Microsoft.Data.Sqlite;
@@ -33,6 +34,17 @@ namespace ByteShelf.Server.Shared.Database
             }
 
             logger.LogInformation("Database is up to date.");
+        }
+
+        /// <summary>
+        /// Opens the root at <paramref name="rootPath"/>, making it when it is missing, and migrates its
+        /// database: <c>--migrate-only</c>, and the server's commands that may make a root.
+        /// </summary>
+        public static RootFolder MigrateRoot(string rootPath, ILogger logger)
+        {
+            RootFolder root = RootFolder.Open(rootPath);
+            RunMigrations(root.ConnectionString, logger);
+            return root;
         }
 
         /// <summary>

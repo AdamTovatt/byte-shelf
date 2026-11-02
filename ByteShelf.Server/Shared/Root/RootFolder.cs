@@ -91,5 +91,11 @@ namespace ByteShelf.Server.Shared.Root
 
             return root;
         }
+
+        /// <summary>Whether a ByteShelf database is at <paramref name="path"/>, which a server's first start makes.</summary>
+        public static bool HasDatabase(string path)
+        {
+            return File.Exists(new RootFolder(System.IO.Path.GetFullPath(path)).DatabasePath);
+        }
     }
 }

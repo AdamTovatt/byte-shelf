@@ -4,6 +4,7 @@ using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Replication.Models;
 using ByteShelf.Server.Replication.Repositories;
+using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Users.Models;
@@ -298,6 +299,64 @@ namespace ByteShelf.Server.Tests.Users
 
             Assert.Equal(RootCommand.Failed, exitCode);
             Assert.Contains($"There is no ByteShelf database in {folder}.", logs.Messages);
+            Assert.False(RootFolder.HasDatabase(folder));
+        }
+
+        [Fact]
+        public async Task CreateUser_OnAFolderNoServerHasStartedOn_MakesTheRootAndTheFirstAdmin()
+        {
+            string folder = Path.Combine(_host.TestRoot.Root.Path, "new-root");
+
+            int exitCode = await UserCommand.RunAsync(["--create-user", NewEmail, "--name", "New", "--admin"], folder, new Passwords(NewPassword), new RecordingLoggerFactory());
+
+            Assert.Equal(RootCommand.Done, exitCode);
+            RootFolder root = RootFolder.OpenExisting(folder);
+            Assert.False(File.Exists(root.DatabasePath + "-wal"));
+            Assert.True(DatabaseMigrator.IsUpToDate(root.ConnectionString));
+            await using ServiceProvider services = UserCommand.BuildServices(root, NullLoggerFactory.Instance);
+            await using AsyncServiceScope scope = services.CreateAsyncScope();
+            User? created = await scope.ServiceProvider.GetRequiredService<IUserService>().GetUserByEmailAsync(NewEmail);
+            Assert.Equal([UserRoles.Admin], created?.Roles);
+        }
+
+        [Fact]
+        public async Task CreateUser_RefusedOnAFolderNoServerHasStartedOn_LeavesNoRoot()
+        {
+            string folder = Path.Combine(_host.TestRoot.Root.Path, "new-root");
+
+            int exitCode = await UserCommand.RunAsync(["--create-user", "not-an-email", "--name", "New", "--admin"], folder, new Passwords(NewPassword), new RecordingLoggerFactory());
+
+            Assert.Equal(RootCommand.Failed, exitCode);
+            Assert.False(Directory.Exists(folder));
+        }
+
+        /// <summary>A folder made for the server beforehand stays, as it was: only what the command made goes.</summary>
+        [Fact]
+        public async Task CreateUser_RefusedOnAnEmptyFolderMadeForTheServer_LeavesItEmpty()
+        {
+            string folder = Path.Combine(_host.TestRoot.Root.Path, "new-root");
+            Directory.CreateDirectory(folder);
+
+            int exitCode = await UserCommand.RunAsync(["--create-user", "not-an-email", "--name", "New", "--admin"], folder, new Passwords(NewPassword), new RecordingLoggerFactory());
+
+            Assert.Equal(RootCommand.Failed, exitCode);
+            Assert.Empty(Directory.EnumerateFileSystemEntries(folder));
+        }
+
+        [Theory]
+        [InlineData(ResetPassword)]
+        [InlineData(SetAdmin)]
+        [InlineData(UnsetAdmin)]
+        public async Task AnyOtherCommand_OnAFolderThatIsNotThere_FailsAndMakesNone(string command)
+        {
+            string folder = Path.Combine(_host.TestRoot.Root.Path, "new-root");
+            RecordingLoggerFactory logs = new RecordingLoggerFactory();
+
+            int exitCode = await UserCommand.RunAsync(command.Split(' '), folder, new Passwords(NewPassword), logs);
+
+            Assert.Equal(RootCommand.Failed, exitCode);
+            Assert.Equal($"There is no ByteShelf database in {folder}.", logs.Messages[^1]);
+            Assert.False(Directory.Exists(folder));
         }
 
         [Fact]

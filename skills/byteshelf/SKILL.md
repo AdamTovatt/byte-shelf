@@ -44,7 +44,7 @@ spaces.
 | Give someone a link | `byteshelf share docs:/2026/report.pdf --expires 2d` |
 | Say what a file is | `byteshelf describe docs:/2026/report.pdf "Signed by both parties"` |
 | Make a directory | `byteshelf mkdir docs:/2026/q2` (missing parents too) |
-| Move or rename | `byteshelf mv docs:/2026/draft.pdf /2026/final.pdf` |
+| Move or rename | `byteshelf mv docs:/2026/draft.pdf /2026/final.pdf` (the new path may repeat the shelf, `docs:/2026/final.pdf`; a name holding a colon starts with `/`, as in `/notes:2026.txt`) |
 | Delete (to the trash) | `byteshelf rm docs:/2026/old.pdf`, then `byteshelf trash docs` and `byteshelf restore docs <id>` |
 | Empty the trash for good | `byteshelf empty-trash docs` (nothing in it can come back afterwards) |
 

@@ -130,8 +130,7 @@ namespace ByteShelf.Server
             using ILoggerFactory loggerFactory = CreateStartupLoggerFactory();
             ILogger<Program> logger = loggerFactory.CreateLogger<Program>();
 
-            RootFolder root = RootFolder.Open(EnvironmentVariables.ByteShelfRoot.GetValue());
-            DatabaseMigrator.RunMigrations(root.ConnectionString, logger);
+            DatabaseMigrator.MigrateRoot(EnvironmentVariables.ByteShelfRoot.GetValue(), logger);
             logger.LogInformation("Migrate-only run complete.");
         }
 

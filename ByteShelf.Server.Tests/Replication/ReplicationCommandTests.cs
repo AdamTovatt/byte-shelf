@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using ByteShelf.Server.Replication.Services;
+using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
@@ -110,6 +111,54 @@ namespace ByteShelf.Server.Tests.Replication
         }
 
         [Fact]
+        public async Task Follow_OnAFolderNoServerHasStartedOn_MakesTheRootAndPairsIt()
+        {
+            string folder = Path.Combine(_pair.Replica.TestRoot.Root.Path, "new-root");
+            string code = await CreateCodeByCommandAsync();
+
+            int exitCode = await RunAsync(folder, new RecordingLoggerFactory(), () => _pair.Primary.CreateHandler(), "--follow", code, "--name", "new");
+
+            Assert.Equal(RootCommand.Done, exitCode);
+            RootFolder root = RootFolder.OpenExisting(folder);
+            Assert.False(File.Exists(root.DatabasePath + "-wal"));
+            Assert.True(DatabaseMigrator.IsUpToDate(root.ConnectionString));
+            RecordingLoggerFactory statusLogs = new RecordingLoggerFactory();
+            Assert.Equal(RootCommand.Done, await RunAsync(folder, statusLogs, () => new Unreachable(), "--replication-status"));
+            Assert.StartsWith($"A replica of {PrimaryUrl}", statusLogs.Messages[^1], StringComparison.Ordinal);
+            Assert.Equal("new", Assert.Single((await ReplicationPair.GetStatusAsync(_pair.Primary.AdminClient)).Replicas).Name);
+        }
+
+        [Fact]
+        public async Task Follow_OnAFolderNoServerHasStartedOn_WhenThePrimaryRefuses_LeavesNoRoot()
+        {
+            string folder = Path.Combine(_pair.Replica.TestRoot.Root.Path, "new-root");
+            string code = await CreateCodeByCommandAsync();
+            Assert.Equal(RootCommand.Done, await RunAsync(_pair.Replica, new RecordingLoggerFactory(), "--follow", code, "--name", "first"));
+
+            int exitCode = await RunAsync(folder, new RecordingLoggerFactory(), () => _pair.Primary.CreateHandler(), "--follow", code, "--name", "new");
+
+            Assert.Equal(RootCommand.Failed, exitCode);
+            Assert.False(Directory.Exists(folder));
+        }
+
+        [Theory]
+        [InlineData("--replication-status")]
+        [InlineData("--replication-code")]
+        [InlineData("--forget", "backup")]
+        [InlineData("--promote")]
+        public async Task AnyOtherCommand_OnAFolderWithoutADatabase_FailsAndMakesNone(params string[] args)
+        {
+            string folder = Path.Combine(_pair.Replica.TestRoot.Root.Path, "new-root");
+            RecordingLoggerFactory logs = new RecordingLoggerFactory();
+
+            int exitCode = await RunAsync(folder, logs, () => new Unreachable(), args);
+
+            Assert.Equal(RootCommand.Failed, exitCode);
+            Assert.Equal($"There is no ByteShelf database in {folder}.", logs.Messages[^1]);
+            Assert.False(Directory.Exists(folder));
+        }
+
+        [Fact]
         public async Task Forget_ByName_UnpairsTheReplica()
         {
             await _pair.PairAsync();
@@ -197,7 +246,7 @@ namespace ByteShelf.Server.Tests.Replication
             await _pair.SyncAsync();
             await _pair.PutOnPrimaryAsync("docs", "/late.txt", "late");
             int promoted = -1;
-            _hook.After("/feed/changes", async () => promoted = await RunAsync(_pair.Replica, new RecordingLoggerFactory(), () => new Unreachable(), "--promote"));
+            _hook.After("/feed/changes", async () => promoted = await RunAsync(_pair.Replica.TestRoot.Root.Path, new RecordingLoggerFactory(), () => new Unreachable(), "--promote"));
 
             await _pair.SyncOnceAsync();
 
@@ -213,7 +262,7 @@ namespace ByteShelf.Server.Tests.Replication
         {
             await _pair.PairAsync();
             int promoted = -1;
-            _hook.After("/feed/copy", async () => promoted = await RunAsync(_pair.Replica, new RecordingLoggerFactory(), () => new Unreachable(), "--promote"));
+            _hook.After("/feed/copy", async () => promoted = await RunAsync(_pair.Replica.TestRoot.Root.Path, new RecordingLoggerFactory(), () => new Unreachable(), "--promote"));
 
             await _pair.SyncOnceAsync();
 
@@ -239,6 +288,14 @@ namespace ByteShelf.Server.Tests.Replication
             Assert.Null(ReplicationCommand.Parse(args));
         }
 
+        /// <summary>A pairing code made on the primary by <c>--replication-code</c>, which names <see cref="PrimaryUrl"/>.</summary>
+        private async Task<string> CreateCodeByCommandAsync()
+        {
+            RecordingLoggerFactory logs = new RecordingLoggerFactory();
+            Assert.Equal(RootCommand.Done, await RunAsync(_pair.Primary, logs, "--replication-code"));
+            return Assert.Single(logs.Messages).Split(Environment.NewLine)[0];
+        }
+
         /// <summary>Pairs one more server with the primary, under <paramref name="name"/>.</summary>
         private async Task PairAnotherAsync(string name)
         {
@@ -249,15 +306,15 @@ namespace ByteShelf.Server.Tests.Replication
 
         private Task<int> RunAsync(ServerTestHost host, RecordingLoggerFactory logs, params string[] args)
         {
-            return RunAsync(host, logs, () => _pair.Primary.CreateHandler(), args);
+            return RunAsync(host.TestRoot.Root.Path, logs, () => _pair.Primary.CreateHandler(), args);
         }
 
         /// <param name="primary">The way the command reaches a primary.</param>
-        private static Task<int> RunAsync(ServerTestHost host, RecordingLoggerFactory logs, Func<HttpMessageHandler> primary, params string[] args)
+        private static Task<int> RunAsync(string rootPath, RecordingLoggerFactory logs, Func<HttpMessageHandler> primary, params string[] args)
         {
             return ReplicationCommand.RunAsync(
                 args,
-                host.TestRoot.Root.Path,
+                rootPath,
                 PrimaryUrl,
                 logs,
                 services => services.AddHttpClient(PrimaryClient.HttpClientName).ConfigurePrimaryHttpMessageHandler(primary));

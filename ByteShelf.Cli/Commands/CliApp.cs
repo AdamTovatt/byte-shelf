@@ -21,6 +21,9 @@ namespace ByteShelf.Cli.Commands
 
         private const int UsageColumn = 40;
 
+        /// <summary>Where else a password to encrypt or decrypt with comes from.</summary>
+        private const string OrPasswordFile = " or in a file with --password-file";
+
         private readonly IClientSource _clients;
         private readonly Terminal _terminal;
         private readonly int _encryptionWorkFactor;
@@ -67,7 +70,7 @@ namespace ByteShelf.Cli.Commands
                     "files under a directory whose name or description holds <text>, ignoring case, and that meet every option; times are ISO 8601, local without an offset",
                     FindAsync),
                 new Command(Section.Files, "mkdir", "<shelf>:<path>", "create a directory with any missing parents", MakeDirectoryAsync),
-                new Command(Section.Files, "mv", "<shelf>:<path> <new-path>", "move or rename a file or a directory within its shelf", MoveAsync),
+                new Command(Section.Files, "mv", "<shelf>:<path> [<shelf>:]<new-path>", "move or rename a file or a directory within its shelf", MoveAsync),
                 new Command(Section.Files, "rm", "<shelf>:<path>", "move a file, or a directory with everything in it, to the trash", RemoveAsync),
 
                 new Command(Section.Trash, "trash", "<shelf>", "what can be restored, with each deletion's id", TrashAsync),
@@ -206,11 +209,11 @@ namespace ByteShelf.Cli.Commands
 
             if (useKey)
             {
-                await _clients.UseKeyAsync(server, _terminal.ReadSecret("Shelf key: ", cancellationToken), cancellationToken);
+                await _clients.UseKeyAsync(server, _terminal.ReadSecret("Shelf key: ", Terminal.NotGiven("shelf key"), cancellationToken), cancellationToken);
             }
             else
             {
-                await _clients.SignInAsync(server, email!, _terminal.ReadSecret("Password: ", cancellationToken), cancellationToken);
+                await _clients.SignInAsync(server, email!, _terminal.ReadSecret("Password: ", Terminal.NotGiven("password"), cancellationToken), cancellationToken);
             }
 
             _terminal.Output.WriteLine($"Signed in to {_clients.Describe()}.");
@@ -379,8 +382,11 @@ namespace ByteShelf.Cli.Commands
                 return;
             }
 
-            // An encrypted file is saved as the age file it is stored as, unless asked to decrypt it.
-            EncryptedFiles fileEncrypted = file.Encrypted && decrypt ? EncryptedFiles.DecryptedWith(password(PasswordUse.Existing)) : EncryptedFiles.SavedAsTheyAre;
+            // An encrypted file is saved as the age file it is stored as, unless asked to decrypt it. Under an
+            // encrypted folder the password asked for is the folder's, named and checked as for the folder.
+            EncryptedFiles fileEncrypted = file.Encrypted && decrypt
+                ? EncryptedFiles.DecryptedWith(await Encrypting.ExistingPasswordAsync(shelf, file.Path, password, cancellationToken))
+                : EncryptedFiles.SavedAsTheyAre;
             if (target == "-")
             {
                 await using Stream output = _terminal.OpenOutput();
@@ -427,13 +433,18 @@ namespace ByteShelf.Cli.Commands
                     return string.IsNullOrEmpty(line) ? throw new UsageException($"The password file {Path.GetFullPath(file)} is empty.") : line;
                 }
 
+                string? folder = use.FolderPath;
+                string needed = folder != null ? $"'{folder}' is an encrypted folder, so its password is needed" : "A password is needed";
                 if (readsInput)
                 {
-                    throw new UsageException("Standard input carries the contents, so give the password with --password-file.");
+                    throw new UsageException($"{needed}, and standard input carries the contents: give it in a file with --password-file.");
                 }
 
-                string password = _terminal.ReadSecret("Password: ", cancellationToken);
-                if (use == PasswordUse.New && _terminal.ReadSecret("Password again: ", cancellationToken) != password)
+                // Without a terminal, standard input carries it; one asked for twice comes on two lines.
+                string password = folder != null
+                    ? _terminal.ReadSecret($"Password of the encrypted folder '{folder}': ", $"{needed}: {Terminal.HowToGive}{OrPasswordFile}.", cancellationToken)
+                    : _terminal.ReadSecret("Password: ", Terminal.NotGiven("password", OrPasswordFile), cancellationToken);
+                if (use.IsNew && _terminal.ReadSecret("Password again: ", $"The password was given only once: give it again on the next line of standard input,{OrPasswordFile}.", cancellationToken) != password)
                 {
                     throw new UsageException("The two passwords differ.");
                 }
@@ -535,7 +546,7 @@ namespace ByteShelf.Cli.Commands
         private async Task MoveAsync(ArgumentList arguments, CancellationToken cancellationToken)
         {
             ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
-            string toPath = arguments.Required(1, "new-path");
+            string toPath = ShelfLocation.PathOn(location.Shelf, arguments.Required(1, "new-path"));
             arguments.EnsureAllUsed();
             Entry moved = await Entries.MoveAsync(await ShelfAsync(location.Shelf, cancellationToken), location.Path, toPath, cancellationToken);
             PrintEntry(moved, TextFormat.Moved);
@@ -577,8 +588,8 @@ namespace ByteShelf.Cli.Commands
         {
             arguments.EnsureAllUsed();
             IByteShelfClient client = await _clients.OpenAsync(cancellationToken);
-            string current = _terminal.ReadSecret("Current password: ", cancellationToken);
-            string replacement = _terminal.ReadSecret("New password: ", cancellationToken);
+            string current = _terminal.ReadSecret("Current password: ", Terminal.NotGiven("current password"), cancellationToken);
+            string replacement = _terminal.ReadSecret("New password: ", Terminal.NotGiven("new password", ", after the current one"), cancellationToken);
             await client.ChangePasswordAsync(current, replacement, cancellationToken);
             Done("Changed your password.");
         }
@@ -600,7 +611,7 @@ namespace ByteShelf.Cli.Commands
             {
                 Email = email,
                 DisplayName = displayName,
-                Password = _terminal.ReadSecret($"Password for {email}: ", cancellationToken),
+                Password = _terminal.ReadSecret($"Password for {email}: ", Terminal.NotGiven($"password for {email}"), cancellationToken),
                 Roles = admin ? new[] { UserRoles.Admin } : Array.Empty<string>(),
             };
 

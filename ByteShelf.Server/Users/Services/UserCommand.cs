@@ -46,7 +46,7 @@ namespace ByteShelf.Server.Users.Services
                 return RootCommand.Usage;
             }
 
-            return await RootCommand.RunAsync(rootPath, logger, async root =>
+            return await RootCommand.RunAsync(rootPath, logger, change.StartsARoot, async root =>
             {
                 await using ServiceProvider services = BuildServices(root, loggerFactory);
                 await using AsyncServiceScope scope = services.CreateAsyncScope();
@@ -101,6 +101,12 @@ namespace ByteShelf.Server.Users.Services
             {
             }
 
+            /// <summary>
+            /// Whether it may run before the server's first start, making the root when there is no database
+            /// yet. Creating a user may, for the first admin.
+            /// </summary>
+            public virtual bool StartsARoot => false;
+
             public abstract Task<string> ApplyAsync(IServiceProvider services, IPasswordReader passwords);
 
             /// <exception cref="NotFoundException">No user has <paramref name="email"/>.</exception>
@@ -116,6 +122,8 @@ namespace ByteShelf.Server.Users.Services
 
             internal sealed record Create(string Email, string DisplayName, bool Admin) : UserChange
             {
+                public override bool StartsARoot => true;
+
                 public override async Task<string> ApplyAsync(IServiceProvider services, IPasswordReader passwords)
                 {
                     // Checked before the password is typed, so a mistake is not reported only after it.

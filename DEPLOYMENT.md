@@ -16,12 +16,14 @@ x64 (`Directory.Build.targets`). Elsewhere (musl, 32-bit arm, Windows on arm) th
    (table below).
 3. Choose where it listens with `ASPNETCORE_URLS`, such as `http://127.0.0.1:5000` behind a reverse
    proxy. Unset, Kestrel listens on `http://localhost:5000`.
-4. Start it. The first start creates the root, migrates its database and generates its secrets, and
-   logs that there are no users yet.
-5. Create the first admin on the server's machine, as the service user, while it runs:
+4. Start it. The first start creates the root (unless step 5 ran first), migrates its database and
+   generates its secrets, and logs that there are no users yet.
+5. Create the first admin on the server's machine, as the service user, while it runs or before its
+   first start, which this then does in its place for the root and its database:
    `BYTESHELF_ROOT=<root> ByteShelf.Server --create-user <email> --name "<name>" --admin`, which asks
    for the password (see [Users from the command line](#users-from-the-command-line)). Then sign in at
-   `APP_BASE_URL`.
+   `APP_BASE_URL`. Whoever runs it owns a root it creates, and the server opens only a root its own
+   user owns, so never run it with `sudo` before the first start.
 
 Setting `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` before the first start creates that admin
 instead of step 5; remove them once it exists.
@@ -48,16 +50,20 @@ at the terminal without being shown, or read as one line from stdin when stdin i
 email, never removing the last admin. A reset ends every session and reset link of that user: the
 access tokens they hold are refused at once, and none of their sessions can be renewed. The change
 log records each change, so replicas follow. A replica refuses them; run them on its primary.
-They never migrate the database, which the running server may be using: a database an older version
-left is refused until this version has started on it or `--migrate-only` has run. Exit codes: 0 done,
-1 refused or failed (the reason is logged; a root without a database too), 2 the arguments are wrong
-or `BYTESHELF_ROOT` is not set.
+
+They never migrate an existing database, which the running server may be using: a database an older
+version left is refused until this version has started on it or `--migrate-only` has run. A root with
+no database yet is refused too, except by `--create-user`, which creates it and its database first,
+as the first start would, so the first admin can exist before the server first starts; it removes them
+again if the user is not created. The others refuse such a root rather than create one at a mistyped
+path. Exit codes: 0 done, 1 refused or failed (the reason is logged), 2 the arguments are wrong or
+`BYTESHELF_ROOT` is not set.
 
 ## Environment variables
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `BYTESHELF_ROOT` | yes | The root folder. Created on first start, with `objects/`, `staging/` and `keys/` inside. The server makes it reachable by its owner only on every start, so it must be owned by the user the server runs as. |
+| `BYTESHELF_ROOT` | yes | The root folder. Created on first start, or by `--create-user` or `--follow` run before it, with `objects/`, `staging/` and `keys/` inside, owned by whoever created it. The server makes it reachable by its owner only on every start, so it must be owned by the user the server runs as. |
 | `APP_BASE_URL` | outside Development | The public URL, e.g. `https://shelf.example.com`. Password-reset links, the download links the API answers (share links, the web UI's Copy link, MCP's `share_file`) and upload links point at it. |
 | `POSTMARK_API_KEY` | to send email | A Postmark server token. Without it no email is sent (see [Email](#email)). |
 | `EMAIL_FROM_ADDRESS` | with `POSTMARK_API_KEY` | The address mail is from, a sender confirmed in Postmark. The server refuses to start with a token and no address. |
@@ -187,10 +193,13 @@ ByteShelf.Server --promote
 
 `--replication-code` also needs `APP_BASE_URL`, which the code names. These go through the same
 rules as the API: a code works once for 15 minutes and not on a replica, and only a server without
-shelves or replicas of its own can follow. A running server starts following within 2 seconds of `--follow`; after
-`--promote` it applies nothing more from the old primary, even changes it had already fetched. Like
-the user commands they never migrate the database. Exit codes: 0 done, 1 refused or failed (the
-reason is logged), 2 the arguments are wrong, or `BYTESHELF_ROOT` (or, for `--replication-code`,
+shelves or replicas of its own can follow. A running server starts following within 2 seconds of
+`--follow`; after `--promote` it applies nothing more from the old primary, even changes it had
+already fetched. Like the user commands they never migrate an existing database. On a root with no
+database yet, `--follow` creates the root and its database first, so a replica can be paired before
+its first start (run it as the service user, as for `--create-user`), and removes them again if the
+pairing fails; the others refuse such a root. Exit codes: 0 done, 1 refused or failed (the reason is
+logged), 2 the arguments are wrong, or `BYTESHELF_ROOT` (or, for `--replication-code`,
 `APP_BASE_URL`) is not set.
 
 ## Backups

@@ -598,6 +598,39 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
+        public async Task Mv_ToAPathWrittenWithItsShelf_MovesTheFileThereOnItsShelf()
+        {
+            await UploadAsync("/a.txt", "a");
+
+            CliRun run = await RunAsync("mv", "docs:/a.txt", "docs:/archive/b.txt");
+
+            Assert.Equal((CliApp.Succeeded, "Moved to /archive/b.txt"), (run.ExitCode, run.Output));
+            Assert.Equal("a", await ReadAsync("/archive/b.txt"));
+        }
+
+        [Fact]
+        public async Task Mv_ToAnotherShelf_FailsAsMisuseAndMovesNothing()
+        {
+            await UploadAsync("/a.txt", "a");
+
+            CliRun run = await RunAsync("mv", "docs:/a.txt", "photos:/a.txt");
+
+            Assert.Equal((CliApp.Misused, "'photos:/a.txt' is on the shelf 'photos', not 'docs'. Start it with / to keep the colon in a name: '/photos:/a.txt'."), (run.ExitCode, run.Error));
+            Assert.Equal("a", await ReadAsync("/a.txt"));
+        }
+
+        [Fact]
+        public async Task Mv_ToAPathStartingWithASlash_KeepsAColonInTheName()
+        {
+            await UploadAsync("/a.txt", "a");
+
+            CliRun run = await RunAsync("mv", "docs:/a.txt", "/notes:2026.txt");
+
+            Assert.Equal((CliApp.Succeeded, "Moved to /notes:2026.txt"), (run.ExitCode, run.Output));
+            Assert.Equal("a", await ReadAsync("/notes:2026.txt"));
+        }
+
+        [Fact]
         public async Task Rm_ThenRestoreWithTheDeletionId_PutsItBack()
         {
             await UploadAsync("/a/b.txt", "b");
@@ -728,7 +761,15 @@ namespace ByteShelf.Cli.Tests
         {
             CliRun run = await RunAsync("passwd");
 
-            Assert.Equal((CliApp.Misused, "Nothing was given."), (run.ExitCode, run.Error));
+            Assert.Equal((CliApp.Misused, "No current password was given: type it at a terminal, or give it as a line of standard input."), (run.ExitCode, run.Error));
+        }
+
+        [Fact]
+        public async Task Passwd_OnlyTheCurrentPasswordOnStandardInput_FailsAsMisuseAskingForTheNewOne()
+        {
+            CliRun run = await RunAsync(new[] { "passwd" }, input: $"password-for-tests{Environment.NewLine}");
+
+            Assert.Equal((CliApp.Misused, "No new password was given: type it at a terminal, or give it as a line of standard input, after the current one."), (run.ExitCode, run.Error));
         }
 
         [Fact]

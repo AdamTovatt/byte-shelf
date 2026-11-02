@@ -43,6 +43,35 @@ namespace ByteShelf.Cli.Tests
                 (ShelfLocation.Parse("docs:/inbox/").FilePathFor("a.pdf"), ShelfLocation.Parse("docs:/b.pdf").FilePathFor("a.pdf")));
         }
 
+        [Theory]
+        [InlineData("b.txt", "/b.txt")]
+        [InlineData("/a/b.txt", "/a/b.txt")]
+        [InlineData("a/b:c", "/a/b:c")]
+        [InlineData("/a:b", "/a:b")]
+        [InlineData("docs:/a/b.txt", "/a/b.txt")]
+        [InlineData("docs:", "/")]
+        public void ShelfLocation_PathOn_ReadsAPathOrTheSameShelfsPath(string text, string path)
+        {
+            Assert.Equal(path, ShelfLocation.PathOn("docs", text));
+        }
+
+        [Theory]
+        [InlineData("photos:/a.txt")]
+        [InlineData("Meeting: notes.txt")]
+        [InlineData("docs:a//b")]
+        public void ShelfLocation_PathOn_AnotherShelfOrNoneOrABadPath_ThrowsUsage(string text)
+        {
+            Assert.Throws<UsageException>(() => ShelfLocation.PathOn("docs", text));
+        }
+
+        [Fact]
+        public void ShelfLocation_PathOn_NotAShelfBeforeTheColon_SaysHowToKeepTheColon()
+        {
+            UsageException refused = Assert.Throws<UsageException>(() => ShelfLocation.PathOn("docs", "Meeting: notes.txt"));
+
+            Assert.Equal("'Meeting: notes.txt' reads as <shelf>:<path>, and 'Meeting' is not a shelf name. Start it with / to keep the colon in a name: '/Meeting: notes.txt'.", refused.Message);
+        }
+
         [Fact]
         public void ArgumentList_ReadsPositionalsFlagsAndValues()
         {

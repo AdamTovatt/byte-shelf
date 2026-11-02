@@ -272,6 +272,21 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
+        public async Task GetDecrypt_OneFileInAnEncryptedFolderWithNoPasswordGiven_FailsNamingTheFolder()
+        {
+            await EncryptSecretAsync();
+            await File.WriteAllTextAsync(_work.File("plain.txt"), "plain");
+            await RunAsync("put", _work.File("plain.txt"), "docs:/secret/", "--password-file", PasswordFile);
+
+            CliRun run = await RunAsync("get", "docs:/secret/plain.txt", _work.File("out.txt"), "--decrypt");
+
+            Assert.Equal(
+                (CliApp.Misused, "'/secret' is an encrypted folder, so its password is needed: type it at a terminal, or give it as a line of standard input or in a file with --password-file."),
+                (run.ExitCode, run.Error));
+            Assert.False(File.Exists(_work.File("out.txt")));
+        }
+
+        [Fact]
         public async Task Get_OneFileWithAnotherPassword_FailsAsMisuseSayingSoAndSavesNothing()
         {
             await StoreEncryptedAsync("/a.txt", "a", Password);
@@ -331,8 +346,23 @@ namespace ByteShelf.Cli.Tests
 
             CliRun run = await CliRun.RunAsync(_clients, new[] { "put", "-", "docs:/secret/a.txt" }, "contents", encryptionWorkFactor: FastWorkFactor);
 
-            Assert.Equal(CliApp.Misused, run.ExitCode);
-            Assert.Contains("--password-file", run.Error, StringComparison.Ordinal);
+            Assert.Equal(
+                (CliApp.Misused, "'/secret' is an encrypted folder, so its password is needed, and standard input carries the contents: give it in a file with --password-file."),
+                (run.ExitCode, run.Error));
+        }
+
+        [Fact]
+        public async Task Put_IntoAnEncryptedFolderWithNoPasswordGiven_FailsSayingTheFolderIsEncryptedAndHowToGiveIt()
+        {
+            await EncryptSecretAsync();
+            await File.WriteAllTextAsync(_work.File("a.txt"), "a");
+
+            CliRun run = await RunAsync("put", _work.File("a.txt"), "docs:/secret/");
+
+            Assert.Equal(
+                (CliApp.Misused, "'/secret' is an encrypted folder, so its password is needed: type it at a terminal, or give it as a line of standard input or in a file with --password-file."),
+                (run.ExitCode, run.Error));
+            Assert.Empty((await Docs.ListAsync("/secret")).Files);
         }
 
         [Fact]
@@ -343,6 +373,19 @@ namespace ByteShelf.Cli.Tests
             CliRun run = await CliRun.RunAsync(_clients, new[] { "encrypt", "docs:/a.txt" }, "one\ntwo\n", encryptionWorkFactor: FastWorkFactor);
 
             Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.False((await Docs.GetFileAsync("/a.txt")).Encrypted);
+        }
+
+        [Fact]
+        public async Task Encrypt_NewPasswordGivenOnceOnStandardInput_FailsAsMisuseAskingForItAgain()
+        {
+            await UploadAsync("/a.txt", "a");
+
+            CliRun run = await CliRun.RunAsync(_clients, new[] { "encrypt", "docs:/a.txt" }, "one\n", encryptionWorkFactor: FastWorkFactor);
+
+            Assert.Equal(
+                (CliApp.Misused, "The password was given only once: give it again on the next line of standard input, or in a file with --password-file."),
+                (run.ExitCode, run.Error));
             Assert.False((await Docs.GetFileAsync("/a.txt")).Encrypted);
         }
 

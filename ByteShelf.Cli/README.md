@@ -59,7 +59,10 @@ recovered.
 
 `mkdir` creates a directory with any missing parents, `rm` moves a file or a directory to the trash,
 `trash` lists what can be restored, `restore` brings a deletion back, and `empty-trash` deletes the
-trash for good. `shelves` lists the shelves you can reach and `whoami` says who commands act as.
+trash for good. `mv` moves or renames within the shelf: its new path is written as a path, or as
+`shelf:path` naming the same shelf, and another shelf is refused. A colon before any `/` is read as
+following a shelf name, so a name holding a colon is written starting with `/`: `/a:b`, as `a:b`
+names the shelf `a`. `shelves` lists the shelves you can reach and `whoami` says who commands act as.
 
 ## Shelves, users and keys
 

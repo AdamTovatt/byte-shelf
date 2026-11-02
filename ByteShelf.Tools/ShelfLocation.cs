@@ -27,6 +27,35 @@ namespace ByteShelf.Tools
             return colon < 0 ? Of(text, ShelfPath.Root) : Of(text[..colon], text[(colon + 1)..]);
         }
 
+        /// <summary>
+        /// A path on <paramref name="shelf"/> as written: a path, or <c>shelf:path</c> naming that same
+        /// shelf, read so when a colon comes before any <c>/</c>. One starting with <c>/</c> is always a
+        /// path, so a name holding a colon is written <c>/a:b</c>.
+        /// </summary>
+        /// <exception cref="UsageException">It names another shelf or no shelf before its colon, or is not allowed.</exception>
+        public static string PathOn(string shelf, string text)
+        {
+            int colon = text.IndexOf(':', StringComparison.Ordinal);
+            int separator = text.IndexOf(ShelfPath.Separator, StringComparison.Ordinal);
+            if (colon < 0 || (separator >= 0 && separator < colon))
+            {
+                return Of(shelf, text).Path;
+            }
+
+            // Both refusals may be a name holding a colon, written without the leading / that keeps it.
+            string keepTheColon = $"Start it with / to keep the colon in a name: '/{text}'.";
+            string named = text[..colon];
+            if (!ShelfName.TryValidate(named, out _))
+            {
+                throw new UsageException($"'{text}' reads as <shelf>:<path>, and '{named}' is not a shelf name. {keepTheColon}");
+            }
+
+            ShelfLocation location = Of(named, text[(colon + 1)..]);
+            return location.Shelf == shelf
+                ? location.Path
+                : throw new UsageException($"'{text}' is on the shelf '{location.Shelf}', not '{shelf}'. {keepTheColon}");
+        }
+
         /// <exception cref="UsageException">The shelf name or the path is not allowed.</exception>
         public static ShelfLocation Of(string shelf, string path)
         {

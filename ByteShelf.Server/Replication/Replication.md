@@ -134,9 +134,11 @@ and when it did not, the replica stays listed there until removed.
 `ReplicationCommand` (`--replication-status`, `--replication-code`, `--follow`, `--forget`, `--promote`)
 runs `ReplicationPairing` on a root without the web host (`AddReplicationPairing`), framed by `RootCommand`
 as the user commands are. It leaves following the primary to the server: a running one finds a pairing on
-its next poll. Promoting from another process cannot pause that server's step, so a step's transaction
-commits only while the pairing it read is still there (`SetProgressAsync` matches the credential, and the
-step rolls back what it applied when it does not); a whole copy's last transaction is guarded the same way,
+its next poll. `--follow` is the one that may create a root with no database yet (`StartsARoot`), so a
+replica can be paired before its first start; `RootCommand` removes it again when the pairing fails.
+Promoting from another process cannot pause that server's step, so a step's transaction commits only
+while the pairing it read is still there (`SetProgressAsync` matches the credential, and the step rolls
+back what it applied when it does not); a whole copy's last transaction is guarded the same way,
 and the pages it wrote after the promotion cleared them are cleared again. Pairing checks for shelves and
 replicas once more in the transaction that pairs, since a running server can make a shelf while the
 command waits on the primary, and the first copy would remove it; the primary is then told to drop the
