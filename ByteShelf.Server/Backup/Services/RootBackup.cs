@@ -6,6 +6,7 @@ using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.IO;
 using ByteShelf.Server.Shared.Root;
+using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
 using ByteShelf.Server.Storage.Services;
 using EasyReasy.Database;
@@ -21,7 +22,8 @@ namespace ByteShelf.Server.Backup.Services
     /// </summary>
     /// <remarks>
     /// The server may purge a file after the snapshot and remove its object before it is copied: such a
-    /// file is purged from the snapshot too, logged as the server logged it. Uploads in progress are
+    /// file is purged from the snapshot too, logged as the server logged it. A file whose contents were
+    /// swapped meanwhile (encrypted or decrypted in place) is backed up with its new contents. Uploads in progress are
     /// dropped, since their staged bytes are not copied. Every object is checked against its SHA-256 on
     /// the way into the zip, and an object missing while the server still points at it or not matching
     /// its hash fails the backup rather than carrying the damage on.
@@ -69,8 +71,9 @@ namespace ByteShelf.Server.Backup.Services
                     await using (StorageDatabase snapshot = new StorageDatabase(RootFolder.ConnectionStringFor(snapshotPath, pooling: false)))
                     {
                         CopiedObjects copied = await AddObjectsAsync(zip, root, snapshot, live, cancellationToken);
-                        int filesPurged = await PruneSnapshotAsync(snapshot, copied.Purged);
-                        summary = new BackupSummary { ObjectCount = copied.Count, ObjectBytes = copied.Bytes, FilesPurgedMeanwhile = filesPurged };
+                        IReadOnlyList<SwappedFile> swapped = await AddSwappedObjectsAsync(zip, root, snapshot, live, copied, cancellationToken);
+                        int filesPurged = await PruneSnapshotAsync(snapshot, swapped, copied.Missing);
+                        summary = new BackupSummary { ObjectCount = copied.Added.Count, ObjectBytes = copied.Bytes, FilesPurgedMeanwhile = filesPurged };
                     }
 
                     await AddOwnerOnlyFileAsync(zip, snapshotPath, RootFolder.DatabaseFileName, cancellationToken);
@@ -106,18 +109,16 @@ namespace ByteShelf.Server.Backup.Services
         }
 
         /// <summary>
-        /// Adds the object of every file in the snapshot. An object gone from disk was purged meanwhile
-        /// when the live database no longer points at it, and is lost otherwise.
+        /// Adds the object of every file in the snapshot. An object gone from disk is missing when the
+        /// live database no longer points at it, purged or swapped out meanwhile, and lost otherwise.
         /// </summary>
         private static async Task<CopiedObjects> AddObjectsAsync(ZipArchive zip, RootFolder root, StorageDatabase snapshot, StorageDatabase live, CancellationToken cancellationToken)
         {
             ObjectStore objects = new ObjectStore(root);
-            int count = 0;
-            long bytes = 0;
-            List<string> purged = new List<string>();
+            CopiedObjects copied = new CopiedObjects();
             foreach (string sha256 in await snapshot.Files.GetReferencedObjectsAsync())
             {
-                string entryName = Path.GetRelativePath(root.Path, objects.GetPath(sha256)).Replace(Path.DirectorySeparatorChar, '/');
+                string entryName = EntryName(root, objects, sha256);
                 FileStream? source = TryOpenRead(objects, sha256);
                 if (source == null && await live.Files.IsObjectReferencedAsync(sha256))
                 {
@@ -129,19 +130,66 @@ namespace ByteShelf.Server.Backup.Services
 
                 if (source == null)
                 {
-                    purged.Add(sha256);
+                    copied.Missing.Add(sha256);
                     continue;
                 }
 
                 await using (source)
                 {
-                    bytes += await AddObjectAsync(zip, entryName, source, sha256, cancellationToken);
+                    copied.Bytes += await AddObjectAsync(zip, entryName, source, sha256, cancellationToken);
                 }
 
-                count++;
+                copied.Added.Add(sha256);
             }
 
-            return new CopiedObjects(count, bytes, purged);
+            return copied;
+        }
+
+        /// <summary>
+        /// Adds, for each live file in the snapshot whose object is missing because its contents were
+        /// swapped meanwhile (encrypted or decrypted in place, which removes the old ones at once), the
+        /// contents it holds now; answers those files, for the snapshot to take their new contents.
+        /// </summary>
+        /// <remarks>
+        /// Only a live file's contents are swapped. One in the trash in the snapshot, restored and swapped
+        /// since, is purged from the backup with the rest. So is one swapped again before its new contents
+        /// were opened (untested: no test reaches that moment without a seam kept only for it).
+        /// </remarks>
+        private static async Task<IReadOnlyList<SwappedFile>> AddSwappedObjectsAsync(ZipArchive zip, RootFolder root, StorageDatabase snapshot, StorageDatabase live, CopiedObjects copied, CancellationToken cancellationToken)
+        {
+            ObjectStore objects = new ObjectStore(root);
+            List<SwappedFile> swapped = new List<SwappedFile>();
+            foreach (string sha256 in copied.Missing)
+            {
+                foreach (FileRecord file in await snapshot.Files.GetLiveWithObjectAsync(sha256))
+                {
+                    // The live database points at nothing missing (AddObjectsAsync), so a file still there
+                    // holds other contents now.
+                    if (await live.Files.GetByIdAsync(file.Id) is not FileRecord current
+                        || TryOpenRead(objects, current.Sha256) is not FileStream source)
+                    {
+                        continue;
+                    }
+
+                    await using (source)
+                    {
+                        if (copied.Added.Add(current.Sha256))
+                        {
+                            copied.Bytes += await AddObjectAsync(zip, EntryName(root, objects, current.Sha256), source, current.Sha256, cancellationToken);
+                        }
+                    }
+
+                    swapped.Add(new SwappedFile(file.Id, sha256, current));
+                }
+            }
+
+            return swapped;
+        }
+
+        /// <summary>Where an object goes in the zip: its path under the root.</summary>
+        private static string EntryName(RootFolder root, ObjectStore objects, string sha256)
+        {
+            return Path.GetRelativePath(root.Path, objects.GetPath(sha256)).Replace(Path.DirectorySeparatorChar, '/');
         }
 
         /// <summary>Copies one object into the zip, checking its SHA-256 as it goes; answers its size.</summary>
@@ -172,11 +220,11 @@ namespace ByteShelf.Server.Backup.Services
         }
 
         /// <summary>
-        /// Drops from the snapshot the uploads in progress, and purges the files whose objects the server
-        /// purged meanwhile, logged so that replicas copying the restored root drop them too; answers how
-        /// many files.
+        /// Drops from the snapshot the uploads in progress, points the files swapped meanwhile at their new
+        /// contents, and purges the other files whose objects are missing, both logged so that replicas
+        /// copying the restored root follow; answers how many files were purged.
         /// </summary>
-        private static async Task<int> PruneSnapshotAsync(StorageDatabase snapshot, IReadOnlyList<string> purgedObjects)
+        private static async Task<int> PruneSnapshotAsync(StorageDatabase snapshot, IReadOnlyList<SwappedFile> swapped, IReadOnlyList<string> missingObjects)
         {
             DateTimeOffset now = TimeProvider.System.GetUtcNow();
             await using IDbTransactionSession session = await snapshot.Sessions.CreateSessionWithTransactionAsync();
@@ -185,8 +233,13 @@ namespace ByteShelf.Server.Backup.Services
                 await snapshot.Uploads.DeleteAsync(upload, session);
             }
 
+            foreach (SwappedFile file in swapped)
+            {
+                await snapshot.Files.SwapContentAsync(file.Id, file.OldSha256, file.Now.Sha256, file.Now.SizeBytes, file.Now.Encrypted, now, session);
+            }
+
             int filesPurged = 0;
-            foreach (string sha256 in purgedObjects)
+            foreach (string sha256 in missingObjects)
             {
                 filesPurged += await snapshot.Files.PurgeAllWithObjectAsync(sha256, now, session);
             }
@@ -253,7 +306,18 @@ namespace ByteShelf.Server.Backup.Services
             }
         }
 
-        private sealed record CopiedObjects(int Count, long Bytes, IReadOnlyList<string> Purged);
+        /// <summary>The objects in the zip so far, their bytes, and those missing from disk.</summary>
+        private sealed class CopiedObjects
+        {
+            public HashSet<string> Added { get; } = new HashSet<string>(StringComparer.Ordinal);
+
+            public long Bytes { get; set; }
+
+            public List<string> Missing { get; } = new List<string>();
+        }
+
+        /// <summary>A file in the snapshot that held <paramref name="OldSha256"/>, and its row in the live database now.</summary>
+        private sealed record SwappedFile(Guid Id, string OldSha256, FileRecord Now);
 
         /// <summary>
         /// The storage repositories over one database file, outside the server's container. Private to the

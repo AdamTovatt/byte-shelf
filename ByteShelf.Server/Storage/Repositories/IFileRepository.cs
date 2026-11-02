@@ -35,6 +35,14 @@ namespace ByteShelf.Server.Storage.Repositories
         Task<FileRecord?> SetDescriptionAsync(Guid id, string? description, DateTimeOffset at, IDbSession session);
 
         /// <summary>
+        /// Points a live file at other contents in place, keeping its id, name, type and description, while
+        /// its contents are still <paramref name="expectedSha256"/>; null when it is not live or they are
+        /// not. Logged as <see cref="ChangeLog.Models.ChangeAction.Swapped"/>. Removing the old object is
+        /// the caller's, once this commits.
+        /// </summary>
+        Task<FileRecord?> SwapContentAsync(Guid id, string expectedSha256, string sha256, long sizeBytes, bool encrypted, DateTimeOffset at, IDbSession session);
+
+        /// <summary>
         /// The live files under <paramref name="directoryId"/>, at any depth, that match the criteria of
         /// <paramref name="search"/> (normalized), by full path, each with that path; at most
         /// <paramref name="maxRows"/> of them, which the caller sets one past the page so it can tell
@@ -79,6 +87,9 @@ namespace ByteShelf.Server.Storage.Repositories
 
         /// <summary>The SHA-256 of every object a row points at, live or trashed, each once, in order.</summary>
         Task<IReadOnlyList<string>> GetReferencedObjectsAsync(IDbSession? session = null);
+
+        /// <summary>The live files pointing at the object <paramref name="sha256"/>.</summary>
+        Task<IReadOnlyList<FileRecord>> GetLiveWithObjectAsync(string sha256, IDbSession? session = null);
 
         /// <summary>
         /// Removes every row, live or trashed, pointing at the object <paramref name="sha256"/>, each logged

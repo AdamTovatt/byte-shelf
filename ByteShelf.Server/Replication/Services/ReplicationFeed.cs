@@ -39,10 +39,12 @@ namespace ByteShelf.Server.Replication.Services
         }
 
         /// <inheritdoc />
-        public async Task<string?> GetObjectPathAsync(Guid fileId)
+        public async Task<string?> GetObjectPathAsync(Guid fileId, string sha256)
         {
             FileRecord? file = await _fileRepository.GetByIdAsync(fileId);
-            return file != null && _objectStore.Exists(file.Sha256) ? _objectStore.GetPath(file.Sha256) : null;
+            return file != null && string.Equals(file.Sha256, sha256, StringComparison.Ordinal) && _objectStore.Exists(sha256)
+                ? _objectStore.GetPath(sha256)
+                : null;
         }
 
         /// <inheritdoc />

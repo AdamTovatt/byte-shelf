@@ -12,7 +12,7 @@ namespace ByteShelf.Server.Storage.Services
     /// subtree. So a directory is never encrypted inside or above another, a plain file is never
     /// stored, moved or restored into one, and nothing comes into one from outside it (its password
     /// could differ). A file moved out keeps its encryption. Plain files already there when it was
-    /// encrypted stay plain until a client encrypts them in place.
+    /// encrypted stay plain until a client encrypts them in place, by swapping their contents.
     /// </summary>
     public sealed class ShelfEncryption
     {
@@ -62,6 +62,25 @@ namespace ByteShelf.Server.Storage.Services
                 throw new ConflictException(
                     $"'{normalizedPath}' is under the encrypted folder '{folderPath}': store it encrypted with that folder's password, as the web UI and the byteshelf CLI do.");
             }
+        }
+
+        /// <summary>
+        /// Throws unless <paramref name="file"/>'s contents may be swapped in place for ones
+        /// <paramref name="encrypted"/> or not: only to encrypt a plain file or decrypt an encrypted one,
+        /// whose old contents then go at once, which the person confirmed; and never to a plain file under
+        /// an encrypted directory.
+        /// </summary>
+        /// <exception cref="ConflictException">It may not, as things stand.</exception>
+        public async Task RequireSwapAsync(FileRecord file, string path, bool encrypted, IDbSession session)
+        {
+            if (file.Encrypted == encrypted)
+            {
+                throw new ConflictException(encrypted
+                    ? $"'{path}' is already encrypted: swapping its contents in place only encrypts a plain file or decrypts an encrypted one."
+                    : $"'{path}' is not encrypted: swapping its contents in place only encrypts a plain file or decrypts an encrypted one.");
+            }
+
+            await RequireStoreAsync(file.ShelfId, path, encrypted, session);
         }
 
         /// <summary>

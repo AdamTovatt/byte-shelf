@@ -18,6 +18,7 @@ namespace ByteShelf.Server.Storage.Services
         private readonly ITrashService _trashService;
         private readonly StagingArea _stagingArea;
         private readonly ObjectStore _objectStore;
+        private readonly ObjectCollector _objectCollector;
         private readonly UploadLocks _uploadLocks;
         private readonly StorageOptions _options;
         private readonly TimeProvider _timeProvider;
@@ -32,6 +33,7 @@ namespace ByteShelf.Server.Storage.Services
             ITrashService trashService,
             StagingArea stagingArea,
             ObjectStore objectStore,
+            ObjectCollector objectCollector,
             UploadLocks uploadLocks,
             StorageOptions options,
             TimeProvider timeProvider)
@@ -45,6 +47,7 @@ namespace ByteShelf.Server.Storage.Services
             _trashService = trashService;
             _stagingArea = stagingArea;
             _objectStore = objectStore;
+            _objectCollector = objectCollector;
             _uploadLocks = uploadLocks;
             _options = options;
             _timeProvider = timeProvider;
@@ -53,8 +56,25 @@ namespace ByteShelf.Server.Storage.Services
         /// <inheritdoc />
         public async Task<ShelfFile> StoreAsync(Shelf shelf, StartUploadRequest request, string startedBy, Stream content, CancellationToken cancellationToken)
         {
-            UploadRecord upload = await BeginAsync(shelf, request, startedBy, isResumable: false);
+            return await StoreInOneGoAsync(await BeginAsync(shelf, request, startedBy, isResumable: false), content, cancellationToken);
+        }
 
+        /// <inheritdoc />
+        public async Task<ShelfFile> SwapAsync(Shelf shelf, StartContentSwapRequest request, string startedBy, Stream content, CancellationToken cancellationToken)
+        {
+            return await StoreInOneGoAsync(await BeginSwapAsync(shelf, request, startedBy, isResumable: false), content, cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public async Task<UploadSession> StartSwapAsync(Shelf shelf, StartContentSwapRequest request, string startedBy)
+        {
+            UploadRecord upload = await BeginSwapAsync(shelf, request, startedBy, isResumable: true);
+            return StorageContracts.ToUploadSession(upload, _options);
+        }
+
+        /// <summary>Writes a single PUT's whole body to its upload and finishes it, discarding it on any failure.</summary>
+        private async Task<ShelfFile> StoreInOneGoAsync(UploadRecord upload, Stream content, CancellationToken cancellationToken)
+        {
             using (await _uploadLocks.AcquireAsync(upload.Id, CancellationToken.None))
             {
                 bool stored = false;
@@ -173,12 +193,10 @@ namespace ByteShelf.Server.Storage.Services
                 Id = Guid.NewGuid(),
                 ShelfId = shelf.Id,
                 StartedBy = startedBy,
-                Path = normalizedPath,
+                Target = new StoreAtPath(normalizedPath, overwrite, FileDescription.Normalize(request.Description)),
                 ContentType = ContentTypes.ForUpload(request.ContentType, normalizedPath),
                 SizeBytes = sizeBytes,
                 ReceivedBytes = 0,
-                Overwrite = overwrite,
-                Description = FileDescription.Normalize(request.Description),
                 Encrypted = request.Encrypted,
                 IsResumable = isResumable,
                 CreatedAt = now,
@@ -190,22 +208,7 @@ namespace ByteShelf.Server.Storage.Services
                 // Refuse up front what finishing would refuse anyway, before any byte is sent. Finishing
                 // checks again, since the shelf can change while the bytes arrive.
                 await EnsureTargetAcceptsAsync(shelf.Id, normalizedPath, overwrite, upload.Encrypted, session);
-
-                Shelf current = await _shelfRepository.GetByIdAsync(shelf.Id, session)
-                    ?? throw new NotFoundException($"There is no shelf '{shelf.Name}'.");
-
-                if (current.QuotaBytes != null)
-                {
-                    ShelfUsage usage = await _shelfRepository.GetUsageAsync(shelf.Id, session);
-                    long free = current.QuotaBytes.Value - usage.TotalBytes;
-                    if (sizeBytes > free)
-                    {
-                        throw new QuotaExceededException(
-                            $"The shelf '{shelf.Name}' has {Math.Max(free, 0)} bytes free of its {current.QuotaBytes.Value}, too few for {sizeBytes}.");
-                    }
-                }
-
-                await _uploadRepository.InsertAsync(upload, session);
+                await ReserveAsync(shelf, upload, session);
                 await session.CommitAsync();
             }
 
@@ -214,20 +217,90 @@ namespace ByteShelf.Server.Storage.Services
         }
 
         /// <summary>
-        /// Hashes the staged bytes, then in one transaction creates missing directories, moves a replaced
-        /// file to the trash, inserts the file row and removes the upload, placing the object last before
-        /// the commit. The object's lock is held from placing it until the row commits, so no removal can
-        /// take it away in between. Hold the upload's lock.
+        /// Validates a swap and records its upload, reserving what it adds, as <see cref="BeginAsync"/> does.
+        /// The upload takes the file's type.
+        /// </summary>
+        private async Task<UploadRecord> BeginSwapAsync(Shelf shelf, StartContentSwapRequest request, string startedBy, bool isResumable)
+        {
+            if (request.SizeBytes < 0)
+            {
+                throw new ArgumentException("The size of an upload cannot be negative.");
+            }
+
+            ContentSwap swap = new ContentSwap(request.FileId, request.Sha256);
+            DateTimeOffset now = _timeProvider.GetUtcNow();
+            await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+            {
+                (FileRecord file, _) = await GetSwappableAsync(shelf.Id, swap, request.Encrypted, session);
+                UploadRecord upload = new UploadRecord
+                {
+                    Id = Guid.NewGuid(),
+                    ShelfId = shelf.Id,
+                    StartedBy = startedBy,
+                    Target = swap,
+                    ContentType = file.ContentType,
+                    SizeBytes = request.SizeBytes,
+                    ReceivedBytes = 0,
+                    Encrypted = request.Encrypted,
+                    IsResumable = isResumable,
+                    CreatedAt = now,
+                    LastActivityAt = now,
+                };
+
+                await ReserveAsync(shelf, upload, session);
+                await session.CommitAsync();
+                _stagingArea.EnsureExists(upload.Id);
+                return upload;
+            }
+        }
+
+        /// <summary>
+        /// Records <paramref name="upload"/>, reserving against the shelf's quota what it will add, as the
+        /// shelf's usage counts it: its size, or for a swap only what it adds to its file's.
+        /// </summary>
+        /// <exception cref="QuotaExceededException">The shelf has too little room.</exception>
+        private async Task ReserveAsync(Shelf shelf, UploadRecord upload, IDbSession session)
+        {
+            Shelf current = await _shelfRepository.GetByIdAsync(shelf.Id, session)
+                ?? throw new NotFoundException($"There is no shelf '{shelf.Name}'.");
+
+            if (current.QuotaBytes is not long quota)
+            {
+                await _uploadRepository.InsertAsync(upload, session);
+                return;
+            }
+
+            // Measured before and after, so the usage query alone says what an upload holds. Throwing
+            // leaves the caller's transaction uncommitted, and the row with it.
+            long before = (await _shelfRepository.GetUsageAsync(shelf.Id, session)).TotalBytes;
+            await _uploadRepository.InsertAsync(upload, session);
+            long after = (await _shelfRepository.GetUsageAsync(shelf.Id, session)).TotalBytes;
+            if (after > quota)
+            {
+                throw new QuotaExceededException(
+                    $"The shelf '{shelf.Name}' has {Math.Max(quota - before, 0)} bytes free of its {quota}, too few for {after - before} more.");
+            }
+        }
+
+        /// <summary>
+        /// Hashes the staged bytes, then in one transaction stores the file (<see cref="StoreNewAsync"/>)
+        /// or swaps its contents (<see cref="SwapInAsync"/>) and removes the upload, placing the object last
+        /// before the commit. The object's lock is held from placing it until the row commits, so no
+        /// removal can take it away in between. A swap's old contents are removed once it commits, unless
+        /// another file holds them. Hold the upload's lock.
         /// </summary>
         private async Task<ShelfFile> FinishAsync(UploadRecord upload, CancellationToken cancellationToken)
         {
             // The server cannot tell a right password, but it can tell what is no age file at all.
             if (upload.Encrypted && !await _stagingArea.StartsAsAgeFileAsync(upload.Id, cancellationToken))
             {
-                throw new ArgumentException($"'{upload.Path}' was sent as encrypted, but it is not an age file.");
+                throw new ArgumentException(upload.Target is StoreAtPath store
+                    ? $"'{store.Path}' was sent as encrypted, but it is not an age file."
+                    : "The new contents were sent as encrypted, but they are not an age file.");
             }
 
             string sha256 = await _stagingArea.ComputeSha256Async(upload.Id, cancellationToken);
+            ShelfFile stored;
 
             using (await _objectStore.LockAsync(sha256, CancellationToken.None))
             {
@@ -236,44 +309,18 @@ namespace ByteShelf.Server.Storage.Services
                 {
                     await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
                     {
-                        await EnsureTargetAcceptsAsync(upload.ShelfId, upload.Path, upload.Overwrite, upload.Encrypted, session);
-
-                        string directoryPath = ShelfPath.GetParent(upload.Path);
-                        string name = ShelfPath.GetName(upload.Path);
                         DateTimeOffset now = _timeProvider.GetUtcNow();
-                        DirectoryRecord directory = await _shelfTree.EnsureDirectoryAsync(upload.ShelfId, directoryPath, now, session);
-
-                        FileRecord? replaced = await _fileRepository.GetLiveByNameAsync(directory.Id, name, session);
-                        if (replaced != null)
+                        stored = upload.Target switch
                         {
-                            await _trashService.TrashFileAsync(replaced.Id, now, session);
-                        }
-
-                        FileRecord file = new FileRecord
-                        {
-                            Id = Guid.NewGuid(),
-                            ShelfId = upload.ShelfId,
-                            DirectoryId = directory.Id,
-                            Name = name,
-                            ContentType = upload.ContentType,
-                            SizeBytes = upload.SizeBytes,
-                            Sha256 = sha256,
-                            CreatedAt = now,
-                            UpdatedAt = now,
-                            // A new version of a file is still that file: it keeps what it was
-                            // described as unless the upload says anew.
-                            Description = upload.Description ?? replaced?.Description,
-                            Encrypted = upload.Encrypted,
+                            StoreAtPath store => await StoreNewAsync(upload, store, sha256, now, session),
+                            ContentSwap swap => await SwapInAsync(upload, swap, sha256, now, session),
+                            _ => throw new InvalidOperationException($"No upload stores to a {upload.Target.GetType().Name}."),
                         };
-
-                        await _fileRepository.InsertAsync(file, session);
                         await _uploadRepository.DeleteAsync(upload.Id, session);
 
                         _objectStore.Place(_stagingArea.GetPath(upload.Id), sha256);
                         placed = true;
                         await session.CommitAsync();
-
-                        return StorageContracts.ToShelfFile(file, directoryPath);
                     }
                 }
                 catch when (placed)
@@ -284,6 +331,92 @@ namespace ByteShelf.Server.Storage.Services
                     throw;
                 }
             }
+
+            if (upload.Target is ContentSwap committed)
+            {
+                await _objectCollector.RemoveReleasedAsync([committed.Sha256]);
+            }
+
+            return stored;
+        }
+
+        /// <summary>
+        /// Creates missing directories, moves a file the upload replaces to the trash, and inserts the new
+        /// file's row.
+        /// </summary>
+        private async Task<ShelfFile> StoreNewAsync(UploadRecord upload, StoreAtPath store, string sha256, DateTimeOffset now, IDbSession session)
+        {
+            await EnsureTargetAcceptsAsync(upload.ShelfId, store.Path, store.Overwrite, upload.Encrypted, session);
+
+            string directoryPath = ShelfPath.GetParent(store.Path);
+            string name = ShelfPath.GetName(store.Path);
+            DirectoryRecord directory = await _shelfTree.EnsureDirectoryAsync(upload.ShelfId, directoryPath, now, session);
+
+            FileRecord? replaced = await _fileRepository.GetLiveByNameAsync(directory.Id, name, session);
+            if (replaced != null)
+            {
+                await _trashService.TrashFileAsync(replaced.Id, now, session);
+            }
+
+            FileRecord file = new FileRecord
+            {
+                Id = Guid.NewGuid(),
+                ShelfId = upload.ShelfId,
+                DirectoryId = directory.Id,
+                Name = name,
+                ContentType = upload.ContentType,
+                SizeBytes = upload.SizeBytes,
+                Sha256 = sha256,
+                CreatedAt = now,
+                UpdatedAt = now,
+                // A new version of a file is still that file: it keeps what it was
+                // described as unless the upload says anew.
+                Description = store.Description ?? replaced?.Description,
+                Encrypted = upload.Encrypted,
+            };
+
+            await _fileRepository.InsertAsync(file, session);
+            return StorageContracts.ToShelfFile(file, directoryPath);
+        }
+
+        /// <summary>
+        /// Points the swap's file at the new contents in place, checked again as things stand now
+        /// (<see cref="GetSwappableAsync"/>): the file may have moved, changed or gone since the swap started.
+        /// </summary>
+        private async Task<ShelfFile> SwapInAsync(UploadRecord upload, ContentSwap swap, string sha256, DateTimeOffset now, IDbSession session)
+        {
+            (FileRecord file, string path) = await GetSwappableAsync(upload.ShelfId, swap, upload.Encrypted, session);
+
+            // The repository's own guard on the SHA-256 holds even for a caller that skipped the check above.
+            FileRecord swapped = await _fileRepository.SwapContentAsync(file.Id, swap.Sha256, sha256, upload.SizeBytes, upload.Encrypted, now, session)
+                ?? throw ChangedSinceRead(path);
+            return StorageContracts.ToShelfFile(swapped, ShelfPath.GetParent(path));
+        }
+
+        /// <summary>
+        /// The file <paramref name="swap"/> names and its path, as long as its contents may be swapped for
+        /// ones <paramref name="encrypted"/> or not, as things stand: they are still the ones the client
+        /// read, so a change made since is never lost, and <see cref="ShelfEncryption.RequireSwapAsync"/>
+        /// allows it.
+        /// </summary>
+        /// <exception cref="NotFoundException">The file is gone, or in the trash.</exception>
+        /// <exception cref="ConflictException">It may not be swapped.</exception>
+        private async Task<(FileRecord File, string Path)> GetSwappableAsync(Guid shelfId, ContentSwap swap, bool encrypted, IDbSession session)
+        {
+            FileRecord file = await _shelfTree.GetFileAsync(shelfId, EntryReference.ForId(swap.FileId), session);
+            string path = (await _shelfTree.ToShelfFileAsync(file, session)).Path;
+            if (file.Sha256 != swap.Sha256)
+            {
+                throw ChangedSinceRead(path);
+            }
+
+            await _encryption.RequireSwapAsync(file, path, encrypted, session);
+            return (file, path);
+        }
+
+        private static ConflictException ChangedSinceRead(string path)
+        {
+            return new ConflictException($"'{path}' has changed since its contents were read: read it again, then encrypt or decrypt it.");
         }
 
         /// <summary>Throws unless a file may be stored at <paramref name="normalizedPath"/> as things stand.</summary>

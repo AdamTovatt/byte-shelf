@@ -1,7 +1,7 @@
 import { apiClient, apiUrl, authorizedFetch, throwIfFailed, unwrapResponse } from './apiClient';
 import type { components } from '../types/api';
 import type { ShelfDirectory, ShelfFile } from './shelfService';
-import { uploadFile } from './uploadService';
+import { swapContent } from './uploadService';
 
 export type EncryptedFolder = components['schemas']['EncryptedFolder'];
 
@@ -39,9 +39,12 @@ export async function openContent(shelf: string, id: string, signal: AbortSignal
   return response.body;
 }
 
-/** Stores `content` over `file`, encrypted or not, typed as `content` is and keeping its description. */
+/**
+ * Swaps `file`'s contents in place for `content`, encrypted or not: it keeps its id, type and
+ * description, and the old contents are gone at once. Refused when it changed since it was read.
+ */
 export function replaceContent(shelf: string, file: ShelfFile, content: Blob, encrypted: boolean): Promise<ShelfFile> {
-  return uploadFile({ shelf, path: file.path, file: content, overwrite: true, encrypted });
+  return swapContent({ shelf, file, content, encrypted });
 }
 
 /** Every file under the folder at `path`, at any depth, read whole before anything is changed. */

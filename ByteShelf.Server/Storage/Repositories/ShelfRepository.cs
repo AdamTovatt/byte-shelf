@@ -23,6 +23,16 @@ namespace ByteShelf.Server.Storage.Repositories
 
         private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict(InsertSql);
 
+        /// <summary>
+        /// How much of its shelf's room an upload holds: its whole size, or for a swap only what it adds to
+        /// its file's size now, since finishing replaces the one with the other. Two swaps of one file
+        /// both count from its size, but only one of them can finish.
+        /// </summary>
+        private const string ReservedBytesSql = @"
+            CASE WHEN upload.swap_file_id IS NULL THEN upload.size_bytes
+            ELSE MAX(0, upload.size_bytes - COALESCE((SELECT swapped.size_bytes FROM file AS swapped WHERE swapped.id = upload.swap_file_id), 0))
+            END";
+
         /// <summary>What a shelf's name becomes, before its id, while a replicated shelf takes the name over; '~' is in no shelf name.</summary>
         private const string SetAsideNamePrefix = "~";
 
@@ -172,7 +182,7 @@ namespace ByteShelf.Server.Storage.Repositories
                 string query = $@"
                     SELECT
                         (SELECT COALESCE(SUM(size_bytes), 0) FROM file WHERE shelf_id = @{nameof(shelfId)}) AS {nameof(ShelfUsageEntity.UsedBytes)},
-                        (SELECT COALESCE(SUM(size_bytes), 0) FROM upload WHERE shelf_id = @{nameof(shelfId)}) AS {nameof(ShelfUsageEntity.ReservedBytes)},
+                        (SELECT COALESCE(SUM({ReservedBytesSql}), 0) FROM upload WHERE shelf_id = @{nameof(shelfId)}) AS {nameof(ShelfUsageEntity.ReservedBytes)},
                         (SELECT COUNT(*) FROM file WHERE shelf_id = @{nameof(shelfId)} AND deleted_at IS NULL) AS {nameof(ShelfUsageEntity.FileCount)}";
 
                 ShelfUsageEntity entity = await dbSession.Connection.QuerySingleAsync<ShelfUsageEntity>(

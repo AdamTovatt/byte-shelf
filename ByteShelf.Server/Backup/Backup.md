@@ -9,9 +9,11 @@ it never migrates the database or creates folders there, and it refuses a zip pa
 2. **Objects.** Every object a file in the snapshot points at, trashed files included, goes into the zip
    under `objects/ab/cd/<sha256>`, its SHA-256 checked on the way. An object that does not match, or is
    missing while the live database still points at it, fails the backup, so damage is not carried into
-   it unnoticed. An object missing because the server purged its files after the snapshot is skipped,
-   and those files are purged from the snapshot through `FileRepository`, logged as the server logged
-   them.
+   it unnoticed. An object can go missing after the snapshot in two ways. A live file whose contents
+   were swapped meanwhile (encrypted or decrypted in place, which removes the old ones at once) is
+   backed up with the contents it holds now, its snapshot row pointed at them and logged as swapped. The
+   other files on that object were purged by the server, so they are purged from the snapshot through
+   `FileRepository`, logged as the server logged them.
 3. **The snapshot itself**, without uploads in progress (their staged bytes are not copied), as
    `byteshelf.db`, then every file in `keys/`.
 

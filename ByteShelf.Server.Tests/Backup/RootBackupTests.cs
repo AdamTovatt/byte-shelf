@@ -125,6 +125,29 @@ namespace ByteShelf.Server.Tests.Backup
         }
 
         [Fact]
+        public async Task WriteAsync_FileSwappedAfterTheSnapshot_IsBackedUpWithItsNewContentsAndLogged()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile plain = await StoreTextAsync(shelf, "/a.txt", "plain contents");
+            // The server checks only that encrypted contents start as an age file.
+            byte[] encrypted = System.Text.Encoding.ASCII.GetBytes("age-encryption.org/v1\nthe file");
+            ShelfFile swapped = null!;
+
+            BackupSummary summary = await RootBackup.WriteAsync(TestRoot.Root, _zipPath, async () =>
+            {
+                StartContentSwapRequest request = new StartContentSwapRequest { FileId = plain.Id, Sha256 = plain.Sha256, SizeBytes = encrypted.Length, Encrypted = true };
+                swapped = await UploadService.SwapAsync(shelf, request, Uploader, new MemoryStream(encrypted), CancellationToken.None);
+                Assert.False(ObjectStore.Exists(plain.Sha256));
+            }, CancellationToken.None);
+
+            RootFolder restored = Restore();
+            Assert.Equal((1, 0), (summary.ObjectCount, summary.FilesPurgedMeanwhile));
+            Assert.Equal(1, await CountAsync(restored, $"SELECT COUNT(*) FROM file WHERE id = '{plain.Id}' AND sha256 = '{swapped.Sha256}' AND encrypted = 1"));
+            Assert.True(new StoredObjects(restored).Exists(swapped.Sha256));
+            Assert.Equal(1, await CountAsync(restored, $"SELECT COUNT(*) FROM change_log WHERE entity_id = '{plain.Id}' AND action = '{ChangeAction.Swapped}'"));
+        }
+
+        [Fact]
         public async Task WriteAsync_ObjectMissingWhileAFilePointsAtIt_WritesNoBackup()
         {
             Shelf shelf = await CreateShelfAsync();

@@ -215,6 +215,31 @@ namespace ByteShelfClient.InMemory
                 : null;
         }
 
+        /// <summary>As the server reserves an upload's room: throws unless <paramref name="addedBytes"/> more fit under the quota.</summary>
+        public void RequireRoomFor(long addedBytes)
+        {
+            if (QuotaBytes is long quota && addedBytes > quota - UsedBytes)
+            {
+                throw new ByteShelfException(
+                    $"The shelf '{Name}' has {Math.Max(quota - UsedBytes, 0)} bytes free of its {quota}, too few for {addedBytes} more.",
+                    ErrorCodes.QuotaExceeded);
+            }
+        }
+
+        /// <summary>
+        /// As the server: bytes sent as <paramref name="encrypted"/> must at least be an age file, the one
+        /// thing it can tell without the password. <paramref name="path"/> is a new file's, null for a swap.
+        /// </summary>
+        public static void RequireAgeFile(bool encrypted, byte[] bytes, string? path)
+        {
+            if (encrypted && !FileEncryption.StartsAsAgeFile(bytes))
+            {
+                throw InMemoryErrors.Invalid(path != null
+                    ? $"'{path}' was sent as encrypted, but it is not an age file."
+                    : "The new contents were sent as encrypted, but they are not an age file.");
+            }
+        }
+
         /// <summary>As the server's ShelfEncryption.RequireStoreAsync: never a plain file under an encrypted directory.</summary>
         public void RequireStore(string normalizedPath, bool encrypted)
         {
@@ -223,6 +248,22 @@ namespace ByteShelfClient.InMemory
                 throw InMemoryErrors.Conflict(
                     $"'{normalizedPath}' is under the encrypted folder '{PathOf(folder)}': store it encrypted with that folder's password, as the web UI and the byteshelf CLI do.");
             }
+        }
+
+        /// <summary>
+        /// As the server's ShelfEncryption.RequireSwapAsync: a swap only encrypts a plain file or decrypts
+        /// an encrypted one, and never leaves a plain file under an encrypted directory.
+        /// </summary>
+        public void RequireSwap(FileNode file, string path, bool encrypted)
+        {
+            if (file.Encrypted == encrypted)
+            {
+                throw InMemoryErrors.Conflict(encrypted
+                    ? $"'{path}' is already encrypted: swapping its contents in place only encrypts a plain file or decrypts an encrypted one."
+                    : $"'{path}' is not encrypted: swapping its contents in place only encrypts a plain file or decrypts an encrypted one.");
+            }
+
+            RequireStore(path, encrypted);
         }
 
         /// <summary>As the server's ShelfEncryption.RequireMoveAsync: into an encrypted directory only from inside it.</summary>
@@ -362,12 +403,12 @@ namespace ByteShelfClient.InMemory
             public required Guid DirectoryId { get; set; }
             public required string Name { get; set; }
             public required string ContentType { get; init; }
-            public required byte[] Content { get; init; }
-            public required string Sha256 { get; init; }
+            public required byte[] Content { get; set; }
+            public required string Sha256 { get; set; }
             public required DateTimeOffset CreatedAt { get; init; }
             public required DateTimeOffset UpdatedAt { get; set; }
             public string? Description { get; set; }
-            public bool Encrypted { get; init; }
+            public bool Encrypted { get; set; }
             public DateTimeOffset? DeletedAt { get; set; }
             public Guid? DeletionId { get; set; }
             public bool IsLive => DeletedAt == null;

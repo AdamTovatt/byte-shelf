@@ -44,9 +44,11 @@ path that is not allowed is a 400.
 | `PUT content?path=&overwrite=&encrypted=` | Stores the body in one request. Needs `Content-Length` (411 without); the `Content-Type` is stored, or without one the type the path's extension names (`ContentTypes.ForUpload`), so `curl -T` stores a PDF as one. `encrypted=true` marks the body as an age file (400 when it does not start as one). 409 when the path is taken and `overwrite` is not set, or for a plain file under an encrypted directory; 507 over quota. |
 | `POST upload-link` | A link that stores one file sent to it without a token, from the body's `path`, `overwrite`, `description` and `expiresInMinutes` (1 to 1440, 15 by default); see "Upload links" below. Needs `Add`, or `Write` with `overwrite`; 400 for the root or a request `CreateUploadLinkRequest.Normalize` refuses, 409 for a path under an encrypted directory or over an encrypted file. |
 | `POST uploads` | Starts a resumable upload from the body's `path`, `sizeBytes`, `contentType` (optional, typed as `PUT content` is), `overwrite` (false by default), `encrypted` (as on `PUT content`, checked when it completes) and the file's `description` if it has one (a single `PUT` has no body to carry one); reserves the size against the quota. |
+| `PUT content/swap?id=&sha256=&encrypted=` | Swaps the contents of the file `id` in place for the body, in one request (`Content-Length` needed): encrypting a plain file (`encrypted=true`, an age file) or decrypting an encrypted one. Needs write access. 400 when sent as encrypted but not an age file; 404 for no such live file; 409 when its contents are no longer `sha256`, when the swap would not flip its encryption, or for a plain file under an encrypted directory; 411 without `Content-Length`; 507 when what it adds to the file's size does not fit the quota. See "Encryption" below. |
+| `POST uploads/swap` | Starts a resumable upload that swaps a file's contents when it completes, from the body's `fileId`, `sha256`, `sizeBytes` and `encrypted`, refused as `PUT content/swap` is. Its chunks, progress, completion and abort are an upload's. |
 | `GET uploads/{id}` | Progress: `receivedBytes` is where the next chunk starts. |
 | `PUT uploads/{id}?offset=` | Appends a chunk of at most `UploadLimits.MaxChunkBytes` (64 MiB, 413 above); 409 when `offset` is not `receivedBytes`. |
-| `POST uploads/{id}/complete` | Stores the file once every byte has arrived. 409 when the path was taken meanwhile; the upload is kept. |
+| `POST uploads/{id}/complete` | Stores the file once every byte has arrived. 409 when the path was taken meanwhile, or for a swap when the file's contents changed or the swap no longer flips its encryption; 404 for a swap whose file is gone. The upload is kept. |
 | `DELETE uploads/{id}` | Drops the upload and releases its reservation. |
 | `GET trash` | Deletions still inside the restore window, newest first. |
 | `POST trash/{deletionId}/restore` | Puts a deletion back where it was. |
@@ -104,14 +106,20 @@ every link at once.
 
 1. Start: the path, content type and description are checked and the whole declared size is
    reserved against the shelf's quota, in one write transaction (SQLite has one writer at a time, so two uploads can
-   never both take the same free space). A single `PUT` uses `Content-Length` as the size. The
+   never both take the same free space). A single `PUT` uses `Content-Length` as the size. An upload
+   either stores a new file at a path or swaps a file's contents (`UploadTarget`: `StoreAtPath` or
+   `ContentSwap`, held apart by the `upload` table's check); a swap has no path, overwrite or
+   description, and reserves only what it adds to its file's size, since finishing replaces one with
+   the other (`ShelfRepository`'s usage query counts it so). The
    upload records who started it (`started_by`), the only caller besides read-write ones who may use
    it afterwards (see [Access.md](../Access/Access.md)).
 2. Bytes go to staging at the offset the upload has reached; anything past the declared size is
    refused as it arrives.
 3. Finish: the server hashes the staged bytes itself, then in one transaction creates missing
    directories, moves an overwritten file to the trash, inserts the file row and removes the upload.
-   The object is placed just before the commit.
+   The object is placed just before the commit. A swap instead checks its file again as it stands,
+   points the row at the new object, and removes the old object once that commits (see
+   "Encryption"); a removal that fails is logged and left to maintenance, as the swap stands.
 
 The client never supplies a hash the server trusts.
 
@@ -181,6 +189,16 @@ or over an encrypted file, when made and again when used. A download link is nev
 encrypted file. Encrypting a directory touches none of its files: a client encrypts them after, and
 removing its encryption decrypts nothing, so a client decrypts them after; the server only records
 the mark.
+
+A client encrypts or decrypts a stored file by swapping its contents in place (`PUT content/swap`,
+`POST uploads/swap`): the file keeps its id, path, type and description, and its old contents are
+removed at once rather than moved to the trash, unless another file holds the same ones. This is the
+one write that destroys contents without the trash, and it is allowed only for what the person
+confirmed cannot be undone: it must flip the file's encryption, and it must name the SHA-256 the
+contents still have, so a change made since they were read is never lost (409 otherwise). Its change
+log entry (`swapped`) points the row at the new contents, and a replica removes the old ones as soon
+as it applies it, the one exception to replicas keeping what the primary drops for their own restore
+window ([Replication](../Replication/Replication.md)). A backup taken before still holds them.
 
 ## Moves (`FileService`, `DirectoryService`)
 

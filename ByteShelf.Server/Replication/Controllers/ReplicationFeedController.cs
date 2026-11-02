@@ -60,14 +60,17 @@ namespace ByteShelf.Server.Replication.Controllers
             return Ok(await _feed.GetCopyAsync(after, limit));
         }
 
-        /// <summary>The bytes of a file's object, live or in the trash, by the file's id.</summary>
+        /// <summary>
+        /// The bytes of a file's object, live or in the trash, by the file's id, while its contents are
+        /// still <c>sha256</c>: an older entry's contents may since have been swapped for others.
+        /// </summary>
         [HttpGet("files/{id:guid}/object")]
         [DisableRateLimiting]
         [ReplicaAuthenticated]
-        public async Task<IActionResult> GetObject(Guid id)
+        public async Task<IActionResult> GetObject(Guid id, [FromQuery] string sha256)
         {
-            string path = await _feed.GetObjectPathAsync(id)
-                ?? throw new NotFoundException("There is no such file, or it has been purged.");
+            string path = await _feed.GetObjectPathAsync(id, sha256)
+                ?? throw new NotFoundException("There is no such file, it has been purged, or its contents have been swapped for others.");
 
             return PhysicalFile(path, "application/octet-stream");
         }

@@ -38,6 +38,24 @@ namespace ByteShelf.Server.Storage.Controllers
             return Ok(await _uploadService.StartAsync(Shelf, request, Access.Caller.Id));
         }
 
+        /// <summary>
+        /// Starts an upload that swaps a file's contents in place when it completes, keeping its id:
+        /// encrypting a plain file or decrypting an encrypted one, while its contents are still
+        /// <c>sha256</c> (409 otherwise). Its old contents are removed at once, never trashed, unless
+        /// another file holds them. Needs write access.
+        /// </summary>
+        [HttpPost("swap")]
+        [ShelfAccess(ShelfOperation.Write)]
+        [ProducesResponseType(typeof(UploadSession), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 403)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 409)]
+        [ProducesResponseType(typeof(ErrorResponse), 507)]
+        public async Task<IActionResult> StartSwap([FromBody] StartContentSwapRequest request)
+        {
+            return Ok(await _uploadService.StartSwapAsync(Shelf, request, Access.Caller.Id));
+        }
+
         /// <summary>An upload's progress: <c>receivedBytes</c> is where the next chunk starts.</summary>
         [HttpGet("{uploadId:guid}")]
         [ShelfAccess(ShelfOperation.Add)]

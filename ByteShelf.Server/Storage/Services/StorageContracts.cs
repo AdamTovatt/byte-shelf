@@ -64,11 +64,12 @@ namespace ByteShelf.Server.Storage.Services
             {
                 Id = upload.Id,
                 ShelfId = upload.ShelfId,
-                Path = upload.Path,
+                Path = (upload.Target as StoreAtPath)?.Path,
+                SwapFileId = (upload.Target as ContentSwap)?.FileId,
                 ContentType = upload.ContentType,
                 SizeBytes = upload.SizeBytes,
                 ReceivedBytes = upload.ReceivedBytes,
-                Overwrite = upload.Overwrite,
+                Overwrite = upload.Target is StoreAtPath { Overwrite: true },
                 CreatedAt = upload.CreatedAt,
                 ExpiresAt = upload.LastActivityAt + options.AbandonedUploadAge,
             };

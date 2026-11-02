@@ -81,6 +81,18 @@ namespace ByteShelfClient.Http
                 : await UploadInChunksAsync(upload, source, cancellationToken).ConfigureAwait(false);
         }
 
+        public async Task<ShelfFile> SwapContentAsync(ShelfFile file, Stream content, bool encrypted, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(file);
+            ArgumentNullException.ThrowIfNull(content);
+
+            await using UploadSource source = await UploadSource.OpenAsync(content, cancellationToken).ConfigureAwait(false);
+
+            return source.SizeBytes <= _options.SingleRequestMaxBytes
+                ? await PutSwapAsync(file, source, encrypted, cancellationToken).ConfigureAwait(false)
+                : await SwapInChunksAsync(file, source, encrypted, cancellationToken).ConfigureAwait(false);
+        }
+
         public Task<ShelfFile> SetDescriptionAsync(EntryReference file, string? description, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(file);
@@ -293,16 +305,40 @@ namespace ByteShelfClient.Http
         }
 
         /// <summary>Sends the whole file in one streamed request, which cannot be repeated after a refused token.</summary>
-        private async Task<ShelfFile> PutAsync(NormalizedUpload upload, UploadSource source, CancellationToken cancellationToken)
+        private Task<ShelfFile> PutAsync(NormalizedUpload upload, UploadSource source, CancellationToken cancellationToken)
         {
-            string uri = $"{_base}/content?{EntryReference.ForPath(upload.Path).ToQuery()}&overwrite={(upload.Overwrite ? "true" : "false")}&encrypted={(upload.Encrypted ? "true" : "false")}";
+            string uri = $"{_base}/content?{EntryReference.ForPath(upload.Path).ToQuery()}&overwrite={QueryFlag(upload.Overwrite)}&encrypted={QueryFlag(upload.Encrypted)}";
+            return PutBodyAsync(uri, source, upload.ContentType, cancellationToken);
+        }
 
+        /// <summary>Swaps a file's contents in one streamed request, as <see cref="PutAsync"/> stores one.</summary>
+        private Task<ShelfFile> PutSwapAsync(ShelfFile file, UploadSource source, bool encrypted, CancellationToken cancellationToken)
+        {
+            string uri = $"{_base}/content/swap?{EntryReference.ForId(file.Id).ToQuery()}&sha256={Uri.EscapeDataString(file.Sha256)}&encrypted={QueryFlag(encrypted)}";
+            return PutBodyAsync(uri, source, contentType: null, cancellationToken);
+        }
+
+        private static string QueryFlag(bool value)
+        {
+            return value ? "true" : "false";
+        }
+
+        /// <summary>
+        /// Sends <paramref name="source"/> as the body of one streamed PUT to <paramref name="uri"/>, typed
+        /// <paramref name="contentType"/> when given, which cannot be repeated after a refused token.
+        /// </summary>
+        private async Task<ShelfFile> PutBodyAsync(string uri, UploadSource source, string? contentType, CancellationToken cancellationToken)
+        {
             using HttpResponseMessage response = await _connection.SendRawAsync(
                 () =>
                 {
                     StreamContent body = new StreamContent(source.Stream);
                     body.Headers.ContentLength = source.SizeBytes;
-                    body.Headers.ContentType = MediaTypeHeaderValue.Parse(upload.ContentType);
+                    if (contentType != null)
+                    {
+                        body.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
+                    }
+
                     return new HttpRequestMessage(HttpMethod.Put, uri) { Content = body };
                 },
                 cancellationToken,
@@ -311,29 +347,54 @@ namespace ByteShelfClient.Http
             return await ApiConnection.ReadAsync(response, ByteShelfJsonContext.Default.ShelfFile, cancellationToken).ConfigureAwait(false);
         }
 
-        /// <summary>
-        /// Starts a resumable upload, sends the content a chunk at a time, and completes it. A chunk
-        /// that is interrupted (<see cref="IsInterruption"/>) is resumed from where the server says the
-        /// upload stands, up to <see cref="MaxResumes"/> times in a row. Any other failure aborts the
-        /// upload, so its reservation against the quota does not linger until it expires.
-        /// </summary>
-        private async Task<ShelfFile> UploadInChunksAsync(NormalizedUpload upload, UploadSource source, CancellationToken cancellationToken)
+        /// <summary>Stores a file as a resumable upload (<see cref="UploadInChunksAsync(UploadSource, Func{CancellationToken, Task{UploadSession}}, CancellationToken)"/>).</summary>
+        private Task<ShelfFile> UploadInChunksAsync(NormalizedUpload upload, UploadSource source, CancellationToken cancellationToken)
         {
-            UploadSession session = await _connection.SendAsync(
-                HttpMethod.Post,
-                $"{_base}/uploads",
-                new StartUploadRequest
-                {
-                    Path = upload.Path,
-                    SizeBytes = source.SizeBytes,
-                    ContentType = upload.ContentType,
-                    Overwrite = upload.Overwrite,
-                    Description = upload.Description,
-                    Encrypted = upload.Encrypted,
-                },
-                ByteShelfJsonContext.Default.StartUploadRequest,
-                ByteShelfJsonContext.Default.UploadSession,
-                cancellationToken).ConfigureAwait(false);
+            return UploadInChunksAsync(
+                source,
+                token => _connection.SendAsync(
+                    HttpMethod.Post,
+                    $"{_base}/uploads",
+                    new StartUploadRequest
+                    {
+                        Path = upload.Path,
+                        SizeBytes = source.SizeBytes,
+                        ContentType = upload.ContentType,
+                        Overwrite = upload.Overwrite,
+                        Description = upload.Description,
+                        Encrypted = upload.Encrypted,
+                    },
+                    ByteShelfJsonContext.Default.StartUploadRequest,
+                    ByteShelfJsonContext.Default.UploadSession,
+                    token),
+                cancellationToken);
+        }
+
+        /// <summary>Swaps a file's contents as a resumable upload, as <see cref="UploadInChunksAsync(NormalizedUpload, UploadSource, CancellationToken)"/> stores one.</summary>
+        private Task<ShelfFile> SwapInChunksAsync(ShelfFile file, UploadSource source, bool encrypted, CancellationToken cancellationToken)
+        {
+            return UploadInChunksAsync(
+                source,
+                token => _connection.SendAsync(
+                    HttpMethod.Post,
+                    $"{_base}/uploads/swap",
+                    new StartContentSwapRequest { FileId = file.Id, Sha256 = file.Sha256, SizeBytes = source.SizeBytes, Encrypted = encrypted },
+                    ByteShelfJsonContext.Default.StartContentSwapRequest,
+                    ByteShelfJsonContext.Default.UploadSession,
+                    token),
+                cancellationToken);
+        }
+
+        /// <summary>
+        /// Starts a resumable upload with <paramref name="start"/>, sends the content a chunk at a time,
+        /// and completes it. A chunk that is interrupted (<see cref="IsInterruption"/>) is resumed from
+        /// where the server says the upload stands, up to <see cref="MaxResumes"/> times in a row. Any
+        /// other failure aborts the upload, so its reservation against the quota does not linger until
+        /// it expires.
+        /// </summary>
+        private async Task<ShelfFile> UploadInChunksAsync(UploadSource source, Func<CancellationToken, Task<UploadSession>> start, CancellationToken cancellationToken)
+        {
+            UploadSession session = await start(cancellationToken).ConfigureAwait(false);
 
             string uploadUri = $"{_base}/uploads/{session.Id:D}";
             try

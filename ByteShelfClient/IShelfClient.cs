@@ -52,6 +52,17 @@ namespace ByteShelfClient
         Task<ShelfFile> UploadAsync(string path, Stream content, UploadOptions? options = null, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Swaps <paramref name="file"/>'s contents in place for <paramref name="content"/>, as the record
+        /// was read: encrypting a plain file (<paramref name="encrypted"/> true, an age file) or decrypting
+        /// an encrypted one. The file keeps its id, path, type and description; its old contents are gone
+        /// at once, on replicas too, never to the trash, unless another file holds the same ones. Throws a
+        /// conflict when its contents changed since <paramref name="file"/> was read, when the swap would
+        /// not flip its encryption, or would leave a plain file under an encrypted directory. Needs write
+        /// access.
+        /// </summary>
+        Task<ShelfFile> SwapContentAsync(ShelfFile file, Stream content, bool encrypted, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Opens a file's contents for reading. Dispose the stream when done. Reading it to the end
         /// checks the bytes against the file's SHA-256 and throws <see cref="IOException"/> if they differ.
         /// </summary>

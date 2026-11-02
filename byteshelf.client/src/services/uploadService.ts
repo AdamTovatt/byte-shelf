@@ -45,12 +45,48 @@ export async function uploadFile(request: UploadRequest): Promise<ShelfFile> {
     body: { path, sizeBytes: file.size, contentType, overwrite, encrypted },
     signal,
   }));
-  const uploadPath = { path: { shelf, uploadId: session.id } };
+  return sendInChunks(shelf, session.id, file, onProgress, signal);
+}
+
+export interface ContentSwap {
+  shelf: string;
+  /** The file as it was read: its id names it, and its SHA-256 is what its contents must still be. */
+  file: ShelfFile;
+  content: Blob;
+  /** Whether `content` is an age file: true encrypts the file, false decrypts it. */
+  encrypted: boolean;
+  signal?: AbortSignal;
+}
+
+/**
+ * Swaps a file's contents in place, keeping its id, path, type and description: encrypting a plain
+ * file or decrypting an encrypted one. Its old contents are gone at once, never to the trash. Refused
+ * (409) when it changed since it was read. Up to a chunk goes in one request, more as an upload.
+ */
+export async function swapContent({ shelf, file, content, encrypted, signal }: ContentSwap): Promise<ShelfFile> {
+  if (content.size <= CHUNK_BYTES) {
+    const query = new URLSearchParams({ id: file.id, sha256: file.sha256, encrypted: String(encrypted) });
+    const response = await authorizedFetch(apiUrl('/api/shelves/{shelf}/content/swap', { shelf }, query), { method: 'PUT', body: content, signal });
+    await throwIfFailed(response);
+    return (await response.json()) as ShelfFile;
+  }
+
+  const session = await unwrapResponse(apiClient.POST('/api/shelves/{shelf}/uploads/swap', {
+    params: { path: { shelf } },
+    body: { fileId: file.id, sha256: file.sha256, sizeBytes: content.size, encrypted },
+    signal,
+  }));
+  return sendInChunks(shelf, session.id, content, undefined, signal);
+}
+
+/** Sends `file` to the upload `uploadId` a chunk at a time and completes it; a failure aborts the upload. */
+async function sendInChunks(shelf: string, uploadId: string, file: Blob, onProgress: ((sentBytes: number) => void) | undefined, signal: AbortSignal | undefined): Promise<ShelfFile> {
+  const uploadPath = { path: { shelf, uploadId } };
 
   try {
     for (let offset = 0; offset < file.size; offset += CHUNK_BYTES) {
       const chunk = file.slice(offset, Math.min(offset + CHUNK_BYTES, file.size));
-      const url = apiUrl('/api/shelves/{shelf}/uploads/{uploadId}', { shelf, uploadId: session.id }, new URLSearchParams({ offset: String(offset) }));
+      const url = apiUrl('/api/shelves/{shelf}/uploads/{uploadId}', { shelf, uploadId }, new URLSearchParams({ offset: String(offset) }));
       await throwIfFailed(await authorizedFetch(url, { method: 'PUT', body: chunk, signal }));
       onProgress?.(offset + chunk.size);
     }

@@ -266,6 +266,114 @@ namespace ByteShelf.Server.Tests.Client
         }
 
         [Fact]
+        public async Task SwapContentAsync_EncryptingAPlainFile_KeepsTheFileAndLeavesNothingInTheTrash()
+        {
+            ShelfFile plain = await UploadTextAsync("/notes/a.txt", "the plain contents", contentType: "text/markdown");
+            await Shelf.SetDescriptionAsync(plain.Id, "kept");
+
+            ShelfFile swapped = await Shelf.SwapContentAsync(plain, await EncryptedAsync("the plain contents"), encrypted: true);
+
+            Assert.Equal((plain.Id, "/notes/a.txt", "text/markdown", "kept", true), (swapped.Id, swapped.Path, swapped.ContentType, swapped.Description, swapped.Encrypted));
+            Assert.NotEqual(plain.Sha256, swapped.Sha256);
+            Assert.Empty(await Shelf.GetTrashAsync());
+            Assert.Equal("the plain contents", await DecryptedTextAsync(swapped));
+        }
+
+        [Fact]
+        public async Task SwapContentAsync_DecryptingAMovedFile_FindsItByIdAndStoresItPlain()
+        {
+            ShelfFile encrypted = await UploadEncryptedAsync("/a.txt", "secret");
+            await Shelf.MoveFileAsync(encrypted.Id, "/moved/b.txt");
+
+            ShelfFile swapped = await Shelf.SwapContentAsync(encrypted, Text("secret"), encrypted: false);
+
+            Assert.Equal((encrypted.Id, "/moved/b.txt", false), (swapped.Id, swapped.Path, swapped.Encrypted));
+            Assert.Equal("secret", await ReadTextAsync(swapped.Id));
+            Assert.Empty(await Shelf.GetTrashAsync());
+        }
+
+        [Fact]
+        public async Task SwapContentAsync_WithARecordReadBeforeTheContentsChanged_ThrowsConflictAndKeepsTheChange()
+        {
+            ShelfFile read = await UploadEncryptedAsync("/a.txt", "first");
+            // Meanwhile another client decrypts it and encrypts it again, with other contents.
+            ShelfFile decrypted = await Shelf.SwapContentAsync(read, Text("first"), encrypted: false);
+            ShelfFile changed = await Shelf.SwapContentAsync(decrypted, await EncryptedAsync("second"), encrypted: true);
+
+            // Encrypted then and now, so only its contents tell the record is stale.
+            ByteShelfException exception = await RefusalOf(Shelf.SwapContentAsync(read, Text("first"), encrypted: false));
+
+            Assert.Equal(ErrorCodes.Conflict, exception.Code);
+            Assert.Equal(changed.Sha256, (await Shelf.GetFileAsync(read.Id)).Sha256);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task SwapContentAsync_ThatWouldNotFlipItsEncryption_ThrowsConflict(bool encrypted)
+        {
+            ShelfFile file = encrypted ? await UploadEncryptedAsync("/a.txt", "a") : await UploadTextAsync("/a.txt", "a");
+            Stream content = encrypted ? await EncryptedAsync("b") : Text("b");
+
+            ByteShelfException exception = await RefusalOf(Shelf.SwapContentAsync(file, content, encrypted));
+
+            Assert.Equal(ErrorCodes.Conflict, exception.Code);
+            Assert.Equal(file.Sha256, (await Shelf.GetFileAsync(file.Id)).Sha256);
+        }
+
+        [Fact]
+        public async Task SwapContentAsync_DecryptingUnderAnEncryptedDirectory_ThrowsConflict()
+        {
+            await Shelf.CreateDirectoryAsync("/secret");
+            await Shelf.EncryptDirectoryAsync("/secret", await CheckAsync());
+            ShelfFile file = await UploadEncryptedAsync("/secret/a.txt", "a");
+
+            ByteShelfException exception = await RefusalOf(Shelf.SwapContentAsync(file, Text("a"), encrypted: false));
+
+            Assert.Equal(ErrorCodes.Conflict, exception.Code);
+            ShelfFile kept = await Shelf.GetFileAsync(file.Id);
+            Assert.Equal((file.Sha256, true), (kept.Sha256, kept.Encrypted));
+        }
+
+        [Fact]
+        public async Task SwapContentAsync_MarkedEncryptedButNoAgeFile_ThrowsInvalidRequest()
+        {
+            ShelfFile file = await UploadTextAsync("/a.txt", "plain");
+
+            ByteShelfException exception = await RefusalOf(Shelf.SwapContentAsync(file, Text("still plain, though marked"), encrypted: true));
+
+            Assert.Equal(ErrorCodes.InvalidRequest, exception.Code);
+            Assert.False((await Shelf.GetFileAsync(file.Id)).Encrypted);
+        }
+
+        [Fact]
+        public async Task SwapContentAsync_OnAShelfWithRoomOnlyForWhatItAdds_SwapsItWhereANewFileWouldNotFit()
+        {
+            Stream encrypted = await EncryptedAsync("the plain contents");
+            await Client.CreateShelfAsync("small", quotaBytes: encrypted.Length);
+            ShelfFile plain = await Client.Shelf("small").UploadAsync("/a.txt", Text("the plain contents"));
+
+            ByteShelfException refused = await RefusalOf(Client.Shelf("small").UploadAsync("/b.bin", new MemoryStream(new byte[encrypted.Length])));
+            ShelfFile swapped = await Client.Shelf("small").SwapContentAsync(plain, encrypted, encrypted: true);
+
+            Assert.Equal(ErrorCodes.QuotaExceeded, refused.Code);
+            Assert.Equal((plain.Id, true), (swapped.Id, swapped.Encrypted));
+        }
+
+        [Fact]
+        public async Task SwapContentAsync_AddingMoreThanTheShelfHasFree_ThrowsQuotaExceeded()
+        {
+            Stream encrypted = await EncryptedAsync("the plain contents");
+            await Client.CreateShelfAsync("small", quotaBytes: encrypted.Length - 1);
+            ShelfFile plain = await Client.Shelf("small").UploadAsync("/a.txt", Text("the plain contents"));
+
+            ByteShelfException exception = await RefusalOf(Client.Shelf("small").SwapContentAsync(plain, encrypted, encrypted: true));
+
+            Assert.Equal(ErrorCodes.QuotaExceeded, exception.Code);
+            Assert.False((await Client.Shelf("small").GetFileAsync(plain.Id)).Encrypted);
+        }
+
+        [Fact]
         public async Task RemoveDirectoryEncryptionAsync_NotEncrypted_ThrowsConflict()
         {
             await Shelf.CreateDirectoryAsync("/plain");
@@ -279,6 +387,24 @@ namespace ByteShelf.Server.Tests.Client
         private static Task<string> CheckAsync()
         {
             return FolderPassword.CreateCheckAsync(FolderPasswordText, CancellationToken.None, workFactor: 10);
+        }
+
+        /// <summary><paramref name="text"/> encrypted with <see cref="FolderPasswordText"/>, at a low work factor so the tests run fast.</summary>
+        private static async Task<Stream> EncryptedAsync(string text)
+        {
+            MemoryStream encrypted = new MemoryStream();
+            await new Encryptor(FolderPasswordText, 10).EncryptAsync(new MemoryStream(Encoding.UTF8.GetBytes(text)), encrypted, CancellationToken.None);
+            encrypted.Position = 0;
+            return encrypted;
+        }
+
+        /// <summary>The contents of <paramref name="file"/>, decrypted with <see cref="FolderPasswordText"/>.</summary>
+        private async Task<string> DecryptedTextAsync(ShelfFile file)
+        {
+            await using Stream stored = await Shelf.OpenReadAsync(file.Id);
+            using MemoryStream decrypted = new MemoryStream();
+            await AgeEncryption.DecryptAsync(stored, decrypted, FolderPasswordText, CancellationToken.None);
+            return Encoding.UTF8.GetString(decrypted.ToArray());
         }
 
         /// <summary>Stores <paramref name="text"/> encrypted with <see cref="FolderPasswordText"/>, as the CLI does, at a low work factor so the tests run fast.</summary>

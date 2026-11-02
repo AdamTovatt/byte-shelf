@@ -55,19 +55,53 @@ namespace ByteShelf.Cli.Tests
         public async Task EncryptAFolder_ThenGetAndDecrypt_RoundTripsItsFiles()
         {
             await UploadAsync("/secret/a.txt", "first");
-            await UploadAsync("/secret/inner/b.txt", "second");
+            Guid id = (await UploadAsync("/secret/inner/b.txt", "second")).Id;
 
             CliRun encrypted = await RunAsync("encrypt", "docs:/secret", "--password-file", PasswordFile);
             ShelfFile stored = await Docs.GetFileAsync("/secret/inner/b.txt");
             CliRun saved = await RunAsync("get", "docs:/secret/a.txt", _work.File("a.txt"), "--password-file", PasswordFile);
             CliRun decrypted = await RunAsync("decrypt", "docs:/secret", "--password-file", PasswordFile);
 
+            ShelfFile afterwards = await Docs.GetFileAsync("/secret/inner/b.txt");
             Assert.Equal((CliApp.Succeeded, CliApp.Succeeded, CliApp.Succeeded), (encrypted.ExitCode, saved.ExitCode, decrypted.ExitCode));
             Assert.StartsWith("Encrypted 2 files", encrypted.Output, StringComparison.Ordinal);
-            Assert.Equal((true, "text/plain"), (stored.Encrypted, stored.ContentType));
+            Assert.Equal((true, "text/plain", id), (stored.Encrypted, stored.ContentType, stored.Id));
             Assert.Equal("first", await File.ReadAllTextAsync(_work.File("a.txt")));
-            Assert.Equal(("second", false), (await ReadAsync("/secret/inner/b.txt"), (await Docs.GetFileAsync("/secret/inner/b.txt")).Encrypted));
+            Assert.Equal(("second", false, id), (await ReadAsync("/secret/inner/b.txt"), afterwards.Encrypted, afterwards.Id));
             Assert.Null((await Docs.GetEncryptionAsync("/secret/a.txt")).EncryptedBy);
+            Assert.Empty(await Docs.GetTrashAsync());
+        }
+
+        [Fact]
+        public async Task EncryptAFolder_AFileChangedAfterTheRunListedIt_LeavesItOutAndKeepsTheChange()
+        {
+            await UploadAsync("/secret/a.txt", "a");
+            ShelfFile b = await UploadAsync("/secret/b.txt", "b");
+            bool changed = false;
+            IShelfClient shelf = ShelfStandIn.Over(Docs, (method, args) => method.Name == nameof(IShelfClient.ListTreeAsync)
+                ? ListThenChangeBAsync((TreeQuery?)args![0], (CancellationToken)args[1]!)
+                : null);
+
+            FolderTransferResult result = await Encrypting.EncryptAsync(shelf, ShelfLocation.Parse("docs:/secret"), _ => Password, FastWorkFactor, CancellationToken.None);
+
+            Assert.StartsWith("/secret/b.txt: ", Assert.Single(result.LeftOut), StringComparison.Ordinal);
+            Assert.True((await Docs.GetFileAsync("/secret/a.txt")).Encrypted);
+            Assert.Equal("b, changed", await ReadAsync("/secret/b.txt"));
+
+            // Between the run's listing and its swap of b, another client encrypts b and decrypts it
+            // again with other contents: plain then and now, so only its contents tell the listing is stale.
+            async Task<DirectoryTree> ListThenChangeBAsync(TreeQuery? query, CancellationToken cancellationToken)
+            {
+                DirectoryTree tree = await Docs.ListTreeAsync(query, cancellationToken);
+                if (!changed)
+                {
+                    changed = true;
+                    ShelfFile encryptedB = await Docs.SwapContentAsync(b, new MemoryStream(Encoding.ASCII.GetBytes("age-encryption.org/v1\nanother client's")), encrypted: true, cancellationToken);
+                    await Docs.SwapContentAsync(encryptedB, new MemoryStream(Encoding.UTF8.GetBytes("b, changed")), encrypted: false, cancellationToken);
+                }
+
+                return tree;
+            }
         }
 
         [Fact]
@@ -136,16 +170,18 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
-        public async Task EncryptThenDecrypt_OneFile_RoundTripsIt()
+        public async Task EncryptThenDecrypt_OneFile_RoundTripsItInPlaceWithNothingInTheTrash()
         {
-            await UploadAsync("/a.txt", "a");
+            Guid id = (await UploadAsync("/a.txt", "a")).Id;
 
             CliRun encrypted = await RunAsync("encrypt", "docs:/a.txt", "--password-file", PasswordFile);
-            bool wasEncrypted = (await Docs.GetFileAsync("/a.txt")).Encrypted;
+            ShelfFile whileEncrypted = await Docs.GetFileAsync("/a.txt");
             CliRun decrypted = await RunAsync("decrypt", "docs:/a.txt", "--password-file", PasswordFile);
 
-            Assert.Equal((CliApp.Succeeded, true, CliApp.Succeeded), (encrypted.ExitCode, wasEncrypted, decrypted.ExitCode));
-            Assert.Equal(("a", false), (await ReadAsync("/a.txt"), (await Docs.GetFileAsync("/a.txt")).Encrypted));
+            ShelfFile afterwards = await Docs.GetFileAsync("/a.txt");
+            Assert.Equal((CliApp.Succeeded, true, id, CliApp.Succeeded), (encrypted.ExitCode, whileEncrypted.Encrypted, whileEncrypted.Id, decrypted.ExitCode));
+            Assert.Equal(("a", false, id), (await ReadAsync("/a.txt"), afterwards.Encrypted, afterwards.Id));
+            Assert.Empty(await Docs.GetTrashAsync());
         }
 
         [Fact]

@@ -6,7 +6,7 @@ namespace ByteShelf.Server.Storage.Models
         /// <summary>The size of every file row on the shelf, the trash included.</summary>
         public required long UsedBytes { get; init; }
 
-        /// <summary>The declared size of every upload in progress.</summary>
+        /// <summary>The declared size of every upload in progress; for a swap, only what it adds to its file's size.</summary>
         public required long ReservedBytes { get; init; }
 
         /// <summary>How many live files the shelf holds.</summary>

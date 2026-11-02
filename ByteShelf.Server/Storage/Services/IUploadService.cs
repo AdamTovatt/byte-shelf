@@ -20,6 +20,18 @@ namespace ByteShelf.Server.Storage.Services
         /// <param name="startedBy">Who starts it, recorded as <see cref="UploadRecord.StartedBy"/>.</param>
         Task<UploadSession> StartAsync(Shelf shelf, StartUploadRequest request, string startedBy);
 
+        /// <summary>
+        /// Swaps a file's contents in place for <paramref name="content"/> in one go, as
+        /// <paramref name="request"/> describes: encrypting or decrypting it, keeping its id. Its old
+        /// contents are removed at once, never trashed, unless another file holds them.
+        /// </summary>
+        /// <exception cref="Shared.Errors.NotFoundException">The shelf has no such live file.</exception>
+        /// <exception cref="Shared.Errors.ConflictException">The swap is not allowed as things stand (<see cref="ShelfEncryption.RequireSwapAsync"/>).</exception>
+        Task<ShelfFile> SwapAsync(Shelf shelf, StartContentSwapRequest request, string startedBy, Stream content, CancellationToken cancellationToken);
+
+        /// <summary>Starts a resumable upload that swaps a file's contents when it completes, as <see cref="SwapAsync"/> does.</summary>
+        Task<UploadSession> StartSwapAsync(Shelf shelf, StartContentSwapRequest request, string startedBy);
+
         /// <exception cref="Shared.Errors.NotFoundException">The shelf has no such upload.</exception>
         Task<UploadRecord> GetAsync(Shelf shelf, Guid uploadId);
 

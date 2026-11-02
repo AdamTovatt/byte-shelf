@@ -12,5 +12,8 @@ namespace ByteShelf.Server.ChangeLog.Models
         public const string Deleted = "deleted";
         public const string Restored = "restored";
         public const string Purged = "purged";
+
+        /// <summary>A file's contents swapped in place, encrypting or decrypting it; the old ones are gone.</summary>
+        public const string Swapped = "swapped";
     }
 }

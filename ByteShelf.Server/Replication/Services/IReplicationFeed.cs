@@ -22,7 +22,10 @@ namespace ByteShelf.Server.Replication.Services
         /// </summary>
         Task<ChangeFeedPage> GetCopyAsync(long afterSequence, int limit);
 
-        /// <summary>Where the bytes of a file (live or in the trash) are; null once it has been purged.</summary>
-        Task<string?> GetObjectPathAsync(Guid fileId);
+        /// <summary>
+        /// Where the bytes of a file (live or in the trash) are, while they are still
+        /// <paramref name="sha256"/>; null once it has been purged or its contents swapped for others.
+        /// </summary>
+        Task<string?> GetObjectPathAsync(Guid fileId, string sha256);
     }
 }

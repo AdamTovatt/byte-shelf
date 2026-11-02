@@ -72,12 +72,13 @@ namespace ByteShelf.Server.Replication.Services
         }
 
         /// <summary>
-        /// Copies the bytes of file <paramref name="fileId"/> into <paramref name="destination"/>; checking
-        /// their hash is the caller's. False when the primary has purged the file since.
+        /// Copies the bytes of file <paramref name="fileId"/>, as <paramref name="sha256"/>, into
+        /// <paramref name="destination"/>; checking their hash is the caller's. False when the primary's
+        /// file no longer holds them: purged, or its contents swapped since.
         /// </summary>
-        public async Task<bool> DownloadObjectAsync(ReplicationSource source, Guid fileId, Stream destination, CancellationToken cancellationToken)
+        public async Task<bool> DownloadObjectAsync(ReplicationSource source, Guid fileId, string sha256, Stream destination, CancellationToken cancellationToken)
         {
-            using HttpRequestMessage message = Authorized(source, HttpMethod.Get, $"files/{fileId:D}/object");
+            using HttpRequestMessage message = Authorized(source, HttpMethod.Get, $"files/{fileId:D}/object?sha256={Uri.EscapeDataString(sha256)}");
             return await ExchangeAsync(message, source.PrimaryUrl, async (response, body, token) =>
             {
                 if (response.StatusCode == HttpStatusCode.NotFound)

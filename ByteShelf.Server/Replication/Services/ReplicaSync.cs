@@ -18,8 +18,9 @@ namespace ByteShelf.Server.Replication.Services
     /// <remarks>
     /// Every step runs under <see cref="MaintenanceGate"/>, which storage maintenance holds too: objects
     /// fetched but not yet named by a committed row are never swept, nor are their staging files. So
-    /// maintenance on a replica waits while a whole copy is taken. On a replica nothing else removes
-    /// objects, since every write that could is refused. A promotion pauses the steps
+    /// maintenance on a replica waits while a whole copy is taken. Besides maintenance, only a step
+    /// removes objects here: a file's old contents once a swap of them (encrypting or decrypting it in
+    /// place) commits, as on the primary; every write of this server's own is refused. A promotion pauses the steps
     /// (<see cref="ReplicaSyncControl"/>), stopping one in flight rather than waiting for it.
     /// </remarks>
     public sealed class ReplicaSync
@@ -30,6 +31,7 @@ namespace ByteShelf.Server.Replication.Services
         private readonly PrimaryClient _primaryClient;
         private readonly ReplicaApplier _applier;
         private readonly ObjectStore _objectStore;
+        private readonly ObjectCollector _objectCollector;
         private readonly StagingArea _stagingArea;
         private readonly MaintenanceGate _maintenanceGate;
         private readonly ReplicaSyncControl _control;
@@ -44,6 +46,7 @@ namespace ByteShelf.Server.Replication.Services
             PrimaryClient primaryClient,
             ReplicaApplier applier,
             ObjectStore objectStore,
+            ObjectCollector objectCollector,
             StagingArea stagingArea,
             MaintenanceGate maintenanceGate,
             ReplicaSyncControl control,
@@ -57,6 +60,7 @@ namespace ByteShelf.Server.Replication.Services
             _primaryClient = primaryClient;
             _applier = applier;
             _objectStore = objectStore;
+            _objectCollector = objectCollector;
             _stagingArea = stagingArea;
             _maintenanceGate = maintenanceGate;
             _control = control;
@@ -134,18 +138,33 @@ namespace ByteShelf.Server.Replication.Services
 
         private async Task ApplyAsync(ReplicationSource source, IReadOnlyList<ChangeLogEntry> entries, long reached, string? reachedFingerprint, CancellationToken cancellationToken)
         {
-            HashSet<Guid> purged = new HashSet<Guid>();
-            await FetchObjectsAsync(source, entries, purged, cancellationToken);
+            HashSet<string> unavailable = new HashSet<string>(StringComparer.Ordinal);
+            await FetchObjectsAsync(source, entries, unavailable, cancellationToken);
 
-            IReadOnlyList<Guid> removedUsers;
+            AppliedChanges changes = new AppliedChanges();
             await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
             {
-                removedUsers = await _applier.ApplyAsync(WithoutPurged(entries, purged), session);
+                await _applier.ApplyAsync(WithoutUnavailable(entries, unavailable), session, changes);
                 await _sourceRepository.SetProgressAsync(reached, reachedFingerprint, _timeProvider.GetUtcNow(), session);
                 await session.CommitAsync();
             }
 
-            await EndSessionsAsync(removedUsers);
+            await FinishAsync(changes);
+        }
+
+        /// <summary>
+        /// Does what applied changes leave to do once they commit: ends removed users' sessions first, the
+        /// part that matters for safety, then removes at once the old contents of files swapped in place
+        /// (encrypted or decrypted), as the primary did, unless a row here still points at them.
+        /// </summary>
+        private async Task FinishAsync(AppliedChanges changes)
+        {
+            foreach (Guid userId in changes.RemovedUsers)
+            {
+                await _userService.EndSessionsAsync(userId);
+            }
+
+            await _objectCollector.RemoveReleasedAsync(changes.ReleasedObjects);
         }
 
         /// <summary>
@@ -163,7 +182,7 @@ namespace ByteShelf.Server.Replication.Services
 
             long? startedAt = null;
             long after = 0;
-            HashSet<Guid> purged = new HashSet<Guid>();
+            HashSet<string> unavailable = new HashSet<string>(StringComparer.Ordinal);
             while (true)
             {
                 ChangeFeedPage page = await _primaryClient.GetCopyAsync(source, after, _pageSize, cancellationToken);
@@ -175,7 +194,7 @@ namespace ByteShelf.Server.Replication.Services
                     await session.CommitAsync();
                 }
 
-                await FetchObjectsAsync(source, page.Entries, purged, cancellationToken);
+                await FetchObjectsAsync(source, page.Entries, unavailable, cancellationToken);
 
                 if (!page.HasMore || page.Entries.Count == 0)
                 {
@@ -185,10 +204,10 @@ namespace ByteShelf.Server.Replication.Services
                 after = page.Entries[^1].Sequence;
             }
 
-            List<Guid> removedUsers = new List<Guid>();
+            AppliedChanges changes = new AppliedChanges();
             await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
             {
-                removedUsers.AddRange(await _applier.RemoveMissingFromCopyAsync(session));
+                await _applier.RemoveMissingFromCopyAsync(session, changes);
 
                 long applied = 0;
                 while (true)
@@ -199,7 +218,7 @@ namespace ByteShelf.Server.Replication.Services
                         break;
                     }
 
-                    removedUsers.AddRange(await _applier.ApplyAsync(WithoutPurged(copied, purged), session));
+                    await _applier.ApplyAsync(WithoutUnavailable(copied, unavailable), session, changes);
                     applied = copied[^1].Sequence;
                 }
 
@@ -210,15 +229,17 @@ namespace ByteShelf.Server.Replication.Services
                 await session.CommitAsync();
             }
 
-            await EndSessionsAsync(removedUsers);
+            await FinishAsync(changes);
         }
 
         /// <summary>
         /// Fetches every object the files in <paramref name="entries"/> name that is not here yet, checking
-        /// each one's hash, and adds to <paramref name="purged"/> the files the primary has purged since:
-        /// their bytes are gone there, so their entries are not applied, and a removal follows in the log.
+        /// each one's hash, and adds to <paramref name="unavailable"/> the objects none of those files holds
+        /// on the primary any more: purged, or swapped for other contents (encrypted or decrypted in place).
+        /// The entries naming them are not applied, since the log goes on to the files' removal or their
+        /// newer state.
         /// </summary>
-        private async Task FetchObjectsAsync(ReplicationSource source, IReadOnlyList<ChangeLogEntry> entries, ISet<Guid> purged, CancellationToken cancellationToken)
+        private async Task FetchObjectsAsync(ReplicationSource source, IReadOnlyList<ChangeLogEntry> entries, ISet<string> unavailable, CancellationToken cancellationToken)
         {
             IEnumerable<IGrouping<string, Guid>> filesByObject = entries
                 .Where(entry => entry.EntityType == ChangeEntityType.File && entry.Payload != null)
@@ -248,20 +269,28 @@ namespace ByteShelf.Server.Replication.Services
 
                 if (!fetched)
                 {
-                    purged.UnionWith(files);
+                    unavailable.Add(files.Key);
                 }
             }
         }
 
-        /// <summary>The entries to apply: all but the writes of files whose bytes the primary no longer has.</summary>
-        private static IReadOnlyList<ChangeLogEntry> WithoutPurged(IReadOnlyList<ChangeLogEntry> entries, IReadOnlySet<Guid> purged)
+        /// <summary>
+        /// The entries to apply: all but the writes of files naming contents the primary no longer has.
+        /// Only those writes: a later entry of the same file naming other contents still applies.
+        /// </summary>
+        private static IReadOnlyList<ChangeLogEntry> WithoutUnavailable(IReadOnlyList<ChangeLogEntry> entries, IReadOnlySet<string> unavailable)
         {
-            return purged.Count == 0
+            return unavailable.Count == 0
                 ? entries
-                : entries.Where(entry => !(entry.EntityType == ChangeEntityType.File && entry.Payload != null && purged.Contains(entry.EntityId))).ToList();
+                : entries.Where(entry => !(entry.EntityType == ChangeEntityType.File
+                    && entry.Payload != null
+                    && unavailable.Contains(ChangePayload.Deserialize<FileRecord>(entry.Payload).Sha256))).ToList();
         }
 
-        /// <summary>Fetches one file's bytes as <paramref name="sha256"/>; false when the primary has purged the file.</summary>
+        /// <summary>
+        /// Fetches one file's bytes as <paramref name="sha256"/>; false when the primary's file no longer
+        /// holds them: purged, or its contents swapped since.
+        /// </summary>
         private async Task<bool> FetchObjectAsync(ReplicationSource source, Guid fileId, string sha256, CancellationToken cancellationToken)
         {
             Guid stagingId = Guid.NewGuid();
@@ -269,7 +298,7 @@ namespace ByteShelf.Server.Replication.Services
             {
                 await using (FileStream file = new FileStream(_stagingArea.GetPath(stagingId), FileMode.CreateNew, FileAccess.Write, FileShare.None, bufferSize: 1, FileOptions.Asynchronous))
                 {
-                    if (!await _primaryClient.DownloadObjectAsync(source, fileId, file, cancellationToken))
+                    if (!await _primaryClient.DownloadObjectAsync(source, fileId, sha256, file, cancellationToken))
                     {
                         return false;
                     }
@@ -294,14 +323,6 @@ namespace ByteShelf.Server.Replication.Services
             finally
             {
                 _stagingArea.Delete(stagingId);
-            }
-        }
-
-        private async Task EndSessionsAsync(IReadOnlyList<Guid> removedUsers)
-        {
-            foreach (Guid userId in removedUsers)
-            {
-                await _userService.EndSessionsAsync(userId);
             }
         }
     }

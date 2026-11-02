@@ -9,16 +9,12 @@ namespace ByteShelf.Server.Storage.Models
         /// <summary>Who started the upload, as the caller's id (<c>user:&lt;id&gt;</c> or <c>key:&lt;id&gt;</c>).</summary>
         public required string StartedBy { get; init; }
 
-        /// <summary>The normalized path the file will be stored at.</summary>
-        public required string Path { get; init; }
+        /// <summary>Where the bytes go once the upload finishes.</summary>
+        public required UploadTarget Target { get; init; }
 
         public required string ContentType { get; init; }
         public required long SizeBytes { get; init; }
         public required long ReceivedBytes { get; init; }
-        public required bool Overwrite { get; init; }
-
-        /// <summary>The description the file is stored with, as <see cref="ByteShelfCommon.FileDescription.Normalize"/> left it.</summary>
-        public string? Description { get; init; }
 
         /// <summary>Whether the bytes are an age file encrypted with a password, as the file will be stored.</summary>
         public bool Encrypted { get; init; }
@@ -31,4 +27,20 @@ namespace ByteShelf.Server.Storage.Models
 
         public bool IsComplete => ReceivedBytes == SizeBytes;
     }
+
+    /// <summary>Where an upload's bytes go: a new file at a path, or an existing file's contents swapped in place.</summary>
+    public abstract record UploadTarget;
+
+    /// <summary>
+    /// A new file at <paramref name="Path"/> (normalized), replacing a file there only when
+    /// <paramref name="Overwrite"/>, described as <paramref name="Description"/>
+    /// (<see cref="ByteShelfCommon.FileDescription.Normalize"/>d) or, when null, as the file it replaces.
+    /// </summary>
+    public sealed record StoreAtPath(string Path, bool Overwrite, string? Description) : UploadTarget;
+
+    /// <summary>
+    /// File <paramref name="FileId"/>'s contents, swapped in place so it keeps its id, while they are
+    /// still <paramref name="Sha256"/>: a client encrypting or decrypting it.
+    /// </summary>
+    public sealed record ContentSwap(Guid FileId, string Sha256) : UploadTarget;
 }

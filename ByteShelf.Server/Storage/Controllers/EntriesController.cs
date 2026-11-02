@@ -199,5 +199,30 @@ namespace ByteShelf.Server.Storage.Controllers
                 Request, path, overwrite, description: null, encrypted, "A single upload needs Content-Length. Send content of unknown length as a resumable upload.");
             return Ok(await _uploadService.StoreAsync(Shelf, request, Access.Caller.Id, Request.Body, cancellationToken));
         }
+
+        /// <summary>
+        /// Swaps the contents of the file <c>id</c> in place for the request body, in one streamed request
+        /// with <c>Content-Length</c>: encrypting a plain file (<c>encrypted=true</c>, an age file) or
+        /// decrypting an encrypted one, while its contents are still <c>sha256</c> (409 otherwise, or when
+        /// the swap would not flip its encryption, or would put a plain file under an encrypted directory).
+        /// The file keeps its id, path, type and description; its old contents are removed at once, never
+        /// trashed, unless another file holds them. Needs write access.
+        /// </summary>
+        [HttpPut("content/swap")]
+        [ShelfAccess(ShelfOperation.Write)]
+        [DisableRequestSizeLimit]
+        [ProducesResponseType(typeof(ShelfFile), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 403)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 409)]
+        [ProducesResponseType(typeof(ErrorResponse), 411)]
+        [ProducesResponseType(typeof(ErrorResponse), 507)]
+        public async Task<IActionResult> SwapContent([FromQuery] Guid id, [FromQuery] string sha256, [FromQuery] bool encrypted, CancellationToken cancellationToken = default)
+        {
+            long length = Request.ContentLength ?? throw new LengthRequiredException("A single swap needs Content-Length. Send content of unknown length as a resumable swap.");
+            StartContentSwapRequest request = new StartContentSwapRequest { FileId = id, Sha256 = sha256, SizeBytes = length, Encrypted = encrypted };
+            return Ok(await _uploadService.SwapAsync(Shelf, request, Access.Caller.Id, Request.Body, cancellationToken));
+        }
     }
 }

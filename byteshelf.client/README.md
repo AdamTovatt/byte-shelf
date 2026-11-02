@@ -58,8 +58,9 @@ npm run codegen    # in a second terminal
   middle (`components/MiddleTruncatedName.tsx`).
 - **Encryption** (`hooks/useEncryption.tsx`, `lib/encryption/`): a file's or folder's menu encrypts
   it with a password, typed twice and then a warning that a lost one cannot be recovered; typage
-  encrypts in the browser at age's work factor, about a second a file, and the file is stored over
-  itself. Inside an encrypted folder, a file is encrypted with the folder's password and a folder
+  encrypts in the browser at age's work factor, about a second a file, and the file's contents are
+  swapped in place: it keeps its id, and the plain contents are gone at once, never to the trash. A
+  file changed since it was read is refused and left as it is. Inside an encrypted folder, a file is encrypted with the folder's password and a folder
   cannot be encrypted on its own; files uploaded into one are encrypted with its password. A folder
   holding a file encrypted with another password is refused before anything changes. Removing a
   folder's encryption lets plain files in again and decrypts every file under it. A file that fails

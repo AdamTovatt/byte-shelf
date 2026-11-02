@@ -189,6 +189,28 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<FileRecord?> SwapContentAsync(Guid id, string expectedSha256, string sha256, long sizeBytes, bool encrypted, DateTimeOffset at, IDbSession session)
+        {
+            string query = $@"
+                UPDATE file
+                SET sha256 = @{nameof(sha256)}, size_bytes = @{nameof(sizeBytes)}, encrypted = @{nameof(encrypted)}, updated_at = @{nameof(at)}
+                WHERE id = @{nameof(id)} AND deleted_at IS NULL AND sha256 = @{nameof(expectedSha256)}
+                RETURNING {SelectColumns}";
+
+            FileEntity? swapped = await session.Connection.QuerySingleOrDefaultAsync<FileEntity>(
+                query, new { id, expectedSha256, sha256, sizeBytes, encrypted, at }, transaction: session.Transaction);
+
+            if (swapped == null)
+            {
+                return null;
+            }
+
+            FileRecord record = swapped.ToDomain();
+            await _changeLog.AppendAsync(ChangeEntityType.File, id, ChangeAction.Swapped, record, at, session);
+            return record;
+        }
+
+        /// <inheritdoc />
         public async Task<IReadOnlyList<(FileRecord File, string Path)>> GetLiveSubtreeAsync(Guid directoryId, string directoryPath, int? maxDepth, string? after, int maxRows, IDbSession? session = null)
         {
             SubtreeWalk walk = SubtreeWalk.ForFiles(directoryId, directoryPath, maxDepth);
@@ -384,6 +406,20 @@ namespace ByteShelf.Server.Storage.Repositories
                     "SELECT DISTINCT sha256 FROM file ORDER BY sha256", transaction: dbSession.Transaction);
 
                 return (IReadOnlyList<string>)hashes.ToList();
+            }, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<IReadOnlyList<FileRecord>> GetLiveWithObjectAsync(string sha256, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string query = $"SELECT {SelectColumns} FROM file WHERE sha256 = @{nameof(sha256)} AND deleted_at IS NULL";
+
+                IEnumerable<FileEntity> entities = await dbSession.Connection.QueryAsync<FileEntity>(
+                    query, new { sha256 }, transaction: dbSession.Transaction);
+
+                return (IReadOnlyList<FileRecord>)entities.Select(entity => entity.ToDomain()).ToList();
             }, session);
         }
 

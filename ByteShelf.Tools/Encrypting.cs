@@ -13,7 +13,8 @@ namespace ByteShelf.Tools
 
     /// <summary>
     /// Encrypting and decrypting what is stored, in place: a client downloads the file, encrypts or
-    /// decrypts it, and stores it over itself. A directory is encrypted first, so nothing plain lands
+    /// decrypts it, and swaps its contents for the result, so it keeps its id and the old contents are
+    /// gone at once, never to the trash (<see cref="IShelfClient.SwapContentAsync"/>). A directory is encrypted first, so nothing plain lands
     /// in it meanwhile, and then every file under it; decrypting removes the directory's encryption
     /// first, as the server keeps plain files out of an encrypted one. Either can be run again to
     /// finish one that was stopped part way: encrypting goes on under the encrypted directory, and
@@ -170,30 +171,34 @@ namespace ByteShelf.Tools
             return folder != null ? await FolderPasswordAsync(folder, password, cancellationToken) : password(PasswordUse.Existing);
         }
 
-        /// <summary>Stores the file's contents encrypted over it, keeping its type and description.</summary>
+        /// <summary>
+        /// Swaps the file's contents for themselves encrypted, keeping its id, type and description; the
+        /// plain ones are gone at once. Refused when the file changed since it was listed.
+        /// </summary>
         private static async Task EncryptFileAsync(IShelfClient shelf, ShelfFile file, Encryptor encryptor, FolderTransferResult result, CancellationToken cancellationToken)
         {
+            await using FileStream encrypted = Transfers.OpenSideFile();
             await using (Stream content = await shelf.OpenReadAsync(file.Id, cancellationToken))
             {
-                await Transfers.UploadAsync(shelf, file.Path, content, Replacing(file), encryptor, cancellationToken);
+                await encryptor.EncryptAsync(content, encrypted, cancellationToken);
             }
 
+            encrypted.Position = 0;
+            await shelf.SwapContentAsync(file, encrypted, encrypted: true, cancellationToken);
             result.Add(file.SizeBytes);
         }
 
-        /// <summary>Stores the file's contents decrypted over it, keeping its type and description.</summary>
+        /// <summary>
+        /// Swaps the file's contents for themselves decrypted, keeping its id, type and description; the
+        /// encrypted ones are gone at once. Refused when the file changed since it was listed.
+        /// </summary>
         private static async Task DecryptFileAsync(IShelfClient shelf, ShelfFile file, string password, FolderTransferResult result, CancellationToken cancellationToken)
         {
             await using FileStream decrypted = Transfers.OpenSideFile();
             await Transfers.WriteAsync(shelf, file, decrypted, EncryptedFiles.DecryptedWith(password), cancellationToken);
             decrypted.Position = 0;
-            await shelf.UploadAsync(file.Path, decrypted, Replacing(file) with { Encrypted = false }, cancellationToken);
+            await shelf.SwapContentAsync(file, decrypted, encrypted: false, cancellationToken);
             result.Add(file.SizeBytes);
-        }
-
-        private static UploadOptions Replacing(ShelfFile file)
-        {
-            return new UploadOptions { Overwrite = true, ContentType = file.ContentType };
         }
 
         /// <exception cref="UsageException">The password does not open some of <paramref name="files"/>, which it names.</exception>
@@ -227,8 +232,8 @@ namespace ByteShelf.Tools
 
         /// <summary>
         /// Every file under the directory, and the first encrypted directory below it, if any. The whole
-        /// list is read before anything is replaced: a file replaced in place gets a new id and sorts the
-        /// same, so paging while replacing would meet it again.
+        /// list is read before anything is swapped, so the run works from one listing, and each swap is
+        /// refused if its file changed since then.
         /// </summary>
         private static async Task<(List<ShelfFile> Files, ShelfDirectory? EncryptedBelow)> TreeUnderAsync(IShelfClient shelf, string directoryPath, CancellationToken cancellationToken)
         {

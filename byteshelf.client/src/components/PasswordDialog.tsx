@@ -59,6 +59,9 @@ export function PasswordDialog({ request, onDone, onCancel }: PasswordDialogProp
           A lost password cannot be recovered: nothing, ByteShelf included, can open these contents without it.
         </p>
         <p className="text-body-md text-muted">
+          The unencrypted contents are deleted at once, not kept in the trash or on replicas. A backup taken before still holds them.
+        </p>
+        <p className="text-body-md text-muted">
           Only the contents are encrypted. Names, sizes, folders and descriptions stay visible, and search still finds them.
         </p>
       </FormDialog>

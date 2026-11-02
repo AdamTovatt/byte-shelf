@@ -105,7 +105,10 @@ decrypts streams; it follows the specification, passes its official test vectors
 with `EncryptDirectoryAsync` and a check from `FolderPassword.CreateCheckAsync`; from then on every
 file stored under it must be encrypted with its password, which `FolderPassword.MatchesAsync` tells
 against the check that `GetEncryptionAsync` or a listing's `EncryptedBy` answers. Files already
-there stay as they are until the client encrypts them in place. `RemoveDirectoryEncryptionAsync`
+there stay as they are until the client encrypts them in place with `SwapContentAsync`, which takes
+the file's record as it was read and stores the encrypted (or decrypted) contents in its place: the
+file keeps its id, and its old contents are gone at once, from replicas too, never to the trash.
+A file that changed since it was read is refused with a conflict. `RemoveDirectoryEncryptionAsync`
 ends the rule and leaves the files encrypted. The server keeps the rule
 ([Storage](../ByteShelf.Server/Storage/Storage.md#encryption-shelfencryption)), and so does the
 in-memory client. Neither kind of link reaches an encrypted file: making a download link to one, or

@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { saveTokens } from './authService';
-import { CHUNK_BYTES, uploadFile } from './uploadService';
+import { CHUNK_BYTES, swapContent, uploadFile } from './uploadService';
+import type { ShelfFile } from './shelfService';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
 
@@ -56,6 +57,31 @@ describe('uploads', () => {
       'POST /api/shelves/docs/uploads/u1/complete',
     ]);
     expect(progress).toEqual([CHUNK_BYTES, CHUNK_BYTES + 1]);
+  });
+
+  it('swaps a file\'s contents by its id and the SHA-256 it was read with, in one request or in chunks', async () => {
+    const starts: unknown[] = [];
+    const sent = stubServer(async (request) => {
+      const path = new URL(request.url).pathname;
+      if (request.method === 'POST' && path.endsWith('/uploads/swap')) {
+        starts.push(await request.json());
+        return json({ id: 'u1' });
+      }
+      return path.endsWith('/content/swap') ? json(storedFile) : acceptingServer(request);
+    });
+    const file = { ...storedFile, id: 'f1', sha256: 'abc' } as unknown as ShelfFile;
+
+    await swapContent({ shelf: 'docs', file, content: new Blob(['age']), encrypted: true });
+    await swapContent({ shelf: 'docs', file, content: new Blob([new Uint8Array(CHUNK_BYTES + 1)]), encrypted: false });
+
+    expect(routes(sent)).toEqual([
+      'PUT /api/shelves/docs/content/swap?id=f1&sha256=abc&encrypted=true',
+      'POST /api/shelves/docs/uploads/swap',
+      'PUT /api/shelves/docs/uploads/u1?offset=0',
+      `PUT /api/shelves/docs/uploads/u1?offset=${CHUNK_BYTES}`,
+      'POST /api/shelves/docs/uploads/u1/complete',
+    ]);
+    expect(starts).toEqual([{ fileId: 'f1', sha256: 'abc', sizeBytes: CHUNK_BYTES + 1, encrypted: false }]);
   });
 
   it('marks an encrypted file encrypted, in the query of one request or the start of chunks, and a plain one in neither', async () => {

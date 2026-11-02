@@ -123,6 +123,19 @@ namespace ByteShelf.Server.Tests.Replication
             return (await response.Content.ReadFromJsonAsync<ShelfFile>())!;
         }
 
+        /// <summary>
+        /// Encrypts <paramref name="file"/> in place on the primary, swapping its contents for an age file
+        /// of <paramref name="text"/>: the server checks only that encrypted contents start as one.
+        /// </summary>
+        public async Task<ShelfFile> SwapOnPrimaryAsync(string shelf, ShelfFile file, string text)
+        {
+            using StringContent content = new StringContent($"age-encryption.org/v1\n{text}");
+            HttpResponseMessage response = await Primary.AdminClient.PutAsync(
+                $"/api/shelves/{shelf}/content/swap?id={file.Id}&sha256={file.Sha256}&encrypted=true", content);
+            response.EnsureSuccessStatusCode();
+            return (await response.Content.ReadFromJsonAsync<ShelfFile>())!;
+        }
+
         /// <summary>Deletes a file on the primary and empties the shelf's trash, so the file is purged there.</summary>
         public async Task PurgeOnPrimaryAsync(string shelf, string path)
         {

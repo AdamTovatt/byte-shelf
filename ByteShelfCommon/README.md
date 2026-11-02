@@ -21,7 +21,7 @@ AOT-compatible.
 | `TreeQuery`, `DirectoryTree` | What to list of everything under a directory (a depth, a page), and one page of it. |
 | `StoredOrder` | The order names and paths are listed in: by code point, as the server's database sorts them. |
 | `CreateDirectoryRequest`, `MoveRequest` | Creates a directory; moves or renames a file or directory. |
-| `StartUploadRequest`, `UploadSession` | Starting and following a resumable upload. |
+| `StartUploadRequest`, `StartContentSwapRequest`, `UploadSession` | Starting and following a resumable upload, of a new file or swapping a file's contents in place. |
 | `TrashEntry`, `TrashEntryKind` | A deletion that can still be restored. |
 | `ShelfAccessGrant`, `SetShelfAccessRequest`, `ShelfAccessPermission` | A user's access to a shelf, and giving it. |
 | `ShelfKeyInfo`, `CreateShelfKeyRequest`, `CreatedShelfKey`, `ShelfKeyPermission` | A program's key to one shelf, and creating one. |

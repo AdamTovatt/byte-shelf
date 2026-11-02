@@ -19,6 +19,8 @@ namespace ByteShelf.Server.Storage.Repositories
             description,
             encrypted,
             is_resumable AS {nameof(UploadEntity.IsResumable)},
+            swap_file_id AS {nameof(UploadEntity.SwapFileId)},
+            swap_sha256 AS {nameof(UploadEntity.SwapSha256)},
             created_at AS {nameof(UploadEntity.CreatedAt)},
             last_activity_at AS {nameof(UploadEntity.LastActivityAt)}";
 
@@ -45,9 +47,11 @@ namespace ByteShelf.Server.Storage.Repositories
         public async Task InsertAsync(UploadRecord upload, IDbSession session)
         {
             string query = @"
-                INSERT INTO upload (id, shelf_id, started_by, path, content_type, size_bytes, received_bytes, overwrite, description, encrypted, is_resumable, created_at, last_activity_at)
-                VALUES (@Id, @ShelfId, @StartedBy, @Path, @ContentType, @SizeBytes, @ReceivedBytes, @Overwrite, @Description, @Encrypted, @IsResumable, @CreatedAt, @LastActivityAt)";
+                INSERT INTO upload (id, shelf_id, started_by, path, content_type, size_bytes, received_bytes, overwrite, description, encrypted, is_resumable, swap_file_id, swap_sha256, created_at, last_activity_at)
+                VALUES (@Id, @ShelfId, @StartedBy, @Path, @ContentType, @SizeBytes, @ReceivedBytes, @Overwrite, @Description, @Encrypted, @IsResumable, @SwapFileId, @SwapSha256, @CreatedAt, @LastActivityAt)";
 
+            StoreAtPath? store = upload.Target as StoreAtPath;
+            ContentSwap? swap = upload.Target as ContentSwap;
             await session.Connection.ExecuteAsync(
                 query,
                 new
@@ -55,14 +59,16 @@ namespace ByteShelf.Server.Storage.Repositories
                     upload.Id,
                     upload.ShelfId,
                     upload.StartedBy,
-                    upload.Path,
+                    store?.Path,
                     upload.ContentType,
                     upload.SizeBytes,
                     upload.ReceivedBytes,
-                    upload.Overwrite,
-                    upload.Description,
+                    store?.Overwrite,
+                    store?.Description,
                     upload.Encrypted,
                     upload.IsResumable,
+                    SwapFileId = swap?.FileId,
+                    SwapSha256 = swap?.Sha256,
                     upload.CreatedAt,
                     upload.LastActivityAt,
                 },
@@ -140,14 +146,16 @@ namespace ByteShelf.Server.Storage.Repositories
             public Guid Id { get; set; }
             public Guid ShelfId { get; set; }
             public string StartedBy { get; set; } = string.Empty;
-            public string Path { get; set; } = string.Empty;
+            public string? Path { get; set; }
             public string ContentType { get; set; } = string.Empty;
             public long SizeBytes { get; set; }
             public long ReceivedBytes { get; set; }
-            public bool Overwrite { get; set; }
+            public bool? Overwrite { get; set; }
             public string? Description { get; set; }
             public bool Encrypted { get; set; }
             public bool IsResumable { get; set; }
+            public Guid? SwapFileId { get; set; }
+            public string? SwapSha256 { get; set; }
             public DateTimeOffset CreatedAt { get; set; }
             public DateTimeOffset LastActivityAt { get; set; }
 
@@ -158,12 +166,13 @@ namespace ByteShelf.Server.Storage.Repositories
                     Id = Id,
                     ShelfId = ShelfId,
                     StartedBy = StartedBy,
-                    Path = Path,
+                    // The table's check holds each kind to its own columns.
+                    Target = SwapFileId is Guid fileId
+                        ? new ContentSwap(fileId, SwapSha256!)
+                        : new StoreAtPath(Path!, Overwrite!.Value, Description),
                     ContentType = ContentType,
                     SizeBytes = SizeBytes,
                     ReceivedBytes = ReceivedBytes,
-                    Overwrite = Overwrite,
-                    Description = Description,
                     Encrypted = Encrypted,
                     IsResumable = IsResumable,
                     CreatedAt = CreatedAt,

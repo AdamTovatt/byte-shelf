@@ -115,6 +115,80 @@ namespace ByteShelf.Server.Tests.Replication
         }
 
         [Fact]
+        public async Task Sync_ContentsSwappedOnThePrimary_RemovesTheOldOnesOnTheReplicaAtOnce()
+        {
+            await _pair.PairAsync();
+            ShelfFile plain = await _pair.PutOnPrimaryAsync("docs", "/a.txt", "plain contents");
+            await _pair.SyncAsync();
+            ObjectStore replicaObjects = _pair.Replica.Services.GetRequiredService<ObjectStore>();
+            Assert.True(replicaObjects.Exists(plain.Sha256));
+
+            await _pair.SwapOnPrimaryAsync("docs", plain, "the file");
+            await _pair.SyncAsync();
+
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            ShelfFile there = (await replica.GetFromJsonAsync<ShelfFile>("/api/shelves/docs/files?path=/a.txt"))!;
+            Assert.Equal((plain.Id, true), (there.Id, there.Encrypted));
+            Assert.False(replicaObjects.Exists(plain.Sha256));
+            Assert.True(replicaObjects.Exists(there.Sha256));
+            Assert.Empty((await replica.GetFromJsonAsync<List<TrashEntry>>("/api/shelves/docs/trash"))!);
+        }
+
+        [Fact]
+        public async Task Sync_FileStoredThenSwappedBeforeTheReplicaSawIt_TakesItsNewContents()
+        {
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+
+            // The entry that stored it names contents the primary no longer holds for it.
+            ShelfFile plain = await _pair.PutOnPrimaryAsync("docs", "/a.txt", "plain contents");
+            ShelfFile swapped = await _pair.SwapOnPrimaryAsync("docs", plain, "the file");
+            await _pair.SyncAsync();
+
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            ShelfFile there = (await replica.GetFromJsonAsync<ShelfFile>("/api/shelves/docs/files?path=/a.txt"))!;
+            Assert.Equal((plain.Id, swapped.Sha256, true), (there.Id, there.Sha256, there.Encrypted));
+        }
+
+        [Fact]
+        public async Task Sync_SwappedOutContentsAnotherFileHolds_KeepsThemOnTheReplica()
+        {
+            await _pair.PairAsync();
+            ShelfFile plain = await _pair.PutOnPrimaryAsync("docs", "/one.txt", "same");
+            await _pair.PutOnPrimaryAsync("docs", "/two.txt", "same");
+            await _pair.SyncAsync();
+
+            await _pair.SwapOnPrimaryAsync("docs", plain, "the file");
+            await _pair.SyncAsync();
+
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            Assert.True(_pair.Replica.Services.GetRequiredService<ObjectStore>().Exists(plain.Sha256));
+            Assert.Equal("same", await replica.GetStringAsync("/api/shelves/docs/content?path=/two.txt"));
+        }
+
+        [Fact]
+        public async Task Sync_ContentsSwappedThenAWholeCopy_RemovesTheOldOnesOnTheReplicaAtOnce()
+        {
+            await _pair.PairAsync();
+            ShelfFile plain = await _pair.PutOnPrimaryAsync("docs", "/a.txt", "plain contents");
+            await _pair.SyncAsync();
+            ObjectStore replicaObjects = _pair.Replica.Services.GetRequiredService<ObjectStore>();
+
+            await _pair.SwapOnPrimaryAsync("docs", plain, "the file");
+            // A move supersedes the swap's entry before the replica saw it, so compacting drops that and
+            // the replica, behind what was dropped, takes a whole copy.
+            (await _pair.Primary.AdminClient.PostAsJsonAsync("/api/shelves/docs/files/move?path=/a.txt", new MoveRequest { ToPath = "/b.txt" })).EnsureSuccessStatusCode();
+            await CompactPrimaryAsync();
+            await _pair.SyncOnceAsync();
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            Assert.True((await ReplicationPair.GetStatusAsync(replica)).Source!.Copying);
+            await _pair.SyncAsync();
+
+            Assert.True((await replica.GetFromJsonAsync<ShelfFile>("/api/shelves/docs/files?path=/b.txt"))!.Encrypted);
+            Assert.False(replicaObjects.Exists(plain.Sha256));
+        }
+
+        [Fact]
         public async Task Sync_FilePurgedOnThePrimary_StaysInTheReplicasTrash()
         {
             await _pair.PairAsync();

@@ -45,7 +45,7 @@ doubles from 5 seconds to 5 minutes.
 Each step reads a page of the primary's change log after the last sequence applied here
 (`GET api/replication/feed/changes?after=N&fingerprint=F`, which also tells the primary how far the
 replica is), fetches the bytes of every file it names that are not here yet
-(`GET api/replication/feed/files/{id}/object`), checks each one's SHA-256 before keeping it, and applies
+(`GET api/replication/feed/files/{id}/object?sha256=H`), checks each one's SHA-256 before keeping it, and applies
 the page in one transaction with how far it reaches. A replica stopped anywhere picks up where it was,
 and applying an entry twice is harmless. A page says whether more follow (`HasMore`); its length does
 not, since a primary may give fewer entries than asked for.
@@ -57,8 +57,10 @@ login, grant or key removed) and a later entry puts it back, so the result is al
 write is logged in the replica's own change log, so its pages update live and a promoted replica keeps a
 whole log.
 
-A file whose bytes the primary no longer has (it was purged before the replica fetched it) is passed
-over: a removal for it follows in the log.
+An entry naming contents the primary no longer holds for that file is passed over: the file was purged,
+or its contents swapped (encrypted or decrypted in place) before the replica fetched them. The primary
+serves a file's bytes only while they are still the SHA-256 asked for, and the log goes on to the file's
+removal or its newer state, which still applies even in the same page.
 
 **Deletions reach a replica late.** A file or directory the primary purges is only moved to the trash on
 the replica, which purges it with its own maintenance once the replica's restore window has passed since
@@ -67,6 +69,13 @@ deletion on the primary, not from the purge; something the replica only trashes 
 saw the deletion) counts from then. Either way a mistaken purge on the primary (emptying the trash) does
 not reach the backup at once. A shelf's removal removes what the replica held for it at once: the primary
 removes only an emptied shelf.
+
+**Swapped contents go at once.** Encrypting or decrypting a file swaps its contents in place, which the
+person confirmed cannot be undone ([Storage](../Storage/Storage.md#encryption-shelfencryption)). A row's
+SHA-256 changes in no other way, so when an applied state points a file here at other contents, the old
+object is removed once the page (or the whole copy) commits, unless a row here still points at it, such
+as another file with the same contents. Removed users' sessions end first; a removal that fails is logged
+and left to maintenance, which removes whatever nothing points at.
 
 A change of a type this build does not know (from a newer primary) stops replication with
 `ReplicaOutdatedException`, saying to update, rather than being skipped. The replica's admins see that
@@ -122,8 +131,9 @@ and when it did not, the replica stays listed there until removed.
 
 `MaintenanceGate` is held by storage maintenance for a whole pass and by the sync for a whole step, so the
 sweeps of `staging/` and of unreferenced objects never take bytes fetched but not yet named by a committed
-row. A whole copy is one step, so maintenance on a replica waits for it. On a replica nothing else removes
-objects, since every write that could is refused.
+row. A whole copy is one step, so maintenance on a replica waits for it. On a replica only a step removes
+objects besides maintenance, the old contents of a swap, since every write of its own that could is
+refused.
 
 ## Endpoints
 
@@ -137,7 +147,7 @@ objects, since every write that could is refused.
 | POST | `/api/replication/feed/accept` | a code's secret | The primary's half of pairing; 404 for a used or expired code. |
 | GET | `/api/replication/feed/changes?after=N&fingerprint=F&limit=L` | replica credential | The log after `N`, or that a copy is needed. |
 | GET | `/api/replication/feed/copy?after=N&limit=L` | replica credential | A page of a whole copy. |
-| GET | `/api/replication/feed/files/{id}/object` | replica credential | A file's bytes, live or in the trash; 404 once purged. |
+| GET | `/api/replication/feed/files/{id}/object?sha256=H` | replica credential | A file's bytes, live or in the trash, while they are still `H`; 404 once purged or swapped for other contents. |
 | DELETE | `/api/replication/feed/pairing` | replica credential | The replica stopped following. |
 
 The credentialed feed actions are outside the shared rate limits: a copy asks for every file one by one.

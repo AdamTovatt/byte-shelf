@@ -103,6 +103,39 @@ namespace ByteShelfClient.InMemory
             return await Run(cancellationToken, shelf => Store(shelf, upload, bytes)).ConfigureAwait(false);
         }
 
+        public async Task<ShelfFile> SwapContentAsync(ShelfFile file, Stream content, bool encrypted, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(file);
+            ArgumentNullException.ThrowIfNull(content);
+
+            using MemoryStream buffer = new MemoryStream();
+            await content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+            byte[] bytes = buffer.ToArray();
+
+            return await Run(cancellationToken, shelf =>
+            {
+                FileNode swapped = shelf.GetFile(EntryReference.ForId(file.Id));
+                string path = shelf.ToShelfFile(swapped).Path;
+                if (swapped.Sha256 != file.Sha256)
+                {
+                    throw InMemoryErrors.Conflict($"'{path}' has changed since its contents were read: read it again, then encrypt or decrypt it.");
+                }
+
+                shelf.RequireSwap(swapped, path, encrypted);
+                InMemoryShelf.RequireAgeFile(encrypted, bytes, path: null);
+
+                // Only what it adds, since the old contents go.
+                shelf.RequireRoomFor(Math.Max(0, bytes.LongLength - swapped.Content.LongLength));
+
+                // In place, never to the trash: the old contents are gone, as on the server.
+                swapped.Content = bytes;
+                swapped.Sha256 = Sha256Of(bytes);
+                swapped.Encrypted = encrypted;
+                swapped.UpdatedAt = _store.Now;
+                return shelf.ToShelfFile(swapped);
+            }).ConfigureAwait(false);
+        }
+
         public Task<ShelfFile> SetDescriptionAsync(EntryReference file, string? description, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(file);
@@ -526,10 +559,7 @@ namespace ByteShelfClient.InMemory
             }
 
             shelf.RequireStore(normalizedPath, upload.Encrypted);
-            if (upload.Encrypted && !FileEncryption.StartsAsAgeFile(bytes))
-            {
-                throw InMemoryErrors.Invalid($"'{normalizedPath}' was sent as encrypted, but it is not an age file.");
-            }
+            InMemoryShelf.RequireAgeFile(upload.Encrypted, bytes, normalizedPath);
 
             DirectoryNode? existingDirectory = shelf.FindDirectory(ShelfPath.GetParent(normalizedPath));
             if (existingDirectory != null)
@@ -537,16 +567,7 @@ namespace ByteShelfClient.InMemory
                 shelf.EnsureNameAvailable(existingDirectory.Id, ShelfPath.GetName(normalizedPath), normalizedPath, overwrite);
             }
 
-            if (shelf.QuotaBytes != null)
-            {
-                long free = shelf.QuotaBytes.Value - shelf.UsedBytes;
-                if (bytes.LongLength > free)
-                {
-                    throw new ByteShelfException(
-                        $"The shelf '{shelf.Name}' has {Math.Max(free, 0)} bytes free of its {shelf.QuotaBytes.Value}, too few for {bytes.LongLength}.",
-                        ErrorCodes.QuotaExceeded);
-                }
-            }
+            shelf.RequireRoomFor(bytes.LongLength);
 
             DateTimeOffset now = _store.Now;
             DirectoryNode directory = shelf.EnsureDirectory(ShelfPath.GetParent(normalizedPath), now);

@@ -244,7 +244,7 @@ namespace ByteShelf.Server.Tests.Replication
         private async Task ApplyAsync(params ChangeLogEntry[] entries)
         {
             await using IDbTransactionSession session = await Services.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync();
-            await Services.GetRequiredService<ReplicaApplier>().ApplyAsync(entries, session);
+            await Services.GetRequiredService<ReplicaApplier>().ApplyAsync(entries, session, new AppliedChanges());
             await session.CommitAsync();
         }
     }

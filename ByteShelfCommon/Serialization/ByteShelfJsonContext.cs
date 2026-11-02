@@ -29,6 +29,7 @@ namespace ByteShelfCommon.Serialization
     [JsonSerializable(typeof(SetDescriptionRequest))]
     [JsonSerializable(typeof(FileSearchResults))]
     [JsonSerializable(typeof(StartUploadRequest))]
+    [JsonSerializable(typeof(StartContentSwapRequest))]
     [JsonSerializable(typeof(UploadSession))]
     [JsonSerializable(typeof(TrashEntry))]
     [JsonSerializable(typeof(IReadOnlyList<TrashEntry>))]

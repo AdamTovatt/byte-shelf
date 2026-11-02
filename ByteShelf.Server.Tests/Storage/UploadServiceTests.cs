@@ -1,4 +1,5 @@
 using System.Text;
+using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
@@ -85,6 +86,88 @@ namespace ByteShelf.Server.Tests.Storage
             Assert.NotEqual(first.Id, second.Id);
             Assert.Equal(first.Sha256, second.Sha256);
             Assert.Single(ObjectStore.EnumerateHashes());
+        }
+
+        [Fact]
+        public async Task SwapAsync_EncryptingAFile_RemovesItsOldObjectAtOnce()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile plain = await StoreTextAsync(shelf, "/report.txt", "plain contents");
+
+            ShelfFile swapped = await SwapAsync(shelf, plain, AgeBytes, encrypted: true);
+
+            Assert.Equal((plain.Id, true), (swapped.Id, swapped.Encrypted));
+            Assert.False(ObjectStore.Exists(plain.Sha256));
+            Assert.True(ObjectStore.Exists(swapped.Sha256));
+        }
+
+        [Fact]
+        public async Task SwapAsync_EncryptingAFile_LogsTheSwapOfThatFile()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile plain = await StoreTextAsync(shelf, "/report.txt", "plain contents");
+
+            await SwapAsync(shelf, plain, AgeBytes, encrypted: true);
+
+            ChangeLogEntry last = (await ChangeLog.GetAfterAsync(0, 100))[^1];
+            Assert.Equal((plain.Id, ChangeAction.Swapped), (last.EntityId, last.Action));
+        }
+
+        [Fact]
+        public async Task SwapAsync_OldContentsAnotherFileHolds_KeepsThemForIt()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile plain = await StoreTextAsync(shelf, "/one.txt", "same");
+            await StoreTextAsync(shelf, "/two.txt", "same");
+
+            await SwapAsync(shelf, plain, AgeBytes, encrypted: true);
+
+            Assert.True(ObjectStore.Exists(plain.Sha256));
+            Assert.Equal("same", await ReadTextAsync(shelf, "/two.txt"));
+        }
+
+        [Fact]
+        public async Task StartSwapAsync_CompletedInChunks_SwapsInPlaceAndRemovesTheOldObject()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile plain = await StoreTextAsync(shelf, "/report.txt", "plain contents");
+
+            UploadSession session = await UploadService.StartSwapAsync(
+                shelf, new StartContentSwapRequest { FileId = plain.Id, Sha256 = plain.Sha256, SizeBytes = AgeBytes.Length, Encrypted = true }, Uploader);
+            await UploadService.AppendAsync(shelf, session.Id, 0, new MemoryStream(AgeBytes[..10]), CancellationToken.None);
+            await UploadService.AppendAsync(shelf, session.Id, 10, new MemoryStream(AgeBytes[10..]), CancellationToken.None);
+            ShelfFile swapped = await UploadService.CompleteAsync(shelf, session.Id, CancellationToken.None);
+
+            Assert.Equal((plain.Id, "/report.txt", true), (swapped.Id, swapped.Path, swapped.Encrypted));
+            Assert.False(ObjectStore.Exists(plain.Sha256));
+            Assert.Empty(await TrashService.GetTrashAsync(shelf));
+        }
+
+        [Fact]
+        public async Task CompleteAsync_SwapWhoseFileWasSwappedMeanwhile_ThrowsConflictAndKeepsTheOtherSwap()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile plain = await StoreTextAsync(shelf, "/report.txt", "plain contents");
+            UploadSession stale = await StartSwapWithAllBytesAsync(shelf, plain, AgeBytes);
+
+            ShelfFile other = await SwapAsync(shelf, plain, Encoding.ASCII.GetBytes("age-encryption.org/v1\nanother client's"), encrypted: true);
+
+            await Assert.ThrowsAsync<ConflictException>(() => UploadService.CompleteAsync(shelf, stale.Id, CancellationToken.None));
+            Assert.Equal(other.Sha256, (await FileService.GetFileAsync(shelf, EntryReference.ForId(plain.Id))).Sha256);
+        }
+
+        [Fact]
+        public async Task CompleteAsync_SwapWhoseFileWasDeletedMeanwhile_ThrowsNotFound()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile plain = await StoreTextAsync(shelf, "/report.txt", "plain contents");
+            UploadSession stale = await StartSwapWithAllBytesAsync(shelf, plain, AgeBytes);
+
+            await FileService.DeleteFileAsync(shelf, EntryReference.ForId(plain.Id));
+
+            await Assert.ThrowsAsync<NotFoundException>(() => UploadService.CompleteAsync(shelf, stale.Id, CancellationToken.None));
+            Assert.Equal(plain.Id, Assert.Single(await TrashService.GetTrashAsync(shelf)).EntryId);
+            Assert.True(ObjectStore.Exists(plain.Sha256));
         }
 
         [Fact]
@@ -410,6 +493,28 @@ namespace ByteShelf.Server.Tests.Storage
         private Task<ShelfUsage> GetUsageAsync(Shelf shelf)
         {
             return Services.GetRequiredService<IShelfRepository>().GetUsageAsync(shelf.Id);
+        }
+
+        /// <summary>Contents the server takes as encrypted: it checks only that they start as an age file.</summary>
+        private static readonly byte[] AgeBytes = Encoding.ASCII.GetBytes("age-encryption.org/v1\nan encrypted file");
+
+        private Task<ShelfFile> SwapAsync(Shelf shelf, ShelfFile file, byte[] content, bool encrypted)
+        {
+            StartContentSwapRequest request = new StartContentSwapRequest { FileId = file.Id, Sha256 = file.Sha256, SizeBytes = content.Length, Encrypted = encrypted };
+            return UploadService.SwapAsync(shelf, request, Uploader, new MemoryStream(content), CancellationToken.None);
+        }
+
+        /// <summary>A resumable swap that encrypts <paramref name="file"/>, holding all its bytes but not completed yet.</summary>
+        private async Task<UploadSession> StartSwapWithAllBytesAsync(Shelf shelf, ShelfFile file, byte[] content)
+        {
+            UploadSession session = await UploadService.StartSwapAsync(
+                shelf, new StartContentSwapRequest { FileId = file.Id, Sha256 = file.Sha256, SizeBytes = content.Length, Encrypted = true }, Uploader);
+            return await UploadService.AppendAsync(shelf, session.Id, 0, new MemoryStream(content), CancellationToken.None);
+        }
+
+        private async Task<string> ReadTextAsync(Shelf shelf, string path)
+        {
+            return await ReadObjectTextAsync((await FileService.GetFileAsync(shelf, EntryReference.ForPath(path))).Sha256);
         }
 
         /// <summary>A body that fails the test if anything reads it.</summary>

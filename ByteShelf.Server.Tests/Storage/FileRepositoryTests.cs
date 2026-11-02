@@ -53,5 +53,39 @@ namespace ByteShelf.Server.Tests.Storage
                 new[] { live.Id, trashed.Id }.Order(),
                 logged.Where(entry => entry.EntityType == ChangeEntityType.File && entry.Action == ChangeAction.Purged).Select(entry => entry.EntityId).Order());
         }
+
+        [Fact]
+        public async Task GetLiveWithObjectAsync_LiveAndTrashedRows_AnswersOnlyTheLiveOnes()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile live = await StoreTextAsync(shelf, "/live.txt", "shared");
+            await StoreTextAsync(shelf, "/trashed.txt", "shared");
+            await StoreTextAsync(shelf, "/other.txt", "other");
+            await FileService.DeleteFileAsync(shelf, EntryReference.ForPath("/trashed.txt"));
+
+            IReadOnlyList<FileRecord> files = await Files.GetLiveWithObjectAsync(Sha256Of("shared"));
+
+            Assert.Equal(live.Id, Assert.Single(files).Id);
+        }
+
+        [Fact]
+        public async Task SwapContentAsync_ContentsNoLongerTheExpectedOnes_ChangesAndLogsNothing()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "now");
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            FileRecord? swapped;
+            await using (IDbTransactionSession session = await TestRoot.SessionFactory.CreateSessionWithTransactionAsync())
+            {
+                swapped = await Files.SwapContentAsync(file.Id, Sha256Of("then"), Sha256Of("new"), 3, encrypted: true, TestInstants.Now, session);
+                await session.CommitAsync();
+            }
+
+            Assert.Null(swapped);
+            FileRecord kept = (await Files.GetByIdAsync(file.Id))!;
+            Assert.Equal((file.Sha256, false), (kept.Sha256, kept.Encrypted));
+            Assert.Equal(before, await ChangeLog.GetLatestSequenceAsync());
+        }
     }
 }
