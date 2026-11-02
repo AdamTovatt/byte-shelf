@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../lib/queryKeys';
 import {
@@ -27,8 +28,35 @@ export function useShelf(shelf: string) {
   return useQuery({ queryKey: queryKeys.shelves.info(shelf), queryFn: () => fetchShelf(shelf) });
 }
 
+/**
+ * How long a folder's listing counts as fresh, and how long one no page shows is kept. Long, because
+ * the live updates mark every listing of a shelf stale the moment it changes: until then a folder
+ * seen before opens at once from the cache, and one marked stale still opens at once and refetches
+ * quietly behind it. Only a folder never fetched waits on the network.
+ */
+const LISTING_STALE_TIME = 5 * 60_000;
+const LISTING_GC_TIME = 30 * 60_000;
+
+/** How many of a folder's subfolders are fetched ahead as it opens, so opening one of those is instant too. */
+export const PREFETCHED_SUBFOLDERS = 20;
+
+function listingQuery(shelf: string, path: string) {
+  return {
+    queryKey: queryKeys.shelfContents.listing(shelf, path),
+    queryFn: () => fetchListing(shelf, path),
+    staleTime: LISTING_STALE_TIME,
+    gcTime: LISTING_GC_TIME,
+  };
+}
+
 export function useListing(shelf: string, path: string) {
-  return useQuery({ queryKey: queryKeys.shelfContents.listing(shelf, path), queryFn: () => fetchListing(shelf, path) });
+  return useQuery(listingQuery(shelf, path));
+}
+
+/** Fetches a folder's listing ahead of opening it; does nothing while a fresh one is cached. */
+export function usePrefetchListing(shelf: string) {
+  const queryClient = useQueryClient();
+  return useCallback((path: string) => void queryClient.prefetchQuery(listingQuery(shelf, path)), [queryClient, shelf]);
 }
 
 /** The files under `under` whose name or description holds `text`; idle while `text` is blank. */

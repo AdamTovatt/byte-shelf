@@ -23,7 +23,7 @@ import { LoadError } from '../components/LoadError';
 import { CardList } from '../components/CardList';
 import { MoveDialog } from '../components/MoveDialog';
 import { ShelfHeader } from '../components/ShelfHeader';
-import { useCreateDirectory, useDeleteEntry, useFileSearch, useListing, useMoveEntry, useRestoreDeletion, useSetDescription } from '../hooks/useShelfQueries';
+import { PREFETCHED_SUBFOLDERS, useCreateDirectory, useDeleteEntry, useFileSearch, useListing, useMoveEntry, usePrefetchListing, useRestoreDeletion, useSetDescription } from '../hooks/useShelfQueries';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useSelection, type SelectionClickModifiers } from '../hooks/useSelection';
 import { useFilePicker } from '../hooks/useFilePicker';
@@ -177,6 +177,14 @@ export function ShelfPage() {
         ...listing.files.map((value): Entry => ({ kind: 'file', value })),
       ]
     : []), [listing]);
+
+  // Opening a subfolder should be instant: fetch the first ones ahead as this folder opens, and any
+  // other as the pointer or focus reaches it (onPrefetch below).
+  const prefetchListing = usePrefetchListing(shelf);
+  useEffect(() => {
+    listing?.directories.slice(0, PREFETCHED_SUBFOLDERS).forEach((directory) => prefetchListing(directory.path));
+  }, [listing, prefetchListing]);
+
   // Only the folder's own list selects; search results open on a click as before. A search hides
   // the list, so it lists nothing to select while it shows.
   const entryIds = useMemo(() => (searching ? [] : entries.map((entry) => entry.value.id)), [entries, searching]);
@@ -215,6 +223,7 @@ export function ShelfPage() {
           onToggle: () => selection.toggle(entry.value.id),
         } : undefined}
         onOpen={() => open(entry)}
+        onPrefetch={entry.kind === 'directory' ? () => prefetchListing(entry.value.path) : undefined}
         onDownload={entry.kind === 'file' ? () => void save([entry.value]) : undefined}
         onDescribe={entry.kind === 'file' ? () => setDescribing(entry.value) : undefined}
         onCopyLink={entry.kind === 'file' ? () => void copyLink(entry.value) : undefined}
@@ -421,6 +430,8 @@ interface EntryRowProps {
   /** Given, the row selects on a click and opens on a double-click; otherwise a click opens it. */
   selection?: RowSelection;
   onOpen: () => void;
+  /** For a folder: fetch what it holds ahead, as the pointer or focus reaches the row. */
+  onPrefetch?: () => void;
   onDownload?: () => void;
   onDescribe?: () => void;
   onCopyLink?: () => void;
@@ -429,7 +440,7 @@ interface EntryRowProps {
   onDelete: () => void;
 }
 
-function EntryRow({ entry, label, selection, onOpen, onDownload, onDescribe, onCopyLink, onRename, onMove, onDelete }: EntryRowProps) {
+function EntryRow({ entry, label, selection, onOpen, onPrefetch, onDownload, onDescribe, onCopyLink, onRename, onMove, onDelete }: EntryRowProps) {
   const isFile = entry.kind === 'file';
   const name = entry.value.name;
   const selected = selection?.selected ?? false;
@@ -447,6 +458,8 @@ function EntryRow({ entry, label, selection, onOpen, onDownload, onDescribe, onC
         type="button"
         onClick={selection ? (event) => selection.onSelectClick({ shiftKey: event.shiftKey, metaKey: event.metaKey, ctrlKey: event.ctrlKey }) : onOpen}
         onDoubleClick={selection ? onOpen : undefined}
+        onPointerEnter={onPrefetch}
+        onFocus={onPrefetch}
         // Enter opens, as a double-click does, and Space toggles the row; both stop the button's own
         // click, which would select the row alone.
         onKeyDown={selection ? (event) => {
