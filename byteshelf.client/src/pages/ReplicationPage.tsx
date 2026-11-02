@@ -4,6 +4,7 @@ import { Button, Card, CopyField, Dropdown, DropdownItem, FormError, Icon, IconB
 import { FormDialog } from '../components/FormDialog';
 import { LoadError } from '../components/LoadError';
 import { SectionTitle } from '../components/SectionTitle';
+import { CardList } from '../components/CardList';
 import { useAuth } from '../contexts/AuthContext';
 import { useCreatePairingCode, usePairWithPrimary, usePromote, useRemoveReplica, useReplicationStatus } from '../hooks/useReplicationQueries';
 import { useSubmit } from '../hooks/useSubmit';
@@ -57,7 +58,7 @@ function PrimaryView({ replicas }: { replicas: ReplicaInfo[] }) {
         {replicas.length === 0 ? (
           <p className="text-body-md text-muted">No replicas yet. Make a pairing code here, and paste it on the new server under Replication.</p>
         ) : (
-          <Card variant="elevated" padding="none" className="divide-y divide-border">
+          <CardList>
             {replicas.map((replica) => (
               <div key={replica.id} className="flex items-center gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
@@ -69,7 +70,7 @@ function PrimaryView({ replicas }: { replicas: ReplicaInfo[] }) {
                 </Dropdown>
               </div>
             ))}
-          </Card>
+          </CardList>
         )}
       </section>
 

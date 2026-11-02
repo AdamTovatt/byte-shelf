@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Button, ButtonGroup, Card, CopyField, Icon, IconButton, Input, PageLayout, getErrorMessage, iconMap } from '../ui';
+import { Button, ButtonGroup, CopyField, Icon, IconButton, Input, PageLayout, getErrorMessage, iconMap } from '../ui';
 import { FormDialog } from '../components/FormDialog';
 import { LoadError } from '../components/LoadError';
 import { QuotaField } from '../components/QuotaField';
 import { SectionTitle } from '../components/SectionTitle';
+import { CardList } from '../components/CardList';
 import { ShelfHeader } from '../components/ShelfHeader';
 import { useCreateKey, useDeleteKey, useGrants, useKeys, useRemoveGrant, useSetGrant } from '../hooks/useAccessQueries';
 import { useDeleteShelf, useShelf, useUpdateShelf } from '../hooks/useShelfQueries';
@@ -86,7 +87,7 @@ function GrantsSection({ shelf }: { shelf: string }) {
       </SectionTitle>
       <LoadError error={error} failure="Could not load who has access" />
       {grants.length > 0 && (
-        <Card variant="elevated" padding="none" className="divide-y divide-border">
+        <CardList>
           {grants.map((grant) => (
             <div key={grant.userId} className="flex flex-wrap items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
@@ -103,7 +104,7 @@ function GrantsSection({ shelf }: { shelf: string }) {
               <IconButton variant="ghost" size="sm" icon={iconMap.delete} aria-label={`Take ${grant.email}'s access away`} onClick={() => setRemoving(grant)} />
             </div>
           ))}
-        </Card>
+        </CardList>
       )}
       {adding && <GiveAccessDialog shelf={shelf} grantedUserIds={grants.map((grant) => grant.userId)} onClose={() => setAdding(false)} />}
       {removing && <RemoveGrantDialog shelf={shelf} grant={removing} onClose={() => setRemoving(null)} />}
@@ -182,7 +183,7 @@ function KeysSection({ shelf }: { shelf: string }) {
       </SectionTitle>
       <LoadError error={error} failure="Could not load the keys" />
       {keys.length > 0 && (
-        <Card variant="elevated" padding="none" className="divide-y divide-border">
+        <CardList>
           {keys.map((key) => (
             <div key={key.id} className="flex items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
@@ -192,7 +193,7 @@ function KeysSection({ shelf }: { shelf: string }) {
               <IconButton variant="ghost" size="sm" icon={iconMap.delete} aria-label={`Delete the key ${key.name}`} onClick={() => setDeleting(key)} />
             </div>
           ))}
-        </Card>
+        </CardList>
       )}
       {creating && <CreateKeyDialog shelf={shelf} onClose={() => setCreating(false)} />}
       {deleting && <DeleteKeyDialog shelf={shelf} shelfKey={deleting} onClose={() => setDeleting(null)} />}

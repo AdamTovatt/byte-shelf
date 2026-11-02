@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Button, Card, EmptyState, Icon, PageLayout, Spinner, getFileIcon, iconMap } from '../ui';
+import { Button, EmptyState, Icon, PageLayout, Spinner, getFileIcon, iconMap } from '../ui';
+import { CardList } from '../components/CardList';
 import { FormDialog } from '../components/FormDialog';
 import { LoadError } from '../components/LoadError';
 import { ShelfHeader } from '../components/ShelfHeader';
@@ -41,7 +42,7 @@ export function TrashPage() {
             <p className="text-body-md text-muted">Each item is deleted for good on the date shown, and can be restored until then.</p>
             <Button variant="outlineDanger" onClick={() => setEmptying(true)}>Empty trash</Button>
           </div>
-          <Card variant="elevated" padding="none" className="divide-y divide-border overflow-hidden">
+          <CardList className="overflow-hidden">
             {trash.map((entry) => (
               <div key={entry.deletionId} className="flex items-center gap-3 px-4 py-3">
                 <Icon icon={entry.kind === 'directory' ? iconMap.folder : getFileIcon(nameOf(entry.path))} size={18} className="shrink-0 text-muted" />
@@ -54,7 +55,7 @@ export function TrashPage() {
                 </Button>
               </div>
             ))}
-          </Card>
+          </CardList>
         </>
       )}
 

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import toast from 'react-hot-toast';
-import { Button, ButtonGroup, Card, Dropdown, DropdownItem, Icon, IconButton, Input, PageLayout, Spinner, iconMap } from '../ui';
+import { Button, ButtonGroup, Dropdown, DropdownItem, Icon, IconButton, Input, PageLayout, Spinner, iconMap } from '../ui';
 import { FormDialog } from '../components/FormDialog';
 import { LoadError } from '../components/LoadError';
+import { CardList } from '../components/CardList';
 import { PasswordInput } from '../components/PasswordInput';
 import { useCreateUser, useCurrentUser, useDeleteUser, useSetRoles, useUsers } from '../hooks/useUserQueries';
 import { useGrantsByShelf, useRemoveGrant, useSetGrant } from '../hooks/useAccessQueries';
@@ -52,7 +53,7 @@ export function UsersPage() {
       {/* Without them each user's shelves would read as none. */}
       <LoadError error={shelvesError ?? grantsError} failure="Could not load who reaches which shelf" />
       {users && (
-        <Card variant="elevated" padding="none" className="divide-y divide-border">
+        <CardList>
           {users.map((user) => (
             <UserRow
               key={user.id}
@@ -62,7 +63,7 @@ export function UsersPage() {
               onDelete={() => setDeleting(user)}
             />
           ))}
-        </Card>
+        </CardList>
       )}
 
       {creating && <CreateUserDialog onClose={() => setCreating(false)} />}

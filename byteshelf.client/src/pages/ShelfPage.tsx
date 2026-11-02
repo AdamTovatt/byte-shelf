@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   Button,
-  Card,
   CopyField,
   Dropdown,
   DropdownItem,
@@ -22,6 +21,7 @@ import {
 import { FileButton } from '../components/FileButton';
 import { FormDialog } from '../components/FormDialog';
 import { LoadError } from '../components/LoadError';
+import { CardList } from '../components/CardList';
 import { MoveDialog } from '../components/MoveDialog';
 import { ShelfHeader } from '../components/ShelfHeader';
 import { useCreateDirectory, useDeleteEntry, useFileSearch, useListing, useMoveEntry, useRestoreDeletion, useSetDescription } from '../hooks/useShelfQueries';
@@ -214,9 +214,9 @@ export function ShelfPage() {
               />
             )}
             {entries.length > 0 && (
-              <Card variant="elevated" padding="none" className={cn('divide-y divide-border overflow-hidden', dragging && 'ring-2 ring-brand-border')}>
+              <CardList className={cn('overflow-hidden', dragging && 'ring-2 ring-brand-border')}>
                 {entries.map((entry) => row(entry))}
-              </Card>
+              </CardList>
             )}
           </>
         )}
@@ -251,9 +251,9 @@ function SearchResults({ results, isLoading, error, text, row }: SearchResultsPr
 
   return (
     <div className="space-y-2">
-      <Card variant="elevated" padding="none" className="divide-y divide-border overflow-hidden">
+      <CardList className="overflow-hidden">
         {results.files.map(row)}
-      </Card>
+      </CardList>
       {results.nextCursor && <p className="text-body-sm text-muted">Showing the first {results.files.length} matches. Type more to narrow them.</p>}
     </div>
   );
