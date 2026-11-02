@@ -39,7 +39,6 @@ export { default as Search01Icon } from './search-01-stroke-rounded.svg?react';
 export { default as Settings01Icon } from './settings-01-stroke-rounded.svg?react';
 export { default as ShelvingUnitIcon } from './shelving-unit.svg?react';
 export { default as Shield01Icon } from './shield-01-stroke-rounded.svg?react';
-export { default as SquareArrowUpRightIcon } from './square-arrow-up-right-stroke-rounded.svg?react';
 export { default as Sun03Icon } from './sun-03-stroke-rounded.svg?react';
 export { default as TextSquareIcon } from './text-square-stroke-rounded.svg?react';
 export { default as Tick01Icon } from './tick-01-stroke-rounded.svg?react';

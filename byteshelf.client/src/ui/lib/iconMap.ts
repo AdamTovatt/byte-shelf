@@ -42,7 +42,6 @@ import {
   ShelvingUnitIcon,
   LibraryBigIcon,
   Shield01Icon,
-  SquareArrowUpRightIcon,
   Sun03Icon,
   TextSquareIcon,
   Tick01Icon,
@@ -107,7 +106,6 @@ export const iconMap = {
   more: MoreHorizontalIcon,
   view: ViewIcon,
   viewOff: ViewOffSlashIcon,
-  externalLink: SquareArrowUpRightIcon,
 
   // Status
   success: Tick01Icon,

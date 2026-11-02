@@ -455,7 +455,7 @@ function EntryRow({ entry, label, selection, onOpen, onPrefetch, onDownload, onD
     <div
       data-selectable-row={selection ? true : undefined}
       data-active={selected || undefined}
-      className={cn('group flex items-center gap-2 px-2 py-1 transition-colors', selected ? 'bg-selected/15 hover:bg-selected/20' : 'hover:bg-row-hover')}
+      className={cn('flex items-center gap-2 px-2 py-1 transition-colors', selected ? 'bg-selected/15 hover:bg-selected/20' : 'hover:bg-row-hover')}
     >
       <button
         type="button"
@@ -481,9 +481,6 @@ function EntryRow({ entry, label, selection, onOpen, onPrefetch, onDownload, onD
       >
         <Icon icon={isFile ? getFileIcon(name) : iconMap.folder} size={18} className="shrink-0 text-muted" />
         <span className="min-w-0 truncate text-body-md text-fg">{label ?? name}</span>
-        {isFile && (
-          <Icon icon={iconMap.externalLink} size={14} className="shrink-0 text-neutral-9 opacity-60 transition-opacity group-hover:opacity-100" />
-        )}
         {isFile && (
           <span className="ml-auto hidden shrink-0 pl-2 text-body-sm text-muted sm:inline">
             {formatBytes(entry.value.sizeBytes)} · {formatTime(entry.value.updatedAt)}
