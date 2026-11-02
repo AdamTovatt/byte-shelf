@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Breadcrumbs, ButtonGroup, iconMap, type BreadcrumbItem } from '../ui';
+import { Breadcrumbs, Dropdown, DropdownItem, IconButton, iconMap, type BreadcrumbItem } from '../ui';
 import { useShelf } from '../hooks/useShelfQueries';
 import { useIsAdmin } from '../hooks/useUserQueries';
 import { describeUsage } from '../lib/format';
@@ -14,7 +14,10 @@ interface ShelfHeaderProps {
 
 const VIEW_LABELS: Record<ShelfView, string> = { files: 'Files', trash: 'Trash', settings: 'Settings' };
 
-/** A shelf's name, where in it the page is, its usage, and its files, trash and (for admins) settings. */
+/**
+ * Where in the shelf the page is, a menu to its files, trash and (for admins) settings with the
+ * current one ticked, and under them how much the shelf holds.
+ */
 export function ShelfHeader({ shelf, view, path = ROOT_PATH }: ShelfHeaderProps) {
   const navigate = useNavigate();
   const isAdmin = useIsAdmin();
@@ -30,19 +33,20 @@ export function ShelfHeader({ shelf, view, path = ROOT_PATH }: ShelfHeaderProps)
   ];
 
   return (
-    <div className="space-y-3">
-      <Breadcrumbs items={crumbs} />
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <ButtonGroup
-          options={views.map((value) => ({ value, label: VIEW_LABELS[value] }))}
-          value={view}
-          onChange={(next) => navigate(shelfViewRoute(shelf, next))}
-          size="sm"
-          ariaTablist
-          ariaLabel={`${shelf} views`}
-        />
-        {info && <p className="text-body-md text-muted">{describeUsage(info)}</p>}
+    <div className="space-y-1">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <Breadcrumbs items={crumbs} />
+        </div>
+        <Dropdown align="right" trigger={<IconButton variant="ghost" size="sm" icon={iconMap.more} aria-label={`Pages of ${shelf}`} />}>
+          {views.map((value) => (
+            <DropdownItem key={value} checked={value === view} onClick={() => navigate(shelfViewRoute(shelf, value))}>
+              {VIEW_LABELS[value]}
+            </DropdownItem>
+          ))}
+        </Dropdown>
       </div>
+      {info && <p className="text-body-sm text-muted">{describeUsage(info)}</p>}
     </div>
   );
 }

@@ -18,7 +18,6 @@ import {
   getFileIcon,
   iconMap,
 } from '../ui';
-import { FileButton } from '../components/FileButton';
 import { FormDialog } from '../components/FormDialog';
 import { LoadError } from '../components/LoadError';
 import { CardList } from '../components/CardList';
@@ -27,6 +26,7 @@ import { ShelfHeader } from '../components/ShelfHeader';
 import { useCreateDirectory, useDeleteEntry, useFileSearch, useListing, useMoveEntry, useRestoreDeletion, useSetDescription } from '../hooks/useShelfQueries';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useSelection, type SelectionClickModifiers } from '../hooks/useSelection';
+import { useFilePicker } from '../hooks/useFilePicker';
 import { useUploads } from '../hooks/useUploads';
 import { formatBytes, formatTime } from '../lib/format';
 import { joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../lib/shelfPaths';
@@ -58,6 +58,8 @@ export function ShelfPage() {
   const searchText = typed.shelf === shelf && typed.path === path ? typed.text : '';
   const searching = searchText.trim() !== '';
   const found = useFileSearch(shelf, path, useDebouncedValue(searchText, SEARCH_DELAY_MS));
+
+  const picker = useFilePicker((files) => uploads.upload(files, path));
 
   function onDrop(event: DragEvent<HTMLDivElement>): void {
     event.preventDefault();
@@ -241,23 +243,17 @@ export function ShelfPage() {
       <PageLayout className="space-y-6">
         <ShelfHeader shelf={shelf} view="files" path={path} />
 
-        {/* The selection bar covers the toolbar rather than replacing it, so the list below never
-            moves when a row is picked, even where the toolbar wraps onto two lines. */}
+        {/* The selection bar covers the search row rather than replacing it, so the list below never
+            moves when a row is picked. */}
         <div className="relative">
-          <div className={cn('flex flex-wrap items-center gap-2', selecting && 'invisible')}>
-            <FileButton variant="main" icon={<Icon icon={iconMap.upload} size={16} />} onFiles={(files) => uploads.upload(files, path)} aria-label="Upload files">
-              Upload
-            </FileButton>
-            <Button variant="secondary" icon={<Icon icon={iconMap.folder} size={16} />} onClick={() => setCreatingDirectory(true)} aria-label="New folder">
-              New folder
-            </Button>
-            <div className="min-w-48 flex-1">
+          <div className={cn('flex items-center gap-2', selecting && 'invisible')}>
+            <div className="min-w-0 flex-1">
               <Input
                 variant="quiet"
                 value={searchText}
                 onChange={(event) => setTyped({ shelf, path, text: event.target.value })}
                 onKeyDown={(event) => event.key === 'Escape' && setTyped({ shelf, path, text: '' })}
-                placeholder="Search names and descriptions"
+                placeholder="Search"
                 aria-label="Search files in this folder and below"
                 icon={<Icon icon={iconMap.search} size={16} />}
                 endElement={searchText && (
@@ -266,6 +262,11 @@ export function ShelfPage() {
                 autoComplete="off"
               />
             </div>
+            <Dropdown align="right" trigger={<Button variant="main" icon={<Icon icon={iconMap.add} size={16} />}>Add</Button>}>
+              <DropdownItem icon={<Icon icon={iconMap.upload} size={16} />} onClick={picker.open}>Upload file</DropdownItem>
+              <DropdownItem icon={<Icon icon={iconMap.folder} size={16} />} onClick={() => setCreatingDirectory(true)}>New folder</DropdownItem>
+            </Dropdown>
+            {picker.input}
           </div>
           {selecting && (
             <SelectionBar
