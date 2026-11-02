@@ -1,7 +1,8 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Outlet, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Button, ButtonGroup, CopyField, Icon, IconButton, Input, PageLayout, getErrorMessage, iconMap } from '../ui';
+import { Button, ButtonGroup, CopyField, Icon, IconButton, Input, PAGE_CONTENT_WIDTH, RouteTab, TabGroup, cn, getErrorMessage, iconMap, type IconComponent } from '../ui';
+import { TabbedPageShell } from '../components/layout/TabbedPageShell';
 import { FormDialog } from '../components/FormDialog';
 import { LoadError } from '../components/LoadError';
 import { QuotaField } from '../components/QuotaField';
@@ -13,26 +14,64 @@ import { useDeleteShelf, useShelf, useUpdateShelf } from '../hooks/useShelfQueri
 import { useUsers } from '../hooks/useUserQueries';
 import { formatQuota, formatTime, parseQuota, type QuotaUnit } from '../lib/format';
 import { ACCESS_OPTIONS, KEY_OPTIONS, keyPermissionLabel } from '../lib/access';
-import { shelfViewRoute } from '../lib/shelfPaths';
+import { SHELF_SETTINGS_TABS, shelfSettingsRoute, type ShelfSettingsTab } from '../lib/shelfPaths';
 import { ROUTES } from '../lib/routes';
 import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
 import type { CreatedShelfKey, ShelfAccessGrant, ShelfAccessPermission, ShelfKeyInfo, ShelfKeyPermission } from '../services/accessService';
 import type { ShelfInfo } from '../services/shelfService';
 
-/** An admin's view of one shelf: its name and quota, who may use it, its keys, and deleting it. */
-export function ShelfSettingsPage() {
+const TAB_LABELS: Record<ShelfSettingsTab, { label: string; icon: IconComponent }> = {
+  general: { label: 'General', icon: iconMap.settings },
+  access: { label: 'Access', icon: iconMap.users },
+  keys: { label: 'Keys', icon: iconMap.key },
+};
+
+/**
+ * An admin's settings for one shelf, as tabs that are routes (as ordo's organization page): General
+ * (name, quota and deleting it), Access (who may use it) and Keys (which programs may).
+ */
+export function ShelfSettingsLayout() {
   const shelf = useParams().shelf!;
 
   return (
-    <PageLayout className="space-y-10">
-      <ShelfHeader shelf={shelf} view="settings" />
-      <SettingsSection shelf={shelf} />
-      <GrantsSection shelf={shelf} />
-      <KeysSection shelf={shelf} />
-      <DeleteSection shelf={shelf} />
-    </PageLayout>
+    <TabbedPageShell
+      header={
+        // The page's own padding and width, so the breadcrumbs sit where they do on the files and
+        // trash pages; the tabs hang off the band's bottom rule.
+        <div className="shrink-0 border-b border-border bg-panel px-6 pt-6 md:px-8 md:pt-8">
+          <div className={cn(PAGE_CONTENT_WIDTH, 'mx-auto space-y-4')}>
+            <ShelfHeader shelf={shelf} view="settings" />
+            <TabGroup>
+              {SHELF_SETTINGS_TABS.map((tab) => (
+                <RouteTab key={tab} label={TAB_LABELS[tab].label} icon={TAB_LABELS[tab].icon} href={shelfSettingsRoute(shelf, tab)} />
+              ))}
+            </TabGroup>
+          </div>
+        </div>
+      }
+    >
+      <Outlet />
+    </TabbedPageShell>
   );
+}
+
+export function ShelfGeneralTab() {
+  const shelf = useParams().shelf!;
+  return (
+    <div className="space-y-10">
+      <SettingsSection shelf={shelf} />
+      <DeleteSection shelf={shelf} />
+    </div>
+  );
+}
+
+export function ShelfAccessTab() {
+  return <GrantsSection shelf={useParams().shelf!} />;
+}
+
+export function ShelfKeysTab() {
+  return <KeysSection shelf={useParams().shelf!} />;
 }
 
 function SettingsSection({ shelf }: { shelf: string }) {
@@ -59,7 +98,7 @@ function SettingsForm({ info }: { info: ShelfInfo }) {
     event.preventDefault();
     return submit(() => updateShelf.mutateAsync({ name: name.trim(), quotaBytes: parseQuota(quota, unit) }), (updated) => {
       toast.success('Saved');
-      if (updated.name !== shelf) navigate(shelfViewRoute(updated.name, 'settings'), { replace: true });
+      if (updated.name !== shelf) navigate(shelfSettingsRoute(updated.name, 'general'), { replace: true });
     });
   }
 

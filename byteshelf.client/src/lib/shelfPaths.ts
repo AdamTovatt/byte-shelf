@@ -39,6 +39,10 @@ export const SHELF_ROUTE_PATTERNS = {
   settings: '/shelves/:shelf/settings',
 } as const;
 
+/** The tabs of a shelf's settings, each its own route below the settings page. */
+export const SHELF_SETTINGS_TABS = ['general', 'access', 'keys'] as const;
+export type ShelfSettingsTab = (typeof SHELF_SETTINGS_TABS)[number];
+
 function shelfBase(shelf: string): string {
   return `/shelves/${encodeURIComponent(shelf)}`;
 }
@@ -52,6 +56,11 @@ export function shelfRoute(shelf: string, path: string = ROOT_PATH): string {
 /** The browser route of one of a shelf's pages; its files open at the root directory. */
 export function shelfViewRoute(shelf: string, view: ShelfView): string {
   return view === 'files' ? shelfBase(shelf) : `${shelfBase(shelf)}/${view}`;
+}
+
+/** The browser route of one tab of a shelf's settings. */
+export function shelfSettingsRoute(shelf: string, tab: ShelfSettingsTab): string {
+  return `${shelfViewRoute(shelf, 'settings')}/${tab}`;
 }
 
 /** The shelf path a route's splat names: the part after /files/, which the router has already unescaped. */

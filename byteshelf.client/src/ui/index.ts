@@ -38,6 +38,7 @@ export {
 export { SideNavItem, type SideNavItemProps } from './components/ui/SideNavItem';
 export { Skeleton, type SkeletonProps } from './components/ui/Skeleton';
 export { Spinner, type SpinnerProps } from './components/ui/Spinner';
+export { RouteTab, Tab, TabGroup, type RouteTabProps, type TabGroupProps, type TabProps } from './components/ui/TabBar';
 export { Textarea, type TextareaProps } from './components/ui/Textarea';
 export { Tooltip, type TooltipProps } from './components/ui/Tooltip';
 
