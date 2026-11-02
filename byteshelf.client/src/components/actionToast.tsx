@@ -18,12 +18,14 @@ interface ActionToast {
  */
 export function showActionToast({ message, action, icon, onAction, duration }: ActionToast): void {
   toast((t) => (
-    <span className="flex items-center gap-3">
-      <span className="min-w-0">{message}</span>
+    // The button keeps its whole label on one line; the message takes what is left, its name cut to fit.
+    <span className="flex w-full min-w-0 items-center gap-3">
+      <span className="min-w-0 flex-1">{message}</span>
       <Button
         size="sm"
         variant="secondary"
         icon={icon}
+        className="shrink-0 whitespace-nowrap"
         onClick={() => {
           toast.dismiss(t.id);
           onAction();
