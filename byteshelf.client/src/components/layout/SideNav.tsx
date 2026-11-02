@@ -91,12 +91,13 @@ export function SideNav() {
       </SidebarHeader>
 
       <SidebarSection scrollable padding="sm" className="space-y-1">
-        <SideNavItem label="Shelves" icon={iconMap.shelf} href={ROUTES.HOME} isActive={pathname === ROUTES.HOME} isCollapsed={isCollapsed} depth={0} />
+        <SideNavItem label="Shelves" icon={iconMap.shelves} href={ROUTES.HOME} isActive={pathname === ROUTES.HOME} isCollapsed={isCollapsed} depth={0} />
 
         {!isCollapsed && shelves?.map((shelf) => (
           <SideNavItem
             key={shelf.id}
             label={shelf.name}
+            icon={iconMap.shelf}
             href={shelfRoute(shelf.name)}
             isActive={isWithin(pathname, shelfRoute(shelf.name))}
             isCollapsed={isCollapsed}

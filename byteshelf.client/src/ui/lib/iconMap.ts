@@ -39,7 +39,8 @@ import {
   RestoreIcon,
   Search01Icon,
   Settings01Icon,
-  ShelfIcon,
+  ShelvingUnitIcon,
+  LibraryBigIcon,
   Shield01Icon,
   SquareArrowUpRightIcon,
   Sun03Icon,
@@ -75,7 +76,9 @@ export const iconMap = {
   logout: Logout02Icon,
 
   // Shelves and their contents
-  shelf: ShelfIcon,
+  // The shelves as a whole (the Shelves page, its nav item and crumb), and one shelf.
+  shelves: ShelvingUnitIcon,
+  shelf: LibraryBigIcon,
   folder: Folder01Icon,
   projectOpen: Folder02Icon,
   file: File02Icon,

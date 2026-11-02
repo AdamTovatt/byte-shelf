@@ -25,7 +25,7 @@ export function ShelfHeader({ shelf, view, path = ROOT_PATH }: ShelfHeaderProps)
 
   const views: ShelfView[] = isAdmin ? ['files', 'trash', 'settings'] : ['files', 'trash'];
   const crumbs: BreadcrumbItem[] = [
-    { key: 'shelves', label: 'Shelves', to: '/' },
+    { key: 'shelves', label: 'Shelves', to: '/', icon: iconMap.shelves },
     { key: shelf, label: shelf, to: shelfRoute(shelf), icon: iconMap.shelf },
     ...(view === 'files'
       ? pathSegments(path).map((segment): BreadcrumbItem => ({ key: segment.path, label: segment.name, to: shelfRoute(shelf, segment.path) }))
