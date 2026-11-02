@@ -2,6 +2,7 @@ import { type InputHTMLAttributes, type ReactNode, forwardRef, useId, useLayoutE
 import { FieldLabel } from './FieldLabel';
 import { Squircle } from './Squircle';
 import { fieldRendering } from './fieldStyles';
+import { CONTROL_HEIGHT_CLASS } from './buttonStyles';
 import { ErrorText } from './ErrorText';
 import { FormError } from './FormError';
 import { useFieldError } from './useFieldError';
@@ -27,7 +28,7 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   /** Renders a red required-marker after the label and sets `aria-required` (no native validation popup). */
   required?: boolean;
   labelClassName?: string;
-  /** Extra classes for the bordered field wrapper — e.g. a fixed `h-10` to match adjacent controls. */
+  /** Extra classes for the bordered field wrapper, which is already as tall as the controls beside it. */
   wrapperClassName?: string;
   icon?: ReactNode;
   /**
@@ -67,7 +68,10 @@ const FIELD_GLOW: Record<NonNullable<InputProps['variant']>, boolean> = {
  * Squircle layer paints that — but it does shape the autofill tint a browser paints on the input
  * itself (`index.css`).
  */
-const APP_INPUT_CLASS = 'rounded-lg px-3 py-2 text-fg placeholder:text-neutral-9/50';
+// The box's height is the wrapper's ({@link CONTROL_HEIGHT_CLASS}); the input fills it. Its text is
+// the button's and the dropdown's size, but 16px on a phone, where iOS zooms the page into any field
+// whose text is smaller as it takes focus.
+const APP_INPUT_CLASS = 'h-full rounded-lg px-3 text-fg text-base sm:text-body-md placeholder:text-neutral-9/50';
 
 const inputVariants = {
   default: APP_INPUT_CLASS,
@@ -98,6 +102,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         <div
           className={`
             ${field.className}
+            ${CONTROL_HEIGHT_CLASS}
             ${wrapperClassName}
           `}
         >

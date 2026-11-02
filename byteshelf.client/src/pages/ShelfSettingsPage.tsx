@@ -50,6 +50,10 @@ function SettingsForm({ info }: { info: ShelfInfo }) {
   const [quota, setQuota] = useState(initialQuota.amount);
   const [unit, setUnit] = useState<QuotaUnit>(initialQuota.unit);
   const { error, submit } = useSubmit('Could not save');
+  // Save shows only while the form differs from what the server holds; a save remounts the form
+  // with the new values (see the key above), which hides it again. A quota that does not read as a
+  // number counts as a change, so Save stays to say why.
+  const changed = name.trim() !== info.name || quotaDiffers(quota, unit, info.quotaBytes);
 
   function save(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -65,10 +69,18 @@ function SettingsForm({ info }: { info: ShelfInfo }) {
       <form onSubmit={(event) => void save(event)} className="space-y-4">
         <Input label="Name" value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" required />
         <QuotaField amount={quota} unit={unit} onAmountChange={setQuota} onUnitChange={setUnit} error={error} />
-        <Button type="submit" variant="main" loading={updateShelf.isPending}>Save</Button>
+        {changed && <Button type="submit" variant="main" loading={updateShelf.isPending}>Save</Button>}
       </form>
     </section>
   );
+}
+
+function quotaDiffers(amount: string, unit: QuotaUnit, savedBytes: number | null | undefined): boolean {
+  try {
+    return parseQuota(amount, unit) !== (savedBytes ?? null);
+  } catch {
+    return true;
+  }
 }
 
 function GrantsSection({ shelf }: { shelf: string }) {

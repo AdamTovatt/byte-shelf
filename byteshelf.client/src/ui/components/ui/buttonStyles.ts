@@ -133,6 +133,14 @@ const SHAPE_CORNER: Record<Exclude<ButtonShape, 'default'>, { token: string; rad
   chip: { token: 'rounded-md', radius: ROUNDED_PX.md },
 };
 
+/**
+ * The one height a text field (`Input`), a dropdown field (`Select`) and a default (`md`) button
+ * share, so a row of them lines up whatever each holds. A fixed height rather than padding around a
+ * line, because their lines differ: an input's text is 16px on a phone (see `Input`) and a button's
+ * leading is its own.
+ */
+export const CONTROL_HEIGHT_CLASS = 'h-10';
+
 const sizeStyles: Record<ButtonSize, string> = {
   /**
    * The step below `xs`, 22px tall: for a canvas's own small toolbar (`PanZoomCanvas`'s Fit beside its
@@ -157,7 +165,7 @@ const sizeStyles: Record<ButtonSize, string> = {
    */
   xs: 'px-2 py-1 text-xs leading-[0.95rem] rounded-lg tracking-wide',
   sm: 'px-3 py-1.5 text-xs leading-[0.95rem] rounded-lg tracking-wide',
-  md: 'px-4 py-2 text-sm leading-[1.1rem] rounded-lg tracking-wide',
+  md: `${CONTROL_HEIGHT_CLASS} px-4 text-sm leading-[1.1rem] rounded-lg tracking-wide`,
   lg: 'px-6 py-2.5 text-base leading-[1.3rem] rounded-lg tracking-wide',
   xl: 'px-8 py-3.5 text-lg leading-[1.5rem] rounded-lg tracking-wide',
 };

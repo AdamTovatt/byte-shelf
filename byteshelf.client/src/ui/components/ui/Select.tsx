@@ -8,6 +8,7 @@ import { MENU_PANEL_CLASS } from './menuPanelStyles';
 import { TOOLBAR_CONTROL_BOX_CLASS } from './toolbarControlStyles';
 import { Squircle } from './Squircle';
 import { fieldRendering } from './fieldStyles';
+import { CONTROL_HEIGHT_CLASS } from './buttonStyles';
 import { ErrorText } from './ErrorText';
 import { useFieldError } from './useFieldError';
 import type { MenuPopoverPosition } from '../../lib/popoverPlacement';
@@ -206,7 +207,8 @@ export function Select<T extends string = string>({
   const triggerClassName = cn(
     TRIGGER_BASE_CLASS,
     SIZE_CLASS[size],
-    field ? `py-2 ${field.className}` : open ? TOOLBAR_SURFACE_CLASS.open : TOOLBAR_SURFACE_CLASS.closed,
+    // A default field is as tall as the text field and button beside it; a small one keeps its padding.
+    field ? `${size === 'md' ? CONTROL_HEIGHT_CLASS : 'py-2'} ${field.className}` : open ? TOOLBAR_SURFACE_CLASS.open : TOOLBAR_SURFACE_CLASS.closed,
     !field && 'gap-1.5',
     disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer',
     isInvalid && !field && TOOLBAR_ERROR_CLASS,
