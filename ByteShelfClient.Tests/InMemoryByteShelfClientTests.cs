@@ -26,5 +26,34 @@ namespace ByteShelfClient.Tests
             ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => shelf.RestoreAsync(deleted.DeletionId));
             Assert.Equal(ErrorCodes.NotFound, exception.Code);
         }
+
+        /// <summary>A replica refuses a write before it looks for the shelf, as the server's read-only filter runs before the action.</summary>
+        [Fact]
+        public async Task ShelfWrite_OnAFollower_IsRefusedAsAReplica()
+        {
+            InMemoryByteShelfClient primary = new InMemoryByteShelfClient();
+            InMemoryByteShelfClient follower = new InMemoryByteShelfClient();
+            await follower.FollowPrimaryAsync(new PairWithPrimaryRequest { Code = (await primary.CreatePairingCodeAsync()).Code, Name = "backup" });
+
+            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => follower.Shelf("docs").UploadAsync("/a.txt", new MemoryStream(new byte[] { 1 })));
+
+            Assert.Equal(ErrorCodes.ReadOnlyReplica, exception.Code);
+        }
+
+        [Fact]
+        public async Task FollowPrimary_ACodePastItsLifetime_IsRefused()
+        {
+            FakeTimeProvider clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+            InMemoryByteShelfClient primary = new InMemoryByteShelfClient(timeProvider: clock);
+            PairingCodeResponse code = await primary.CreatePairingCodeAsync();
+            Assert.Equal(clock.GetUtcNow() + PairingCodeResponse.Lifetime, code.ExpiresAt);
+
+            clock.Advance(PairingCodeResponse.Lifetime);
+            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(
+                () => new InMemoryByteShelfClient().FollowPrimaryAsync(new PairWithPrimaryRequest { Code = code.Code, Name = "backup" }));
+
+            Assert.Equal(ErrorCodes.Conflict, exception.Code);
+            Assert.Empty((await primary.GetReplicationAsync()).Replicas);
+        }
     }
 }

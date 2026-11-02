@@ -2,9 +2,7 @@ using ByteShelf.Server.Email;
 using ByteShelf.Server.Replication;
 using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared;
-using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Errors;
-using ByteShelf.Server.Shared.Middleware;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Users.Exceptions;
 using ByteShelf.Server.Users.Models;
@@ -18,18 +16,11 @@ namespace ByteShelf.Server.Users.Services
     /// machine, with the server running or stopped, for when no admin can sign in. They go through the
     /// services the API uses, so passwords are hashed and checked by the same rules, the last admin is
     /// kept, and the change log records each change for replicas. A replica refuses them, as its API
-    /// refuses writes. Answers the process's exit code.
+    /// refuses writes. Answers the process's exit code, one of <see cref="RootCommand"/>'s: refused
+    /// for no such user, a taken email, the last admin, a refused password or a replica.
     /// </summary>
     public static class UserCommand
     {
-        public const int Done = 0;
-
-        /// <summary>Nothing was changed: no such user, a taken email, the last admin, a refused password, a replica, a damaged root.</summary>
-        public const int Failed = 1;
-
-        /// <summary>Nothing was tried: the arguments are wrong, or <c>BYTESHELF_ROOT</c> is not set.</summary>
-        public const int Usage = 2;
-
         /// <summary>The flags that name a user command; the server runs this instead of starting when its arguments hold one.</summary>
         public static readonly IReadOnlyList<string> Flags = ["--create-user", "--reset-password", "--set-admin", "--unset-admin"];
 
@@ -52,60 +43,16 @@ namespace ByteShelf.Server.Users.Services
             if (change == null)
             {
                 logger.LogError("{Usage}", UsageText);
-                return Usage;
+                return RootCommand.Usage;
             }
 
-            if (string.IsNullOrWhiteSpace(rootPath))
+            return await RootCommand.RunAsync(rootPath, logger, async root =>
             {
-                logger.LogError("Set BYTESHELF_ROOT to the server's root.");
-                return Usage;
-            }
-
-            try
-            {
-                RootFolder root = RootFolder.OpenExisting(rootPath);
-                try
-                {
-                    return await ApplyAsync(change, root, passwords, loggerFactory);
-                }
-                finally
-                {
-                    // Refusing anyone but the root's owner would need the folder's owner, which .NET does not
-                    // expose; releasing the connections leaves no files owned by whoever ran this instead.
-                    DataSources.Release(root.ConnectionString);
-                }
-            }
-            catch (Exception exception) when (exception is FileNotFoundException || ExceptionHandlingMiddleware.RefusalMessage(exception) != null)
-            {
-                // What the person running it can act on, as the API would answer it; a root without a
-                // database besides.
-                logger.LogError("{Message}", ExceptionHandlingMiddleware.RefusalMessage(exception) ?? exception.Message);
-                return Failed;
-            }
-            catch (Exception exception)
-            {
-                logger.LogError(exception, "Failed: {Message}", exception.Message);
-                return Failed;
-            }
-        }
-
-        private static async Task<int> ApplyAsync(UserChange change, RootFolder root, IPasswordReader passwords, ILoggerFactory loggerFactory)
-        {
-            ILogger logger = loggerFactory.CreateLogger(typeof(UserCommand));
-
-            // Not migrated here: the server may be running on this database, and an executable newer than
-            // the server would upgrade it under it.
-            if (!DatabaseMigrator.IsUpToDate(root.ConnectionString))
-            {
-                logger.LogError("The database is from an older version of the server: start this version on it, or run ByteShelf.Server --migrate-only, first.");
-                return Failed;
-            }
-
-            await using ServiceProvider services = BuildServices(root, loggerFactory);
-            await using AsyncServiceScope scope = services.CreateAsyncScope();
-            await scope.ServiceProvider.GetRequiredService<ReplicationState>().RequireWritesAsync();
-            logger.LogInformation("{Done}", await change.ApplyAsync(scope.ServiceProvider, passwords));
-            return Done;
+                await using ServiceProvider services = BuildServices(root, loggerFactory);
+                await using AsyncServiceScope scope = services.CreateAsyncScope();
+                await scope.ServiceProvider.GetRequiredService<ReplicationState>().RequireWritesAsync();
+                return await change.ApplyAsync(scope.ServiceProvider, passwords);
+            });
         }
 
         /// <summary>
@@ -115,37 +62,13 @@ namespace ByteShelf.Server.Users.Services
         /// </summary>
         internal static UserChange? Parse(IReadOnlyList<string> args)
         {
-            // Its own few lines rather than the CLI's ArgumentList, which reads a command table and
-            // ByteShelf.Tools does not hold: four flags and two options do not earn moving it there.
-            List<string> left = new List<string>(args);
-            bool wellFormed = true;
-
-            string? ValueOf(string flag)
-            {
-                int at = left.IndexOf(flag);
-                if (at < 0)
-                {
-                    return null;
-                }
-
-                if (at + 1 >= left.Count || left[at + 1].StartsWith("--", StringComparison.Ordinal))
-                {
-                    wellFormed = false;
-                    left.RemoveAt(at);
-                    return null;
-                }
-
-                string value = left[at + 1];
-                left.RemoveRange(at, 2);
-                return value;
-            }
-
-            string? create = ValueOf("--create-user");
-            string? reset = ValueOf("--reset-password");
-            string? setAdmin = ValueOf("--set-admin");
-            string? unsetAdmin = ValueOf("--unset-admin");
-            string? name = ValueOf("--name");
-            bool admin = left.Remove("--admin");
+            CommandArguments arguments = new CommandArguments(args);
+            string? create = arguments.Value("--create-user");
+            string? reset = arguments.Value("--reset-password");
+            string? setAdmin = arguments.Value("--set-admin");
+            string? unsetAdmin = arguments.Value("--unset-admin");
+            string? name = arguments.Value("--name");
+            bool admin = arguments.Flag("--admin");
 
             UserChange? change = (create, reset, setAdmin, unsetAdmin) switch
             {
@@ -155,7 +78,7 @@ namespace ByteShelf.Server.Users.Services
                 (null, null, null, string email) when name == null && !admin => new UserChange.SetAdmin(email, Admin: false),
                 _ => null,
             };
-            return wellFormed && left.Count == 0 ? change : null;
+            return arguments.AllTaken ? change : null;
         }
 
         /// <summary>The services the API changes users through, on <paramref name="root"/>, without the web host.</summary>

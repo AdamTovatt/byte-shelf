@@ -6,7 +6,9 @@ namespace ByteShelfClient.InMemory
     /// <see cref="IByteShelfClient"/> held in memory, for an app's tests to run without a server. It
     /// follows the server's rules for paths, names, conflicts, quotas and the trash, and acts as a
     /// signed-in admin, <see cref="CurrentUser"/>: it does not model access, so nothing is refused for
-    /// lack of permission.
+    /// lack of permission. Replication is modelled by its rules and state alone: one in-memory client can
+    /// follow another in the same process, and then refuses writes until promoted, but a follower copies
+    /// no data.
     /// </summary>
     public sealed class InMemoryByteShelfClient : IByteShelfClient
     {
@@ -32,6 +34,9 @@ namespace ByteShelfClient.InMemory
         /// <summary>The admin the client acts as.</summary>
         public UserInfo CurrentUser { get; }
 
+        /// <summary>What stands for this server's public URL: the primary a follower's status names.</summary>
+        public string Address => _store.Address;
+
         /// <inheritdoc />
         public IShelfClient Shelf(string name)
         {
@@ -54,7 +59,7 @@ namespace ByteShelfClient.InMemory
         /// <inheritdoc />
         public Task<ShelfInfo> CreateShelfAsync(string name, long? quotaBytes = null, CancellationToken cancellationToken = default)
         {
-            return _store.RunAsync(
+            return _store.WriteAsync(
                 () =>
                 {
                     InMemoryErrors.Checked(() => ShelfSettings.Validate(name, quotaBytes));
@@ -79,7 +84,7 @@ namespace ByteShelfClient.InMemory
         /// <inheritdoc />
         public Task ChangePasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default)
         {
-            return _store.RunAsync(
+            return _store.WriteAsync(
                 () =>
                 {
                     InMemoryErrors.Checked(() => PasswordPolicy.Validate(newPassword));
@@ -104,14 +109,14 @@ namespace ByteShelfClient.InMemory
         public Task<UserInfo> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(request);
-            return _store.RunAsync(() => AddUser(request), cancellationToken);
+            return _store.WriteAsync(() => AddUser(request), cancellationToken);
         }
 
         /// <inheritdoc />
         public Task SetUserRolesAsync(Guid userId, IReadOnlyList<string> roles, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(roles);
-            return _store.RunAsync(
+            return _store.WriteAsync(
                 () =>
                 {
                     IReadOnlyList<string> distinct = InMemoryErrors.Checked(() => UserRoles.Normalize(roles));
@@ -129,7 +134,7 @@ namespace ByteShelfClient.InMemory
         /// <inheritdoc />
         public Task DeleteUserAsync(Guid userId, CancellationToken cancellationToken = default)
         {
-            return _store.RunAsync(
+            return _store.WriteAsync(
                 () =>
                 {
                     InMemoryStore.UserRow user = _store.GetUser(userId);
@@ -146,6 +151,46 @@ namespace ByteShelfClient.InMemory
                     _store.Users.Remove(user);
                 },
                 cancellationToken);
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// Modelled without data: no change log, so every sequence is 0 and a replica is never behind; it
+        /// counts as seen, and caught up, from the moment it paired.
+        /// </remarks>
+        public Task<ReplicationStatus> GetReplicationAsync(CancellationToken cancellationToken = default)
+        {
+            return _store.RunAsync(_store.Replication.Status, cancellationToken);
+        }
+
+        /// <inheritdoc />
+        /// <remarks>The code works only with another <see cref="InMemoryByteShelfClient"/> in this process.</remarks>
+        public Task<PairingCodeResponse> CreatePairingCodeAsync(CancellationToken cancellationToken = default)
+        {
+            return _store.WriteAsync(_store.Replication.NewCode, cancellationToken);
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// Follows another <see cref="InMemoryByteShelfClient"/> in this process by the server's rules,
+        /// and refuses writes from then on, but copies no data: its shelves stay empty and its users its own.
+        /// </remarks>
+        public Task<ReplicationStatus> FollowPrimaryAsync(PairWithPrimaryRequest request, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            return _store.WriteAsync(() => _store.Replication.Follow(request), cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public Task RemoveReplicaAsync(Guid replicaId, CancellationToken cancellationToken = default)
+        {
+            return _store.WriteAsync(() => _store.Replication.RemoveReplica(replicaId), cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public Task<PromoteResponse> PromoteAsync(CancellationToken cancellationToken = default)
+        {
+            return _store.RunAsync(_store.Replication.Promote, cancellationToken);
         }
 
         private bool IsLastAdmin(InMemoryStore.UserRow user)

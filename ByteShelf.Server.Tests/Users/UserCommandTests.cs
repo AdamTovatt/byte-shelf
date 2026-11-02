@@ -4,6 +4,7 @@ using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Replication.Models;
 using ByteShelf.Server.Replication.Repositories;
+using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Services;
@@ -48,7 +49,7 @@ namespace ByteShelf.Server.Tests.Users
         {
             int exitCode = await RunAsync(new Passwords(NewPassword), "--create-user", NewEmail, "--name", "New", "--admin");
 
-            Assert.Equal(UserCommand.Done, exitCode);
+            Assert.Equal(RootCommand.Done, exitCode);
             HttpClient client = await _host.CreateSignedInClientAsync(NewEmail, NewPassword);
             Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/users")).StatusCode);
         }
@@ -58,7 +59,7 @@ namespace ByteShelf.Server.Tests.Users
         {
             int exitCode = await RunAsync(new Passwords(NewPassword), "--create-user", NewEmail, "--name", "New");
 
-            Assert.Equal(UserCommand.Done, exitCode);
+            Assert.Equal(RootCommand.Done, exitCode);
             HttpClient client = await _host.CreateSignedInClientAsync(NewEmail, NewPassword);
             Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/users")).StatusCode);
         }
@@ -82,7 +83,7 @@ namespace ByteShelf.Server.Tests.Users
 
             int exitCode = await RunAsync(passwords, logs, "--create-user", ServerTestHost.MemberEmail, "--name", "Again");
 
-            Assert.Equal(UserCommand.Failed, exitCode);
+            Assert.Equal(RootCommand.Failed, exitCode);
             Assert.Contains($"A user with the email '{ServerTestHost.MemberEmail}' already exists.", logs.Messages);
             Assert.Empty(passwords.AskedFor);
         }
@@ -94,7 +95,7 @@ namespace ByteShelf.Server.Tests.Users
 
             int exitCode = await RunAsync(passwords, "--create-user", NewEmail, "--name", " ");
 
-            Assert.Equal(UserCommand.Failed, exitCode);
+            Assert.Equal(RootCommand.Failed, exitCode);
             Assert.Empty(passwords.AskedFor);
         }
 
@@ -103,7 +104,7 @@ namespace ByteShelf.Server.Tests.Users
         {
             int exitCode = await RunAsync(new Passwords("short"), "--create-user", NewEmail, "--name", "New");
 
-            Assert.Equal(UserCommand.Failed, exitCode);
+            Assert.Equal(RootCommand.Failed, exitCode);
             Assert.Equal(HttpStatusCode.Unauthorized, (await _host.TrySignInAsync(NewEmail, "short")).StatusCode);
         }
 
@@ -114,7 +115,7 @@ namespace ByteShelf.Server.Tests.Users
 
             int exitCode = await RunAsync(new Passwords(), logs, "--create-user", NewEmail, "--name", "New");
 
-            Assert.Equal(UserCommand.Failed, exitCode);
+            Assert.Equal(RootCommand.Failed, exitCode);
             Assert.Contains(Passwords.NoneCame, logs.Messages);
             using IServiceScope scope = _host.Services.CreateScope();
             Assert.Null(await scope.ServiceProvider.GetRequiredService<IUserService>().GetUserByEmailAsync(NewEmail));
@@ -128,7 +129,7 @@ namespace ByteShelf.Server.Tests.Users
 
             int exitCode = await RunAsync(new Passwords(NewPassword), "--reset-password", ServerTestHost.MemberEmail);
 
-            Assert.Equal(UserCommand.Done, exitCode);
+            Assert.Equal(RootCommand.Done, exitCode);
             Assert.Equal(HttpStatusCode.Unauthorized, (await _host.TrySignInAsync(ServerTestHost.MemberEmail, ServerTestHost.Password)).StatusCode);
             await _host.CreateSignedInClientAsync(ServerTestHost.MemberEmail, NewPassword);
             Assert.Equal(HttpStatusCode.Unauthorized, (await _host.AnonymousClient.PostAsJsonAsync("/api/auth/refresh", new { refreshToken })).StatusCode);
@@ -141,7 +142,7 @@ namespace ByteShelf.Server.Tests.Users
 
             int exitCode = await RunAsync(new Passwords(NewPassword), "--reset-password", ServerTestHost.MemberEmail);
 
-            Assert.Equal(UserCommand.Done, exitCode);
+            Assert.Equal(RootCommand.Done, exitCode);
             Assert.Equal(HttpStatusCode.Unauthorized, (await _host.MemberClient.GetAsync("/api/users/me")).StatusCode);
             Assert.Equal(HttpStatusCode.OK, (await _host.AdminClient.GetAsync("/api/users/me")).StatusCode);
         }
@@ -153,7 +154,7 @@ namespace ByteShelf.Server.Tests.Users
 
             int exitCode = await RunAsync(passwords, "--reset-password", NewEmail);
 
-            Assert.Equal(UserCommand.Failed, exitCode);
+            Assert.Equal(RootCommand.Failed, exitCode);
             Assert.Empty(passwords.AskedFor);
         }
 
@@ -164,18 +165,18 @@ namespace ByteShelf.Server.Tests.Users
 
             int exitCode = await RunAsync(new Passwords(), "--set-admin", ServerTestHost.MemberEmail);
 
-            Assert.Equal(UserCommand.Done, exitCode);
+            Assert.Equal(RootCommand.Done, exitCode);
             Assert.Equal(HttpStatusCode.OK, (await member.GetAsync("/api/users")).StatusCode);
         }
 
         [Fact]
         public async Task UnsetAdmin_WithAnotherAdmin_TakesAdminAway()
         {
-            Assert.Equal(UserCommand.Done, await RunAsync(new Passwords(), "--set-admin", ServerTestHost.MemberEmail));
+            Assert.Equal(RootCommand.Done, await RunAsync(new Passwords(), "--set-admin", ServerTestHost.MemberEmail));
 
             int exitCode = await RunAsync(new Passwords(), "--unset-admin", ServerTestHost.AdminEmail);
 
-            Assert.Equal(UserCommand.Done, exitCode);
+            Assert.Equal(RootCommand.Done, exitCode);
             Assert.Equal(HttpStatusCode.Forbidden, (await _host.AdminClient.GetAsync("/api/users")).StatusCode);
         }
 
@@ -186,7 +187,7 @@ namespace ByteShelf.Server.Tests.Users
 
             int exitCode = await RunAsync(new Passwords(), logs, "--unset-admin", ServerTestHost.AdminEmail);
 
-            Assert.Equal(UserCommand.Failed, exitCode);
+            Assert.Equal(RootCommand.Failed, exitCode);
             Assert.Contains("This is the only admin; make someone else an admin first.", logs.Messages);
             Assert.Equal(HttpStatusCode.OK, (await _host.AdminClient.GetAsync("/api/users")).StatusCode);
         }
@@ -201,7 +202,7 @@ namespace ByteShelf.Server.Tests.Users
 
             int exitCode = await RunAsync(new Passwords(), logs, command, email);
 
-            Assert.Equal(UserCommand.Done, exitCode);
+            Assert.Equal(RootCommand.Done, exitCode);
             Assert.Contains(said, logs.Messages);
             Assert.Empty(await ChangesAfterAsync(before));
         }
@@ -215,7 +216,7 @@ namespace ByteShelf.Server.Tests.Users
 
             int exitCode = await RunAsync(new Passwords(), logs, command, NewEmail);
 
-            Assert.Equal(UserCommand.Failed, exitCode);
+            Assert.Equal(RootCommand.Failed, exitCode);
             Assert.Contains($"No user has the email '{NewEmail}'.", logs.Messages);
         }
 
@@ -245,7 +246,7 @@ namespace ByteShelf.Server.Tests.Users
 
             int exitCode = await RunAsync(passwords, command.Split(' '));
 
-            Assert.Equal(UserCommand.Failed, exitCode);
+            Assert.Equal(RootCommand.Failed, exitCode);
             Assert.Empty(passwords.AskedFor);
             Assert.Empty(await ChangesAfterAsync(before));
         }
@@ -263,7 +264,7 @@ namespace ByteShelf.Server.Tests.Users
 
             int exitCode = await RunAsync(new Passwords(NewPassword), command.Split(' '));
 
-            Assert.Equal(UserCommand.Done, exitCode);
+            Assert.Equal(RootCommand.Done, exitCode);
             Assert.False(File.Exists(_host.TestRoot.Root.DatabasePath + "-wal"));
             await using ServiceProvider services = UserCommand.BuildServices(_host.TestRoot.Root, NullLoggerFactory.Instance);
             await using AsyncServiceScope scope = services.CreateAsyncScope();
@@ -282,7 +283,7 @@ namespace ByteShelf.Server.Tests.Users
 
             int exitCode = await RunAsync(new Passwords(), logs, "--set-admin", ServerTestHost.MemberEmail);
 
-            Assert.Equal(UserCommand.Failed, exitCode);
+            Assert.Equal(RootCommand.Failed, exitCode);
             Assert.Contains(logs.Messages, message => message.Contains("--migrate-only", StringComparison.Ordinal));
             Assert.Equal(applied - 1, await ExecuteAsync(CountApplied));
         }
@@ -295,7 +296,7 @@ namespace ByteShelf.Server.Tests.Users
 
             int exitCode = await UserCommand.RunAsync(["--set-admin", ServerTestHost.MemberEmail], folder, new Passwords(), logs);
 
-            Assert.Equal(UserCommand.Failed, exitCode);
+            Assert.Equal(RootCommand.Failed, exitCode);
             Assert.Contains($"There is no ByteShelf database in {folder}.", logs.Messages);
         }
 
@@ -304,7 +305,7 @@ namespace ByteShelf.Server.Tests.Users
         {
             int exitCode = await UserCommand.RunAsync(["--set-admin", NewEmail], rootPath: null, new Passwords(), NullLoggerFactory.Instance);
 
-            Assert.Equal(UserCommand.Usage, exitCode);
+            Assert.Equal(RootCommand.Usage, exitCode);
         }
 
         [Fact]
@@ -312,7 +313,7 @@ namespace ByteShelf.Server.Tests.Users
         {
             int exitCode = await RunAsync(new Passwords(), "--set-admin");
 
-            Assert.Equal(UserCommand.Usage, exitCode);
+            Assert.Equal(RootCommand.Usage, exitCode);
         }
 
         [Theory]

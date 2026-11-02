@@ -20,8 +20,10 @@ namespace ByteShelf.Server.Replication.Services
     /// fetched but not yet named by a committed row are never swept, nor are their staging files. So
     /// maintenance on a replica waits while a whole copy is taken. Besides maintenance, only a step
     /// removes objects here: a file's old contents once a swap of them (encrypting or decrypting it in
-    /// place) commits, as on the primary; every write of this server's own is refused. A promotion pauses the steps
-    /// (<see cref="ReplicaSyncControl"/>), stopping one in flight rather than waiting for it.
+    /// place) commits, as on the primary; every write of this server's own is refused. A promotion in this
+    /// process pauses the steps (<see cref="ReplicaSyncControl"/>), stopping one in flight rather than
+    /// waiting for it. One by the server's command in another process cannot, so a step commits only while
+    /// the pairing it read is still there, and otherwise rolls back what it applied.
     /// </remarks>
     public sealed class ReplicaSync
     {
@@ -145,7 +147,11 @@ namespace ByteShelf.Server.Replication.Services
             await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
             {
                 await _applier.ApplyAsync(WithoutUnavailable(entries, unavailable), session, changes);
-                await _sourceRepository.SetProgressAsync(reached, reachedFingerprint, _timeProvider.GetUtcNow(), session);
+                if (!await _sourceRepository.SetProgressAsync(source, reached, reachedFingerprint, _timeProvider.GetUtcNow(), session))
+                {
+                    return;
+                }
+
                 await session.CommitAsync();
             }
 
@@ -225,11 +231,17 @@ namespace ByteShelf.Server.Replication.Services
                 // No fingerprint: the entry at startedAt may not be in the copy, which holds only the newest
                 // state of each entity. The next page applied gives one.
                 await _copyRepository.ClearAsync(session);
-                await _sourceRepository.SetProgressAsync(startedAt.Value, appliedFingerprint: null, _timeProvider.GetUtcNow(), session);
-                await session.CommitAsync();
+                if (await _sourceRepository.SetProgressAsync(source, startedAt.Value, appliedFingerprint: null, _timeProvider.GetUtcNow(), session))
+                {
+                    await session.CommitAsync();
+                    await FinishAsync(changes);
+                    return;
+                }
             }
 
-            await FinishAsync(changes);
+            // Promoted (or paired anew) while the copy was read, by the server's command in another process:
+            // the rollback kept the pages written since the promotion cleared them, so the copy is dropped here.
+            await _copyRepository.ClearAsync();
         }
 
         /// <summary>

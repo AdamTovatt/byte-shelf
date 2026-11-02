@@ -9,6 +9,7 @@ namespace ByteShelfClient.InMemory
         {
             TimeProvider = timeProvider;
             RestoreWindow = restoreWindow;
+            Replication = new InMemoryReplication(this);
         }
 
         /// <summary>Held around every read and change, so each call sees and leaves a consistent state.</summary>
@@ -21,6 +22,45 @@ namespace ByteShelfClient.InMemory
         public List<InMemoryShelf> Shelves { get; } = new List<InMemoryShelf>();
 
         public List<UserRow> Users { get; } = new List<UserRow>();
+
+        public InMemoryReplication Replication { get; }
+
+        /// <summary>What stands for this store's public URL, which its replicas' status names.</summary>
+        public string Address { get; } = $"memory://{Guid.NewGuid():N}/";
+
+        /// <summary>Refuses a change on a replica, as a replica's API refuses every one but promoting it.</summary>
+        /// <exception cref="ByteShelfException"><see cref="ErrorCodes.ReadOnlyReplica"/>: this store follows a primary.</exception>
+        public void RequireWrites()
+        {
+            if (Replication.IsReplica)
+            {
+                throw new ByteShelfException("This server is a replica and only reads; make the change on its primary.", ErrorCodes.ReadOnlyReplica);
+            }
+        }
+
+        /// <summary>Runs a change as <see cref="RunAsync{T}"/> does, refused first on a replica (<see cref="RequireWrites"/>).</summary>
+        public Task<T> WriteAsync<T>(Func<T> operation, CancellationToken cancellationToken)
+        {
+            return RunAsync(
+                () =>
+                {
+                    RequireWrites();
+                    return operation();
+                },
+                cancellationToken);
+        }
+
+        /// <inheritdoc cref="WriteAsync{T}(Func{T}, CancellationToken)"/>
+        public Task WriteAsync(Action operation, CancellationToken cancellationToken)
+        {
+            return WriteAsync(
+                () =>
+                {
+                    operation();
+                    return true;
+                },
+                cancellationToken);
+        }
 
         public DateTimeOffset Now => TimeProvider.GetUtcNow();
 

@@ -171,6 +171,28 @@ To make a replica the primary, promote it on its Replication page, then point cl
 `APP_BASE_URL` at it. Stop the old primary: other replicas keep following it, and pairing them with the
 new one needs servers without shelves, in practice new roots.
 
+Every step above can be done without the web UI. An admin signed in with the `byteshelf` CLI runs
+`byteshelf replication` (the status), `replication code`, `replication follow <code> --name <name>`,
+`replication forget <replica>` and `replication promote`. On the server's own machine, with no
+login, as the user the server runs as and with `BYTESHELF_ROOT` set, the server's executable does the
+same to its root, with the server running or stopped:
+
+```
+ByteShelf.Server --replication-status
+ByteShelf.Server --replication-code
+ByteShelf.Server --follow <code> --name "<this server's name on the primary>"
+ByteShelf.Server --forget <replica id or name>
+ByteShelf.Server --promote
+```
+
+`--replication-code` also needs `APP_BASE_URL`, which the code names. These go through the same
+rules as the API: a code works once for 15 minutes and not on a replica, and only a server without
+shelves or replicas of its own can follow. A running server starts following within 2 seconds of `--follow`; after
+`--promote` it applies nothing more from the old primary, even changes it had already fetched. Like
+the user commands they never migrate the database. Exit codes: 0 done, 1 refused or failed (the
+reason is logged), 2 the arguments are wrong, or `BYTESHELF_ROOT` (or, for `--replication-code`,
+`APP_BASE_URL`) is not set.
+
 ## Backups
 
 While the server runs, with the same `BYTESHELF_ROOT` (the only variable it reads):

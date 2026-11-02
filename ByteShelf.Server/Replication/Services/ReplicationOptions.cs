@@ -3,9 +3,6 @@ namespace ByteShelf.Server.Replication.Services
     /// <summary>Where replicas reach this server, and the limits replication works within.</summary>
     public sealed class ReplicationOptions
     {
-        /// <summary>How long a pairing code can be used.</summary>
-        public static readonly TimeSpan CodeLifetime = TimeSpan.FromMinutes(15);
-
         /// <summary>This server's public URL (<c>APP_BASE_URL</c>), which a pairing code made here names.</summary>
         public required string PublicUrl { get; init; }
 

@@ -26,7 +26,7 @@ namespace ByteShelf.Server.Replication.Controllers
             return Ok(await _pairing.GetStatusAsync());
         }
 
-        /// <summary>A pairing code for one replica, usable once for <see cref="ReplicationOptions.CodeLifetime"/>. Refused on a replica.</summary>
+        /// <summary>A pairing code for one replica, usable once for <see cref="PairingCodeResponse.Lifetime"/>. Refused on a replica.</summary>
         [HttpPost("codes")]
         [ProducesResponseType(typeof(PairingCodeResponse), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 409)]

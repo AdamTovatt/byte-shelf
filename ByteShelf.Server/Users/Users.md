@@ -100,12 +100,13 @@ server's executable on its machine (DEPLOYMENT.md). It builds the domain service
 (`Program.AddDomainServices`) without the web host, so the rules and the change log are the API's:
 `IUserService` creates users and changes roles (the last admin is kept), and
 `IPasswordResetService.SetPasswordAsync` sets a password as a reset link does, ending the user's
-sessions and reset links. A replica refuses them, as its API refuses writes, and so does a database
-with migrations still to run: the server may be running on it, so they never migrate it. Passwords
+sessions and reset links. A replica refuses them, as its API refuses writes. `RootCommand` frames them,
+as it does the replication commands: it refuses a database with migrations still to run (the server
+may be running on it, so they never migrate it), and closes the pooled connections. Passwords
 come from `IPasswordReader`: stdin when redirected, else typed twice at the terminal, never an
 argument. A new user's email and name, and a user to change, are checked before the password is asked
-for. The command closes its pooled connections before it exits, so with the server stopped SQLite
-removes the `-wal` and `-shm` files it made rather than leaving them owned by whoever ran it.
+for. Closing the connections before it exits means that with the server stopped SQLite removes the
+`-wal` and `-shm` files it made rather than leaving them owned by whoever ran it.
 
 ## Cleanup
 

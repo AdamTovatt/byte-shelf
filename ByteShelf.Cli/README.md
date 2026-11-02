@@ -69,6 +69,12 @@ Admins also run these, as `byteshelf help` lists them: `shelf create`, `shelf up
 shelf's keys (a new key's secret is shown once). `passwd` changes your own password and is for
 anyone signed in as a user.
 
+Replication is an admin's too: `replication` shows the replicas and how many changes each is behind,
+or the primary this server follows; `replication code` makes a pairing code; `replication follow
+<code> --name <name>`, run against a server without shelves, makes it a replica of the code's primary
+(its users are replaced by the primary's, so sign in again with one of those); `replication forget
+<replica>` unpairs a replica by id or name; and `replication promote` makes a replica take writes.
+
 ## Signing in
 
 `byteshelf login <server> --email <email>` signs in as a user, and `byteshelf login <server> --key`

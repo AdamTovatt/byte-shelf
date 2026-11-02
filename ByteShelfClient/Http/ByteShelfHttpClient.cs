@@ -119,5 +119,41 @@ namespace ByteShelfClient.Http
         {
             return _connection.SendAsync(HttpMethod.Delete, $"api/users/{userId:D}", cancellationToken);
         }
+
+        /// <inheritdoc />
+        public Task<ReplicationStatus> GetReplicationAsync(CancellationToken cancellationToken = default)
+        {
+            return _connection.SendAsync(HttpMethod.Get, "api/replication", ByteShelfJsonContext.Default.ReplicationStatus, cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public Task<PairingCodeResponse> CreatePairingCodeAsync(CancellationToken cancellationToken = default)
+        {
+            return _connection.SendAsync(HttpMethod.Post, "api/replication/codes", ByteShelfJsonContext.Default.PairingCodeResponse, cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public Task<ReplicationStatus> FollowPrimaryAsync(PairWithPrimaryRequest request, CancellationToken cancellationToken = default)
+        {
+            return _connection.SendAsync(
+                HttpMethod.Post,
+                "api/replication/pair",
+                request,
+                ByteShelfJsonContext.Default.PairWithPrimaryRequest,
+                ByteShelfJsonContext.Default.ReplicationStatus,
+                cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public Task RemoveReplicaAsync(Guid replicaId, CancellationToken cancellationToken = default)
+        {
+            return _connection.SendAsync(HttpMethod.Delete, $"api/replication/replicas/{replicaId:D}", cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public Task<PromoteResponse> PromoteAsync(CancellationToken cancellationToken = default)
+        {
+            return _connection.SendAsync(HttpMethod.Post, "api/replication/promote", ByteShelfJsonContext.Default.PromoteResponse, cancellationToken);
+        }
     }
 }

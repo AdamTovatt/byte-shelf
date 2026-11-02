@@ -15,8 +15,11 @@ namespace ByteShelf.Server.Replication.Repositories
         /// <summary>
         /// Records how far the log is applied, in the transaction that applied it, and that no copy is due.
         /// <paramref name="appliedFingerprint"/> is the fingerprint of the entry at <paramref name="appliedSequence"/>, when known.
+        /// Answers false, writing nothing, when this server no longer follows <paramref name="source"/>:
+        /// promoted, or paired anew, since the step read it, perhaps by the server's command in another
+        /// process. The caller then rolls back what it applied from that source.
         /// </summary>
-        Task SetProgressAsync(long appliedSequence, string? appliedFingerprint, DateTimeOffset syncedAt, IDbSession session);
+        Task<bool> SetProgressAsync(ReplicationSource source, long appliedSequence, string? appliedFingerprint, DateTimeOffset syncedAt, IDbSession session);
 
         Task RecordSyncErrorAsync(string message, DateTimeOffset at, IDbSession? session = null);
 

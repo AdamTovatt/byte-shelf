@@ -10,5 +10,12 @@ namespace ByteShelf.Server.Tests.Client
         {
             return Task.FromResult<IByteShelfClient>(new InMemoryByteShelfClient(password: AdminPassword));
         }
+
+        protected override string PrimaryUrl => ((InMemoryByteShelfClient)Client).Address;
+
+        protected override Task<IByteShelfClient> CreateServerToFollowAsync()
+        {
+            return Task.FromResult<IByteShelfClient>(new InMemoryByteShelfClient());
+        }
     }
 }

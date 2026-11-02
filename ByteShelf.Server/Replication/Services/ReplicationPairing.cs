@@ -94,11 +94,11 @@ namespace ByteShelf.Server.Replication.Services
             };
         }
 
-        /// <summary>On a primary: a pairing code for one replica, usable once for <see cref="ReplicationOptions.CodeLifetime"/>.</summary>
+        /// <summary>On a primary: a pairing code for one replica, usable once for <see cref="PairingCodeResponse.Lifetime"/>.</summary>
         public async Task<PairingCodeResponse> CreateCodeAsync()
         {
             string secret = RandomSecret.Generate();
-            DateTimeOffset expiresAt = _timeProvider.GetUtcNow() + ReplicationOptions.CodeLifetime;
+            DateTimeOffset expiresAt = _timeProvider.GetUtcNow() + PairingCodeResponse.Lifetime;
 
             await _replicaRepository.InsertInviteAsync(Guid.NewGuid(), SecretHash.Sha256Hex(secret), expiresAt);
 
@@ -162,15 +162,8 @@ namespace ByteShelf.Server.Replication.Services
                 throw new ConflictException("That code was made on this server; paste it into the server that is to be the replica.");
             }
 
-            if ((await _replicaRepository.GetAllAsync()).Count > 0)
-            {
-                throw new ConflictException("This server has replicas of its own; a replica cannot have any. Remove them first.");
-            }
-
-            if ((await _shelfRepository.GetAllAsync()).Count > 0)
-            {
-                throw new ConflictException("Only a server without shelves can become a replica: it takes the primary's shelves and users.");
-            }
+            // Checked before the code is used, so a refusal leaves it working, and again below.
+            await RequireNothingToReplaceAsync(session: null);
 
             AcceptPairingResponse accepted = await _primaryClient.AcceptAsync(
                 code.PrimaryUrl,
@@ -192,13 +185,46 @@ namespace ByteShelf.Server.Replication.Services
                 NeedsCopy = true,
             };
 
-            if (!await _sourceRepository.TryInsertAsync(source))
+            // The checks again, in the transaction that pairs: the first copy removes whatever the primary does
+            // not have, so a shelf made while the primary was asked (the server running beside the command
+            // that pairs it) must refuse the pairing rather than be lost. A write the API had let through
+            // before the pairing commits can still land after it; SQLite refuses this transaction's insert
+            // if one commits after its checks read.
+            try
             {
-                throw new ConflictException("This server is already a replica.");
+                await using IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync();
+                await RequireNothingToReplaceAsync(session);
+                if (!await _sourceRepository.TryInsertAsync(source, session))
+                {
+                    throw new ConflictException("This server is already a replica.");
+                }
+
+                await session.CommitAsync();
+            }
+            catch (ConflictException)
+            {
+                // The primary took the code and lists this server; it is told to drop it.
+                await _primaryClient.LeaveAsync(source, cancellationToken);
+                throw;
             }
 
             _syncControl.Wake();
             return await GetStatusAsync();
+        }
+
+        /// <summary>Refuses pairing a server that has what a replica cannot keep: replicas of its own, or shelves, which its first copy would remove.</summary>
+        /// <exception cref="ConflictException">It has either.</exception>
+        private async Task RequireNothingToReplaceAsync(IDbSession? session)
+        {
+            if ((await _replicaRepository.GetAllAsync(session)).Count > 0)
+            {
+                throw new ConflictException("This server has replicas of its own; a replica cannot have any. Remove them first.");
+            }
+
+            if ((await _shelfRepository.GetAllAsync(session)).Count > 0)
+            {
+                throw new ConflictException("Only a server without shelves can become a replica: it takes the primary's shelves and users.");
+            }
         }
 
         /// <summary>On a primary: unpairs a replica, which can no longer read the log.</summary>
@@ -226,7 +252,9 @@ namespace ByteShelf.Server.Replication.Services
             ReplicationSource source;
 
             // Steps paused, so one in flight stops rather than finishing a copy first; then under the
-            // gate it holds while it applies, so nothing is applied after this.
+            // gate it holds while it applies, so nothing is applied after this. Both reach only a sync in
+            // this process; a server running beside the command that promotes finds the pairing gone when
+            // its step commits (ReplicaSync), and drops what it fetched.
             using (_syncControl.PauseSteps())
             using (await _maintenanceGate.EnterAsync(cancellationToken))
             {

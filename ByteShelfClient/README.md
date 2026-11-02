@@ -29,7 +29,9 @@ await session.SignOutAsync();   // ends it on the server; disposing alone leaves
 ```
 
 `IByteShelfClient` lists and creates shelves and, with a `UserSession`, the signed-in user and
-(for admins) the other users; a shelf key cannot reach users. `IShelfClient` works on one shelf:
+(for admins) the other users; a shelf key cannot reach users. Admins also drive replication through
+it: `GetReplicationAsync` (the replicas and how far behind each is, or the primary followed),
+`CreatePairingCodeAsync`, `FollowPrimaryAsync`, `RemoveReplicaAsync` and `PromoteAsync`. `IShelfClient` works on one shelf:
 list a directory or its whole tree, search, upload, open, describe, share by a link, make an upload
 link, encrypt directories and swap a file's contents in place (`SwapContentAsync`), create
 directories, move, delete, the trash, and for admins the shelf's settings, grants and keys.
@@ -134,6 +136,10 @@ The admin is `CurrentUser`; pass `email` and
 `password` to choose who it is (a test of `ChangePasswordAsync` needs the password), a
 `TimeProvider` to control timestamps and when the trash is purged, and `restoreWindow` to change
 the 30 days.
+
+Replication is modelled by its rules and state only: an in-memory client can follow another in the
+same process with its pairing code, after which it refuses writes until promoted, but a follower
+copies no data, and it is never behind.
 
 ```csharp
 InMemoryByteShelfClient client = new InMemoryByteShelfClient(email: "me@example.com", password: "a-long-password");

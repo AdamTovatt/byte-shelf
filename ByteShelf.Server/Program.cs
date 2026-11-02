@@ -7,6 +7,7 @@ using ByteShelf.Server.Invalidation;
 using ByteShelf.Server.Jobs;
 using ByteShelf.Server.Mcp;
 using ByteShelf.Server.Replication;
+using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Database;
@@ -71,6 +72,18 @@ namespace ByteShelf.Server
                     args,
                     EnvironmentVariables.ByteShelfRoot.GetValueOrDefault(),
                     new ConsolePasswordReader(),
+                    loggerFactory).GetAwaiter().GetResult();
+                return;
+            }
+
+            if (ReplicationCommand.Flags.Any(args.Contains))
+            {
+                // Beside BYTESHELF_ROOT only APP_BASE_URL is read, by --replication-code.
+                using ILoggerFactory loggerFactory = CreateStartupLoggerFactory();
+                Environment.ExitCode = ReplicationCommand.RunAsync(
+                    args,
+                    EnvironmentVariables.ByteShelfRoot.GetValueOrDefault(),
+                    EnvironmentVariables.AppBaseUrl.GetValueOrDefault(),
                     loggerFactory).GetAwaiter().GetResult();
                 return;
             }

@@ -54,14 +54,16 @@ namespace ByteShelf.Server.Replication.Repositories
         }
 
         /// <inheritdoc />
-        public async Task SetProgressAsync(long appliedSequence, string? appliedFingerprint, DateTimeOffset syncedAt, IDbSession session)
+        public async Task<bool> SetProgressAsync(ReplicationSource source, long appliedSequence, string? appliedFingerprint, DateTimeOffset syncedAt, IDbSession session)
         {
+            string credential = source.Credential;
             string query = $@"
                 UPDATE replication_source
                 SET applied_sequence = @{nameof(appliedSequence)}, applied_fingerprint = @{nameof(appliedFingerprint)}, needs_copy = 0,
-                    last_synced_at = @{nameof(syncedAt)}, last_error = NULL, last_error_at = NULL";
+                    last_synced_at = @{nameof(syncedAt)}, last_error = NULL, last_error_at = NULL
+                WHERE credential = @{nameof(credential)}";
 
-            await session.Connection.ExecuteAsync(query, new { appliedSequence, appliedFingerprint, syncedAt }, transaction: session.Transaction);
+            return await session.Connection.ExecuteAsync(query, new { appliedSequence, appliedFingerprint, syncedAt, credential }, transaction: session.Transaction) > 0;
         }
 
         /// <inheritdoc />

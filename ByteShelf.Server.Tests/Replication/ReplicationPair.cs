@@ -37,7 +37,21 @@ namespace ByteShelf.Server.Tests.Replication
             TimeProvider? primaryClock = null)
         {
             ServerTestHost primary = await ServerTestHost.StartAsync();
-            ServerTestHost replica = await ServerTestHost.StartAsync(services =>
+            return new ReplicationPair(primary, await StartServerToFollowAsync(primary, wrapPrimary, idleTimeout, pageSize, primaryClock));
+        }
+
+        /// <summary>
+        /// A new server whose calls to a primary reach <paramref name="primary"/>, with its background sync
+        /// off; the rest as <see cref="StartAsync"/>.
+        /// </summary>
+        public static Task<ServerTestHost> StartServerToFollowAsync(
+            ServerTestHost primary,
+            Func<HttpMessageHandler, HttpMessageHandler>? wrapPrimary = null,
+            TimeSpan? idleTimeout = null,
+            int? pageSize = null,
+            TimeProvider? primaryClock = null)
+        {
+            return ServerTestHost.StartAsync(services =>
             {
                 services.Remove(services.Single(service => service.ServiceType == typeof(IHostedService) && service.ImplementationType == typeof(ReplicaSyncWorker)));
                 services
@@ -60,8 +74,6 @@ namespace ByteShelf.Server.Tests.Replication
                         primaryClock)));
                 }
             });
-
-            return new ReplicationPair(primary, replica);
         }
 
         /// <summary>Makes a code on the primary and pairs the replica with it.</summary>

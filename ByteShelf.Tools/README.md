@@ -19,6 +19,7 @@ the same words:
 | `Encrypting` | Encrypting and decrypting what is stored, in place, for the CLI's `encrypt` and `decrypt`: a directory first, then each file swapped for its encrypted or decrypted contents, keeping its id. Run again, it finishes a run that stopped. |
 | `LinkLifetimes` | A link's lifetime as written: `30m`, `12h`, `7d`. |
 | `PermissionNames` | The words for access and key permissions. |
+| `Replicas` | A replica named by id or name, for the CLI's `replication forget` and the server's `--forget`; none or several sharing the name is refused with where they are listed. |
 | `TextFormat` | How results read as text, in the terminal and in answers to an agent. |
 | `Failure` | What to say when something fails, ending with the server's error code. |
 | `UsageException` | A command or tool call given wrongly, or one that cannot run as things are. |

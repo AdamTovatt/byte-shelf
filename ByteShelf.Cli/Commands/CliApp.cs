@@ -86,6 +86,12 @@ namespace ByteShelf.Cli.Commands
                 new Command(Section.Users, "keys", "<shelf>", "a shelf's keys", ListKeysAsync),
                 new Command(Section.Users, "key create", $"<shelf> <name> {PermissionNames.KeyWords}", "create a key; its secret is shown once", CreateKeyAsync),
                 new Command(Section.Users, "key delete", "<shelf> <key-id>", "delete a key", DeleteKeyAsync),
+
+                new Command(Section.Replication, "replication", string.Empty, "this server's replicas and how many changes each is behind, or the primary it follows", ReplicationStatusAsync),
+                new Command(Section.Replication, "replication code", string.Empty, string.Create(CultureInfo.InvariantCulture, $"a pairing code for one new replica, usable once within {PairingCodeResponse.Lifetime.TotalMinutes} minutes"), PairingCodeAsync),
+                new Command(Section.Replication, "replication follow", "<code> --name <replica-name>", "make this server a replica of the one that made the code, named so there; only a server without shelves can, and it takes the primary's shelves and users, its own users replaced", FollowAsync),
+                new Command(Section.Replication, "replication forget", "<replica>", "unpair a replica, named by id or name; it can no longer read this server's changes", ForgetReplicaAsync),
+                new Command(Section.Replication, "replication promote", string.Empty, "stop following the primary, so this server takes writes", PromoteAsync),
             };
         }
 
@@ -96,6 +102,7 @@ namespace ByteShelf.Cli.Commands
             Files,
             Trash,
             Users,
+            Replication,
         }
 
         /// <summary>Every command, by section, with the options every command takes.</summary>
@@ -158,7 +165,9 @@ namespace ByteShelf.Cli.Commands
                 Section.Shelves => "Shelves:",
                 Section.Files => "Files and directories:",
                 Section.Trash => "Trash:",
-                _ => "Users, access and keys (admins, except passwd):",
+                Section.Users => "Users, access and keys (admins, except passwd):",
+                Section.Replication => "Replication (admins; the server's own --replication-status and the like need no login):",
+                _ => throw new ArgumentOutOfRangeException(nameof(section), section, "A section without a title."),
             };
         }
 
@@ -672,6 +681,46 @@ namespace ByteShelf.Cli.Commands
             arguments.EnsureAllUsed();
             await (await ShelfAsync(shelf, cancellationToken)).DeleteKeyAsync(keyId, cancellationToken);
             Done("Deleted the key.");
+        }
+
+        private async Task ReplicationStatusAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            arguments.EnsureAllUsed();
+            Print(await (await _clients.OpenAsync(cancellationToken)).GetReplicationAsync(cancellationToken), ByteShelfJsonContext.Default.ReplicationStatus, TextFormat.Replication);
+        }
+
+        private async Task PairingCodeAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            arguments.EnsureAllUsed();
+            Print(await (await _clients.OpenAsync(cancellationToken)).CreatePairingCodeAsync(cancellationToken), ByteShelfJsonContext.Default.PairingCodeResponse, TextFormat.PairingCode);
+        }
+
+        private async Task FollowAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            string code = arguments.Required(0, "code");
+            string name = arguments.Value("--name") ?? throw new UsageException("Give this server's --name on the primary.");
+            arguments.EnsureAllUsed();
+            PairWithPrimaryRequest request = new PairWithPrimaryRequest { Code = code, Name = name };
+            Print(await (await _clients.OpenAsync(cancellationToken)).FollowPrimaryAsync(request, cancellationToken), ByteShelfJsonContext.Default.ReplicationStatus, TextFormat.Followed);
+        }
+
+        private async Task ForgetReplicaAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            string replica = arguments.Required(0, "replica");
+            arguments.EnsureAllUsed();
+            IByteShelfClient client = await _clients.OpenAsync(cancellationToken);
+            ReplicaLookup lookup = Replicas.Find((await client.GetReplicationAsync(cancellationToken)).Replicas, replica, "'byteshelf replication'");
+            ReplicaInfo forgotten = lookup.Found
+                ?? throw new ByteShelfException(lookup.Refusal!, lookup.Ambiguous ? ErrorCodes.Conflict : ErrorCodes.NotFound);
+
+            await client.RemoveReplicaAsync(forgotten.Id, cancellationToken);
+            Done(TextFormat.ReplicaRemoved(forgotten));
+        }
+
+        private async Task PromoteAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            arguments.EnsureAllUsed();
+            Print(await (await _clients.OpenAsync(cancellationToken)).PromoteAsync(cancellationToken), ByteShelfJsonContext.Default.PromoteResponse, TextFormat.Promoted);
         }
 
         /// <exception cref="UsageException"><paramref name="text"/> is not an id.</exception>

@@ -292,6 +292,70 @@ namespace ByteShelf.Tools
             });
         }
 
+        /// <summary>
+        /// A server's part in replication: on a primary, each replica with how many changes it has yet
+        /// to apply; on a replica, the primary it follows, how far it has got and when it last caught up.
+        /// </summary>
+        public static string Replication(ReplicationStatus status)
+        {
+            if (status.Source is ReplicationSourceInfo source)
+            {
+                List<string> lines = new List<string>
+                {
+                    $"A replica of {source.PrimaryUrl}, paired {Time(source.PairedAt)}; it refuses writes until promoted.",
+                    source.Copying
+                        ? "Taking a whole copy of the primary."
+                        : $"Applied the primary's changes up to {source.AppliedSequence}.",
+                    source.LastSyncedAt is DateTimeOffset synced ? $"Last caught up {Time(synced)}." : "Not caught up yet.",
+                };
+
+                if (source.LastError != null)
+                {
+                    lines.Add($"Last failed {(source.LastErrorAt is DateTimeOffset failed ? Time(failed) : "just now")}: {source.LastError}");
+                }
+
+                return Lines(lines);
+            }
+
+            return status.Replicas.Count == 0
+                ? $"No replicas. Latest change {status.LatestSequence}."
+                : Lines(status.Replicas
+                    .Select(replica => $"{replica.Id:D}  {replica.Name}  {replica.ChangesBehind} changes behind, "
+                        + (replica.LastSeenAt is DateTimeOffset seen ? $"last seen {Time(seen)}" : "not seen yet"))
+                    .Prepend($"Latest change {status.LatestSequence}. Replicas:"));
+        }
+
+        /// <summary>A server that has just paired with a primary, and what that means for its users.</summary>
+        public static string Followed(ReplicationStatus status)
+        {
+            return Lines(new[]
+            {
+                Replication(status),
+                "It takes a whole copy of the primary, then follows its changes. The copy replaces this server's own users with the primary's: sign in with an account of the primary's from then on.",
+            });
+        }
+
+        public static string ReplicaRemoved(ReplicaInfo replica)
+        {
+            return $"Removed the replica {replica.Name} ({replica.Id:D}); it can no longer read this server's changes.";
+        }
+
+        public static string PairingCode(PairingCodeResponse code)
+        {
+            return Lines(new[]
+            {
+                code.Code,
+                $"Works once, until {Time(code.ExpiresAt)}, on a server without shelves that is to follow this one.",
+            });
+        }
+
+        public static string Promoted(PromoteResponse promoted)
+        {
+            return promoted.PrimaryTold
+                ? "Promoted: this server takes writes now, and its old primary no longer lists it."
+                : "Promoted: this server takes writes now. Its old primary did not answer, so it lists this server until an admin there removes it.";
+        }
+
         private static string Lines(IEnumerable<string> lines)
         {
             return string.Join(Environment.NewLine, lines);

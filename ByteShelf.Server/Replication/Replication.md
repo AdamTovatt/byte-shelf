@@ -12,7 +12,7 @@ to reach the replica.
 ## Pairing
 
 1. An admin on the primary makes a **pairing code** (`POST api/replication/codes`). A `replica_invite`
-   row keeps the hash of its secret for 15 minutes (`ReplicationOptions.CodeLifetime`). The code
+   row keeps the hash of its secret for 15 minutes (`PairingCodeResponse.Lifetime`). The code
    (`bsrep1_` + base64url JSON, `PairingCode`) carries the primary's `APP_BASE_URL`, its instance id
    and the secret.
 2. An admin on the replica-to-be pastes it with a name (`POST api/replication/pair`). That server must
@@ -122,10 +122,25 @@ new one is refused there, or fails that test, until somebody decides otherwise.
 ## Promoting
 
 `POST api/replication/promote` on a replica removes `replication_source`: from then on the server takes
-writes and may have replicas of its own. What it holds stays as it is; a whole copy in progress is dropped
-(`ReplicaSyncControl.PauseSteps` stops the step in flight rather than waiting for it). It tells the primary,
+writes and may have replicas of its own. What it holds stays as it is; a whole copy in progress is dropped.
+Through the API, `ReplicaSyncControl.PauseSteps` stops the step in flight rather than waiting for it; the
+server's `--promote` runs in another process, which cannot, so the step finds the pairing gone when it
+commits (below). It tells the primary,
 which drops the replica (`DELETE api/replication/feed/pairing`); the answer says whether the primary heard,
 and when it did not, the replica stays listed there until removed.
+
+## The server's own commands
+
+`ReplicationCommand` (`--replication-status`, `--replication-code`, `--follow`, `--forget`, `--promote`)
+runs `ReplicationPairing` on a root without the web host (`AddReplicationPairing`), framed by `RootCommand`
+as the user commands are. It leaves following the primary to the server: a running one finds a pairing on
+its next poll. Promoting from another process cannot pause that server's step, so a step's transaction
+commits only while the pairing it read is still there (`SetProgressAsync` matches the credential, and the
+step rolls back what it applied when it does not); a whole copy's last transaction is guarded the same way,
+and the pages it wrote after the promotion cleared them are cleared again. Pairing checks for shelves and
+replicas once more in the transaction that pairs, since a running server can make a shelf while the
+command waits on the primary, and the first copy would remove it; the primary is then told to drop the
+replica it had just accepted.
 
 ## Objects and maintenance
 

@@ -20,9 +20,30 @@ namespace ByteShelf.Server.Replication
             return services;
         }
 
+        /// <summary>Replication in the web host: <see cref="AddReplicationPairing"/>, the read-only filter on a replica, and the sync that follows the primary.</summary>
         /// <param name="services">The application's services.</param>
         /// <param name="publicUrl">This server's public URL, which pairing codes made here name.</param>
         public static IServiceCollection AddReplicationServices(this IServiceCollection services, string publicUrl)
+        {
+            services.AddReplicationPairing(publicUrl);
+            services.AddScoped<ReplicaApplier>();
+            services.AddScoped<IReplicationFeed, ReplicationFeed>();
+            services.AddScoped<ReplicaSync>();
+            services.AddScoped<ReplicaReadOnlyFilter>();
+
+            services.Configure<MvcOptions>(options => options.Filters.AddService<ReplicaReadOnlyFilter>());
+            services.AddHostedService<ReplicaSyncWorker>();
+
+            return services;
+        }
+
+        /// <summary>
+        /// <see cref="ReplicationPairing"/> and what it needs, without the web host: for the server's
+        /// replication commands, which leave following the primary to the server once it runs.
+        /// </summary>
+        /// <param name="services">The services.</param>
+        /// <param name="publicUrl">This server's public URL, which pairing codes made here name.</param>
+        public static IServiceCollection AddReplicationPairing(this IServiceCollection services, string publicUrl)
         {
             services.TryAddTimeProvider();
 
@@ -50,15 +71,7 @@ namespace ByteShelf.Server.Replication
             services.AddReplicationState();
             services.AddScoped<IReplicationCopyRepository, ReplicationCopyRepository>();
             services.AddScoped<PrimaryClient>();
-            services.AddScoped<ReplicaApplier>();
             services.AddScoped<ReplicationPairing>();
-            services.AddScoped<IReplicationFeed, ReplicationFeed>();
-            services.AddScoped<ReplicaSync>();
-            services.AddScoped<ReplicaReadOnlyFilter>();
-
-            services.Configure<MvcOptions>(options => options.Filters.AddService<ReplicaReadOnlyFilter>());
-            services.AddHostedService<ReplicaSyncWorker>();
-
             return services;
         }
     }
