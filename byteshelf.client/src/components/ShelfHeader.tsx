@@ -25,17 +25,19 @@ export function ShelfHeader({ shelf, view, path = ROOT_PATH }: ShelfHeaderProps)
 
   const views: ShelfView[] = isAdmin ? ['files', 'trash', 'settings'] : ['files', 'trash'];
   const crumbs: BreadcrumbItem[] = [
-    { key: 'shelves', label: 'Shelves', to: '/', icon: iconMap.shelves },
-    { key: shelf, label: shelf, to: shelfRoute(shelf), icon: iconMap.shelf },
+    // Too narrow for the whole trail on one line: first Shelves, then the shelf, show only their icons.
+    { key: 'shelves', label: 'Shelves', to: '/', icon: iconMap.shelves, collapseOrder: 1 },
+    { key: shelf, label: shelf, to: shelfRoute(shelf), icon: iconMap.shelf, collapseOrder: 2 },
     ...(view === 'files'
-      ? pathSegments(path).map((segment): BreadcrumbItem => ({ key: segment.path, label: segment.name, to: shelfRoute(shelf, segment.path) }))
+      ? pathSegments(path).map((segment): BreadcrumbItem => ({ key: segment.path, label: segment.name, to: shelfRoute(shelf, segment.path), icon: iconMap.folder }))
       : [{ key: view, label: VIEW_LABELS[view], to: null }]),
   ];
 
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
+        {/* The space beside the menu, whatever the trail's own width, which is what it collapses to fit. */}
+        <div className="min-w-0 flex-1">
           <Breadcrumbs items={crumbs} />
         </div>
         <Dropdown align="right" trigger={<IconButton variant="ghost" size="sm" icon={iconMap.more} aria-label={`Pages of ${shelf}`} />}>
