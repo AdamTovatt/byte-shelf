@@ -67,8 +67,9 @@ the replica, which purges it with its own maintenance once the replica's restore
 it was trashed. A deletion the replica followed keeps the primary's time, so the window counts from the
 deletion on the primary, not from the purge; something the replica only trashes at the purge (it never
 saw the deletion) counts from then. Either way a mistaken purge on the primary (emptying the trash) does
-not reach the backup at once. A shelf's removal removes what the replica held for it at once: the primary
-removes only an emptied shelf.
+not reach the backup at once, and the replica gives such a file back from its trash without restoring
+it, which it could not, being read-only (`GET trash/{deletionId}/content`, [Storage](../Storage/Storage.md)).
+A shelf's removal removes what the replica held for it at once: the primary removes only an emptied shelf.
 
 **Swapped contents go at once.** Encrypting or decrypting a file swaps its contents in place, which the
 person confirmed cannot be undone ([Storage](../Storage/Storage.md#encryption-shelfencryption)). A row's

@@ -4,7 +4,8 @@ The ByteShelf web UI: React, TypeScript, Vite, Tailwind and TanStack Query, buil
 template. Everyone browses the shelves they reach, searches a folder and everything below it by
 name or description, uploads (dropping files on a directory works too), opens and downloads files,
 describes, shares by a link, moves, renames and deletes them, encrypts files and folders with a
-password, and restores them from the trash. Admins
+password, and restores them from the trash or downloads a deleted file from it without restoring
+it (a replica's trash too). Admins
 also create shelves and users, set quotas, give access from a shelf or from a user, make keys, and on
 the Replication page pair replicas, see how far behind each is, remove one, and promote a replica.
 
@@ -70,7 +71,12 @@ npm run codegen    # in a second terminal
   session holds no record that the server set that cookie. A browser keeps that `Secure` cookie only over HTTPS or on
   localhost, so elsewhere (plain HTTP) the file is read with the token and shown or saved from a
   local blob as an encrypted one is, which holds it whole in memory. One rule picks the way,
-  `opensByNavigation` (`isSecureContext`), in `services/contentService.ts`.
+  `opensByNavigation` (`isSecureContext`), in `services/contentService.ts`. The same opening serves
+  a file in the trash: a `ContentSource` says whether a file is read live or from one deletion
+  (`deletedContent`), and which encrypted folder's password opens it: for a live file the one at its
+  path, for a deleted one the folder it was stored in, as the deletion's listing names it. The
+  Trash page's Download saves a deleted file through it; a deleted folder downloads whole from the
+  CLI or an agent.
 - **Encryption** (`hooks/useEncryption.tsx`, `lib/encryption/`): a file's or folder's menu encrypts
   it with a password, typed twice and then a warning that a lost one cannot be recovered; typage
   encrypts in the browser at age's work factor, about a second a file, and the file's contents are

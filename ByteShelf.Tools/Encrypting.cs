@@ -236,7 +236,7 @@ namespace ByteShelf.Tools
         private static async Task DecryptFileAsync(IShelfClient shelf, ShelfFile file, string password, FolderTransferResult result, CancellationToken cancellationToken)
         {
             await using FileStream decrypted = Transfers.OpenSideFile();
-            await Transfers.WriteAsync(shelf, file, decrypted, EncryptedFiles.DecryptedWith(password), cancellationToken);
+            await Transfers.WriteAsync(FileSource.Live(shelf), file, decrypted, EncryptedFiles.DecryptedWith(password), cancellationToken);
             decrypted.Position = 0;
             await shelf.SwapContentAsync(file, decrypted, encrypted: false, cancellationToken);
             result.Add(file.SizeBytes);

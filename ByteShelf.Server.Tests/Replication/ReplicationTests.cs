@@ -203,6 +203,24 @@ namespace ByteShelf.Server.Tests.Replication
             Assert.Equal("/a.txt", Assert.Single(trash).Path);
         }
 
+        /// <summary>How a replica gives back a file purged on its primary: a read, so the read-only replica answers it.</summary>
+        [Fact]
+        public async Task FilePurgedOnThePrimary_IsReadFromTheReplicasTrash()
+        {
+            await _pair.PairAsync();
+            await _pair.PutOnPrimaryAsync("docs", "/a.txt", "kept for the window");
+            await _pair.SyncAsync();
+            await _pair.PurgeOnPrimaryAsync("docs", "/a.txt");
+            await _pair.SyncAsync();
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            TrashEntry deleted = Assert.Single((await replica.GetFromJsonAsync<List<TrashEntry>>("/api/shelves/docs/trash"))!);
+
+            DeletionTree listed = (await replica.GetFromJsonAsync<DeletionTree>($"/api/shelves/docs/trash/{deleted.DeletionId}/tree"))!;
+            string contents = await replica.GetStringAsync($"/api/shelves/docs/trash/{deleted.DeletionId}/content?id={Assert.Single(listed.Tree.Files).Id}");
+
+            Assert.Equal("kept for the window", contents);
+        }
+
         [Fact]
         public async Task Sync_ShelfDeletedOnThePrimary_GoesWithEverythingItHeld()
         {

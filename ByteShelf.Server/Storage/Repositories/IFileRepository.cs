@@ -58,6 +58,14 @@ namespace ByteShelf.Server.Storage.Repositories
         /// </summary>
         Task<IReadOnlyList<(FileRecord File, string Path)>> GetLiveSubtreeAsync(Guid directoryId, string directoryPath, int? maxDepth, string? after, int maxRows, IDbSession? session = null);
 
+        /// <summary>
+        /// The files deletion <paramref name="deletionId"/> removed, from <paramref name="containerId"/>
+        /// (at <paramref name="containerPath"/>) or the directories it removed under it, at
+        /// <paramref name="under"/> or below it when set, whose path as it was comes after
+        /// <paramref name="after"/>; by that path, each with it, at most <paramref name="maxRows"/> of them.
+        /// </summary>
+        Task<IReadOnlyList<(FileRecord File, string Path)>> GetDeletionSubtreeAsync(Guid containerId, string containerPath, Guid deletionId, string? under, string? after, int maxRows, IDbSession? session = null);
+
         /// <summary>Whether a deletion holds any file that is not encrypted.</summary>
         Task<bool> DeletionHoldsPlainFileAsync(Guid deletionId, IDbSession? session = null);
 

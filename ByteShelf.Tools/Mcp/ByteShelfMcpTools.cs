@@ -251,8 +251,8 @@ namespace ByteShelf.Tools.Mcp
                 }
 
                 return localPath == null
-                    ? await ReadInlineAsync(shelfClient, file, cancellationToken)
-                    : new ContentBlock[] { Text(TextFormat.Saved(await Transfers.DownloadToFileAsync(shelfClient, file, Absolute(localPath), overwrite, NeverDecrypted, cancellationToken))) };
+                    ? await ReadInlineAsync(FileSource.Live(shelfClient), file, WhereToGetIt(), cancellationToken)
+                    : new ContentBlock[] { Text(TextFormat.Saved(await Transfers.DownloadToFileAsync(FileSource.Live(shelfClient), file, Absolute(localPath), overwrite, NeverDecrypted, cancellationToken))) };
             });
         }
 
@@ -381,6 +381,45 @@ namespace ByteShelf.Tools.Mcp
             });
         }
 
+        [McpServerTool(Name = "download_deleted", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Read)]
+        [Description("Reads what one deletion in the trash took, without restoring it; a replica answers it too, for a file purged on its primary that is still in the replica's trash. A file is read as download_file reads one: saved to localPath, or answered here. A directory is saved whole to localPath, keeping the paths it had; without localPath what it holds is listed, a page at a time, and path reads one file or directory of it.")]
+        public Task<IEnumerable<ContentBlock>> DownloadDeletedAsync(
+            [Description("The deletion's id, as list_trash shows it.")] Guid deletionId,
+            [Description("The path a file or directory the deletion took had, to read just that; omit for what the deletion took.")] string? path = null,
+            [Description("An absolute local path to save it to; omit to have a file answered here. Only the byteshelf CLI's MCP server, on your own machine, can save.")] string? localPath = null,
+            [Description("Replace local files already there.")] bool overwrite = false,
+            [Description("For a directory's listing: the cursor of the page before.")] string? after = null,
+            [Description(ShelfDescription)] string? shelf = null,
+            CancellationToken cancellationToken = default)
+        {
+            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, shelfName) =>
+            {
+                Entry entry = (await Entries.GetDeletedAsync(shelfClient, deletionId, path, cancellationToken)).Entry;
+                if (entry.File is not ShelfFile file)
+                {
+                    if (localPath != null)
+                    {
+                        FolderTransferResult saved = await FolderTransfers.DownloadDeletionAsync(shelfClient, deletionId, entry.Path, Absolute(localPath), overwrite, NeverDecrypted, cancellationToken);
+                        return new ContentBlock[] { Text(FolderAnswer(saved, "Saved")) };
+                    }
+
+                    DirectoryTree page = (await shelfClient.ListDeletionAsync(deletionId, entry.Path, after, cancellationToken: cancellationToken)).Tree;
+                    return new ContentBlock[] { Text($"'{entry.Path}' was a directory: give path to read one file it took, or localPath to save it whole.{Environment.NewLine}{TextFormat.Tree(page, MoreAfter)}") };
+                }
+
+                if (file.Encrypted)
+                {
+                    throw new McpException($"{file.Path}: it is encrypted with a password, and passwords never go through tool calls; a person can get it with: byteshelf get-deleted {shelfName} {deletionId:D} --path '{file.Path}' --decrypt");
+                }
+
+                FileSource source = FileSource.Deleted(shelfClient, deletionId);
+                return localPath == null
+                    ? await ReadInlineAsync(source, file, WhereToGetDeleted(shelfName, deletionId, file), cancellationToken)
+                    : new ContentBlock[] { Text(TextFormat.Saved(await Transfers.DownloadToFileAsync(source, file, Absolute(localPath), overwrite, NeverDecrypted, cancellationToken))) };
+            });
+        }
+
         [McpServerTool(Name = "empty_trash", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
         [ToolNeeds(ToolNeed.Write)]
         [Description("Deletes everything in a shelf's trash for good. It cannot be restored afterwards.")]
@@ -404,24 +443,25 @@ namespace ByteShelf.Tools.Mcp
         /// the uploader said: a model refuses an image that does not decode as its stated type. How far
         /// a file is read is <see cref="ReadingOf"/>'s.
         /// </summary>
+        /// <param name="whereToGetIt">How to get the whole file instead, which a refusal and a preview say.</param>
         /// <exception cref="UsageException">It is larger than that, or neither an image nor text; the message says where to get it instead.</exception>
-        private async Task<IEnumerable<ContentBlock>> ReadInlineAsync(IShelfClient shelf, ShelfFile file, CancellationToken cancellationToken)
+        private async Task<IEnumerable<ContentBlock>> ReadInlineAsync(FileSource source, ShelfFile file, string whereToGetIt, CancellationToken cancellationToken)
         {
             string path = file.Path;
             InlineReading reading = ReadingOf(file);
             if (file.SizeBytes > reading.MaxBytes)
             {
-                throw NotAnsweredInline($"{path} is {TextFormat.Size(file.SizeBytes)}, more than the {TextFormat.Size(reading.MaxBytes)} answered here{reading.AnsweredAs}");
+                throw NotAnsweredInline($"{path} is {TextFormat.Size(file.SizeBytes)}, more than the {TextFormat.Size(reading.MaxBytes)} answered here{reading.AnsweredAs}", whereToGetIt);
             }
 
             // Only a preview can answer an image this large, so the previewer reads it in its turn, and
             // a call waiting for that turn holds none of it.
             if (reading.Previews != null && file.SizeBytes > MaxInlineImageBytes)
             {
-                return await PreviewAsync(reading.Previews, file, token => Transfers.ReadAllAsync(shelf, file, token), cancellationToken);
+                return await PreviewAsync(reading.Previews, file, token => Transfers.ReadAllAsync(source, file, token), whereToGetIt, cancellationToken);
             }
 
-            byte[] content = await Transfers.ReadAllAsync(shelf, file, cancellationToken);
+            byte[] content = await Transfers.ReadAllAsync(source, file, cancellationToken);
             if (ImageTypeOf(content) is string imageType && content.Length <= MaxInlineImageBytes)
             {
                 return new ContentBlock[] { ImageContentBlock.FromBytes(content, imageType), Text($"{path} ({imageType}, {TextFormat.Size(content.Length)})") };
@@ -434,12 +474,14 @@ namespace ByteShelf.Tools.Mcp
 
             if (reading.Previews != null)
             {
-                return await PreviewAsync(reading.Previews, file, _ => Task.FromResult(content), cancellationToken);
+                return await PreviewAsync(reading.Previews, file, _ => Task.FromResult(content), whereToGetIt, cancellationToken);
             }
 
-            throw NotAnsweredInline(content.Length > MaxInlineBytes
-                ? $"{path} is not a {InlineImageKinds} image, and at {TextFormat.Size(content.Length)} it is more than the {TextFormat.Size(MaxInlineBytes)} answered here as text"
-                : $"{path} is neither UTF-8 text nor a {InlineImageKinds} image");
+            throw NotAnsweredInline(
+                content.Length > MaxInlineBytes
+                    ? $"{path} is not a {InlineImageKinds} image, and at {TextFormat.Size(content.Length)} it is more than the {TextFormat.Size(MaxInlineBytes)} answered here as text"
+                    : $"{path} is neither UTF-8 text nor a {InlineImageKinds} image",
+                whereToGetIt);
         }
 
         /// <summary>How far download_file reads a file it answers in the call, what it says it answers it as, and whether a preview may stand in for it.</summary>
@@ -466,22 +508,22 @@ namespace ByteShelf.Tools.Mcp
 
         /// <summary>A preview of <paramref name="file"/>, with where to get it whole.</summary>
         /// <exception cref="UsageException">No preview could be made; the message says why, and where to get the file.</exception>
-        private async Task<IEnumerable<ContentBlock>> PreviewAsync(IImagePreviews previews, ShelfFile file, Func<CancellationToken, Task<byte[]>> readContent, CancellationToken cancellationToken)
+        private static async Task<IEnumerable<ContentBlock>> PreviewAsync(IImagePreviews previews, ShelfFile file, Func<CancellationToken, Task<byte[]>> readContent, string whereToGetIt, CancellationToken cancellationToken)
         {
             return await previews.MakeAsync(readContent, cancellationToken) switch
             {
-                PreviewOutcome.Made made => new ContentBlock[] { ImageContentBlock.FromBytes(made.Preview.Jpeg, "image/jpeg"), Text(PreviewNote(file, made.Preview)) },
-                PreviewOutcome.NotMade { Why: NoPreview.TooManyPixels } => throw NotAnsweredInline($"{file.Path} decodes to more pixels than a preview is made from here"),
-                PreviewOutcome.NotMade { Why: NoPreview.TooDetailed } => throw NotAnsweredInline($"{file.Path} has too much fine detail for a preview within {TextFormat.Size(MaxInlineImageBytes)}"),
-                _ => throw NotAnsweredInline($"{file.Path} ({file.ContentType}) is not an image these tools can make a preview of"),
+                PreviewOutcome.Made made => new ContentBlock[] { ImageContentBlock.FromBytes(made.Preview.Jpeg, "image/jpeg"), Text(PreviewNote(file, made.Preview, whereToGetIt)) },
+                PreviewOutcome.NotMade { Why: NoPreview.TooManyPixels } => throw NotAnsweredInline($"{file.Path} decodes to more pixels than a preview is made from here", whereToGetIt),
+                PreviewOutcome.NotMade { Why: NoPreview.TooDetailed } => throw NotAnsweredInline($"{file.Path} has too much fine detail for a preview within {TextFormat.Size(MaxInlineImageBytes)}", whereToGetIt),
+                _ => throw NotAnsweredInline($"{file.Path} ({file.ContentType}) is not an image these tools can make a preview of", whereToGetIt),
             };
         }
 
         /// <summary>What a preview stands in for, and where the whole file is.</summary>
-        private string PreviewNote(ShelfFile file, ImagePreview preview)
+        private static string PreviewNote(ShelfFile file, ImagePreview preview, string whereToGetIt)
         {
             return $"{file.Path} is a {preview.OriginalWidth}×{preview.OriginalHeight} {preview.OriginalType} of {TextFormat.Size(file.SizeBytes)}; "
-                + $"this is a {preview.Width}×{preview.Height} JPEG preview of it. For the whole file, {WhereToGetIt()}.";
+                + $"this is a {preview.Width}×{preview.Height} JPEG preview of it. For the whole file, {whereToGetIt}.";
         }
 
         private static string? Utf8TextOf(byte[] content)
@@ -518,18 +560,26 @@ namespace ByteShelf.Tools.Mcp
             return content.Length >= 12 && content.StartsWith("RIFF"u8) && content.Slice(8, 4).SequenceEqual("WEBP"u8) ? "image/webp" : null;
         }
 
-        /// <summary>A file download_file cannot answer here, saying where to get it: a share link, or a local file where there is one.</summary>
-        private UsageException NotAnsweredInline(string reason)
+        /// <summary>A file that cannot be answered here, saying <paramref name="whereToGetIt"/>.</summary>
+        private static UsageException NotAnsweredInline(string reason, string whereToGetIt)
         {
-            return new UsageException($"{reason}; {WhereToGetIt()}.");
+            return new UsageException($"{reason}; {whereToGetIt}.");
         }
 
-        /// <summary>How to get a file whole that is not answered here whole.</summary>
+        /// <summary>How to get a live file whole that is not answered here whole: a share link, or a local file where there is one.</summary>
         private string WhereToGetIt()
         {
             return _host.ReachesLocalFiles
                 ? "save it to a local file with localPath, or make a link with share_file"
                 : "make a link to it with share_file and fetch it from there, such as with curl";
+        }
+
+        /// <summary>How to get a file in the trash whole: a local file where there is one; no link reaches the trash.</summary>
+        private string WhereToGetDeleted(string shelf, Guid deletionId, ShelfFile file)
+        {
+            return _host.ReachesLocalFiles
+                ? "save it to a local file with localPath"
+                : $"restore it and make a link with share_file, or a person can save it with: byteshelf get-deleted {shelf} {deletionId:D} --path '{file.Path}'";
         }
 
         private static TextContentBlock Text(string text)

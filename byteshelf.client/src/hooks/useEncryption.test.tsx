@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encryptionActions, useEncryption } from './useEncryption';
 import { createCheck, decryptBlob, encryptBlob } from '../lib/encryption/age';
 import { folderPasswordKey, rememberPassword, rememberedPassword, filePasswordKey } from '../lib/encryption/passwords';
+import { liveContent, type ContentSource } from '../services/contentService';
+import type { EncryptedFolder } from '../services/encryptionService';
 import type { Entry, ShelfDirectory, ShelfFile } from '../services/shelfService';
 import { fill, press, textOf as messageText } from '../test/dom';
 
@@ -33,19 +35,21 @@ const shelf = vi.hoisted(() => ({
   unreachable: false,
   /** What happens on the server just before a folder is marked encrypted, such as an upload. */
   beforeMark: async () => {},
+  /** The encrypted folder a file at `path` is, or would be, under, as the server answers it. */
+  async folderFor(path: string) {
+    if (this.unreachable) throw new Error('The server cannot be reached.');
+    for (const directory of this.directories.values()) {
+      const check = this.checks.get(directory.id);
+      if (check && (path === directory.path || path.startsWith(`${directory.path}/`))) return { directory, check };
+    }
+    return null;
+  },
 }));
 
 vi.mock('../services/encryptionService', () => {
   const filesUnder = (path: string) => Array.from(shelf.files.values()).map((each) => each.file).filter((file) => file.path.startsWith(`${path}/`));
   return {
-    fetchEncryptedFolder: async (_shelf: string, path: string) => {
-      if (shelf.unreachable) throw new Error('The server cannot be reached.');
-      for (const directory of shelf.directories.values()) {
-        const check = shelf.checks.get(directory.id);
-        if (check && (path === directory.path || path.startsWith(`${directory.path}/`))) return { directory, check };
-      }
-      return null;
-    },
+    fetchEncryptedFolder: (_shelf: string, path: string) => shelf.folderFor(path),
     encryptDirectory: async (_shelf: string, id: string, check: string) => {
       await shelf.beforeMark();
       shelf.folderMarks.push(`encrypt ${id}`);
@@ -78,6 +82,11 @@ vi.mock('../services/encryptionService', () => {
 });
 
 vi.mock('../services/contentService', () => ({
+  liveContent: () => ({
+    navigationUrl: async () => '',
+    read: async (id: string) => shelf.files.get(id)!.content,
+    encryptedFolderOf: (file: ShelfFile) => shelf.folderFor(file.path),
+  }),
   readContent: async (_shelf: string, id: string) => shelf.files.get(id)!.content,
   openContent: async (_shelf: string, id: string, signal: AbortSignal) => {
     shelf.headerReads.push(id);
@@ -101,6 +110,18 @@ async function file(path: string, text: string, password?: string): Promise<Shel
   };
   shelf.files.set(created.id, { file: created, content: password === undefined ? plain : await encryptBlob(plain, password, 'text/plain', FAST) });
   return created;
+}
+
+/** A deletion's files as the fake shelf holds them, stored in `encryptedBy`; each read is added to `reads`. */
+function deletedSource(encryptedBy: EncryptedFolder | null, reads: string[] = []): ContentSource {
+  return {
+    navigationUrl: async () => '',
+    read: async (id) => {
+      reads.push(id);
+      return shelf.files.get(id)!.content;
+    },
+    encryptedFolderOf: async () => encryptedBy,
+  };
 }
 
 async function encryptedFolder(path: string, password: string): Promise<ShelfDirectory> {
@@ -178,11 +199,36 @@ describe('encryption in the browser', () => {
     const secret = await file('/secret.txt', 'contents', 'right');
     rememberPassword(filePasswordKey('docs', undefined, secret.id), 'stale');
 
-    const { answer: asked } = await untilAsked(() => encryption.contents(secret));
+    const { answer: asked } = await untilAsked(() => encryption.contents(secret, liveContent('docs')));
 
     expect(rememberedPassword(filePasswordKey('docs', undefined, secret.id))).toBeNull();
     await press('Cancel');
     await asked;
+  });
+
+  it('opens a file read from a deletion with the kept password of the folder it was stored in, asking for none', async () => {
+    const vault = await encryptedFolder('/vault', 'pw');
+    const secret = await file('/vault/secret.txt', 'trashed contents', 'pw');
+    rememberPassword(folderPasswordKey('docs', vault.id), 'pw');
+    const reads: string[] = [];
+
+    const opened = await encryption.contents(secret, deletedSource({ directory: vault, check: shelf.checks.get(vault.id)! }, reads));
+
+    expect(await opened!.text()).toBe('trashed contents');
+    expect(reads).toEqual([secret.id]);
+    expect(document.body.querySelector('form')).toBeNull();
+  });
+
+  it('asks for the password of a file read from a deletion that took its folder too, keeping it under that folder', async () => {
+    const vault = await encryptedFolder('/vault', 'pw');
+    const secret = await file('/vault/secret.txt', 'trashed contents', 'pw');
+
+    const { answer: asked } = await untilAsked(() => encryption.contents(secret, deletedSource({ directory: vault, check: shelf.checks.get(vault.id)! })));
+    fill('Password', 'pw');
+    await press('Unlock');
+
+    expect(await (await asked)!.text()).toBe('trashed contents');
+    expect(rememberedPassword(folderPasswordKey('docs', vault.id))).toBe('pw');
   });
 
   it('answers null when the password prompt is cancelled', async () => {

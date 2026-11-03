@@ -75,6 +75,7 @@ namespace ByteShelf.Cli.Commands
 
                 new Command(Section.Trash, "trash", "<shelf>", "what can be restored, with each deletion's id", TrashAsync),
                 new Command(Section.Trash, "restore", "<shelf> <deletion-id>", "put back what a deletion took", RestoreAsync),
+                new Command(Section.Trash, "get-deleted", "<shelf> <deletion-id> [<local-file>|<local-folder>|-] [--path <path>] [--overwrite] [--decrypt] [--password-file <file>]", "save what a deletion took without restoring it, as get saves, a directory with the paths it had (--path: only the file or directory it took there); works on a replica, for a file purged on its primary", GetDeletedAsync),
                 new Command(Section.Trash, "empty-trash", "<shelf>", "delete a shelf's trash for good", EmptyTrashAsync),
 
                 new Command(Section.Users, "passwd", string.Empty, "change your password; both are read from the terminal or stdin", ChangePasswordAsync),
@@ -387,15 +388,62 @@ namespace ByteShelf.Cli.Commands
             EncryptedFiles fileEncrypted = file.Encrypted && decrypt
                 ? EncryptedFiles.DecryptedWith(await Encrypting.ExistingPasswordAsync(shelf, file.Path, password, cancellationToken))
                 : EncryptedFiles.SavedAsTheyAre;
-            if (target == "-")
+            await SaveFileAsync(FileSource.Live(shelf), file, target, overwrite, fileEncrypted, cancellationToken);
+        }
+
+        /// <summary>
+        /// Saves what a deletion removed without restoring it, as <c>get</c> saves: the file deleted, or
+        /// the directory with everything under it, keeping the paths it had.
+        /// </summary>
+        private async Task GetDeletedAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            string shelfName = arguments.Required(0, "shelf");
+            Guid deletionId = Id(arguments.Required(1, "deletion-id"), $"a deletion id; 'byteshelf trash {shelfName}' lists them");
+            string? target = arguments.Optional(2);
+            string? path = arguments.Value("--path");
+            bool overwrite = arguments.Flag("--overwrite");
+            bool decrypt = arguments.Flag("--decrypt") | arguments.Value("--password-file") != null;
+            Func<PasswordUse, string> password = PasswordFrom(arguments, readsInput: false, cancellationToken);
+            arguments.EnsureAllUsed();
+            IShelfClient shelf = await ShelfAsync(shelfName, cancellationToken);
+
+            DeletedEntry deleted = await Entries.GetDeletedAsync(shelf, deletionId, path, cancellationToken);
+
+            // Checked against the folder the files were stored in, as get checks one, which may have been
+            // deleted or moved since; outside one, a wrong password is told by each file it does not open.
+            async Task<EncryptedFiles> DecryptedAsync() => EncryptedFiles.DecryptedWith(
+                await Encrypting.PasswordForAsync(deleted.EncryptedBy, PasswordUse.Existing, password, cancellationToken));
+
+            if (deleted.Entry.File is ShelfFile file)
             {
-                await using Stream output = _terminal.OpenOutput();
-                await Transfers.WriteAsync(shelf, file, output, fileEncrypted, cancellationToken);
+                EncryptedFiles fileEncrypted = file.Encrypted && decrypt ? await DecryptedAsync() : EncryptedFiles.SavedAsTheyAre;
+                await SaveFileAsync(FileSource.Deleted(shelf, deletionId), file, target, overwrite, fileEncrypted, cancellationToken);
                 return;
             }
 
-            string saved = await Transfers.DownloadToFileAsync(shelf, file, target ?? ".", overwrite, fileEncrypted, cancellationToken);
-            Done(fileEncrypted.KeepsEncrypted(file) ? TextFormat.SavedEncrypted(saved) : TextFormat.Saved(saved));
+            if (target == "-")
+            {
+                throw new UsageException($"'{deleted.Entry.Path}' was a directory; save it to a local folder, not to stdout.");
+            }
+
+            // As get does, --decrypt on a directory asks for a password even when nothing under it is
+            // encrypted: it was asked for, and the two commands answer alike.
+            EncryptedFiles encrypted = decrypt ? await DecryptedAsync() : EncryptedFiles.SavedAsTheyAre;
+            FolderDone(await FolderTransfers.DownloadDeletionAsync(shelf, deletionId, deleted.Entry.Path, target, overwrite, encrypted, cancellationToken), "Saved");
+        }
+
+        /// <summary>Saves one file to <paramref name="target"/> (the working folder when null), or writes it to stdout for <c>-</c>.</summary>
+        private async Task SaveFileAsync(FileSource source, ShelfFile file, string? target, bool overwrite, EncryptedFiles encrypted, CancellationToken cancellationToken)
+        {
+            if (target == "-")
+            {
+                await using Stream output = _terminal.OpenOutput();
+                await Transfers.WriteAsync(source, file, output, encrypted, cancellationToken);
+                return;
+            }
+
+            string saved = await Transfers.DownloadToFileAsync(source, file, target ?? ".", overwrite, encrypted, cancellationToken);
+            Done(encrypted.KeepsEncrypted(file) ? TextFormat.SavedEncrypted(saved) : TextFormat.Saved(saved));
         }
 
         private async Task EncryptAsync(ArgumentList arguments, CancellationToken cancellationToken)

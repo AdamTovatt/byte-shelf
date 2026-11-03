@@ -437,6 +437,102 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
+        public async Task DownloadDeleted_AFileDeletion_AnswersTheFileAndLeavesItInTheTrash()
+        {
+            await _tools.UploadFileAsync("/a.txt", text: "deleted text", shelf: "docs");
+            TrashEntry deleted = await Docs.DeleteFileAsync("/a.txt");
+
+            string text = TextOf(await _tools.DownloadDeletedAsync(deleted.DeletionId, shelf: "docs"));
+
+            Assert.Equal("deleted text", text);
+            Assert.Single(await Docs.GetTrashAsync());
+        }
+
+        [Fact]
+        public async Task DownloadDeleted_ADirectoryWithoutAPath_ListsWhatItHeld()
+        {
+            await _tools.UploadFileAsync("/photos/a.txt", text: "a", shelf: "docs");
+            await _tools.UploadFileAsync("/photos/2026/b.txt", text: "b", shelf: "docs");
+            TrashEntry deleted = await Docs.DeleteDirectoryAsync("/photos");
+
+            string listing = TextOf(await _tools.DownloadDeletedAsync(deleted.DeletionId, shelf: "docs"));
+
+            Assert.StartsWith("'/photos' was a directory: give path", listing, StringComparison.Ordinal);
+            Assert.Contains("/photos/2026/b.txt", listing, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task DownloadDeleted_AFilesPathInADeletedDirectory_AnswersThatFile()
+        {
+            await _tools.UploadFileAsync("/photos/a.txt", text: "a", shelf: "docs");
+            await _tools.UploadFileAsync("/photos/2026/b.txt", text: "b", shelf: "docs");
+            TrashEntry deleted = await Docs.DeleteDirectoryAsync("/photos");
+
+            string one = TextOf(await _tools.DownloadDeletedAsync(deleted.DeletionId, path: "/photos/2026/b.txt", shelf: "docs"));
+
+            Assert.Equal("b", one);
+        }
+
+        [Fact]
+        public async Task DownloadDeleted_ADirectorysListingAfterACursor_ListsOnlyWhatFollowsIt()
+        {
+            await _tools.UploadFileAsync("/photos/a.txt", text: "a", shelf: "docs");
+            await _tools.UploadFileAsync("/photos/b.txt", text: "b", shelf: "docs");
+            TrashEntry deleted = await Docs.DeleteDirectoryAsync("/photos");
+
+            string listing = TextOf(await _tools.DownloadDeletedAsync(deleted.DeletionId, after: "/photos/a.txt", shelf: "docs"));
+
+            Assert.Equal(new[] { "'/photos' was a directory: give path to read one file it took, or localPath to save it whole.", "/photos/b.txt  1 B" }, listing.Split(Environment.NewLine));
+        }
+
+        [Fact]
+        public async Task DownloadDeleted_AnEncryptedFile_IsRefusedPointingToGetDeleted()
+        {
+            await StoreEncryptedAsync("/secret.txt");
+            TrashEntry deleted = await Docs.DeleteFileAsync("/secret.txt");
+
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadDeletedAsync(deleted.DeletionId, shelf: "docs"));
+
+            Assert.Contains($"passwords never go through tool calls; a person can get it with: byteshelf get-deleted docs {deleted.DeletionId:D} --path '/secret.txt' --decrypt", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task DownloadDeleted_ADirectoryHoldingAnEncryptedFile_LeavesItOutAndSavesTheRest()
+        {
+            await StoreEncryptedAsync("/mixed/secret.txt");
+            await _tools.UploadFileAsync("/mixed/plain.txt", text: "plain", shelf: "docs");
+            TrashEntry deleted = await Docs.DeleteDirectoryAsync("/mixed");
+
+            string answer = TextOf(await _tools.DownloadDeletedAsync(deleted.DeletionId, localPath: _work.Path, shelf: "docs"));
+
+            Assert.Contains("secret.txt: it is encrypted with a password", answer, StringComparison.Ordinal);
+            Assert.True(File.Exists(Path.Combine(_work.Path, "mixed", "plain.txt")));
+            Assert.Empty(Directory.GetFiles(Path.Combine(_work.Path, "mixed"), "secret*"));
+        }
+
+        [Fact]
+        public async Task DownloadDeleted_ADirectoryToALocalPath_SavesItWithThePathsItHad()
+        {
+            await _tools.UploadFileAsync("/photos/2026/b.txt", text: "b", shelf: "docs");
+            TrashEntry deleted = await Docs.DeleteDirectoryAsync("/photos");
+
+            await _tools.DownloadDeletedAsync(deleted.DeletionId, localPath: _work.Path, shelf: "docs");
+
+            Assert.Equal("b", await File.ReadAllTextAsync(_work.File("photos/2026/b.txt")));
+        }
+
+        [Fact]
+        public async Task DownloadDeleted_APathTheDeletionDidNotTake_IsAnError()
+        {
+            await _tools.UploadFileAsync("/a.txt", text: "a", shelf: "docs");
+            TrashEntry deleted = await Docs.DeleteFileAsync("/a.txt");
+
+            McpException exception = await Assert.ThrowsAsync<McpException>(() => _tools.DownloadDeletedAsync(deleted.DeletionId, path: "/b.txt", shelf: "docs"));
+
+            Assert.Contains("took nothing at '/b.txt'", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public async Task EmptyTrash_ForgetsEveryDeletion()
         {
             await _tools.UploadFileAsync("/a.txt", text: "a", shelf: "docs");

@@ -7,6 +7,7 @@ export type ShelfFile = components['schemas']['ShelfFile'];
 export type ShelfDirectory = components['schemas']['ShelfDirectory'];
 export type ListedDirectory = components['schemas']['ListedDirectory'];
 export type TrashEntry = components['schemas']['TrashEntry'];
+export type DeletionTree = components['schemas']['DeletionTree'];
 export type DownloadLink = components['schemas']['DownloadLink'];
 export type FileSearchResults = components['schemas']['FileSearchResults'];
 
@@ -95,6 +96,14 @@ export function deleteDirectory(shelf: string, id: string): Promise<TrashEntry> 
 
 export function fetchTrash(shelf: string): Promise<TrashEntry[]> {
   return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/trash', { params: shelfPath(shelf) }));
+}
+
+/**
+ * What a deletion took and the encrypted folder its files were in, with the first page of it: all of
+ * a file deletion, the one file.
+ */
+export function fetchDeletion(shelf: string, deletionId: string): Promise<DeletionTree> {
+  return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/trash/{deletionId}/tree', { params: { path: { shelf, deletionId }, query: { limit: 1 } } }));
 }
 
 export function restoreDeletion(shelf: string, deletionId: string): Promise<void> {

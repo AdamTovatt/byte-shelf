@@ -668,6 +668,79 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
+        public async Task GetDeleted_AFile_SavesItAndLeavesItInTheTrash()
+        {
+            await UploadAsync("/reports/q3.txt", "q3");
+            TrashEntry deleted = await Docs.DeleteFileAsync("/reports/q3.txt");
+
+            CliRun run = await RunAsync("get-deleted", "docs", deleted.DeletionId.ToString(), _work.Path);
+
+            Assert.Equal((CliApp.Succeeded, $"Saved {_work.File("q3.txt")}"), (run.ExitCode, run.Output));
+            Assert.Equal("q3", await File.ReadAllTextAsync(_work.File("q3.txt")));
+            Assert.Single(await Docs.GetTrashAsync());
+        }
+
+        [Fact]
+        public async Task GetDeleted_ADirectory_SavesEverythingItTookWithThePathsItHad()
+        {
+            await UploadAsync("/photos/a.jpg", "a");
+            await UploadAsync("/photos/2026/b.jpg", "b");
+            await Docs.CreateDirectoryAsync("/photos/empty");
+            TrashEntry deleted = await Docs.DeleteDirectoryAsync("/photos");
+
+            CliRun run = await RunAsync("get-deleted", "docs", deleted.DeletionId.ToString(), _work.Path);
+
+            Assert.Equal(CliApp.Succeeded, run.ExitCode);
+            Assert.Equal(
+                ("a", "b", true),
+                (await File.ReadAllTextAsync(_work.File("photos/a.jpg")), await File.ReadAllTextAsync(_work.File("photos/2026/b.jpg")), Directory.Exists(_work.File("photos/empty"))));
+        }
+
+        [Fact]
+        public async Task GetDeleted_AFileToStdout_WritesItsContents()
+        {
+            await UploadAsync("/reports/q3.txt", "q3 figures");
+            TrashEntry deleted = await Docs.DeleteFileAsync("/reports/q3.txt");
+
+            CliRun run = await RunAsync("get-deleted", "docs", deleted.DeletionId.ToString(), "-");
+
+            Assert.Equal((CliApp.Succeeded, "q3 figures"), (run.ExitCode, Encoding.UTF8.GetString(run.BinaryOutput)));
+        }
+
+        [Fact]
+        public async Task GetDeleted_APathInADeletedDirectory_SavesOnlyWhatItTookThere()
+        {
+            await UploadAsync("/photos/a.jpg", "a");
+            await UploadAsync("/photos/2026/b.jpg", "b");
+            TrashEntry deleted = await Docs.DeleteDirectoryAsync("/photos");
+
+            CliRun run = await RunAsync("get-deleted", "docs", deleted.DeletionId.ToString(), _work.Path, "--path", "/photos/2026");
+
+            Assert.Equal(CliApp.Succeeded, run.ExitCode);
+            Assert.Equal(("b", false), (await File.ReadAllTextAsync(_work.File("2026/b.jpg")), File.Exists(_work.File("a.jpg"))));
+        }
+
+        [Fact]
+        public async Task GetDeleted_ADirectoryToStdout_FailsAsMisuse()
+        {
+            await UploadAsync("/photos/a.jpg", "a");
+            TrashEntry deleted = await Docs.DeleteDirectoryAsync("/photos");
+
+            CliRun run = await RunAsync("get-deleted", "docs", deleted.DeletionId.ToString(), "-");
+
+            Assert.Equal((CliApp.Misused, "'/photos' was a directory; save it to a local folder, not to stdout."), (run.ExitCode, run.Error));
+        }
+
+        [Fact]
+        public async Task GetDeleted_NoSuchDeletion_FailsWithNotFound()
+        {
+            CliRun run = await RunAsync("get-deleted", "docs", Guid.NewGuid().ToString(), _work.Path);
+
+            Assert.Equal(CliApp.Failed, run.ExitCode);
+            Assert.Contains("(not_found)", run.Error, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public async Task Ls_WithJson_PrintsTheListing()
         {
             await UploadAsync("/a.txt", "a");

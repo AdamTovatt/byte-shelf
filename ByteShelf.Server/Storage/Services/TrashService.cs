@@ -22,6 +22,7 @@ namespace ByteShelf.Server.Storage.Services
         private readonly ShelfTree _shelfTree;
         private readonly ShelfEncryption _encryption;
         private readonly ObjectCollector _objectCollector;
+        private readonly ObjectStore _objectStore;
         private readonly StorageOptions _options;
         private readonly TimeProvider _timeProvider;
 
@@ -33,6 +34,7 @@ namespace ByteShelf.Server.Storage.Services
             ShelfTree shelfTree,
             ShelfEncryption encryption,
             ObjectCollector objectCollector,
+            ObjectStore objectStore,
             StorageOptions options,
             TimeProvider timeProvider)
         {
@@ -43,6 +45,7 @@ namespace ByteShelf.Server.Storage.Services
             _shelfTree = shelfTree;
             _encryption = encryption;
             _objectCollector = objectCollector;
+            _objectStore = objectStore;
             _options = options;
             _timeProvider = timeProvider;
         }
@@ -99,6 +102,76 @@ namespace ByteShelf.Server.Storage.Services
             {
                 TrashedEntry entry = await GetRestorableEntryAsync(shelf, deletionId, session);
                 return await ToTrashEntryAsync(entry, session);
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task<DeletionTree> ListDeletionAsync(Shelf shelf, Guid deletionId, TreeQuery page)
+        {
+            TreeQuery normalized = page.Normalize();
+            int limit = normalized.Limit!.Value;
+
+            // A deletion never takes the root, so everything it took is under it.
+            string? under = normalized.Under == ShelfPath.Root ? null : normalized.Under;
+
+            await using (IDbSession session = await _sessionFactory.CreateSessionAsync())
+            {
+                TrashedEntry entry = await GetRestorableEntryAsync(shelf, deletionId, session);
+                DirectoryRecord container = await _directoryRepository.GetByIdAsync(entry.ContainerId, session)
+                    ?? throw new NotFoundException($"There is no restorable deletion {deletionId} in this shelf's trash.");
+                string containerPath = await _shelfTree.GetDirectoryPathAsync(container.Id, session);
+
+                // As a live tree's page: each kind one past the page, so the first limit + 1 of both are among them.
+                IReadOnlyList<(DirectoryRecord Directory, string Path)> directories = await _directoryRepository.GetDeletionSubtreeAsync(
+                    container.Id, containerPath, deletionId, under, normalized.After, limit + 1, session);
+                IReadOnlyList<(FileRecord File, string Path)> files = await _fileRepository.GetDeletionSubtreeAsync(
+                    container.Id, containerPath, deletionId, under, normalized.After, limit + 1, session);
+
+                // A directory's own encryption counts, as it was the folder its files were stored in.
+                Guid storedIn = under == null
+                    ? entry.Kind == TrashEntryKind.Directory ? entry.EntryId : entry.ContainerId
+                    : await DirectoryAtAsync(entry, container.Id, containerPath, under, session);
+
+                return new DeletionTree
+                {
+                    Deletion = StorageContracts.ToTrashEntry(entry, containerPath, _options),
+                    EncryptedBy = await _encryption.DescribeFolderOfAsync(storedIn, session),
+                    Tree = DirectoryTree.Page(
+                        StorageContracts.ToShelfDirectory(container, containerPath),
+                        directories.Select(row => StorageContracts.ToShelfDirectory(row.Directory, row.Path)),
+                        files.Select(row => StorageContracts.ToShelfFile(row.File, ShelfPath.GetParent(row.Path))),
+                        limit),
+                };
+            }
+        }
+
+        /// <inheritdoc />
+        public async Task<FileContent> GetDeletedContentAsync(Shelf shelf, Guid deletionId, Guid fileId)
+        {
+            ShelfFile described;
+            string sha256;
+            await using (IDbSession session = await _sessionFactory.CreateSessionAsync())
+            {
+                await GetRestorableEntryAsync(shelf, deletionId, session);
+                FileRecord? file = await _fileRepository.GetByIdAsync(fileId, session);
+                if (file == null || file.ShelfId != shelf.Id || file.DeletionId != deletionId)
+                {
+                    throw new NotFoundException($"Deletion {deletionId} in this shelf's trash holds no file {fileId}.");
+                }
+
+                described = await _shelfTree.ToShelfFileAsync(file, session);
+                sha256 = file.Sha256;
+            }
+
+            // A file in the trash keeps its contents until it is purged, which may come between the lookup
+            // and the open: it is then gone, as though looked up a moment later.
+            try
+            {
+                return new FileContent { File = described, Contents = _objectStore.OpenRead(sha256) };
+            }
+            catch (FileNotFoundException)
+            {
+                throw new NotFoundException($"File {fileId} has been purged from this shelf's trash.");
             }
         }
 
@@ -235,6 +308,28 @@ namespace ByteShelf.Server.Storage.Services
             }
 
             return entry;
+        }
+
+        /// <summary>The directory deletion <paramref name="entry"/> took at <paramref name="path"/>, or the one the file it took there was in.</summary>
+        /// <exception cref="NotFoundException">It took nothing at <paramref name="path"/>.</exception>
+        private async Task<Guid> DirectoryAtAsync(TrashedEntry entry, Guid containerId, string containerPath, string path, IDbSession session)
+        {
+            // Each listing starts at the path, so what is there comes first.
+            IReadOnlyList<(DirectoryRecord Directory, string Path)> directories = await _directoryRepository.GetDeletionSubtreeAsync(
+                containerId, containerPath, entry.DeletionId, path, after: null, maxRows: 1, session);
+            if (directories.Count == 1 && directories[0].Path == path)
+            {
+                return directories[0].Directory.Id;
+            }
+
+            IReadOnlyList<(FileRecord File, string Path)> files = await _fileRepository.GetDeletionSubtreeAsync(
+                containerId, containerPath, entry.DeletionId, path, after: null, maxRows: 1, session);
+            if (files.Count == 1 && files[0].Path == path)
+            {
+                return files[0].File.DirectoryId;
+            }
+
+            throw new NotFoundException($"Deletion {entry.DeletionId} took nothing at '{path}'.");
         }
 
         private async Task<TrashEntry> ToTrashEntryAsync(TrashedEntry entry, IDbSession session)

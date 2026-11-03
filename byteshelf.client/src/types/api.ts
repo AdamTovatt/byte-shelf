@@ -2646,6 +2646,284 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shelves/{shelf}/trash/{deletionId}/tree": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    under?: string;
+                    limit?: number;
+                    after?: string;
+                };
+                header?: never;
+                path: {
+                    deletionId: string;
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["DeletionTree"];
+                        "application/json": components["schemas"]["DeletionTree"];
+                        "text/json": components["schemas"]["DeletionTree"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shelves/{shelf}/trash/{deletionId}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    id?: string;
+                    download?: boolean;
+                };
+                header?: never;
+                path: {
+                    deletionId: string;
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": string;
+                        "application/json": string;
+                        "text/json": string;
+                    };
+                };
+                /** @description Partial Content */
+                206: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head: {
+            parameters: {
+                query?: {
+                    id?: string;
+                    download?: boolean;
+                };
+                header?: never;
+                path: {
+                    deletionId: string;
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": string;
+                        "application/json": string;
+                        "text/json": string;
+                    };
+                };
+                /** @description Partial Content */
+                206: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        patch?: never;
+        trace?: never;
+    };
+    "/api/open/{shelf}/trash/{deletionId}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    id?: string;
+                    download?: boolean;
+                };
+                header?: never;
+                path: {
+                    deletionId: string;
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": string;
+                        "application/json": string;
+                        "text/json": string;
+                    };
+                };
+                /** @description Partial Content */
+                206: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head: {
+            parameters: {
+                query?: {
+                    id?: string;
+                    download?: boolean;
+                };
+                header?: never;
+                path: {
+                    deletionId: string;
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": string;
+                        "application/json": string;
+                        "text/json": string;
+                    };
+                };
+                /** @description Partial Content */
+                206: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        patch?: never;
+        trace?: never;
+    };
     "/api/shelves/{shelf}/trash/{deletionId}/restore": {
         parameters: {
             query?: never;
@@ -3572,6 +3850,11 @@ export interface components {
         CreatedShelfKey: {
             key: components["schemas"]["ShelfKeyInfo"];
             secret: string;
+        };
+        DeletionTree: {
+            deletion: components["schemas"]["TrashEntry"];
+            encryptedBy?: components["schemas"]["EncryptedFolder"];
+            tree: components["schemas"]["DirectoryTree"];
         };
         DirectoryListing: {
             directory: components["schemas"]["ShelfDirectory"];

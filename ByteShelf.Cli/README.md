@@ -59,7 +59,11 @@ recovered.
 
 `mkdir` creates a directory with any missing parents, `rm` moves a file or a directory to the trash,
 `trash` lists what can be restored, `restore` brings a deletion back, and `empty-trash` deletes the
-trash for good. `mv` moves or renames within the shelf: its new path is written as a path, or as
+trash for good. `get-deleted` saves what a deletion took without restoring it, as `get` saves (a
+directory as a folder with the paths it had, an encrypted file decrypted with `--decrypt`, its
+password checked against the folder it was stored in); `--path` saves only the file or directory it
+took at that path. It works on a replica, which keeps a file purged on its primary for its own
+restore window. `mv` moves or renames within the shelf: its new path is written as a path, or as
 `shelf:path` naming the same shelf, and another shelf is refused. A colon before any `/` is read as
 following a shelf name, so a name holding a colon is written starting with `/`: `/a:b`, as `a:b`
 names the shelf `a`. `shelves` lists the shelves you can reach and `whoami` says who commands act as.
@@ -113,7 +117,8 @@ read-only, so a host asks first: the link hands the file on), making a link some
 file to with `curl`, downloading a file to a local file, as
 text (UTF-8, up to 256 KiB) or as an image the agent sees (PNG, JPEG, GIF or WebP, up to 1 MiB;
 a larger image is saved with localPath, since only the server's `/mcp` makes previews), or
-a whole directory to a local folder, moving, deleting, restoring and emptying the trash. A tool's
+a whole directory to a local folder, moving, deleting, restoring and emptying the trash, and reading
+what a deletion took without restoring it (`download_deleted`). A tool's
 `shelf` can be left out when the login reaches only one shelf, as a key always does. Local paths
 must be absolute, since the server's working folder is not the agent's. Signing in, users, grants
 and keys stay on the command line, since they carry passwords and secrets an agent's transcript

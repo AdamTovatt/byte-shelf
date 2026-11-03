@@ -48,9 +48,9 @@ namespace ByteShelf.Cli.Tests
             string target = _work.File("a.txt");
 
             // The first holds its side file open, mid-download, while the second runs from start to end.
-            Task<string> first = Transfers.DownloadToFileAsync(shelf, one, target, overwrite: true, EncryptedFiles.SavedAsTheyAre, CancellationToken.None);
+            Task<string> first = Transfers.DownloadToFileAsync(FileSource.Live(shelf), one, target, overwrite: true, EncryptedFiles.SavedAsTheyAre, CancellationToken.None);
             await reading.Task;
-            await Transfers.DownloadToFileAsync(shelf, two, target, overwrite: true, EncryptedFiles.SavedAsTheyAre, CancellationToken.None);
+            await Transfers.DownloadToFileAsync(FileSource.Live(shelf), two, target, overwrite: true, EncryptedFiles.SavedAsTheyAre, CancellationToken.None);
             string secondSaved = await File.ReadAllTextAsync(target);
             release.SetResult();
             await first;

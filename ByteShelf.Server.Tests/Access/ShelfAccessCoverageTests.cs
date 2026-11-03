@@ -39,6 +39,8 @@ namespace ByteShelf.Server.Tests.Access
             ["UploadsController.Complete"] = ShelfOperation.Add,
             ["UploadsController.Abort"] = ShelfOperation.Add,
             ["TrashController.List"] = ShelfOperation.Read,
+            ["TrashController.ListDeletion"] = ShelfOperation.Read,
+            ["TrashController.GetDeletedContent"] = ShelfOperation.Read,
             ["TrashController.Restore"] = ShelfOperation.Write,
             ["TrashController.EmptyTrash"] = ShelfOperation.Write,
             ["ShelvesController.Get"] = ShelfOperation.Read,

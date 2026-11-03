@@ -1,7 +1,7 @@
 import { openTabWithoutPasswords } from '../lib/encryption/passwords';
 import { saveBlob, saveFrom, showBlob } from '../lib/localBlobs';
 import { runOrToast } from '../lib/utils';
-import { navigationUrl, opensByNavigation, readContent } from '../services/contentService';
+import { opensByNavigation, type ContentSource } from '../services/contentService';
 import type { ShelfFile } from '../services/shelfService';
 import { showActionToast } from './actionToast';
 import { NameLine } from './MiddleTruncatedName';
@@ -13,20 +13,21 @@ export interface FileOpening {
 }
 
 /**
- * Opens and saves a shelf's files, never through a public link. A plain file goes by navigating to it,
- * the session's token in its cookie, so it streams and the browser's own viewers handle any type. An
- * encrypted file, and any file where the page cannot keep that cookie (`opensByNavigation`), is read
- * here into a blob (decrypted by `decrypted` when encrypted), shown in a tab only when its type is one
- * a tab may show (`showBlob`), and saved otherwise.
+ * Opens and saves files from `source` (a shelf's live files, or one deletion in its trash), never
+ * through a public link. A plain file goes by navigating to it, the session's token in its cookie, so
+ * it streams and the browser's own viewers handle any type. An encrypted file, and any file where the
+ * page cannot keep that cookie (`opensByNavigation`), is read here into a blob (decrypted from
+ * `source` by `decrypted` when encrypted), shown in a tab only when its type is one a tab may show
+ * (`showBlob`), and saved otherwise.
  */
-export function fileOpening(shelf: string, decrypted: (file: ShelfFile) => Promise<Blob | null>): FileOpening {
+export function fileOpening(source: ContentSource, decrypted: (file: ShelfFile, source: ContentSource) => Promise<Blob | null>): FileOpening {
   function throughBlob(file: ShelfFile): boolean {
     return file.encrypted || !opensByNavigation();
   }
 
   /** The file's contents read here, decrypted when encrypted; null when no password was given. */
   function contentsHere(file: ShelfFile): Promise<Blob | null> {
-    return file.encrypted ? decrypted(file) : readContent(shelf, file.id);
+    return file.encrypted ? decrypted(file, source) : source.read(file.id);
   }
 
   /**
@@ -39,7 +40,7 @@ export function fileOpening(shelf: string, decrypted: (file: ShelfFile) => Promi
     if (!tab) return save([file]);
     await runOrToast(async () => {
       try {
-        tab.location.href = await navigationUrl(shelf, file.id, false);
+        tab.location.href = await source.navigationUrl(file.id, false);
       } catch (caught) {
         tab.close();
         throw caught;
@@ -75,7 +76,7 @@ export function fileOpening(shelf: string, decrypted: (file: ShelfFile) => Promi
           const blob = await contentsHere(file);
           if (blob) saveBlob(blob, file.name);
         } else {
-          saveFrom(await navigationUrl(shelf, file.id, true), '');
+          saveFrom(await source.navigationUrl(file.id, true), '');
         }
       }
     }, files.length === 1 ? 'Could not save the file' : 'Could not save the files');

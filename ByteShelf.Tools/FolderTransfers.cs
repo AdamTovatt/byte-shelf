@@ -103,20 +103,66 @@ namespace ByteShelf.Tools
             int pageSize = TreeQuery.MaxLimit)
         {
             string name = location.Path == ShelfPath.Root ? location.Shelf : ShelfPath.GetName(location.Path);
+            return await SaveTreeAsync(
+                name, location.Path, Entries.TreePagesAsync(shelf, location.Path, pageSize, cancellationToken), FileSource.Live(shelf), localTarget, overwrite, encrypted, cancellationToken);
+        }
+
+        /// <summary>
+        /// Saves a directory a deletion took, without restoring it, as a local folder named as the
+        /// directory was, placed as <see cref="DownloadAsync"/> places one, keeping the paths it had.
+        /// </summary>
+        /// <param name="deletionId">A deletion that took the directory, or one above it.</param>
+        /// <param name="directoryPath">The path the deleted directory had.</param>
+        public static async Task<FolderTransferResult> DownloadDeletionAsync(
+            IShelfClient shelf,
+            Guid deletionId,
+            string directoryPath,
+            string? localTarget,
+            bool overwrite,
+            EncryptedFiles encrypted,
+            CancellationToken cancellationToken,
+            int pageSize = TreeQuery.MaxLimit)
+        {
+            return await SaveTreeAsync(
+                ShelfPath.GetName(directoryPath),
+                directoryPath,
+                Entries.DeletionPagesAsync(shelf, deletionId, directoryPath, pageSize, cancellationToken),
+                FileSource.Deleted(shelf, deletionId),
+                localTarget,
+                overwrite,
+                encrypted,
+                cancellationToken);
+        }
+
+        /// <summary>
+        /// Saves the entries <paramref name="pages"/> hold under <paramref name="under"/> as a local folder
+        /// named <paramref name="name"/>, placed as <see cref="DownloadAsync"/> says; an entry at
+        /// <paramref name="under"/> itself is that folder.
+        /// </summary>
+        private static async Task<FolderTransferResult> SaveTreeAsync(
+            string name,
+            string under,
+            IAsyncEnumerable<DirectoryTree> pages,
+            FileSource source,
+            string? localTarget,
+            bool overwrite,
+            EncryptedFiles encrypted,
+            CancellationToken cancellationToken)
+        {
             string root = Path.GetFullPath(localTarget == null ? name : Directory.Exists(localTarget) ? Path.Combine(localTarget, name) : localTarget);
             FolderTransferResult result = new FolderTransferResult(root);
-            LocalNames names = new LocalNames(root, location.Path);
+            LocalNames names = new LocalNames(root, under);
 
             await StopOnAsync(result, cancellationToken, async () =>
             {
                 Directory.CreateDirectory(root);
-                await foreach (DirectoryTree page in Entries.TreePagesAsync(shelf, location.Path, pageSize, cancellationToken))
+                await foreach (DirectoryTree page in pages)
                 {
-                    foreach (TreeEntry entry in page.InOrder())
+                    foreach (TreeEntry entry in page.InOrder().Where(entry => entry.Path != under))
                     {
                         await RunAsync(entry.Path, result, () => entry.File == null
                             ? SaveDirectoryAsync(entry.Path, names)
-                            : SaveFileAsync(shelf, entry.File, names, overwrite, encrypted, result, cancellationToken));
+                            : SaveFileAsync(source, entry.File, names, overwrite, encrypted, result, cancellationToken));
                     }
                 }
             });
@@ -130,7 +176,7 @@ namespace ByteShelf.Tools
             return Task.CompletedTask;
         }
 
-        private static async Task SaveFileAsync(IShelfClient shelf, ShelfFile file, LocalNames names, bool overwrite, EncryptedFiles encrypted, FolderTransferResult result, CancellationToken cancellationToken)
+        private static async Task SaveFileAsync(FileSource source, ShelfFile file, LocalNames names, bool overwrite, EncryptedFiles encrypted, FolderTransferResult result, CancellationToken cancellationToken)
         {
             string target = names.Claim(encrypted.NameFor(file, file.Path), isDirectory: false);
             if (Directory.Exists(target))
@@ -139,7 +185,7 @@ namespace ByteShelf.Tools
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            await Transfers.DownloadToFileAsync(shelf, file, target, overwrite, encrypted, cancellationToken);
+            await Transfers.DownloadToFileAsync(source, file, target, overwrite, encrypted, cancellationToken);
             result.Add(file.SizeBytes);
         }
 

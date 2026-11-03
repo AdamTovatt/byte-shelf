@@ -99,11 +99,11 @@ namespace ByteShelf.Tools
         /// go to a side file first, so a failed download leaves nothing behind and replaces nothing. The
         /// side file's name is new for each download, so two downloads to one path never write into each
         /// other's, and it does not grow with the file's own name, which may already be as long as the
-        /// disk allows. Read by id, so it is the file whose record the caller holds.
+        /// disk allows.
         /// </summary>
         /// <exception cref="UsageException">The local file exists and <paramref name="overwrite"/> is false, or an encrypted file is to be left out.</exception>
         /// <exception cref="AgeException">The password does not open the file, or it is damaged.</exception>
-        public static async Task<string> DownloadToFileAsync(IShelfClient shelf, ShelfFile file, string localPath, bool overwrite, EncryptedFiles encrypted, CancellationToken cancellationToken)
+        public static async Task<string> DownloadToFileAsync(FileSource source, ShelfFile file, string localPath, bool overwrite, EncryptedFiles encrypted, CancellationToken cancellationToken)
         {
             string target = Path.GetFullPath(localPath);
             if (Directory.Exists(target))
@@ -121,7 +121,7 @@ namespace ByteShelf.Tools
             {
                 await using (FileStream output = new FileStream(partial, FileMode.CreateNew, FileAccess.Write, FileShare.None, CopyBufferBytes, useAsync: true))
                 {
-                    await WriteAsync(shelf, file, output, encrypted, cancellationToken);
+                    await WriteAsync(source, file, output, encrypted, cancellationToken);
                 }
 
                 File.Move(partial, target, overwrite);
@@ -134,23 +134,20 @@ namespace ByteShelf.Tools
             }
         }
 
-        /// <summary>Writes <paramref name="file"/>'s contents to <paramref name="output"/> as they arrive, as <paramref name="encrypted"/> says; read by id.</summary>
+        /// <summary>Writes <paramref name="file"/>'s contents to <paramref name="output"/> as they arrive, as <paramref name="encrypted"/> says.</summary>
         /// <exception cref="UsageException">An encrypted file is to be left out.</exception>
         /// <exception cref="AgeException">The password does not open the file, or it is damaged.</exception>
-        public static async Task WriteAsync(IShelfClient shelf, ShelfFile file, Stream output, EncryptedFiles encrypted, CancellationToken cancellationToken)
+        public static async Task WriteAsync(FileSource source, ShelfFile file, Stream output, EncryptedFiles encrypted, CancellationToken cancellationToken)
         {
-            await using Stream content = await shelf.OpenReadAsync(file.Id, cancellationToken);
+            await using Stream content = await source.OpenAsync(file, cancellationToken);
             await encrypted.WriteAsync(file, content, output, cancellationToken);
         }
 
-        /// <summary>
-        /// A file's whole content in memory, for an answer that carries it inline; the caller has checked
-        /// its size. Read by id, so it is the file whose record the caller holds.
-        /// </summary>
-        public static async Task<byte[]> ReadAllAsync(IShelfClient shelf, ShelfFile file, CancellationToken cancellationToken)
+        /// <summary>A file's whole content in memory, for an answer that carries it inline; the caller has checked its size.</summary>
+        public static async Task<byte[]> ReadAllAsync(FileSource source, ShelfFile file, CancellationToken cancellationToken)
         {
             using MemoryStream buffer = new MemoryStream(checked((int)file.SizeBytes));
-            await using (Stream content = await shelf.OpenReadAsync(file.Id, cancellationToken))
+            await using (Stream content = await source.OpenAsync(file, cancellationToken))
             {
                 await content.CopyToAsync(buffer, cancellationToken);
             }

@@ -173,7 +173,9 @@ follows no redirects); nothing needs to reach the replica but its own admins and
 The same page shows on the primary each replica and how far behind it is, and on a replica the
 primary it follows and the last error (`GET /api/replication` answers the same). A replica only reads.
 A file or directory purged on the primary stays in the replica's trash until the replica's own restore
-window has passed since it was deleted. The exception is a file's old contents when it is encrypted or
+window has passed since it was deleted. To get it back, download it from the replica's trash (a file
+from the web UI's Trash page, a whole directory with `byteshelf get-deleted <shelf> <deletion-id>`)
+and upload it to the primary. The exception is a file's old contents when it is encrypted or
 decrypted in place: they leave the replica as soon as it applies that change, as they left the primary.
 
 To make a replica the primary, promote it on its Replication page, then point clients and

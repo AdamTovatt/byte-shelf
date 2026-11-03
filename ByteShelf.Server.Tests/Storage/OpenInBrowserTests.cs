@@ -91,6 +91,19 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
+        public async Task GetOpenDeletedContent_WithOnlyTheCookie_SavesTheFileFromTheTrash()
+        {
+            TrashEntry deleted = (await (await _host.AdminClient.DeleteAsync($"/api/shelves/docs/files?id={_file.Id}")).Content.ReadFromJsonAsync<TrashEntry>())!;
+
+            HttpResponseMessage response = await SendWithCookieAsync(
+                HttpMethod.Get, $"/api/open/docs/trash/{deleted.DeletionId}/content?id={_file.Id}&download=true", (await SignInAsync(ServerTestHost.AdminEmail)).Cookie);
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal("the contents", await response.Content.ReadAsStringAsync());
+            Assert.Equal("a.txt", response.Content.Headers.ContentDisposition?.FileName);
+        }
+
+        [Fact]
         public async Task GetOpenContent_MayBeCachedOnlyByTheBrowserThatAsked()
         {
             HttpResponseMessage response = await SendWithCookieAsync(HttpMethod.Get, OpenUri(), (await SignInAsync(ServerTestHost.AdminEmail)).Cookie);

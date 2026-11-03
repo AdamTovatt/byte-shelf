@@ -37,10 +37,13 @@ namespace ByteShelf.Tools.Mcp
 
             Changing: move renames or moves a file or directory and never overwrites. delete moves it
             to the trash; list_trash shows what can come back, restore brings a deletion back, and
-            empty_trash deletes the trash for good.
+            empty_trash deletes the trash for good. download_deleted reads what a deletion took without
+            restoring it, as download_file and download_directory read; a replica answers it too, which
+            gives back a file purged on its primary while it is still in the replica's trash.
 
             Encrypted: an entry marked (encrypted) is encrypted with a password, which never goes through
-            tool calls. download_file refuses an encrypted file, download_directory leaves them out, no
+            tool calls. download_file and download_deleted refuse an encrypted file, download_directory
+            and download_deleted leave them out of a directory, no
             link is made to one, and nothing can be stored in an encrypted directory through these
             tools. Names, sizes and descriptions stay visible, so search still finds them; a person opens
             them in the web UI or with the byteshelf CLI.

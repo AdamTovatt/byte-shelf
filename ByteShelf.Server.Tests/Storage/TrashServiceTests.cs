@@ -114,6 +114,50 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
+        public async Task ListDeletionAsync_PastRestoreWindow_ThrowsNotFound()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            await StoreTextAsync(shelf, "/a.txt", "late");
+            TrashEntry entry = await FileService.DeleteFileAsync(shelf, EntryReference.ForPath("/a.txt"));
+            Clock.Advance(Options.RestoreWindow + TimeSpan.FromSeconds(1));
+
+            await Assert.ThrowsAsync<NotFoundException>(() => TrashService.ListDeletionAsync(shelf, entry.DeletionId, new TreeQuery()));
+        }
+
+        [Fact]
+        public async Task GetDeletedContentAsync_PastRestoreWindow_ThrowsNotFound()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "late");
+            TrashEntry entry = await FileService.DeleteFileAsync(shelf, EntryReference.ForPath("/a.txt"));
+            Clock.Advance(Options.RestoreWindow + TimeSpan.FromSeconds(1));
+
+            await Assert.ThrowsAsync<NotFoundException>(() => TrashService.GetDeletedContentAsync(shelf, entry.DeletionId, file.Id));
+        }
+
+        [Fact]
+        public async Task GetDeletedContentAsync_ContentsPurgedSinceTheLookup_ThrowsNotFound()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "purged under it");
+            TrashEntry entry = await FileService.DeleteFileAsync(shelf, EntryReference.ForPath("/a.txt"));
+            ObjectStore.Delete(file.Sha256);
+
+            await Assert.ThrowsAsync<NotFoundException>(() => TrashService.GetDeletedContentAsync(shelf, entry.DeletionId, file.Id));
+        }
+
+        [Fact]
+        public async Task GetDeletedContentAsync_ADeletionOfAnotherShelf_ThrowsNotFound()
+        {
+            Shelf theirs = await CreateShelfAsync("theirs");
+            Shelf mine = await CreateShelfAsync("mine");
+            ShelfFile file = await StoreTextAsync(theirs, "/a.txt", "theirs");
+            TrashEntry entry = await FileService.DeleteFileAsync(theirs, EntryReference.ForPath("/a.txt"));
+
+            await Assert.ThrowsAsync<NotFoundException>(() => TrashService.GetDeletedContentAsync(mine, entry.DeletionId, file.Id));
+        }
+
+        [Fact]
         public async Task RestoreAsync_FileWhoseDirectoryIsInTheTrash_ThrowsConflict()
         {
             Shelf shelf = await CreateShelfAsync();

@@ -15,7 +15,7 @@ import {
   treeUnder,
   type EncryptedFolder,
 } from '../services/encryptionService';
-import { openContent, readContent } from '../services/contentService';
+import { liveContent, openContent, readContent, type ContentSource } from '../services/contentService';
 import type { Entry, ShelfDirectory, ShelfFile } from '../services/shelfService';
 import { useInvalidateShelf } from './useShelfQueries';
 
@@ -106,11 +106,11 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
     }
 
     /**
-     * An encrypted file's contents, decrypted with its folder's password or its own, asked for when
-     * this tab has none that opens it. Null when cancelled.
+     * An encrypted file's contents read from `source`, decrypted with its folder's password or its
+     * own, asked for when this tab has none that opens it. Null when cancelled.
      */
-    async function contents(file: ShelfFile): Promise<Blob | null> {
-      const [stored, folder] = await Promise.all([readContent(shelf, file.id), fetchEncryptedFolder(shelf, file.path)]);
+    async function contents(file: ShelfFile, source: ContentSource): Promise<Blob | null> {
+      const [stored, folder] = await Promise.all([source.read(file.id), source.encryptedFolderOf(file)]);
       let plain: Blob | null = null;
       const password = await unlock(filePasswordKey(shelf, folder?.directory.id, file.id), folder?.directory.name ?? file.name, async (given) => {
         plain = await decryptBlobWith(stored, given, file.contentType);
@@ -204,7 +204,7 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
       const { name } = entry.value;
       await runOrToastNamed(async () => {
         if (entry.kind === 'file') {
-          const plain = await contents(entry.value);
+          const plain = await contents(entry.value, liveContent(shelf));
           if (plain === null) return;
           await inPlace('Removing encryption from', name, 'Remove encryption', [entry.value], (file) => replaceContent(shelf, file, plain, false));
           return;

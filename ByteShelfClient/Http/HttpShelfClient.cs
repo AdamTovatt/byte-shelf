@@ -148,11 +148,22 @@ namespace ByteShelfClient.Http
             return new Uri(linkBase, url.TrimStart('/')).AbsoluteUri;
         }
 
-        public async Task<Stream> OpenReadAsync(EntryReference file, CancellationToken cancellationToken = default)
+        public Task<Stream> OpenReadAsync(EntryReference file, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(file);
+            return OpenContentAsync($"{_base}/content?{file.ToQuery()}", cancellationToken);
+        }
+
+        public Task<Stream> OpenDeletedReadAsync(Guid deletionId, Guid fileId, CancellationToken cancellationToken = default)
+        {
+            return OpenContentAsync($"{_base}/trash/{deletionId:D}/content?id={fileId:D}", cancellationToken);
+        }
+
+        /// <summary>Opens the contents at <paramref name="url"/>, checked against the SHA-256 the server names as they are read.</summary>
+        private async Task<Stream> OpenContentAsync(string url, CancellationToken cancellationToken)
+        {
             HttpResponseMessage response = await _connection.SendRawAsync(
-                () => new HttpRequestMessage(HttpMethod.Get, $"{_base}/content?{file.ToQuery()}"),
+                () => new HttpRequestMessage(HttpMethod.Get, url),
                 cancellationToken,
                 completion: HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
 
@@ -250,6 +261,12 @@ namespace ByteShelfClient.Http
         public Task<IReadOnlyList<TrashEntry>> GetTrashAsync(CancellationToken cancellationToken = default)
         {
             return _connection.SendAsync(HttpMethod.Get, $"{_base}/trash", ByteShelfJsonContext.Default.IReadOnlyListTrashEntry, cancellationToken);
+        }
+
+        public Task<DeletionTree> ListDeletionAsync(Guid deletionId, string? under = null, string? after = null, int? limit = null, CancellationToken cancellationToken = default)
+        {
+            TreeQuery page = new TreeQuery { Under = under, Limit = limit, After = after }.Normalize();
+            return _connection.SendAsync(HttpMethod.Get, $"{_base}/trash/{deletionId:D}/tree?{page.ToQuery()}", ByteShelfJsonContext.Default.DeletionTree, cancellationToken);
         }
 
         public Task RestoreAsync(Guid deletionId, CancellationToken cancellationToken = default)

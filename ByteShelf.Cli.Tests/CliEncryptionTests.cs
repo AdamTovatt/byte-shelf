@@ -326,6 +326,62 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
+        public async Task GetDeleted_OneFileFromAnEncryptedFolder_SavesItDecryptedWithTheFoldersPassword()
+        {
+            await UploadAsync("/secret/a.txt", "a");
+            await EncryptAsync("docs:/secret");
+            TrashEntry deleted = await Docs.DeleteFileAsync("/secret/a.txt");
+
+            CliRun run = await RunAsync("get-deleted", "docs", deleted.DeletionId.ToString(), _work.File("a.txt"), "--password-file", PasswordFile);
+
+            Assert.Equal(CliApp.Succeeded, run.ExitCode);
+            Assert.Equal("a", await File.ReadAllTextAsync(_work.File("a.txt")));
+        }
+
+        [Fact]
+        public async Task GetDeleted_OneFileFromAnEncryptedFolderWithAnotherPassword_FailsNamingTheFolderAndSavesNothing()
+        {
+            await UploadAsync("/secret/a.txt", "a");
+            await EncryptAsync("docs:/secret");
+            TrashEntry deleted = await Docs.DeleteFileAsync("/secret/a.txt");
+            await File.WriteAllTextAsync(_work.File("wrong.txt"), "another password\n");
+
+            CliRun run = await RunAsync("get-deleted", "docs", deleted.DeletionId.ToString(), _work.File("a.txt"), "--password-file", _work.File("wrong.txt"));
+
+            Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.Contains("not the password of the encrypted folder '/secret'", run.Error, StringComparison.Ordinal);
+            Assert.False(File.Exists(_work.File("a.txt")));
+        }
+
+        [Fact]
+        public async Task GetDeleted_AnEncryptedFolderDeletedWhole_SavesItsFilesDecrypted()
+        {
+            await UploadAsync("/secret/a.txt", "a");
+            await EncryptAsync("docs:/secret");
+            TrashEntry deleted = await Docs.DeleteDirectoryAsync("/secret");
+
+            CliRun run = await RunAsync("get-deleted", "docs", deleted.DeletionId.ToString(), _work.File("out"), "--decrypt", "--password-file", PasswordFile);
+
+            Assert.Equal(CliApp.Succeeded, run.ExitCode);
+            Assert.Equal("a", await File.ReadAllTextAsync(Path.Combine(_work.File("out"), "a.txt")));
+        }
+
+        [Fact]
+        public async Task GetDeleted_AnEncryptedFolderWithAnotherPassword_FailsAsMisuseBeforeSavingAnything()
+        {
+            await UploadAsync("/secret/a.txt", "a");
+            await EncryptAsync("docs:/secret");
+            TrashEntry deleted = await Docs.DeleteDirectoryAsync("/secret");
+            await File.WriteAllTextAsync(_work.File("wrong.txt"), "another password\n");
+
+            CliRun run = await RunAsync("get-deleted", "docs", deleted.DeletionId.ToString(), _work.File("out"), "--password-file", _work.File("wrong.txt"));
+
+            Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.Contains("not the password of the encrypted folder '/secret'", run.Error, StringComparison.Ordinal);
+            Assert.False(Directory.Exists(_work.File("out")));
+        }
+
+        [Fact]
         public async Task Put_IntoAnEncryptedFolderWithAnotherPassword_FailsAsMisuseAndStoresNothing()
         {
             await EncryptSecretAsync();
@@ -442,7 +498,7 @@ namespace ByteShelf.Cli.Tests
             ShelfFile file = await Docs.GetFileAsync(path);
             Assert.True(file.Encrypted);
             using MemoryStream plain = new MemoryStream();
-            await Transfers.WriteAsync(Docs, file, plain, EncryptedFiles.DecryptedWith(Password), CancellationToken.None);
+            await Transfers.WriteAsync(FileSource.Live(Docs), file, plain, EncryptedFiles.DecryptedWith(Password), CancellationToken.None);
             return Encoding.UTF8.GetString(plain.ToArray());
         }
 

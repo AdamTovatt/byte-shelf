@@ -33,6 +33,7 @@ namespace ByteShelfCommon.Serialization
     [JsonSerializable(typeof(UploadSession))]
     [JsonSerializable(typeof(TrashEntry))]
     [JsonSerializable(typeof(IReadOnlyList<TrashEntry>))]
+    [JsonSerializable(typeof(DeletionTree))]
     [JsonSerializable(typeof(ShelfAccessGrant))]
     [JsonSerializable(typeof(IReadOnlyList<ShelfAccessGrant>))]
     [JsonSerializable(typeof(SetShelfAccessRequest))]

@@ -383,6 +383,55 @@ namespace ByteShelfClient.InMemory
                 .ToList());
         }
 
+        public Task<DeletionTree> ListDeletionAsync(Guid deletionId, string? under = null, string? after = null, int? limit = null, CancellationToken cancellationToken = default)
+        {
+            TreeQuery normalized = new TreeQuery { Under = under, Limit = limit, After = after }.Normalize();
+            string kept = normalized.Under!;
+            bool Keeps(string path) => IsAfter(path, normalized.After)
+                && (kept == ShelfPath.Root || path == kept || path.StartsWith(kept + "/", StringComparison.Ordinal));
+
+            return Run(cancellationToken, shelf =>
+            {
+                if (!DeletionIds(shelf).Contains(deletionId))
+                {
+                    throw InMemoryErrors.NotFound($"There is no restorable deletion {deletionId} in this shelf's trash.");
+                }
+
+                List<ShelfDirectory> taken = shelf.Directories.Where(directory => directory.DeletionId == deletionId).Select(shelf.ToShelfDirectory).ToList();
+                List<ShelfFile> takenFiles = shelf.Files.Where(file => file.DeletionId == deletionId).Select(shelf.ToShelfFile).ToList();
+
+                // A directory's own encryption counts, as it was the folder its files were stored in.
+                TrashEntry deletion = ToTrashEntry(shelf, deletionId);
+                DirectoryNode container = shelf.Directories.First(directory => directory.Id == TopOf(shelf, deletionId).ContainerId);
+                Guid storedIn = kept == ShelfPath.Root
+                    ? deletion.Kind == TrashEntryKind.Directory ? deletion.EntryId : container.Id
+                    : taken.FirstOrDefault(directory => directory.Path == kept)?.Id
+                        ?? takenFiles.FirstOrDefault(file => file.Path == kept)?.DirectoryId
+                        ?? throw InMemoryErrors.NotFound($"Deletion {deletionId} took nothing at '{kept}'.");
+
+                return new DeletionTree
+                {
+                    Deletion = deletion,
+                    EncryptedBy = shelf.ToEncryptedFolder(shelf.EncryptedFolderOf(storedIn)),
+                    Tree = DirectoryTree.Page(
+                        shelf.ToShelfDirectory(container),
+                        taken.Where(entry => Keeps(entry.Path)),
+                        takenFiles.Where(entry => Keeps(entry.Path)),
+                        normalized.Limit!.Value),
+                };
+            });
+        }
+
+        public Task<Stream> OpenDeletedReadAsync(Guid deletionId, Guid fileId, CancellationToken cancellationToken = default)
+        {
+            return Run<Stream>(cancellationToken, shelf =>
+            {
+                FileNode file = shelf.Files.FirstOrDefault(candidate => candidate.Id == fileId && candidate.DeletionId == deletionId)
+                    ?? throw InMemoryErrors.NotFound($"Deletion {deletionId} in this shelf's trash holds no file {fileId}.");
+                return new MemoryStream(file.Content, writable: false);
+            });
+        }
+
         public Task RestoreAsync(Guid deletionId, CancellationToken cancellationToken = default)
         {
             return Write(cancellationToken, shelf =>

@@ -33,6 +33,9 @@ namespace ByteShelf.Tools
         }
     }
 
+    /// <summary>What a deletion took at one path, and the encrypted folder its files were in (null for none).</summary>
+    internal sealed record DeletedEntry(Entry Entry, EncryptedFolder? EncryptedBy);
+
     /// <summary>
     /// Working on whatever a path names. Commands and tools take a path without saying whether it is
     /// a file or a directory, as a shell's do, and the server's routes differ by kind.
@@ -70,16 +73,42 @@ namespace ByteShelf.Tools
         }
 
         /// <summary>Everything under the directory at <paramref name="under"/>, a page of the tree at a time, following each page's cursor.</summary>
-        public static async IAsyncEnumerable<DirectoryTree> TreePagesAsync(
-            IShelfClient shelf,
-            string under,
-            int pageSize,
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+        public static IAsyncEnumerable<DirectoryTree> TreePagesAsync(IShelfClient shelf, string under, int pageSize, CancellationToken cancellationToken)
+        {
+            return PagesAsync(after => shelf.ListTreeAsync(new TreeQuery { Under = under, Limit = pageSize, After = after }, cancellationToken));
+        }
+
+        /// <summary>
+        /// What deletion <paramref name="deletionId"/> took at <paramref name="under"/> and below it, a page
+        /// at a time, following each page's cursor.
+        /// </summary>
+        public static IAsyncEnumerable<DirectoryTree> DeletionPagesAsync(IShelfClient shelf, Guid deletionId, string under, int pageSize, CancellationToken cancellationToken)
+        {
+            return PagesAsync(async after => (await shelf.ListDeletionAsync(deletionId, under, after, pageSize, cancellationToken)).Tree);
+        }
+
+        /// <summary>
+        /// What deletion <paramref name="deletionId"/> took at <paramref name="path"/> (the file or the
+        /// directory it deleted, when null), with the encrypted folder its files were in.
+        /// </summary>
+        /// <exception cref="ByteShelfException">It took nothing there, or is not in the trash (<see cref="ErrorCodes.NotFound"/>).</exception>
+        public static async Task<DeletedEntry> GetDeletedAsync(IShelfClient shelf, Guid deletionId, string? path, CancellationToken cancellationToken)
+        {
+            DeletionTree first = await shelf.ListDeletionAsync(deletionId, path, limit: 1, cancellationToken: cancellationToken);
+
+            // The page starts with the entry at the path; with none, everything the deletion took is under
+            // the entry it deleted, which comes first.
+            TreeEntry entry = first.Tree.InOrder()[0];
+            return new DeletedEntry(entry.File != null ? Entry.Of(entry.File) : Entry.Of(entry.Directory!), first.EncryptedBy);
+        }
+
+        /// <summary>Every page <paramref name="list"/> answers, from the first, following each page's cursor.</summary>
+        private static async IAsyncEnumerable<DirectoryTree> PagesAsync(Func<string?, Task<DirectoryTree>> list)
         {
             string? after = null;
             do
             {
-                DirectoryTree page = await shelf.ListTreeAsync(new TreeQuery { Under = under, Limit = pageSize, After = after }, cancellationToken);
+                DirectoryTree page = await list(after);
                 yield return page;
                 after = page.NextCursor;
             }

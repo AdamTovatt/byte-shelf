@@ -34,7 +34,10 @@ it: `GetReplicationAsync` (the replicas and how far behind each is, or the prima
 `CreatePairingCodeAsync`, `FollowPrimaryAsync`, `RemoveReplicaAsync` and `PromoteAsync`. `IShelfClient` works on one shelf:
 list a directory or its whole tree, search, upload, open, describe, share by a link, make an upload
 link, encrypt directories and swap a file's contents in place (`SwapContentAsync`), create
-directories, move, delete, the trash, and for admins the shelf's settings, grants and keys.
+directories, move, delete, the trash (`ListDeletionAsync` and `OpenDeletedReadAsync` read what a
+deletion took without restoring it, on a replica too; the listing also says what the deletion took
+and the encrypted folder its files were stored in), and for admins the shelf's settings, grants
+and keys.
 `ByteShelfClient.Encryption` encrypts and decrypts with a password, on the client only. Files and
 directories are named by path or by id; both convert to an `EntryReference`.
 

@@ -122,20 +122,38 @@ namespace ByteShelf.Server.Storage.Repositories
         public async Task<IReadOnlyList<(DirectoryRecord Directory, string Path)>> GetLiveSubtreeAsync(Guid directoryId, string directoryPath, int? maxDepth, string? after, int maxRows, IDbSession? session = null)
         {
             SubtreeWalk walk = SubtreeWalk.ForDirectories(directoryId, directoryPath, maxDepth);
+            return await GetWalkedAsync(SubtreeWalk.Sql, walk.Parameters(), "TRUE", after, maxRows, session);
+        }
 
+        /// <inheritdoc />
+        public async Task<IReadOnlyList<(DirectoryRecord Directory, string Path)>> GetDeletionSubtreeAsync(Guid containerId, string containerPath, Guid deletionId, string? under, string? after, int maxRows, IDbSession? session = null)
+        {
+            DeletionWalk walk = DeletionWalk.From(containerId, containerPath, deletionId, under);
+            return await GetWalkedAsync(DeletionWalk.Sql, walk.Parameters(), DeletionWalk.Keeps("tree.node_path"), after, maxRows, session);
+        }
+
+        /// <summary>
+        /// The directories <paramref name="walkSql"/> walks below where it starts that meet
+        /// <paramref name="condition"/>, by path after <paramref name="after"/>, with their paths: one
+        /// page of a tree listing.
+        /// </summary>
+        /// <param name="parameters">The walk's parameters, under the names its SQL and the condition use.</param>
+        private async Task<IReadOnlyList<(DirectoryRecord Directory, string Path)>> GetWalkedAsync(string walkSql, DynamicParameters parameters, string condition, string? after, int maxRows, IDbSession? session)
+        {
             return await UseSessionAsync(async (dbSession) =>
             {
                 string query = $@"
-                    {SubtreeWalk.Sql}
+                    {walkSql}
                     SELECT {SelectColumns}, tree.node_path AS {nameof(DirectoryTreeEntity.FullPath)}
                     FROM directory JOIN tree ON directory.id = tree.node_id
-                    WHERE tree.level > 0
+                    WHERE tree.level > 0 AND {condition}
                       AND (@{nameof(after)} IS NULL OR tree.node_path > @{nameof(after)})
                     ORDER BY tree.node_path
                     LIMIT @{nameof(maxRows)}";
 
-                IEnumerable<DirectoryTreeEntity> entities = await dbSession.Connection.QueryAsync<DirectoryTreeEntity>(
-                    query, new { walk.DirectoryId, walk.BasePath, walk.MaxLevel, after, maxRows }, transaction: dbSession.Transaction);
+                parameters.Add(nameof(after), after);
+                parameters.Add(nameof(maxRows), maxRows);
+                IEnumerable<DirectoryTreeEntity> entities = await dbSession.Connection.QueryAsync<DirectoryTreeEntity>(query, parameters, transaction: dbSession.Transaction);
 
                 return (IReadOnlyList<(DirectoryRecord, string)>)entities.Select(entity => (entity.ToDomain(), entity.FullPath)).ToList();
             }, session);

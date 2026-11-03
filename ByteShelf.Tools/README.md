@@ -13,6 +13,7 @@ the same words:
 | `ShelfLocation` | A place on a shelf, `shelf:/path` or `shelf` alone for its root. |
 | `Entries` | A file or directory by path, whichever is there. |
 | `Transfers` | Moving one file between a local file or stream and a shelf; a download is checked against its SHA-256 and written to a side file first. |
+| `FileSource` | Where a download reads a file from: the shelf as it is, or one deletion in its trash, for the CLI's `get-deleted` and MCP's `download_deleted`. |
 | `FolderTransfers` | Moving a whole local folder or shelf directory. An entry that cannot move is left out and listed; a refusal that would fail every entry (signed out, no permission, over quota, a replica, the server out of reach) stops the transfer. Symbolic links are never followed. |
 | `Encryptor` | A password to encrypt with and its scrypt work factor, which `Transfers` and `FolderTransfers` take to encrypt on the way up. |
 | `EncryptedFiles` | What a download does with an encrypted file: saves it as the age file it is (named `.age` when the download picks the name), decrypts it with a password, or leaves it out. |

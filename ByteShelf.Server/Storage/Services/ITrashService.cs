@@ -25,6 +25,21 @@ namespace ByteShelf.Server.Storage.Services
         /// <exception cref="Shared.Errors.NotFoundException">The deletion is not on the shelf, or its window has passed.</exception>
         Task<TrashEntry> GetEntryAsync(Shelf shelf, Guid deletionId);
 
+        /// <summary>
+        /// One page of what a deletion removed, by the paths it had, with what the deletion was and the
+        /// encrypted folder its files were in (<see cref="DeletionTree"/>). <see cref="TreeQuery.Under"/>
+        /// keeps what it took at that path and under it, the root keeping all of it; <see cref="TreeQuery.Depth"/>
+        /// is not read. A read, so a replica answers it too.
+        /// </summary>
+        /// <exception cref="Shared.Errors.NotFoundException">
+        /// The deletion is not on the shelf, its window has passed, or it took nothing at that path.
+        /// </exception>
+        Task<DeletionTree> ListDeletionAsync(Shelf shelf, Guid deletionId, TreeQuery page);
+
+        /// <summary>The contents of a file deletion <paramref name="deletionId"/> removed, with the record it had.</summary>
+        /// <exception cref="Shared.Errors.NotFoundException">The deletion or the file is not in the shelf's trash, or has been purged.</exception>
+        Task<FileContent> GetDeletedContentAsync(Shelf shelf, Guid deletionId, Guid fileId);
+
         /// <summary>Brings back what one deletion removed, to where it was, while its window lasts.</summary>
         Task RestoreAsync(Shelf shelf, Guid deletionId);
 

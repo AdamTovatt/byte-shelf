@@ -142,6 +142,25 @@ namespace ByteShelfClient
         /// <summary>Every deletion that can still be restored, newest first.</summary>
         Task<IReadOnlyList<TrashEntry>> GetTrashAsync(CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// One page of what a deletion removed, by the paths it had, without restoring it, with what the
+        /// deletion was and the encrypted folder its files were in (<see cref="DeletionTree"/>). Its entries
+        /// are what it took at <paramref name="under"/> and below it, that entry first: the file deleted,
+        /// or the directory and everything under it, when <paramref name="under"/> is null. A read, so a
+        /// replica answers it too, for a file purged on its primary that is still in the replica's trash.
+        /// A <paramref name="limit"/> outside 1 to <see cref="TreeQuery.MaxLimit"/> throws
+        /// <see cref="ArgumentException"/> before anything is sent. <paramref name="after"/> is the previous
+        /// page's <see cref="DirectoryTree.NextCursor"/>, null for the first page.
+        /// </summary>
+        Task<DeletionTree> ListDeletionAsync(Guid deletionId, string? under = null, string? after = null, int? limit = null, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Opens the contents of a file a deletion removed, by its id, without restoring it; an encrypted
+        /// file's are its age bytes. The stream checks them against the file's SHA-256 as
+        /// <see cref="OpenReadAsync"/>'s does.
+        /// </summary>
+        Task<Stream> OpenDeletedReadAsync(Guid deletionId, Guid fileId, CancellationToken cancellationToken = default);
+
         /// <summary>Puts back what one deletion removed, where it was.</summary>
         Task RestoreAsync(Guid deletionId, CancellationToken cancellationToken = default);
 

@@ -4,7 +4,8 @@ import toast from 'react-hot-toast';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fileOpening, type FileOpening } from './fileOpening';
 import { saveTokens } from '../services/authService';
-import type { ShelfFile } from '../services/shelfService';
+import { deletedContent, liveContent } from '../services/contentService';
+import type { DeletionTree, ShelfFile } from '../services/shelfService';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
 import { textOf } from '../test/dom';
@@ -51,6 +52,15 @@ function file(encrypted = false, id = 'f'): ShelfFile {
   return { id, shelfId: 's', directoryId: 'd', path: `/${id}.txt`, name: `${id}.txt`, contentType: 'text/plain', sizeBytes: 12, sha256: 'x', createdAt: '', updatedAt: '', description: null, encrypted };
 }
 
+/** Deletion `deletionId`, which took `file()`. */
+function deletion(deletionId: string): DeletionTree {
+  const root = { id: 'd', shelfId: 's', parentId: null, path: '/', name: '', createdAt: '', encrypted: false };
+  return {
+    deletion: { deletionId, kind: 'file', entryId: 'f', path: '/f.txt', deletedAt: '', purgesAt: '', fileCount: 1, sizeBytes: 12 },
+    tree: { directory: root, directories: [], files: [file()] },
+  };
+}
+
 describe('opening and saving files', () => {
   let opening: FileOpening;
   let errors: string[];
@@ -76,7 +86,7 @@ describe('opening and saving files', () => {
       errors.push(String(message));
       return '';
     });
-    opening = fileOpening('docs', async (encrypted) => {
+    opening = fileOpening(liveContent('docs'), async (encrypted) => {
       if (promptCancelled) return null;
       decrypted.push(encrypted.id);
       return new Blob(['secret'], { type: encrypted.contentType });
@@ -110,6 +120,14 @@ describe('opening and saving files', () => {
 
       expect(blobs.savedFrom).toEqual(['/api/open/docs/content?id=f&download=true']);
       expect(blobs.saved).toEqual([]);
+    });
+
+    it('saves a file from the trash by navigating to its deletion, as a live file is saved', async () => {
+      stubServer(async () => json({}));
+
+      await fileOpening(deletedContent('docs', deletion('del')), async () => null).save([file()]);
+
+      expect(blobs.savedFrom).toEqual(['/api/open/docs/trash/del/content?id=f&download=true']);
     });
 
     it('saves plain files by navigating and encrypted ones from their contents decrypted here, together', async () => {
@@ -220,6 +238,15 @@ describe('opening and saving files', () => {
       await opening.open(file());
 
       expect(toasts.shown.map((shown) => [textOf(shown.message), shown.action])).toEqual([['f.txt is ready', 'Open']]);
+    });
+
+    it('saves a file from the trash from its contents read here from its deletion', async () => {
+      const sent = stubServer(async () => new Response('the contents', { headers: { 'Content-Type': 'text/plain' } }));
+
+      await fileOpening(deletedContent('docs', deletion('del')), async () => null).save([file()]);
+
+      expect(sent).toEqual(['GET /api/shelves/docs/trash/del/content?id=f Bearer first']);
+      expect(blobs.saved).toEqual(['f.txt']);
     });
 
     it('saves a plain file from its contents read here, never by navigating', async () => {

@@ -31,6 +31,7 @@ import { MobileTopBarActions, MobileTopBarOverlay } from '../components/layout/M
 import { useUploads } from '../hooks/useUploads';
 import { encryptionActions, useEncryption } from '../hooks/useEncryption';
 import { fileOpening } from '../components/fileOpening';
+import { liveContent } from '../services/contentService';
 import { showActionToast } from '../components/actionToast';
 import { NameAndReason, NameLine } from '../components/MiddleTruncatedName';
 import { reasonOf, runOrToastNamed, toastNamedFailure } from '../components/nameToasts';
@@ -55,7 +56,7 @@ export function ShelfPage() {
   const { data: listing, isLoading, error } = useListing(shelf, path);
   const uploads = useUploads(shelf);
   const encryption = useEncryption(shelf);
-  const opening = fileOpening(shelf, encryption.contents);
+  const opening = fileOpening(liveContent(shelf), encryption.contents);
   const deleteEntry = useDeleteEntry(shelf);
   const restore = useRestoreDeletion(shelf);
   const [creatingDirectory, setCreatingDirectory] = useState(false);

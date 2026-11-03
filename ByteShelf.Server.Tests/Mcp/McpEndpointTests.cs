@@ -20,7 +20,7 @@ namespace ByteShelf.Server.Tests.Mcp
     {
         private static readonly string[] ReadTools =
         {
-            "download_file", "get_info", "list_directory", "list_shelves", "list_trash", "list_tree", "search_files", "share_file", "shelf_info",
+            "download_deleted", "download_file", "get_info", "list_directory", "list_shelves", "list_trash", "list_tree", "search_files", "share_file", "shelf_info",
         };
 
         private static readonly string[] AddTools = { "create_directory", "create_upload_link", "upload_file" };
@@ -117,6 +117,20 @@ namespace ByteShelf.Server.Tests.Mcp
 
             Assert.Equal("keys shelf", TextOf(read));
             Assert.Equal("keys shelf", await _host.AdminClient.GetStringAsync("/api/shelves/docs/content?path=/a.txt"));
+        }
+
+        /// <summary>No link reaches the trash, so a deleted file not answered here points to the CLI's get-deleted.</summary>
+        [Fact]
+        public async Task CallTool_DownloadDeletedBinaryFile_PointsToGetDeleted()
+        {
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+            AssertSucceeded(await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["path"] = "/a.bin", ["base64"] = Convert.ToBase64String(new byte[] { 0xff, 0xfe, 0x00 }) }));
+            TrashEntry deleted = (await (await _host.AdminClient.DeleteAsync("/api/shelves/docs/files?path=/a.bin")).Content.ReadFromJsonAsync<TrashEntry>())!;
+
+            CallToolResult read = await client.CallToolAsync("download_deleted", new Dictionary<string, object?> { ["deletionId"] = deleted.DeletionId });
+
+            Assert.True(read.IsError);
+            Assert.Contains($"byteshelf get-deleted docs {deleted.DeletionId:D}", TextOf(read), StringComparison.Ordinal);
         }
 
         [Fact]

@@ -214,20 +214,43 @@ namespace ByteShelf.Server.Storage.Repositories
         public async Task<IReadOnlyList<(FileRecord File, string Path)>> GetLiveSubtreeAsync(Guid directoryId, string directoryPath, int? maxDepth, string? after, int maxRows, IDbSession? session = null)
         {
             SubtreeWalk walk = SubtreeWalk.ForFiles(directoryId, directoryPath, maxDepth);
+            return await GetWalkedAsync(SubtreeWalk.Sql, walk.Parameters(), "file.deleted_at IS NULL", after, maxRows, session);
+        }
 
+        /// <inheritdoc />
+        public async Task<IReadOnlyList<(FileRecord File, string Path)>> GetDeletionSubtreeAsync(Guid containerId, string containerPath, Guid deletionId, string? under, string? after, int maxRows, IDbSession? session = null)
+        {
+            DeletionWalk walk = DeletionWalk.From(containerId, containerPath, deletionId, under);
+            return await GetWalkedAsync(
+                DeletionWalk.Sql,
+                walk.Parameters(),
+                $"file.deletion_id = @{nameof(walk.DeletionId)} AND {DeletionWalk.Keeps(nameof(FileSearchEntity.FullPath))}",
+                after,
+                maxRows,
+                session);
+        }
+
+        /// <summary>
+        /// The files in the directories <paramref name="walkSql"/> walks that meet <paramref name="condition"/>,
+        /// by path after <paramref name="after"/>, with their paths: one page of a tree listing.
+        /// </summary>
+        /// <param name="parameters">The walk's parameters, under the names its SQL and the condition use.</param>
+        private async Task<IReadOnlyList<(FileRecord File, string Path)>> GetWalkedAsync(string walkSql, DynamicParameters parameters, string condition, string? after, int maxRows, IDbSession? session)
+        {
             return await UseSessionAsync(async (dbSession) =>
             {
                 string query = $@"
-                    {SubtreeWalk.Sql}
+                    {walkSql}
                     SELECT {SelectColumns}, tree.node_path || '/' || file.name AS {nameof(FileSearchEntity.FullPath)}
                     FROM file JOIN tree ON file.directory_id = tree.node_id
-                    WHERE file.deleted_at IS NULL
+                    WHERE {condition}
                       AND (@{nameof(after)} IS NULL OR {nameof(FileSearchEntity.FullPath)} > @{nameof(after)})
                     ORDER BY {nameof(FileSearchEntity.FullPath)}
                     LIMIT @{nameof(maxRows)}";
 
-                IEnumerable<FileSearchEntity> entities = await dbSession.Connection.QueryAsync<FileSearchEntity>(
-                    query, new { walk.DirectoryId, walk.BasePath, walk.MaxLevel, after, maxRows }, transaction: dbSession.Transaction);
+                parameters.Add(nameof(after), after);
+                parameters.Add(nameof(maxRows), maxRows);
+                IEnumerable<FileSearchEntity> entities = await dbSession.Connection.QueryAsync<FileSearchEntity>(query, parameters, transaction: dbSession.Transaction);
 
                 return (IReadOnlyList<(FileRecord, string)>)entities.Select(entity => (entity.ToDomain(), entity.FullPath)).ToList();
             }, session);

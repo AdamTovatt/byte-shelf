@@ -51,13 +51,16 @@ path that is not allowed is a 400.
 | `POST uploads/{id}/complete` | Stores the file once every byte has arrived. 409 when the path was taken meanwhile, or for a swap when the file's contents changed or the swap no longer flips its encryption; 404 for a swap whose file is gone. The upload is kept. |
 | `DELETE uploads/{id}` | Drops the upload and releases its reservation. |
 | `GET trash` | Deletions still inside the restore window, newest first. |
+| `GET trash/{deletionId}/tree?under=&limit=&after=` | What a deletion took, by the paths it had, a page at a time as `tree` pages (`DeletionTree`): the deletion as `GET trash` lists it, the encrypted folder the entry at `under` was stored in (`encryptedBy`, which may have been moved or deleted since; its check still tells the password), and the page, whose directory is the one the deletion was made in and whose entries are what it took at `under` and below, that entry first. Without `under`, that is all it took. 404 when it took nothing at `under`. |
+| `GET trash/{deletionId}/content?id=` (and `HEAD`) | A file the deletion took, sent as a live file's contents are, `download=true` too. Also served at `/api/open/{shelf}/trash/{deletionId}/content`, for a browser's cookie. |
 | `POST trash/{deletionId}/restore` | Puts a deletion back where it was. |
 | `DELETE trash` | Empties the trash: everything in it can no longer be restored, and is purged now with its objects (see below). |
 
 ## Opening in a browser (`AuthSetup.CookieTokenPath`)
 
 A new tab or a save is a plain navigation, which cannot send an `Authorization` header. So the web UI
-opens and saves a file at `/api/open/{shelf}/content`, the one path where the session's access token
+opens and saves a file at `/api/open/{shelf}/content`, and one in the trash at
+`/api/open/{shelf}/trash/{deletionId}/content`: the paths under `/api/open`, where the session's access token
 may instead come in the `__Secure-access_token` cookie (EasyReasy.Auth's `CookieTokenPaths`; its README's
 "Opening Files in a New Tab (token in a cookie)"). The built-in sign-in and renewal set the cookie, `HttpOnly`, `Secure`,
 `SameSite=Strict`, host-only, with `Path=/api/open` and the token's own lifetime; a failed renewal
@@ -147,6 +150,13 @@ reached all of it yet. Emptying a shelf's trash first marks everything in it as 
 one transaction, so none of it can be listed or restored from then on, and then purges it in batches.
 What a crash or a cancelled request leaves unpurged is already past its window, so the next
 maintenance pass purges it. A deletion made while emptying runs is kept.
+
+What a listed deletion took can be read without restoring it (`ListDeletionAsync`,
+`GetDeletedContentAsync`): a read, open to whoever can list the trash and answered on a replica too,
+which is how a replica gives back a file purged on its primary. `DeletionWalk` walks the deletion's
+directories from the one it was made in, so each entry has the path it had. An encrypted file's
+contents are its age bytes. Contents purged between the lookup and the open answer 404, as a file
+looked up a moment later would. Putting a file back on another server is an ordinary upload.
 
 ## Descriptions and search (`FileService`)
 

@@ -29,6 +29,14 @@ namespace ByteShelf.Server.Storage.Repositories
         Task<IReadOnlyList<(DirectoryRecord Directory, string Path)>> GetLiveSubtreeAsync(Guid directoryId, string directoryPath, int? maxDepth, string? after, int maxRows, IDbSession? session = null);
 
         /// <summary>
+        /// The directories deletion <paramref name="deletionId"/> removed from <paramref name="containerId"/>
+        /// (at <paramref name="containerPath"/>), at <paramref name="under"/> or below it when set, whose
+        /// path as it was comes after <paramref name="after"/>; by that path, each with it, at most
+        /// <paramref name="maxRows"/> of them.
+        /// </summary>
+        Task<IReadOnlyList<(DirectoryRecord Directory, string Path)>> GetDeletionSubtreeAsync(Guid containerId, string containerPath, Guid deletionId, string? under, string? after, int maxRows, IDbSession? session = null);
+
+        /// <summary>
         /// The names from the shelf's root down to <paramref name="id"/>, the root's empty name excluded:
         /// empty for the root itself.
         /// </summary>

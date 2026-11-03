@@ -46,6 +46,7 @@ spaces.
 | Make a directory | `byteshelf mkdir docs:/2026/q2` (missing parents too) |
 | Move or rename | `byteshelf mv docs:/2026/draft.pdf /2026/final.pdf` (the new path may repeat the shelf, `docs:/2026/final.pdf`; a name holding a colon starts with `/`, as in `/notes:2026.txt`) |
 | Delete (to the trash) | `byteshelf rm docs:/2026/old.pdf`, then `byteshelf trash docs` and `byteshelf restore docs <id>` |
+| Save something deleted without restoring it | `byteshelf get-deleted docs <id> ./out` (`--path <path>` for one file or directory it took; a replica's trash too, for a file purged on its primary) |
 | Empty the trash for good | `byteshelf empty-trash docs` (nothing in it can come back afterwards) |
 
 - `find` matches text in a file's name or its description, ignoring case, so describe what you store.
