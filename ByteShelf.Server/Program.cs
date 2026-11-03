@@ -168,7 +168,9 @@ namespace ByteShelf.Server
         /// </summary>
         internal static WebApplication BuildApplication(string[] args, RootFolder root, Action<WebApplicationBuilder>? configureForTests = null, EmailOptions? email = null)
         {
-            WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+            // The content root is the executable's folder, which holds wwwroot/ and appsettings.json, not the
+            // working directory, which is wherever the server was started from.
+            WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = AppContext.BaseDirectory });
             builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestLineSize = MaxRequestLineBytes);
 
             using (ILoggerFactory loggerFactory = CreateStartupLoggerFactory())

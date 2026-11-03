@@ -3,6 +3,7 @@ using ByteShelf.Server.Replication.Repositories;
 using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace ByteShelf.Server.Replication
 {
@@ -10,13 +11,14 @@ namespace ByteShelf.Server.Replication
     {
         /// <summary>
         /// <see cref="ReplicationState"/>, which says whether this server is a replica and so refuses
-        /// writes: part of <see cref="AddReplicationServices"/>, and alone for work on a root without the
-        /// web host, such as the server's user commands.
+        /// writes: part of <see cref="AddReplicationServices"/>, added by the first admin's seeder, and
+        /// alone for work on a root without the web host, such as the server's user commands.
         /// </summary>
         public static IServiceCollection AddReplicationState(this IServiceCollection services)
         {
-            services.AddScoped<IReplicationSourceRepository, ReplicationSourceRepository>();
-            services.AddScoped<ReplicationState>();
+            // Tried, as several features need it and each adds it.
+            services.TryAddScoped<IReplicationSourceRepository, ReplicationSourceRepository>();
+            services.TryAddScoped<ReplicationState>();
             return services;
         }
 

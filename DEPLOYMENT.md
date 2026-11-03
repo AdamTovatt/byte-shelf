@@ -8,6 +8,9 @@ image previews with, for Linux x64 and arm64 (glibc, no system libraries needed)
 x64 (`Directory.Build.targets`). Elsewhere (musl, 32-bit arm, Windows on arm) the server runs, but
 `/mcp`'s `download_file` fails on an image it would preview.
 
+The server finds `wwwroot/` and `appsettings.json` beside its executable, whichever folder it is
+started from; `--contentRoot` and `ASPNETCORE_CONTENTROOT` are ignored.
+
 ## Installing
 
 1. Publish: `dotnet publish ByteShelf.Server -c Release -o <folder>`, and install that folder with
@@ -69,7 +72,7 @@ path. Exit codes: 0 done, 1 refused or failed (the reason is logged), 2 the argu
 | `EMAIL_FROM_ADDRESS` | with `POSTMARK_API_KEY` | The address mail is from, a sender confirmed in Postmark. The server refuses to start with a token and no address. |
 | `EMAIL_FROM_NAME` | no | The name mail is from. `ByteShelf` by default. |
 | `REMOTE_CLAUDE_DEV_MAIL_DIR` | no | A folder each email is written into as a file instead of being sent, in any environment, unless `POSTMARK_API_KEY` is set. Set by remote-claude for a dev server; see [Email](#email). |
-| `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD` | no | Create the first admin while there are no users; ignored afterwards and can be removed. Without them, create it with `--create-user`. |
+| `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD` | no | Create the first admin while there are no users; ignored afterwards and can be removed. Without them, create it with `--create-user`. Ignored on a replica, whose users come from its primary. |
 | `INITIAL_ADMIN_DISPLAY_NAME` | no | The first admin's display name; the email's local part otherwise. |
 | `BYTESHELF_RESTORE_WINDOW_DAYS` | no | How long a deletion can be restored before it is purged. 30 by default. |
 | `BYTESHELF_TRUSTED_PROXIES` | behind a proxy | Comma-separated IPs or CIDR ranges of the reverse proxies in front of the server. Their `X-Forwarded-For` and `X-Forwarded-Proto` are believed, so rate limits and the sign-in delay count each client rather than the proxy. Loopback is always trusted. |
@@ -198,9 +201,11 @@ shelves or replicas of its own can follow. A running server starts following wit
 already fetched. Like the user commands they never migrate an existing database. On a root with no
 database yet, `--follow` creates the root and its database first, so a replica can be paired before
 its first start (run it as the service user, as for `--create-user`), and removes them again if the
-pairing fails; the others refuse such a root. Exit codes: 0 done, 1 refused or failed (the reason is
-logged), 2 the arguments are wrong, or `BYTESHELF_ROOT` (or, for `--replication-code`,
-`APP_BASE_URL`) is not set.
+pairing fails; the others refuse such a root. Such a replica needs no first admin and ignores
+`INITIAL_ADMIN_*`: at its first start it logs that it is waiting for the primary's copy, which brings
+the primary's users, rather than that there are no users. Exit codes: 0 done, 1 refused or failed
+(the reason is logged), 2 the arguments are wrong, or `BYTESHELF_ROOT` (or, for
+`--replication-code`, `APP_BASE_URL`) is not set.
 
 ## Backups
 

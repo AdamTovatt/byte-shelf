@@ -2,8 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
-using ByteShelf.Server.Replication.Models;
-using ByteShelf.Server.Replication.Repositories;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Tests.TestUtilities;
@@ -229,18 +227,7 @@ namespace ByteShelf.Server.Tests.Users
         public async Task AnyCommand_OnAReplica_FailsWithoutAskingForAPasswordAndChangesNothing(string command)
         {
             await CreateOtherAdminAsync();
-            using (IServiceScope scope = _host.Services.CreateScope())
-            {
-                await scope.ServiceProvider.GetRequiredService<IReplicationSourceRepository>().TryInsertAsync(new ReplicationSource
-                {
-                    PrimaryUrl = "http://primary.invalid/",
-                    PrimaryInstanceId = Guid.NewGuid().ToString("D"),
-                    Credential = "replica-credential",
-                    PairedAt = DateTimeOffset.UtcNow,
-                    AppliedSequence = 0,
-                    NeedsCopy = false,
-                });
-            }
+            await TestReplicas.MarkAsReplicaAsync(_host.Services);
 
             long before = await LatestChangeAsync();
             Passwords passwords = new Passwords(NewPassword);

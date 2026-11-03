@@ -1,3 +1,4 @@
+using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Users.Models;
 using ByteShelfCommon;
@@ -8,7 +9,8 @@ namespace ByteShelf.Server.Users.Services
     /// First-run seeding: creates the admin account from <see cref="InitialAdminSettings"/> — but only
     /// while there are no users, so the settings are inert on every later boot and can be removed once
     /// the admin exists. The display name falls back to the email's local part. The settings are
-    /// optional: without them it logs how to create the first admin with <see cref="UserCommand"/>.
+    /// optional: without them it logs how to create the first admin with <see cref="UserCommand"/>. A
+    /// replica makes no one, since its users come with its primary's copy, and says it is waiting for that.
     /// </summary>
     public class InitialAccountSeeder : IHostedService
     {
@@ -34,10 +36,19 @@ namespace ByteShelf.Server.Users.Services
                 return;
             }
 
+            // A replica's users are its primary's, which arrive with its first copy: none is made here,
+            // as the copy would remove it.
+            if (!await scope.ServiceProvider.GetRequiredService<ReplicationState>().AllowsWritesAsync())
+            {
+                _logger.LogInformation(
+                    "No users yet: this server is a replica, waiting for its primary's copy, which brings the primary's users. "
+                    + "Sign in with an account of the primary's once it lands.");
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(_settings.Email) || string.IsNullOrWhiteSpace(_settings.Password))
             {
-                // Not fatal: a replica receives its users from its primary, and the first admin can be
-                // created beside the running server.
+                // Not fatal: the first admin can be created beside the running server.
                 _logger.LogWarning(
                     "There are no users. Create the first admin on this machine with BYTESHELF_ROOT set to this root: "
                     + "{Command}, giving --admin (it asks for the password), "

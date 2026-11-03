@@ -90,7 +90,9 @@ The access token names its session, so the server moves that one session onto th
 `InitialAccountSeeder` creates an admin from `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD`
 (display name from `INITIAL_ADMIN_DISPLAY_NAME`, else the email's local part) while there are no
 users, and does nothing once there are, so both can be removed after the first start. Both are
-optional: without them it logs how to create the first admin with `--create-user`.
+optional: without them it logs how to create the first admin with `--create-user`. A replica makes
+no one, whether or not they are set: its users are its primary's and come with the first copy, so until
+that lands it logs that it is waiting for the copy.
 
 ## From the server's command line
 

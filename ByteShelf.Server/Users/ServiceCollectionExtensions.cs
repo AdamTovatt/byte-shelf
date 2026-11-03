@@ -1,4 +1,5 @@
 using ByteShelf.Server.Email.Services;
+using ByteShelf.Server.Replication;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Root;
@@ -22,6 +23,8 @@ namespace ByteShelf.Server.Users
         /// </summary>
         public static IServiceCollection AddInitialAdmin(this IServiceCollection services, InitialAdminSettings settings)
         {
+            // The seeder asks whether this server is a replica, which makes no first admin.
+            services.AddReplicationState();
             services.AddSingleton(settings);
             services.AddHostedService<InitialAccountSeeder>();
             return services;

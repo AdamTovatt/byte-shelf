@@ -5,8 +5,6 @@ using System.Text;
 using System.Text.RegularExpressions;
 using ByteShelf.Tools;
 using ByteShelf.Tools.Mcp;
-using ByteShelf.Server.Replication.Models;
-using ByteShelf.Server.Replication.Repositories;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
@@ -85,18 +83,7 @@ namespace ByteShelf.Server.Tests.Mcp
         public async Task ListTools_OnAReplica_OffersOnlyTheReadingToolsAndSaysWhy()
         {
             string secret = await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite);
-            using (IServiceScope scope = _host.Services.CreateScope())
-            {
-                await scope.ServiceProvider.GetRequiredService<IReplicationSourceRepository>().TryInsertAsync(new ReplicationSource
-                {
-                    PrimaryUrl = "http://primary.invalid/",
-                    PrimaryInstanceId = Guid.NewGuid().ToString("D"),
-                    Credential = "replica-credential",
-                    PairedAt = DateTimeOffset.UtcNow,
-                    AppliedSequence = 0,
-                    NeedsCopy = false,
-                });
-            }
+            await TestReplicas.MarkAsReplicaAsync(_host.Services);
 
             await using McpClient client = await ConnectAsync(secret);
 
