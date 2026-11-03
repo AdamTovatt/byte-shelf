@@ -19,7 +19,8 @@ namespace ByteShelf.Server.Replication.Services
     /// that. A replica watches its primary: following it has failed every time for longer than that,
     /// which is also what a primary that is down looks like. One email when a problem starts, one when it
     /// clears, and while it lasts at most one a <see cref="RepeatInterval"/>; what was sent is kept in the
-    /// database, so a restart sends nothing twice.
+    /// database, so a restart sends nothing twice. Silence and failing count only from the server's own
+    /// start, and an open problem clears only once replication is known to work.
     /// </summary>
     public sealed class ReplicationAlerts
     {
@@ -58,12 +59,16 @@ namespace ByteShelf.Server.Replication.Services
             _logger = logger;
         }
 
-        /// <summary>Looks at replication as it stands and sends whatever alert that calls for; answers how many it sent.</summary>
-        public async Task<int> CheckAsync(CancellationToken cancellationToken)
+        /// <summary>
+        /// Looks at replication as it stands and sends whatever alert that calls for; answers how many it
+        /// sent. Silence and failing count only from <paramref name="watchingSince"/>, when this server
+        /// started: nothing could reach it, nor could it try anything, while it was down.
+        /// </summary>
+        public async Task<int> CheckAsync(DateTimeOffset watchingSince, CancellationToken cancellationToken)
         {
             DateTimeOffset now = _timeProvider.GetUtcNow();
-            IReadOnlyList<Watched> watched = await WatchedAsync(now);
             Dictionary<string, ReplicationAlert> open = (await _alertRepository.GetAllAsync()).ToDictionary(alert => alert.Subject, StringComparer.Ordinal);
+            IReadOnlyList<Watched> watched = await WatchedAsync(now, watchingSince, open);
             int alerted = 0;
 
             foreach (Watched subject in watched)
@@ -71,7 +76,9 @@ namespace ByteShelf.Server.Replication.Services
                 open.TryGetValue(subject.Subject, out ReplicationAlert? alert);
                 if (subject.Problem is not Problem problem)
                 {
-                    if (alert != null)
+                    // Undecided (too short to count, or nothing heard since this server started) may be an
+                    // open problem going on, so it does not clear it.
+                    if (alert != null && subject.IsWorking)
                     {
                         await SendAsync(
                             $"Replication recovered: {subject.Concerns}",
@@ -130,45 +137,54 @@ namespace ByteShelf.Server.Replication.Services
         }
 
         /// <summary>What this server watches, each with its problem now, if it has one.</summary>
-        private async Task<IReadOnlyList<Watched>> WatchedAsync(DateTimeOffset now)
+        private async Task<IReadOnlyList<Watched>> WatchedAsync(DateTimeOffset now, DateTimeOffset watchingSince, IReadOnlyDictionary<string, ReplicationAlert> open)
         {
             List<Watched> watched = new List<Watched>();
             DateTimeOffset longAgo = now - _options.AlertAfter;
 
             foreach (Replica replica in await _replicaRepository.GetAllAsync())
             {
-                string concerns = $"replica '{replica.Name}'";
-                watched.Add(new Watched(ReplicationAlert.ForReplica(replica.Id), concerns, await ReplicaProblemAsync(replica, concerns, longAgo)));
+                watched.Add(await WatchReplicaAsync(replica, longAgo, watchingSince));
             }
 
             if (await _sourceRepository.GetAsync() is ReplicationSource source)
             {
-                string concerns = $"the primary {source.PrimaryUrl}";
-                watched.Add(new Watched(ReplicationAlert.Primary, concerns, PrimaryProblem(source, concerns, longAgo)));
+                watched.Add(WatchPrimary(source, longAgo, watchingSince, open.GetValueOrDefault(ReplicationAlert.Primary)));
             }
 
             return watched;
         }
 
         /// <summary>
-        /// A replica's problem as its primary sees it: not seen since before <paramref name="longAgo"/>, or
-        /// following the log but behind a change made before then. How far it had applied is as of its last
-        /// request for changes, so a replica not seen is never also counted behind, nor is one taking a
-        /// whole copy, which brings it every change made before the copy began.
+        /// A replica as its primary sees it. Its problem: silent for longer than the threshold, counted
+        /// from its last request or from <paramref name="watchingSince"/>, whichever is later; or following
+        /// the log but behind a change made before <paramref name="longAgo"/>. How far it had applied is as
+        /// of its last request for changes, so a replica not seen since this server started, or for long,
+        /// is never also counted behind, nor is one taking a whole copy, which brings it every change made
+        /// before the copy began. Working once it has been seen since this server started without one.
         /// </summary>
-        private async Task<Problem?> ReplicaProblemAsync(Replica replica, string concerns, DateTimeOffset longAgo)
+        private async Task<Watched> WatchReplicaAsync(Replica replica, DateTimeOffset longAgo, DateTimeOffset watchingSince)
         {
+            string subject = ReplicationAlert.ForReplica(replica.Id);
+            string concerns = $"replica '{replica.Name}'";
             DateTimeOffset seenAt = replica.LastSeenAt ?? replica.PairedAt;
-            if (seenAt < longAgo)
+            if (CountedFrom(seenAt, watchingSince) < longAgo)
             {
-                return new Problem($"{Capitalized(concerns)} has not been in touch with this server since {Format(seenAt)}.", seenAt);
+                return Watched.Failing(subject, concerns, new Problem($"{Capitalized(concerns)} has not been in touch with this server since {Format(seenAt)}.", seenAt));
             }
 
-            if (replica.Copying)
+            if (seenAt < watchingSince)
             {
-                return null;
+                return Watched.Undecided(subject, concerns);
             }
 
+            Problem? lag = replica.Copying ? null : await LagAsync(replica, concerns, longAgo);
+            return lag == null ? Watched.Working(subject, concerns) : Watched.Failing(subject, concerns, lag);
+        }
+
+        /// <summary>A replica's problem when it is behind a change made before <paramref name="longAgo"/>.</summary>
+        private async Task<Problem?> LagAsync(Replica replica, string concerns, DateTimeOffset longAgo)
+        {
             // The Replication page counts the same lag in changes rather than time: both are above zero
             // exactly when a change is unapplied. Compaction may have dropped older changes it has yet
             // to apply; the oldest left is then younger than the one it lacks, and it is counted behind a
@@ -184,17 +200,43 @@ namespace ByteShelf.Server.Replication.Services
         }
 
         /// <summary>
-        /// The primary's problem as a replica sees it: every step since before <paramref name="longAgo"/>
-        /// has failed. A whole copy taking long without failing is not one.
+        /// The primary as a replica sees it. Its problem: every step has failed for longer than the
+        /// threshold, counted from the first failure or from <paramref name="watchingSince"/>, whichever
+        /// is later. A whole copy taking long without failing is not one. Working once a step has worked
+        /// since the failing <paramref name="openAlert"/> is about began, even when later steps failed
+        /// again before this check: that is a new run of failures, its own problem once long enough.
         /// </summary>
-        private static Problem? PrimaryProblem(ReplicationSource source, string concerns, DateTimeOffset longAgo)
+        private static Watched WatchPrimary(ReplicationSource source, DateTimeOffset longAgo, DateTimeOffset watchingSince, ReplicationAlert? openAlert)
         {
-            if (source.FailingSince is not DateTimeOffset failingSince || failingSince >= longAgo)
+            string concerns = $"the primary {source.PrimaryUrl}";
+            if (openAlert != null && source.LastSyncedAt > openAlert.Since)
             {
-                return null;
+                return Watched.Working(ReplicationAlert.Primary, concerns);
             }
 
-            return new Problem($"This server has been failing to follow {concerns} since {Format(failingSince)}. The last attempt failed: {source.LastError}", failingSince);
+            if (source.FailingSince is not DateTimeOffset failingSince)
+            {
+                return Watched.Working(ReplicationAlert.Primary, concerns);
+            }
+
+            if (CountedFrom(failingSince, watchingSince) >= longAgo)
+            {
+                return Watched.Undecided(ReplicationAlert.Primary, concerns);
+            }
+
+            return Watched.Failing(
+                ReplicationAlert.Primary,
+                concerns,
+                new Problem($"This server has been failing to follow {concerns} since {Format(failingSince)}. The last attempt failed: {source.LastError}", failingSince));
+        }
+
+        /// <summary>
+        /// When silence or failing that began at <paramref name="began"/> counts from: then, or when this
+        /// server started watching, whichever is later.
+        /// </summary>
+        private static DateTimeOffset CountedFrom(DateTimeOffset began, DateTimeOffset watchingSince)
+        {
+            return began > watchingSince ? began : watchingSince;
         }
 
         /// <summary>
@@ -242,8 +284,47 @@ namespace ByteShelf.Server.Replication.Services
             return char.ToUpperInvariant(text[0]) + text[1..];
         }
 
-        /// <summary>Something this server watches, by its alert's subject: what it concerns, in an email's words, and its problem now.</summary>
-        private sealed record Watched(string Subject, string Concerns, Problem? Problem);
+        /// <summary>
+        /// Something this server watches, by its alert's subject, and what it concerns in an email's words.
+        /// It stands one of three ways: failing, with a problem long enough to count; working, which clears
+        /// an open problem; or undecided, neither.
+        /// </summary>
+        private sealed class Watched
+        {
+            private Watched(string subject, string concerns, Problem? problem, bool isWorking)
+            {
+                Subject = subject;
+                Concerns = concerns;
+                Problem = problem;
+                IsWorking = isWorking;
+            }
+
+            public string Subject { get; }
+
+            public string Concerns { get; }
+
+            /// <summary>Its problem, when it is failing.</summary>
+            public Problem? Problem { get; }
+
+            /// <summary>Whether replication is known to work for it.</summary>
+            public bool IsWorking { get; }
+
+            public static Watched Failing(string subject, string concerns, Problem problem)
+            {
+                return new Watched(subject, concerns, problem, isWorking: false);
+            }
+
+            public static Watched Working(string subject, string concerns)
+            {
+                return new Watched(subject, concerns, problem: null, isWorking: true);
+            }
+
+            /// <summary>A problem too short to count, or nothing heard since this server started.</summary>
+            public static Watched Undecided(string subject, string concerns)
+            {
+                return new Watched(subject, concerns, problem: null, isWorking: false);
+            }
+        }
 
         /// <summary>What is wrong, as a sentence, and since when.</summary>
         private sealed record Problem(string Description, DateTimeOffset Since);

@@ -135,7 +135,12 @@ and when it did not, the replica stays listed there until removed.
 `ReplicationAlertWorker`, the `replication.alerts` job, runs `ReplicationAlerts` every minute. It
 emails every admin of this server through `IEmailSender` when a problem has lasted longer than
 `ReplicationOptions.AlertAfter` (`BYTESHELF_REPLICATION_ALERT_MINUTES`, 60 by default, at most 30
-days), and again when it clears:
+days), and again when it clears. `AlertAfter` is at least twice `ReplicaSyncWorker.MaxRetryDelay`
+(`MinAlertAfterMinutes`), so a replica backing off between failed attempts never alerts on that alone:
+it still asks its primary well inside the threshold, and its next attempt once the primary is back
+works well inside it. Silence and failing count only from the server's own start (the worker passes
+it to `CheckAsync` as `watchingSince`), as nothing reached it, nor did it try anything, while it was
+down:
 
 - A primary watches each replica. Every credentialed request a replica makes (changes, a page of a
   copy, a file's bytes) sets its `last_seen_at`; one not seen since longer ago than that (or, never
@@ -152,10 +157,15 @@ days), and again when it clears:
 What has been emailed is kept in `replication_alert`, one row a subject (`replica:<id>`, or
 `primary`), with what is wrong as last seen, when it began, and when it was last emailed. So a
 problem is emailed when it starts, at most once a day while it lasts (`RepeatInterval`), and once
-when it clears, quoting it as it last was and since when, and a restart sends nothing twice. A
-problem that changes (a replica not seen, then seen but behind) is updated without an email. A row
-whose subject is no longer watched (a replica removed, a replica promoted) is dropped without an
-email, as there is nothing left to recover. The table is not in the change log: each server keeps
+when it clears, quoting it as it last was and since when, and a restart sends nothing twice. Each
+subject stands one of three ways. Failing: its problem has lasted long enough to count. Working,
+which clears an open problem: a replica seen since the start and not behind, or a step that has
+worked since the failing the open problem is about began, even if a later step failed again before
+the check (that new run of failures is its own problem once long enough). Undecided: a problem too
+short to count since the start, or a replica not heard from since; an open problem then neither
+clears nor repeats. A problem that changes (a replica not seen, then seen but behind) is updated
+without an email. A row whose subject is no longer watched (a replica removed, a replica promoted)
+is dropped without an email, as there is nothing left to recover. The table is not in the change log: each server keeps
 its own. Each alert is also logged as a warning, for whoever watches the log rather than the inbox.
 `IEmailSender` answers a failed send rather than throwing, so a send that fails is logged, the other
 admins are still emailed, and it counts as sent: a mail provider that is down is not sent the same

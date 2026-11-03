@@ -31,7 +31,7 @@ namespace ByteShelf.Server.Storage.Services
         /// <exception cref="InvalidOperationException">It is not a whole number of days from 1 to <see cref="MaxRestoreWindowDays"/>.</exception>
         public static TimeSpan RestoreWindowFrom(string? days)
         {
-            int? parsed = WholeNumberSetting.Parse(EnvironmentVariables.RestoreWindowDays, days, "days", MaxRestoreWindowDays);
+            int? parsed = WholeNumberSetting.Parse(EnvironmentVariables.RestoreWindowDays, days, "days", 1, MaxRestoreWindowDays);
             return TimeSpan.FromDays(parsed ?? DefaultRestoreWindowDays);
         }
     }

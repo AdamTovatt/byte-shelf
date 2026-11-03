@@ -75,7 +75,7 @@ path. Exit codes: 0 done, 1 refused or failed (the reason is logged), 2 the argu
 | `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD` | no | Create the first admin while there are no users; ignored afterwards and can be removed. Without them, create it with `--create-user`. Ignored on a replica, whose users come from its primary. |
 | `INITIAL_ADMIN_DISPLAY_NAME` | no | The first admin's display name; the email's local part otherwise. |
 | `BYTESHELF_RESTORE_WINDOW_DAYS` | no | How long a deletion can be restored before it is purged. Whole days, 30 by default, at most 3650. |
-| `BYTESHELF_REPLICATION_ALERT_MINUTES` | no | How long replication may go wrong before the admins are emailed (see [Replicas](#replicas)). Whole minutes, 60 by default, at most 43200 (30 days). |
+| `BYTESHELF_REPLICATION_ALERT_MINUTES` | no | How long replication may go wrong before the admins are emailed (see [Replicas](#replicas)). Whole minutes, 60 by default; at least 10, twice the longest a replica waits between failed attempts, and at most 43200 (30 days). |
 | `BYTESHELF_TRUSTED_PROXIES` | behind a proxy | Comma-separated IPs or CIDR ranges of the reverse proxies in front of the server. Their `X-Forwarded-For` and `X-Forwarded-Proto` are believed, so rate limits and the sign-in delay count each client rather than the proxy. Loopback is always trusted. |
 | `ASPNETCORE_URLS` | no | Where Kestrel listens. |
 
@@ -188,7 +188,10 @@ page of a copy, or a file) for that long, or one following its changes but still
 than that; a replica taking a whole copy is not counted behind. A replica watches its primary:
 every attempt to follow it has failed for that long, which is also how a primary that is down
 shows; a copy that takes long without failing is no problem. While a problem lasts it is emailed
-again at most once a day, and a restart sends nothing twice. The email says which server noticed,
+again at most once a day, and a restart sends nothing twice. A server counts silence and failing only
+from its own start, as nothing could reach it while it was down. A problem open when it stopped is
+neither cleared nor repeated until the server hears how things stand, or the problem has lasted long
+enough since the start to count again. The email says which server noticed,
 which replica or primary it concerns, what is wrong and since when. Every alert is also logged as a
 warning, so a server without a mail provider ([Email](#email)) still has it in its log.
 

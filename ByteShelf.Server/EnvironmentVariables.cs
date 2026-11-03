@@ -32,8 +32,9 @@ namespace ByteShelf.Server
         public static readonly VariableName RestoreWindowDays = new VariableName("BYTESHELF_RESTORE_WINDOW_DAYS");
 
         // How many minutes replication may go wrong (a replica unseen or behind, or a replica unable to
-        // follow its primary) before the admins are emailed. Whole minutes, at most
-        // ReplicationOptions.MaxAlertAfterMinutes; defaults to ReplicationOptions.DefaultAlertAfter.
+        // follow its primary) before the admins are emailed. Whole minutes, from
+        // ReplicationOptions.MinAlertAfterMinutes to MaxAlertAfterMinutes; defaults to
+        // ReplicationOptions.DefaultAlertAfter.
         [EnvironmentVariableName(optional: true)]
         public static readonly VariableName ReplicationAlertMinutes = new VariableName("BYTESHELF_REPLICATION_ALERT_MINUTES");
 

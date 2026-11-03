@@ -13,9 +13,13 @@ namespace ByteShelf.Server.Replication.Services
         /// <summary>How often replication is looked at; small beside the alert threshold, which is in minutes.</summary>
         public static readonly TimeSpan CheckInterval = TimeSpan.FromMinutes(1);
 
+        /// <summary>When this server started, from which <see cref="ReplicationAlerts"/> counts silence and failing.</summary>
+        private readonly DateTimeOffset _startedAt;
+
         public ReplicationAlertWorker(IServiceScopeFactory scopeFactory, TimeProvider timeProvider, ILogger<ReplicationAlertWorker> logger)
             : base(scopeFactory, timeProvider, logger)
         {
+            _startedAt = timeProvider.GetUtcNow();
         }
 
         protected override string JobName => JobNames.ReplicationAlerts;
@@ -24,7 +28,7 @@ namespace ByteShelf.Server.Replication.Services
 
         protected override Task<int> RunOnceAsync(IServiceProvider services, CancellationToken cancellationToken)
         {
-            return services.GetRequiredService<ReplicationAlerts>().CheckAsync(cancellationToken);
+            return services.GetRequiredService<ReplicationAlerts>().CheckAsync(_startedAt, cancellationToken);
         }
     }
 }
