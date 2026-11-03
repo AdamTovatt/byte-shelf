@@ -39,8 +39,9 @@ namespace ByteShelf.Server.Replication.Services
         }
 
         /// <inheritdoc />
-        public async Task<string?> GetObjectPathAsync(Guid fileId, string sha256)
+        public async Task<string?> GetObjectPathAsync(Replica replica, Guid fileId, string sha256)
         {
+            await _replicaRepository.RecordSeenAsync(replica.Id, _timeProvider.GetUtcNow());
             FileRecord? file = await _fileRepository.GetByIdAsync(fileId);
             return file != null && string.Equals(file.Sha256, sha256, StringComparison.Ordinal) && _objectStore.Exists(sha256)
                 ? _objectStore.GetPath(sha256)
@@ -51,7 +52,7 @@ namespace ByteShelf.Server.Replication.Services
         public async Task<ChangeFeedPage> GetChangesAsync(Replica replica, long afterSequence, string? afterFingerprint, int limit)
         {
             ArgumentOutOfRangeException.ThrowIfNegative(afterSequence);
-            await _replicaRepository.RecordSeenAsync(replica.Id, afterSequence, _timeProvider.GetUtcNow());
+            await _replicaRepository.RecordFollowingAsync(replica.Id, afterSequence, _timeProvider.GetUtcNow());
             string instanceId = await _instanceRepository.GetInstanceIdAsync();
 
             // One read transaction: compaction committing between the reads could otherwise drop an entry
@@ -73,9 +74,10 @@ namespace ByteShelf.Server.Replication.Services
         }
 
         /// <inheritdoc />
-        public async Task<ChangeFeedPage> GetCopyAsync(long afterSequence, int limit)
+        public async Task<ChangeFeedPage> GetCopyAsync(Replica replica, long afterSequence, int limit)
         {
             ArgumentOutOfRangeException.ThrowIfNegative(afterSequence);
+            await _replicaRepository.RecordCopyingAsync(replica.Id, _timeProvider.GetUtcNow());
             string instanceId = await _instanceRepository.GetInstanceIdAsync();
 
             // The latest sequence and the page from one snapshot: a replica follows the log from there once

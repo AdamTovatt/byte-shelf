@@ -36,6 +36,20 @@ namespace ByteShelf.Server.Replication
             services.Configure<MvcOptions>(options => options.Filters.AddService<ReplicaReadOnlyFilter>());
             services.AddHostedService<ReplicaSyncWorker>();
 
+            services.AddReplicationAlerts();
+            services.AddHostedService<ReplicationAlertWorker>();
+
+            return services;
+        }
+
+        /// <summary>
+        /// <see cref="ReplicationAlerts"/> and its state, over <see cref="AddReplicationPairing"/>'s
+        /// registrations; <see cref="AddReplicationServices"/> adds the worker that runs it.
+        /// </summary>
+        public static IServiceCollection AddReplicationAlerts(this IServiceCollection services)
+        {
+            services.AddScoped<IReplicationAlertRepository, ReplicationAlertRepository>();
+            services.AddScoped<ReplicationAlerts>();
             return services;
         }
 
@@ -49,7 +63,7 @@ namespace ByteShelf.Server.Replication
         {
             services.TryAddTimeProvider();
 
-            services.AddSingleton(new ReplicationOptions { PublicUrl = publicUrl });
+            services.AddSingleton(ReplicationOptions.FromEnvironment(publicUrl));
             services.AddSingleton<ReplicaSyncControl>();
 
             // A redirect would carry the replica's credential header to wherever it points (unlike

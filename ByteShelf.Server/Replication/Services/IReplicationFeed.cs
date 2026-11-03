@@ -18,14 +18,16 @@ namespace ByteShelf.Server.Replication.Services
 
         /// <summary>
         /// A page of a whole copy: the newest entry of every entity after <paramref name="afterSequence"/>,
-        /// its state, or its removal once it no longer exists.
+        /// its state, or its removal once it no longer exists. Records that <paramref name="replica"/> is
+        /// copying, so it is not counted behind meanwhile.
         /// </summary>
-        Task<ChangeFeedPage> GetCopyAsync(long afterSequence, int limit);
+        Task<ChangeFeedPage> GetCopyAsync(Replica replica, long afterSequence, int limit);
 
         /// <summary>
         /// Where the bytes of a file (live or in the trash) are, while they are still
         /// <paramref name="sha256"/>; null once it has been purged or its contents swapped for others.
+        /// Records that <paramref name="replica"/> was seen, as a copy may fetch files for long between pages.
         /// </summary>
-        Task<string?> GetObjectPathAsync(Guid fileId, string sha256);
+        Task<string?> GetObjectPathAsync(Replica replica, Guid fileId, string sha256);
     }
 }

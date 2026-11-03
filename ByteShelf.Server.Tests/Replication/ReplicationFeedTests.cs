@@ -34,8 +34,8 @@ namespace ByteShelf.Server.Tests.Replication
             Shelf shelf = await CreateShelfAsync();
             await StoreTextAsync(shelf, "/a.txt", "a");
 
-            ChangeFeedPage first = await Feed.GetCopyAsync(0, limit: 1);
-            ChangeFeedPage all = await Feed.GetCopyAsync(0, limit: 100);
+            ChangeFeedPage first = await Feed.GetCopyAsync(Replica, 0, limit: 1);
+            ChangeFeedPage all = await Feed.GetCopyAsync(Replica, 0, limit: 100);
 
             Assert.True(first.HasMore);
             Assert.False(all.HasMore);

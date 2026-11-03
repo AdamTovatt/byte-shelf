@@ -1,9 +1,7 @@
-using System.Globalization;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Storage.Repositories;
 using ByteShelf.Server.Storage.Services;
-using EasyReasy.EnvironmentVariables;
 
 namespace ByteShelf.Server.Storage
 {
@@ -13,7 +11,7 @@ namespace ByteShelf.Server.Storage
         {
             services.TryAddTimeProvider();
 
-            services.AddSingleton(CreateOptions());
+            services.AddSingleton(StorageOptions.FromEnvironment());
             services.AddSingleton<ObjectStore>();
             services.AddSingleton<StagingArea>();
             services.AddSingleton<UploadLocks>();
@@ -42,23 +40,6 @@ namespace ByteShelf.Server.Storage
             services.AddHostedService<StorageMaintenanceWorker>();
 
             return services;
-        }
-
-        private static StorageOptions CreateOptions()
-        {
-            string? restoreWindowDays = EnvironmentVariables.RestoreWindowDays.GetValueOrDefault();
-            // Null when unset or blank, as EasyReasy reads a blank variable.
-            if (restoreWindowDays == null)
-            {
-                return new StorageOptions();
-            }
-
-            if (!int.TryParse(restoreWindowDays, NumberStyles.None, CultureInfo.InvariantCulture, out int days) || days < 1)
-            {
-                throw new InvalidOperationException($"BYTESHELF_RESTORE_WINDOW_DAYS must be a whole number of days, at least 1; it is '{restoreWindowDays}'.");
-            }
-
-            return new StorageOptions { RestoreWindow = TimeSpan.FromDays(days) };
         }
     }
 }

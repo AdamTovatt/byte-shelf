@@ -11,5 +11,8 @@ namespace ByteShelf.Server.Jobs.Models
 
         /// <summary>Drops old change-log entries a newer one supersedes, and old removals.</summary>
         public const string ChangeLogCompaction = "change_log.compaction";
+
+        /// <summary>Emails the admins when replication has gone wrong for long, and when it recovers.</summary>
+        public const string ReplicationAlerts = "replication.alerts";
     }
 }

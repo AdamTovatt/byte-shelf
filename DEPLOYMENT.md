@@ -74,7 +74,8 @@ path. Exit codes: 0 done, 1 refused or failed (the reason is logged), 2 the argu
 | `REMOTE_CLAUDE_DEV_MAIL_DIR` | no | A folder each email is written into as a file instead of being sent, in any environment, unless `POSTMARK_API_KEY` is set. Set by remote-claude for a dev server; see [Email](#email). |
 | `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD` | no | Create the first admin while there are no users; ignored afterwards and can be removed. Without them, create it with `--create-user`. Ignored on a replica, whose users come from its primary. |
 | `INITIAL_ADMIN_DISPLAY_NAME` | no | The first admin's display name; the email's local part otherwise. |
-| `BYTESHELF_RESTORE_WINDOW_DAYS` | no | How long a deletion can be restored before it is purged. 30 by default. |
+| `BYTESHELF_RESTORE_WINDOW_DAYS` | no | How long a deletion can be restored before it is purged. Whole days, 30 by default, at most 3650. |
+| `BYTESHELF_REPLICATION_ALERT_MINUTES` | no | How long replication may go wrong before the admins are emailed (see [Replicas](#replicas)). Whole minutes, 60 by default, at most 43200 (30 days). |
 | `BYTESHELF_TRUSTED_PROXIES` | behind a proxy | Comma-separated IPs or CIDR ranges of the reverse proxies in front of the server. Their `X-Forwarded-For` and `X-Forwarded-Proto` are believed, so rate limits and the sign-in delay count each client rather than the proxy. Loopback is always trusted. |
 | `ASPNETCORE_URLS` | no | Where Kestrel listens. |
 
@@ -101,7 +102,8 @@ password cannot be reset by email; on the server's machine `--reset-password` se
 the log instead. Reset links
 wait in an outbox in memory that holds 100: when it is full a new link is dropped with a warning,
 links still waiting are lost on a restart, and a failed send is not retried
-([Users](ByteShelf.Server/Users/Users.md#password-reset)).
+([Users](ByteShelf.Server/Users/Users.md#password-reset)). Replication alerts ([Replicas](#replicas))
+then reach only the server's log.
 
 ## Logging
 
@@ -178,6 +180,18 @@ from the web UI's Trash page, a whole directory with `byteshelf get-deleted <she
 and upload it to the primary. The exception is a file's old contents when it is encrypted or
 decrypted in place: they leave the replica as soon as it applies that change, as they left the primary.
 
+Each server emails its admins when replication has gone wrong for longer than
+`BYTESHELF_REPLICATION_ALERT_MINUTES` (60 by default), and again when it recovers. A replica's users
+are its primary's, so the same admins hear from every server: when the primary goes down, one email
+from each replica. The primary watches each replica: one that has asked it for nothing (changes, a
+page of a copy, or a file) for that long, or one following its changes but still to apply one older
+than that; a replica taking a whole copy is not counted behind. A replica watches its primary:
+every attempt to follow it has failed for that long, which is also how a primary that is down
+shows; a copy that takes long without failing is no problem. While a problem lasts it is emailed
+again at most once a day, and a restart sends nothing twice. The email says which server noticed,
+which replica or primary it concerns, what is wrong and since when. Every alert is also logged as a
+warning, so a server without a mail provider ([Email](#email)) still has it in its log.
+
 To make a replica the primary, promote it on its Replication page, then point clients and
 `APP_BASE_URL` at it. Stop the old primary: other replicas keep following it, and pairing them with the
 new one needs servers without shelves, in practice new roots.
@@ -234,4 +248,5 @@ The server cleans up after itself: hourly it removes abandoned uploads, staging 
 past its restore window, and objects no file points at; daily it deletes expired sign-in and reset
 tokens and compacts the change log (entries older than 30 days that something newer replaced, and
 removals that old). A failed pass is logged as an error and the next one runs on schedule. A replica
-also follows its primary continuously, every two seconds when caught up.
+also follows its primary continuously, every two seconds when caught up, and every minute each
+server checks replication for the alerts above.

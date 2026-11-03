@@ -21,6 +21,10 @@ namespace ByteShelf.Server.Replication.Repositories
         /// </summary>
         Task<bool> SetProgressAsync(ReplicationSource source, long appliedSequence, string? appliedFingerprint, DateTimeOffset syncedAt, IDbSession session);
 
+        /// <summary>
+        /// Records why a step failed at <paramref name="at"/>; <see cref="ReplicationSource.FailingSince"/>
+        /// keeps the first such time until a step works again.
+        /// </summary>
         Task RecordSyncErrorAsync(string message, DateTimeOffset at, IDbSession? session = null);
 
         /// <summary>Asks for a whole copy before following the log again.</summary>

@@ -130,6 +130,37 @@ commits (below). It tells the primary,
 which drops the replica (`DELETE api/replication/feed/pairing`); the answer says whether the primary heard,
 and when it did not, the replica stays listed there until removed.
 
+## Alerts
+
+`ReplicationAlertWorker`, the `replication.alerts` job, runs `ReplicationAlerts` every minute. It
+emails every admin of this server through `IEmailSender` when a problem has lasted longer than
+`ReplicationOptions.AlertAfter` (`BYTESHELF_REPLICATION_ALERT_MINUTES`, 60 by default, at most 30
+days), and again when it clears:
+
+- A primary watches each replica. Every credentialed request a replica makes (changes, a page of a
+  copy, a file's bytes) sets its `last_seen_at`; one not seen since longer ago than that (or, never
+  seen, paired) has a problem. So does one following the log whose oldest change still to apply, the
+  first log entry after its `applied_sequence`, was made longer ago. Lag is time, not a count. A
+  replica not seen is never also counted behind, since how far it applied is as of its last request
+  for changes, nor is one taking a whole copy (`copying`, set by a copy page and cleared by a request
+  for changes), as the copy brings it every change made before it began. Compaction may have dropped
+  older entries it lacks, which makes it look behind a little later than it is.
+- A replica watches its primary: every step since longer ago than that has failed
+  (`failing_since`, the first failure since a step last worked). A primary that is down shows this
+  way, as it can send nothing. A whole copy that takes long without failing is not a problem.
+
+What has been emailed is kept in `replication_alert`, one row a subject (`replica:<id>`, or
+`primary`), with what is wrong as last seen, when it began, and when it was last emailed. So a
+problem is emailed when it starts, at most once a day while it lasts (`RepeatInterval`), and once
+when it clears, quoting it as it last was and since when, and a restart sends nothing twice. A
+problem that changes (a replica not seen, then seen but behind) is updated without an email. A row
+whose subject is no longer watched (a replica removed, a replica promoted) is dropped without an
+email, as there is nothing left to recover. The table is not in the change log: each server keeps
+its own. Each alert is also logged as a warning, for whoever watches the log rather than the inbox.
+`IEmailSender` answers a failed send rather than throwing, so a send that fails is logged, the other
+admins are still emailed, and it counts as sent: a mail provider that is down is not sent the same
+email every minute.
+
 ## The server's own commands
 
 `ReplicationCommand` (`--replication-status`, `--replication-code`, `--follow`, `--forget`, `--promote`)

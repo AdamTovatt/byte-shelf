@@ -17,7 +17,8 @@ namespace ByteShelf.Server.Replication.Repositories
             needs_copy AS {nameof(SourceEntity.NeedsCopy)},
             last_synced_at AS {nameof(SourceEntity.LastSyncedAt)},
             last_error AS {nameof(SourceEntity.LastError)},
-            last_error_at AS {nameof(SourceEntity.LastErrorAt)}";
+            last_error_at AS {nameof(SourceEntity.LastErrorAt)},
+            failing_since AS {nameof(SourceEntity.FailingSince)}";
 
         public ReplicationSourceRepository(DbDataSource dataSource, IDbSessionFactory sessionFactory)
             : base(dataSource, sessionFactory)
@@ -60,7 +61,7 @@ namespace ByteShelf.Server.Replication.Repositories
             string query = $@"
                 UPDATE replication_source
                 SET applied_sequence = @{nameof(appliedSequence)}, applied_fingerprint = @{nameof(appliedFingerprint)}, needs_copy = 0,
-                    last_synced_at = @{nameof(syncedAt)}, last_error = NULL, last_error_at = NULL
+                    last_synced_at = @{nameof(syncedAt)}, last_error = NULL, last_error_at = NULL, failing_since = NULL
                 WHERE credential = @{nameof(credential)}";
 
             return await session.Connection.ExecuteAsync(query, new { appliedSequence, appliedFingerprint, syncedAt, credential }, transaction: session.Transaction) > 0;
@@ -72,7 +73,7 @@ namespace ByteShelf.Server.Replication.Repositories
             await UseSessionAsync(async (dbSession) =>
             {
                 return await dbSession.Connection.ExecuteAsync(
-                    $"UPDATE replication_source SET last_error = @{nameof(message)}, last_error_at = @{nameof(at)}",
+                    $"UPDATE replication_source SET last_error = @{nameof(message)}, last_error_at = @{nameof(at)}, failing_since = COALESCE(failing_since, @{nameof(at)})",
                     new { message, at },
                     transaction: dbSession.Transaction);
             }, session);
@@ -108,6 +109,7 @@ namespace ByteShelf.Server.Replication.Repositories
             public DateTimeOffset? LastSyncedAt { get; set; }
             public string? LastError { get; set; }
             public DateTimeOffset? LastErrorAt { get; set; }
+            public DateTimeOffset? FailingSince { get; set; }
 
             public ReplicationSource ToDomain()
             {
@@ -123,6 +125,7 @@ namespace ByteShelf.Server.Replication.Repositories
                     LastSyncedAt = LastSyncedAt,
                     LastError = LastError,
                     LastErrorAt = LastErrorAt,
+                    FailingSince = FailingSince,
                 };
             }
         }

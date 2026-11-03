@@ -10,8 +10,12 @@ namespace ByteShelf.Server.Replication.Models
 
         public required DateTimeOffset PairedAt { get; init; }
 
+        /// <summary>When it last asked this server for anything; null until it first does.</summary>
         public DateTimeOffset? LastSeenAt { get; init; }
 
         public required long AppliedSequence { get; init; }
+
+        /// <summary>Whether its last request for changes or a copy was for a page of a whole copy.</summary>
+        public bool Copying { get; init; }
     }
 }

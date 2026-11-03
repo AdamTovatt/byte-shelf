@@ -20,7 +20,14 @@ namespace ByteShelf.Server.Replication.Repositories
 
         Task<IReadOnlyList<Replica>> GetAllAsync(IDbSession? session = null);
 
-        Task RecordSeenAsync(Guid id, long appliedSequence, DateTimeOffset at, IDbSession? session = null);
+        /// <summary>The replica asked for changes at <paramref name="at"/>, having applied the log up to <paramref name="appliedSequence"/>.</summary>
+        Task RecordFollowingAsync(Guid id, long appliedSequence, DateTimeOffset at, IDbSession? session = null);
+
+        /// <summary>The replica asked for a page of a whole copy at <paramref name="at"/>.</summary>
+        Task RecordCopyingAsync(Guid id, DateTimeOffset at, IDbSession? session = null);
+
+        /// <summary>The replica asked for something else at <paramref name="at"/>, such as a file's bytes.</summary>
+        Task RecordSeenAsync(Guid id, DateTimeOffset at, IDbSession? session = null);
 
         /// <summary>Unpairs a replica; false when there is no such replica.</summary>
         Task<bool> DeleteAsync(Guid id, IDbSession? session = null);

@@ -57,7 +57,7 @@ namespace ByteShelf.Server.Replication.Controllers
         [ReplicaAuthenticated]
         public async Task<IActionResult> GetCopy([FromQuery] long after, [FromQuery] int limit = IReplicationFeed.MaxPageSize)
         {
-            return Ok(await _feed.GetCopyAsync(after, limit));
+            return Ok(await _feed.GetCopyAsync(ReplicaAuthenticatedAttribute.GetReplica(HttpContext), after, limit));
         }
 
         /// <summary>
@@ -69,7 +69,7 @@ namespace ByteShelf.Server.Replication.Controllers
         [ReplicaAuthenticated]
         public async Task<IActionResult> GetObject(Guid id, [FromQuery] string sha256)
         {
-            string path = await _feed.GetObjectPathAsync(id, sha256)
+            string path = await _feed.GetObjectPathAsync(ReplicaAuthenticatedAttribute.GetReplica(HttpContext), id, sha256)
                 ?? throw new NotFoundException("There is no such file, it has been purged, or its contents have been swapped for others.");
 
             return PhysicalFile(path, "application/octet-stream");

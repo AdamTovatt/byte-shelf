@@ -26,10 +26,16 @@ namespace ByteShelf.Server
         [EnvironmentVariableName(optional: true)]
         public static readonly VariableName AppBaseUrl = new VariableName("APP_BASE_URL");
 
-        // How long a deleted file or directory can be restored before it is purged. Whole days;
-        // defaults to StorageOptions.DefaultRestoreWindowDays.
+        // How long a deleted file or directory can be restored before it is purged. Whole days, at
+        // most StorageOptions.MaxRestoreWindowDays; defaults to StorageOptions.DefaultRestoreWindowDays.
         [EnvironmentVariableName(optional: true)]
         public static readonly VariableName RestoreWindowDays = new VariableName("BYTESHELF_RESTORE_WINDOW_DAYS");
+
+        // How many minutes replication may go wrong (a replica unseen or behind, or a replica unable to
+        // follow its primary) before the admins are emailed. Whole minutes, at most
+        // ReplicationOptions.MaxAlertAfterMinutes; defaults to ReplicationOptions.DefaultAlertAfter.
+        [EnvironmentVariableName(optional: true)]
+        public static readonly VariableName ReplicationAlertMinutes = new VariableName("BYTESHELF_REPLICATION_ALERT_MINUTES");
 
         // Comma-separated IP addresses or CIDR ranges of the reverse proxies in front of the server.
         // Their X-Forwarded-For and X-Forwarded-Proto are trusted, so rate limits and the sign-in

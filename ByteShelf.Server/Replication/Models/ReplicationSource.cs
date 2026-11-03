@@ -28,5 +28,8 @@ namespace ByteShelf.Server.Replication.Models
         public string? LastError { get; init; }
 
         public DateTimeOffset? LastErrorAt { get; init; }
+
+        /// <summary>When the steps failing since the last one that worked began failing; null while the last step worked.</summary>
+        public DateTimeOffset? FailingSince { get; init; }
     }
 }

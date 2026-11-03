@@ -12,7 +12,8 @@ namespace ByteShelf.Server.Replication.Repositories
             name,
             paired_at AS {nameof(ReplicaEntity.PairedAt)},
             last_seen_at AS {nameof(ReplicaEntity.LastSeenAt)},
-            applied_sequence AS {nameof(ReplicaEntity.AppliedSequence)}";
+            applied_sequence AS {nameof(ReplicaEntity.AppliedSequence)},
+            copying";
 
         public ReplicaRepository(DbDataSource dataSource, IDbSessionFactory sessionFactory)
             : base(dataSource, sessionFactory)
@@ -84,16 +85,40 @@ namespace ByteShelf.Server.Replication.Repositories
         }
 
         /// <inheritdoc />
-        public async Task RecordSeenAsync(Guid id, long appliedSequence, DateTimeOffset at, IDbSession? session = null)
+        public async Task RecordFollowingAsync(Guid id, long appliedSequence, DateTimeOffset at, IDbSession? session = null)
         {
             await UseSessionAsync(async (dbSession) =>
             {
                 string query = $@"
                     UPDATE replica
-                    SET last_seen_at = @{nameof(at)}, applied_sequence = @{nameof(appliedSequence)}
+                    SET last_seen_at = @{nameof(at)}, applied_sequence = @{nameof(appliedSequence)}, copying = 0
                     WHERE id = @{nameof(id)}";
 
                 return await dbSession.Connection.ExecuteAsync(query, new { id, appliedSequence, at }, transaction: dbSession.Transaction);
+            }, session);
+        }
+
+        /// <inheritdoc />
+        public async Task RecordCopyingAsync(Guid id, DateTimeOffset at, IDbSession? session = null)
+        {
+            await UseSessionAsync(async (dbSession) =>
+            {
+                return await dbSession.Connection.ExecuteAsync(
+                    $"UPDATE replica SET last_seen_at = @{nameof(at)}, copying = 1 WHERE id = @{nameof(id)}",
+                    new { id, at },
+                    transaction: dbSession.Transaction);
+            }, session);
+        }
+
+        /// <inheritdoc />
+        public async Task RecordSeenAsync(Guid id, DateTimeOffset at, IDbSession? session = null)
+        {
+            await UseSessionAsync(async (dbSession) =>
+            {
+                return await dbSession.Connection.ExecuteAsync(
+                    $"UPDATE replica SET last_seen_at = @{nameof(at)} WHERE id = @{nameof(id)}",
+                    new { id, at },
+                    transaction: dbSession.Transaction);
             }, session);
         }
 
@@ -114,6 +139,7 @@ namespace ByteShelf.Server.Replication.Repositories
             public DateTimeOffset PairedAt { get; set; }
             public DateTimeOffset? LastSeenAt { get; set; }
             public long AppliedSequence { get; set; }
+            public bool Copying { get; set; }
 
             public Replica ToDomain()
             {
@@ -124,6 +150,7 @@ namespace ByteShelf.Server.Replication.Repositories
                     PairedAt = PairedAt,
                     LastSeenAt = LastSeenAt,
                     AppliedSequence = AppliedSequence,
+                    Copying = Copying,
                 };
             }
         }
