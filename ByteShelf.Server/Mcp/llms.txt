@@ -1,0 +1,52 @@
+# ByteShelf
+
+> A self-hosted file store. Files live on shelves: each shelf is its own tree of directories and
+> files, with its own trash, quota, users' access and keys. This server answers an agent three ways:
+> MCP at /mcp, the byteshelf command line, and its REST API under /api.
+
+Paths on a shelf start with `/`, the shelf's root. A program reaches one shelf with a shelf key (a
+secret starting `bsk_`) that an admin makes in the web UI's shelf settings, with one of three
+permissions: read, add-only (read, and store new files, never replace or remove) or read-write.
+
+## MCP
+
+- `/mcp` on this server: MCP over Streamable HTTP. Send the key as `Authorization: Bearer <key>` (or
+  in `X-Api-Key`). It reaches the key's own shelf, and offers only the tools the key's permission
+  allows (only reading ones on a replica). The server tells the agent the shelf's name when it
+  connects, and every tool works on that shelf when shelf is left out. It cannot read or write the
+  agent's own files: upload text or base64 (up to 256 KiB), read text of up to 256 KiB or a PNG,
+  JPEG, GIF or WebP image of up to 1 MiB (any other file stored as an image, up to 32 MiB, as a
+  preview at most 1568 pixels on its long side), and use share_file for a link to anything else, or
+  create_upload_link for a link that stores one file sent to it with curl. Add it to
+  Claude Code with this server's address and the key:
+  `claude mcp add --transport http byteshelf https://<this-server>/mcp --header "Authorization: Bearer bsk_..."`
+- Files and folders can be encrypted with a password (as age files) in the web UI and with the CLI. The
+  tools never read their contents, since a password never goes through a tool call.
+- `byteshelf --mcp`: the same tools over stdio on the agent's own machine, signed in as the CLI is,
+  plus moving local files and whole folders. Add it with `claude mcp add byteshelf -- byteshelf --mcp`.
+
+## Command line
+
+- Install with `dotnet tool install -g ByteShelf.Cli`. With `BYTESHELF_URL` and `BYTESHELF_KEY` set it
+  needs no login.
+- `byteshelf whoami`, `shelves`, `ls`, `tree`, `find`, `stat`, `get`, `put`, `encrypt`, `decrypt`,
+  `mkdir`, `describe`, `share`, `mv`, `rm`, `trash`, `restore`, `get-deleted`, `empty-trash`; `--json` prints the server's JSON. A place
+  is written `shelf:/path`. `byteshelf help` lists every command.
+- [The CLI's guide](https://github.com/AdamTovatt/byte-shelf/blob/master/ByteShelf.Cli/README.md)
+- [A skill for agents using it](https://github.com/AdamTovatt/byte-shelf/blob/master/skills/byteshelf/SKILL.md):
+  for Claude Code, copy its folder to `~/.claude/skills/byteshelf/`.
+
+## REST API
+
+- Shelf endpoints are under `/api/shelves/{shelf}` and take the key in `X-Api-Key` or as a bearer
+  token. Errors answer `{ "code": ..., "message": ... }` with a code such as `not_found`.
+- Stream a file of any size up and down with the key, the path URL-encoded (add `&overwrite=true` to
+  the upload to replace a file):
+  `curl -fsS -H "Authorization: Bearer $BYTESHELF_KEY" -T ./q3.pdf "https://<this-server>/api/shelves/<shelf>/content?path=/reports/q3.pdf"`
+  `curl -fsS -H "Authorization: Bearer $BYTESHELF_KEY" -o q3.pdf "https://<this-server>/api/shelves/<shelf>/content?path=/reports/q3.pdf"`
+- `POST /api/shelves/<shelf>/upload-link` with `{ "path": "/in/q3.pdf" }` answers a link that
+  stores one file PUT to it without the key (`curl -fsS -T ./q3.pdf "<link>"`), for 15 minutes or
+  `expiresInMinutes` (at most 1440); `overwrite` and `description` are optional.
+- [Storage endpoints](https://github.com/AdamTovatt/byte-shelf/blob/master/ByteShelf.Server/Storage/Storage.md)
+- [Who may do what](https://github.com/AdamTovatt/byte-shelf/blob/master/ByteShelf.Server/Access/Access.md)
+- [ByteShelfClient, the .NET client](https://github.com/AdamTovatt/byte-shelf/blob/master/ByteShelfClient/README.md)

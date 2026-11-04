@@ -1,0 +1,61 @@
+using System.Text.Json.Serialization;
+
+namespace ByteShelfCommon.Serialization
+{
+    /// <summary>
+    /// Source-generated JSON for every contract type, camelCase like the server, so clients serialize
+    /// without reflection and stay AOT-compatible.
+    /// </summary>
+    [JsonSourceGenerationOptions(
+        PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+        PropertyNameCaseInsensitive = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
+    [JsonSerializable(typeof(ErrorResponse))]
+    [JsonSerializable(typeof(ShelfFile))]
+    [JsonSerializable(typeof(DownloadLink))]
+    [JsonSerializable(typeof(PathEncryption))]
+    [JsonSerializable(typeof(SetFolderEncryptionRequest))]
+    [JsonSerializable(typeof(UploadLink))]
+    [JsonSerializable(typeof(CreateUploadLinkRequest))]
+    [JsonSerializable(typeof(ShelfDirectory))]
+    [JsonSerializable(typeof(DirectoryListing))]
+    [JsonSerializable(typeof(DirectoryTree))]
+    [JsonSerializable(typeof(ShelfInfo))]
+    [JsonSerializable(typeof(IReadOnlyList<ShelfInfo>))]
+    [JsonSerializable(typeof(CreateShelfRequest))]
+    [JsonSerializable(typeof(UpdateShelfRequest))]
+    [JsonSerializable(typeof(CreateDirectoryRequest))]
+    [JsonSerializable(typeof(MoveRequest))]
+    [JsonSerializable(typeof(SetDescriptionRequest))]
+    [JsonSerializable(typeof(FileSearchResults))]
+    [JsonSerializable(typeof(StartUploadRequest))]
+    [JsonSerializable(typeof(StartContentSwapRequest))]
+    [JsonSerializable(typeof(UploadSession))]
+    [JsonSerializable(typeof(TrashEntry))]
+    [JsonSerializable(typeof(IReadOnlyList<TrashEntry>))]
+    [JsonSerializable(typeof(DeletionTree))]
+    [JsonSerializable(typeof(ShelfAccessGrant))]
+    [JsonSerializable(typeof(IReadOnlyList<ShelfAccessGrant>))]
+    [JsonSerializable(typeof(SetShelfAccessRequest))]
+    [JsonSerializable(typeof(ShelfKeyInfo))]
+    [JsonSerializable(typeof(IReadOnlyList<ShelfKeyInfo>))]
+    [JsonSerializable(typeof(CreateShelfKeyRequest))]
+    [JsonSerializable(typeof(CreatedShelfKey))]
+    [JsonSerializable(typeof(UserInfo))]
+    [JsonSerializable(typeof(IReadOnlyList<UserInfo>))]
+    [JsonSerializable(typeof(CreateUserRequest))]
+    [JsonSerializable(typeof(UpdateRolesRequest))]
+    [JsonSerializable(typeof(UpdatePasswordRequest))]
+    [JsonSerializable(typeof(RequestPasswordResetRequest))]
+    [JsonSerializable(typeof(CompletePasswordResetRequest))]
+    [JsonSerializable(typeof(SignInRequest))]
+    [JsonSerializable(typeof(SessionTokens))]
+    [JsonSerializable(typeof(RefreshTokenRequest))]
+    [JsonSerializable(typeof(ReplicationStatus))]
+    [JsonSerializable(typeof(PairWithPrimaryRequest))]
+    [JsonSerializable(typeof(PairingCodeResponse))]
+    [JsonSerializable(typeof(PromoteResponse))]
+    public sealed partial class ByteShelfJsonContext : JsonSerializerContext
+    {
+    }
+}

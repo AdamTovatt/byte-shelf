@@ -1,415 +1,153 @@
 # ByteShelfClient
 
-ByteShelfClient is a .NET client library that provides a simple and intuitive interface for interacting with the ByteShelf API server. It handles all the complexities of file chunking, HTTP communication, and authentication, making it easy to integrate file storage capabilities into your .NET applications.
-
-## 🚀 Features
-
-### Easy Integration
-- **Simple API**: Clean, intuitive methods for file operations
-- **Automatic Chunking**: Handles file splitting and reconstruction automatically
-- **Streaming Support**: Efficient memory usage for large files
-- **Error Handling**: Comprehensive exception handling with meaningful error messages
-
-### Authentication & Security
-- **API Key Authentication**: Automatic inclusion of API keys in requests
-- **Tenant Support**: Full support for multi-tenant ByteShelf deployments
-- **Subtenant Management**: Complete support for hierarchical tenant structures
-- **Secure Communication**: Works with HTTPS endpoints
-
-### Performance
-- **Streaming Operations**: Files are streamed to avoid loading entire files into memory
-- **Configurable Chunking**: Customizable chunk sizes for optimal performance
-- **Efficient HTTP Usage**: Optimized HTTP requests with proper content handling
-
-## 📦 Installation
-
-### NuGet Package
-```bash
-dotnet add package ByteShelfClient
-```
-
-### Project Reference
-```bash
-dotnet add reference ../ByteShelfClient/ByteShelfClient.csproj
-```
-
-## 🔧 Basic Usage
-
-### Setup
-```csharp
-using ByteShelfClient;
-using ByteShelfCommon;
-
-// Create HTTP client using the helper method
-using HttpClient httpClient = HttpShelfFileProvider.CreateHttpClient("https://localhost:7001");
-
-// Create client with tenant API key
-IShelfFileProvider provider = new HttpShelfFileProvider(httpClient, "your-api-key");
-```
-
-### Upload a File
-```csharp
-// Upload a file from disk
-using FileStream fileStream = File.OpenRead("example.txt");
-Guid fileId = await provider.WriteFileAsync("example.txt", "text/plain", fileStream);
-Console.WriteLine($"File uploaded with ID: {fileId}");
-
-// Upload from memory stream
-using MemoryStream memoryStream = new MemoryStream(Encoding.UTF8.GetBytes("Hello, World!"));
-Guid fileId2 = await provider.WriteFileAsync("hello.txt", "text/plain", memoryStream);
-
-// Upload a file to a specific subtenant (parent access required)
-using FileStream subtenantFileStream = File.OpenRead("subtenant-file.txt");
-Guid subtenantFileId = await provider.WriteFileForTenantAsync("subtenant-id", "subtenant-file.txt", "text/plain", subtenantFileStream);
-Console.WriteLine($"File uploaded to subtenant with ID: {subtenantFileId}");
-```
-
-### Download a File
-```csharp
-// Download and save to disk
-ShelfFile file = await provider.ReadFileAsync(fileId);
-using Stream content = file.GetContentStream();
-using FileStream output = File.Create("downloaded.txt");
-await content.CopyToAsync(output);
-
-// Download and process in memory
-ShelfFile file2 = await provider.ReadFileAsync(fileId2);
-using Stream content2 = file2.GetContentStream();
-using StreamReader reader = new StreamReader(content2);
-string content = await reader.ReadToEndAsync();
-Console.WriteLine($"File content: {content}");
-
-// Download a file from a specific subtenant (parent access required)
-ShelfFile subtenantFile = await provider.ReadFileForTenantAsync("subtenant-id", fileId);
-using Stream subtenantContent = subtenantFile.GetContentStream();
-// Process the file content...
-```
-
-### List Files
-```csharp
-// Get all files for the tenant
-IEnumerable<ShelfFileMetadata> files = await provider.GetFilesAsync();
-foreach (ShelfFileMetadata file in files)
-{
-    Console.WriteLine($"{file.OriginalFilename} ({file.FileSize} bytes)");
-    Console.WriteLine($"  ID: {file.FileId}");
-    Console.WriteLine($"  Content Type: {file.ContentType}");
-    Console.WriteLine($"  Created: {file.CreatedAt}");
-}
-
-// Get files from a specific subtenant (parent access required)
-IEnumerable<ShelfFileMetadata> subtenantFiles = await provider.GetFilesForTenantAsync("subtenant-id");
-foreach (ShelfFileMetadata file in subtenantFiles)
-{
-    Console.WriteLine($"Subtenant file: {file.OriginalFilename}");
-}
-```
-
-### Delete a File
-```csharp
-// Delete a file and all its chunks
-await provider.DeleteFileAsync(fileId);
-
-// Delete a file from a specific subtenant (parent access required)
-await provider.DeleteFileForTenantAsync("subtenant-id", fileId);
-```
-
-### Get File Metadata
-```csharp
-// Get metadata without downloading the file
-ShelfFileMetadata metadata = await provider.GetFileMetadataAsync(fileId);
-Console.WriteLine($"File: {metadata.OriginalFilename}");
-Console.WriteLine($"Size: {metadata.FileSize} bytes");
-Console.WriteLine($"Chunks: {metadata.ChunkIds.Count}");
-```
-
-## 🔧 Advanced Usage
-
-### Custom Chunk Configuration
-```csharp
-// Create client with custom chunk size
-ChunkConfiguration config = new ChunkConfiguration
-{
-    ChunkSizeBytes = 2 * 1024 * 1024 // 2MB chunks
-};
-
-IShelfFileProvider provider = new HttpShelfFileProvider(httpClient, "your-api-key", config);
-```
-
-### Error Handling
-```csharp
-try
-{
-    Guid fileId = await provider.WriteFileAsync("large-file.zip", "application/zip", fileStream);
-}
-catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-{
-    Console.WriteLine("Authentication failed. Check your API key.");
-}
-catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Forbidden)
-{
-    Console.WriteLine("Access denied. Check your permissions.");
-}
-catch (FileNotFoundException ex)
-{
-    Console.WriteLine($"File not found: {ex.Message}");
-}
-catch (QuotaExceededException ex)
-{
-    Console.WriteLine($"Storage quota exceeded: {ex.Message}");
-}
-```
-
-### Dependency Injection
-```csharp
-// In Program.cs or Startup.cs
-builder.Services.AddHttpClient<IShelfFileProvider, HttpShelfFileProvider>(client =>
-{
-    client.BaseAddress = new Uri("https://localhost:7001");
-    client.DefaultRequestHeaders.Add("X-API-Key", "your-api-key");
-});
-
-// Or using the helper method for simpler setup
-builder.Services.AddSingleton<IShelfFileProvider>(provider =>
-{
-    return new HttpShelfFileProvider(
-        HttpShelfFileProvider.CreateHttpClient("https://localhost:7001"),
-        "your-api-key");
-});
-
-// In your service or controller
-public class FileService
-{
-    private readonly IShelfFileProvider _fileProvider;
-
-    public FileService(IShelfFileProvider fileProvider)
-    {
-        _fileProvider = fileProvider;
-    }
-
-    public async Task<Guid> UploadFileAsync(string filename, string contentType, Stream content)
-    {
-        return await _fileProvider.WriteFileAsync(filename, contentType, content);
-    }
-}
-```
-
-### Tenant-Specific Operations
-```csharp
-// Get tenant information including admin status
-TenantInfoResponse tenantInfo = await provider.GetTenantInfoAsync();
-Console.WriteLine($"Tenant: {tenantInfo.DisplayName}");
-Console.WriteLine($"Admin: {tenantInfo.IsAdmin}");
-Console.WriteLine($"Storage Limit: {tenantInfo.StorageLimitBytes} bytes");
-Console.WriteLine($"Current Usage: {tenantInfo.CurrentUsageBytes} bytes");
-
-// Check if tenant is admin
-if (tenantInfo.IsAdmin)
-{
-    Console.WriteLine("This tenant has administrative privileges");
-    // Show admin-specific UI or enable admin features
-}
-
-// Check storage usage
-TenantStorageInfo storageInfo = await provider.GetStorageInfoAsync();
-Console.WriteLine($"Used: {storageInfo.UsedBytes} bytes");
-Console.WriteLine($"Limit: {storageInfo.LimitBytes} bytes");
-Console.WriteLine($"Available: {storageInfo.AvailableBytes} bytes");
-
-// Check if you can store a file
-bool canStore = await provider.CanStoreFileAsync(fileSize);
-if (canStore)
-{
-    // Proceed with upload
-    Guid fileId = await provider.WriteFileAsync(filename, contentType, content);
-}
-else
-{
-    Console.WriteLine("Not enough storage space available.");
-}
-```
-
-### Subtenant Management
-```csharp
-// Create a new subtenant
-string subTenantId = await provider.CreateSubTenantAsync("Department A");
-Console.WriteLine($"Created subtenant with ID: {subTenantId}");
-
-// Create a subtenant under another subtenant (hierarchical folder creation)
-string parentSubTenantId = "parent-subtenant-id";
-string nestedSubTenantId = await provider.CreateSubTenantUnderSubTenantAsync(parentSubTenantId, "Nested Department");
-Console.WriteLine($"Created nested subtenant with ID: {nestedSubTenantId}");
-
-// List all subtenants
-Dictionary<string, TenantInfoResponse> subTenants = await provider.GetSubTenantsAsync();
-foreach (KeyValuePair<string, TenantInfoResponse> kvp in subTenants)
-{
-    Console.WriteLine($"Subtenant: {kvp.Value.DisplayName}");
-    Console.WriteLine($"  ID: {kvp.Key}");
-    Console.WriteLine($"  Storage Limit: {kvp.Value.StorageLimitBytes} bytes");
-    Console.WriteLine($"  Current Usage: {kvp.Value.CurrentUsageBytes} bytes");
-}
-
-// List subtenants under a specific subtenant (hierarchical folder browsing)
-string parentSubTenantId = "parent-subtenant-id";
-Dictionary<string, TenantInfoResponse> nestedSubTenants = await provider.GetSubTenantsUnderSubTenantAsync(parentSubTenantId);
-foreach (KeyValuePair<string, TenantInfoResponse> kvp in nestedSubTenants)
-{
-    Console.WriteLine($"Nested Subtenant: {kvp.Value.DisplayName}");
-    Console.WriteLine($"  ID: {kvp.Key}");
-    Console.WriteLine($"  Storage Limit: {kvp.Value.StorageLimitBytes} bytes");
-    Console.WriteLine($"  Current Usage: {kvp.Value.CurrentUsageBytes} bytes");
-}
-
-// Get specific subtenant information
-TenantInfoResponse subTenant = await provider.GetSubTenantAsync(subTenantId);
-Console.WriteLine($"Subtenant Details:");
-Console.WriteLine($"  Display Name: {subTenant.DisplayName}");
-Console.WriteLine($"  Storage Limit: {subTenant.StorageLimitBytes} bytes");
-Console.WriteLine($"  Current Usage: {subTenant.CurrentUsageBytes} bytes");
-Console.WriteLine($"  Is Admin: {subTenant.IsAdmin}");
-
-// Update subtenant storage limit
-long newLimit = 500 * 1024 * 1024; // 500MB
-await provider.UpdateSubTenantStorageLimitAsync(subTenantId, newLimit);
-Console.WriteLine($"Updated storage limit to {newLimit} bytes");
-
-// Delete a subtenant
-await provider.DeleteSubTenantAsync(subTenantId);
-Console.WriteLine("Subtenant deleted successfully");
-```
-
-### Working with Shared Storage Quotas
-```csharp
-// Check storage availability considering shared quotas
-TenantInfoResponse tenantInfo = await provider.GetTenantInfoAsync();
-
-if (tenantInfo.StorageLimitBytes > 0)
-{
-    // Tenant has a specific storage limit
-    double usagePercent = tenantInfo.UsagePercentage;
-    long availableBytes = tenantInfo.AvailableSpaceBytes;
-    
-    Console.WriteLine($"Usage: {usagePercent:F1}%");
-    Console.WriteLine($"Available: {availableBytes} bytes");
-    
-    if (usagePercent > 90)
-    {
-        Console.WriteLine("Warning: Storage usage is high!");
-    }
-}
-else
-{
-    // Unlimited storage (admin tenant)
-    Console.WriteLine("Unlimited storage available");
-}
-
-// Check if a large file can be stored (considers shared quotas)
-long largeFileSize = 100 * 1024 * 1024; // 100MB
-bool canStore = await provider.CanStoreFileAsync(largeFileSize);
-
-if (canStore)
-{
-    Console.WriteLine("Large file can be stored");
-}
-else
-{
-    Console.WriteLine("Cannot store large file - quota exceeded");
-}
-```
-
-## 📁 Project Structure
-
-```
-```
-
-#### Complete Interface Implementation
-
-The `HttpShelfFileProvider` implements the full `IShelfFileProvider` interface, providing all the methods needed for comprehensive file system management:
-
-##### Core File Operations
-- `WriteFileAsync()` - Write a file to storage with automatic chunking
-- `ReadFileAsync()` - Read a file with configurable retrieval method (chunked vs single endpoint)
-- `DeleteFileAsync()` - Delete a file and all its chunks
-- `GetFilesAsync()` - Get metadata for all stored files
-
-##### Enhanced File Operations
-- `WriteFileWithQuotaCheckAsync()` - Write file with optional quota checking before upload
-
-##### Tenant-Specific Operations
-- `WriteFileForTenantAsync()` - Write file to a specific tenant
-- `ReadFileForTenantAsync()` - Read file from a specific tenant
-- `DeleteFileForTenantAsync()` - Delete file from a specific tenant
-- `GetFilesForTenantAsync()` - Get files from a specific tenant
-
-##### Storage Management
-- `GetStorageInfoAsync()` - Get current storage usage and limits
-- `CanStoreFileAsync()` - Check if a file can be stored within quota
-
-##### Tenant Information
-- `GetTenantInfoAsync()` - Get current tenant information including admin status
-- `GetSubTenantsAsync()` - Get all subtenants of the current tenant
-- `GetSubTenantAsync()` - Get information about a specific subtenant
-- `GetSubTenantsUnderSubTenantAsync()` - Get subtenants under a specific subtenant
-
-##### Subtenant Management
-- `CreateSubTenantAsync()` - Create a new subtenant under the current tenant
-- `CreateSubTenantUnderSubTenantAsync()` - Create a subtenant under another subtenant
-- `UpdateSubTenantStorageLimitAsync()` - Update a subtenant's storage limit
-- `DeleteSubTenantAsync()` - Delete a subtenant
-
-#### Network Issues
-```
-System.Net.Http.HttpRequestException: Unable to connect to the remote server
-```
-**Solution**: Verify the server URL and network connectivity.
-
-#### Subtenant Management Issues
-```
-System.IO.FileNotFoundException: Subtenant not found
-```
-**Solution**: Verify the subtenant ID exists and belongs to your tenant.
-
-```
-System.InvalidOperationException: Cannot create subtenant: maximum depth reached
-```
-**Solution**: The tenant hierarchy has reached the maximum depth of 10 levels. Create subtenants under a different parent.
-
-```
-System.InvalidOperationException: Cannot create subtenant: maximum of 50 subtenants per tenant reached
-```
-**Solution**: The tenant has reached the maximum of 50 subtenants. Create subtenants under a different parent tenant.
-
-```
-System.IO.FileNotFoundException: Parent subtenant with ID {parentSubtenantId} not found
-```
-**Solution**: The parent subtenant ID does not exist or you don't have access to it. Verify the parent subtenant ID and your permissions.
-
-```
-System.ArgumentException: Storage limit cannot be negative
-```
-**Solution**: Ensure the storage limit is a positive number or zero for unlimited storage.
-
-```
-System.ArgumentException: Subtenant storage limit exceeds parent limit
-```
-**Solution**: The subtenant's storage limit cannot exceed the parent's storage limit.
-
-### Parent Access to Subtenant Files
-The client library supports hierarchical access where parent tenants can access files from their subtenants:
+The client for ByteShelf, a self-hosted file store. One interface over a server's shelves, files and
+users, an HTTP implementation, and an in-memory one so an app's tests need no running server.
+Targets net8.0 and is AOT-compatible.
+
+## Use
 
 ```csharp
-// List files from a subtenant
-IEnumerable<ShelfFileMetadata> subtenantFiles = await provider.GetFilesForTenantAsync("subtenant-id");
+HttpClient http = new HttpClient { BaseAddress = new Uri("https://files.example.com/") };
 
-// Download a file from a subtenant
-ShelfFile subtenantFile = await provider.ReadFileForTenantAsync("subtenant-id", fileId);
+// A program uses one shelf with a key an admin created for it.
+IByteShelfClient client = new ByteShelfHttpClient(http, new ShelfKeyCredentials(secret));
+IShelfClient receipts = client.Shelf("receipts");
 
-// Upload a file to a subtenant
-Guid uploadedFileId = await provider.WriteFileForTenantAsync("subtenant-id", "filename.txt", "text/plain", contentStream);
-
-// Delete a file from a subtenant
-await provider.DeleteFileForTenantAsync("subtenant-id", fileId);
+// Typed application/pdf by its extension; UploadOptions.ContentType says otherwise.
+ShelfFile stored = await receipts.UploadAsync("/2026/march.pdf", fileStream);
+await using Stream content = await receipts.OpenReadAsync(stored.Id);
 ```
 
-**Access Control**: All tenant-specific operations require that the authenticated tenant has access to the target tenant (either be the same tenant or a parent). If access is denied, an `UnauthorizedAccessException` is thrown.
+A person signs in instead, and the session renews itself:
+
+```csharp
+using UserSession session = await UserSession.SignInAsync(http, email, password);
+session.Renewed += (_, _) => Save(session.Tokens);   // to resume later with UserSession.Resume(http, saved)
+IByteShelfClient client = new ByteShelfHttpClient(http, session);
+// ...
+await session.SignOutAsync();   // ends it on the server; disposing alone leaves it resumable
+```
+
+`IByteShelfClient` lists and creates shelves and, with a `UserSession`, the signed-in user and
+(for admins) the other users; a shelf key cannot reach users. Admins also drive replication through
+it: `GetReplicationAsync` (the replicas and how far behind each is, or the primary followed),
+`CreatePairingCodeAsync`, `FollowPrimaryAsync`, `RemoveReplicaAsync` and `PromoteAsync`. `IShelfClient` works on one shelf:
+list a directory or its whole tree, search, upload, open, describe, share by a link, make an upload
+link, encrypt directories and swap a file's contents in place (`SwapContentAsync`), create
+directories, move, delete, the trash (`ListDeletionAsync` and `OpenDeletedReadAsync` read what a
+deletion took without restoring it, on a replica too; the listing also says what the deletion took
+and the encrypted folder its files were stored in), and for admins the shelf's settings, grants
+and keys.
+`ByteShelfClient.Encryption` encrypts and decrypts with a password, on the client only. Files and
+directories are named by path or by id; both convert to an `EntryReference`.
+
+## Uploads
+
+The server needs a file's size before it accepts any bytes. A stream that can seek is sent from its
+position to its end; any other stream is first copied to a temporary file. Files up to
+`ByteShelfHttpClientOptions.SingleRequestMaxBytes` (32 MiB) go in one request, larger ones as a
+resumable upload in chunks of `ChunkBytes` (8 MiB). A file with a description always goes as a
+resumable upload, since a single request has no body but the contents to carry it. A chunk
+interrupted on the way (the connection broke, the `HttpClient`'s timeout ran out, the server failed
+with a 5xx, or it holds a different count than the chunk assumed) is sent on from the offset the
+server reports, up to three times in a row. Any other failure, or a cancellation, aborts the
+upload, so its reservation against the quota is released at once; the abort gets 10 seconds, and
+the failure it follows is the one thrown. `HttpClient`'s default timeout of 100 seconds applies to
+each request; a program that sends large chunks over a slow line can raise it.
+
+## Errors
+
+A shelf name, path, content type, description, search, tree query or link lifetime the rules in
+ByteShelfCommon refuse throws `ArgumentException` before anything is sent. Anything the server refuses throws
+`ByteShelfException`, whose `Code` is one of `ErrorCodes`: `not_found`, `conflict`,
+`permission_denied`, `quota_exceeded` and so on. A request that
+never reached the server throws what `HttpClient` throws.
+
+## Sessions
+
+A `UserSession` belongs to the server its `HttpClient` points at. It renews its access token a
+minute before it runs out, and once more if the server challenges it. A refresh token works once,
+so renewals run one at a time, a renewal already sent finishes even when the request that started
+it is cancelled, and `Renewed` reports each new token. A renewal the server refuses throws its
+error: `unauthenticated` when the session has ended (sign in again), anything else leaves the
+session as it was. A streamed upload cannot be sent twice, so it relies on the renewal ahead of
+time. Dispose a session when done with it; the `HttpClient` stays the caller's.
+
+`UserSession.Resume(http, tokens)` picks up kept `Tokens`, using the access token while it works.
+Processes that share one session open it with `UserSession.OpenSharedAsync(http, store)` instead:
+the `ISharedSessionStore` is locked for every renewal, which first takes up tokens another process
+renewed to and is then saved there, so no two renew with the same refresh token. Signing a shared
+session out also happens with the store locked, with the tokens it keeps then, and clears it. The
+`byteshelf` CLI keeps its session that way, in its config file. Once signed out, a session's
+requests fail with `unauthenticated` without being sent.
+
+## Downloads
+
+`OpenReadAsync` hashes the bytes as they are read, and reading to the end throws `IOException` if
+they do not match the file's SHA-256, so a file read whole is the file that was stored.
+
+## Links
+
+`CreateDownloadLinkAsync` makes a link to one file that anyone holding it can open without signing
+in, for a day unless a lifetime in whole minutes up to 7 days is given. Making one is a read, so any
+key may. A server with a public URL configured answers the link on it, and the HTTP client keeps it
+as it is. Otherwise the server answers a path from its root, which the HTTP client makes absolute
+against the `HttpClient`'s base address, or against `ByteShelfHttpClientOptions.LinkBaseAddress` for
+a client that reaches the server at another address than the people the links are for. The in-memory client's links name the file under the reserved
+`byteshelf.invalid` domain, which nothing serves.
+
+`CreateUploadLinkAsync` makes a link that stores one file at a path when anyone holding it `PUT`s the
+contents with a `Content-Length` (`curl -T file '<link>'`), for 15 minutes unless `UploadLinkOptions`
+give a lifetime up to 24 hours, with an optional description and `Overwrite`. Making one is a store,
+so a read key cannot, and one with `Overwrite` needs write access, so an add-only key cannot either.
+The link acts with the client's access, checked again when it is used. Its
+URL is made absolute as a download link's is.
+
+## Encryption
+
+`ByteShelfClient.Encryption` encrypts with a password as every ByteShelf client does: an age file
+(c2sp.org/age) with a scrypt recipient, which `age -d` opens too. `AgeEncryption` encrypts and
+decrypts streams; it follows the specification, passes its official test vectors, reads what typage
+(age in JavaScript, which the web UI depends on) writes and the other way round, and needs the platform's ChaCha20-Poly1305
+(`IsSupported`). New files are encrypted at work factor 18 (`DefaultWorkFactor`, age's default), and
+a file is decrypted up to 22 (`MaxWorkFactor`, age's cap), which takes 4 GiB of memory; past it the
+file is refused. A failed decryption throws `AgeException`, whose `Failure` is `NoMatch` for a wrong
+password (or a file not encrypted with one), `Header` or `Payload` for a file that is no age file or
+is damaged. `IsOpenedByAsync` tells whether a password opens a file from its header alone. Store an
+encrypted file with `UploadOptions.Encrypted`. A directory is encrypted with `EncryptDirectoryAsync`
+and a check from `FolderPassword.CreateCheckAsync`; from then on every file stored under it must be
+encrypted with its password, which `FolderPassword.MatchesAsync` tells against the check that
+`GetEncryptionAsync` or a listing's `EncryptedBy` answers. Files already
+there stay as they are until the client encrypts them in place with `SwapContentAsync`, which takes
+the file's record as it was read and stores the encrypted (or decrypted) contents in its place: the
+file keeps its id, and its old contents are gone at once, from replicas too, never to the trash.
+A file that changed since it was read is refused with a conflict. `RemoveDirectoryEncryptionAsync`
+ends the rule and leaves the files encrypted. The server keeps the rule
+([Storage](../ByteShelf.Server/Storage/Storage.md#encryption-shelfencryption)), and so does the
+in-memory client, as far as either can see it: a file stored under the directory must be sent as
+encrypted and start as an age file. Neither ever sees the password, so the client that stores the
+file is the one that checks it with `MatchesAsync`. Neither kind of link reaches an encrypted file: making a download link to one, or
+an upload link under an encrypted directory or over an encrypted file, throws a conflict.
+
+## In tests
+
+`InMemoryByteShelfClient` keeps everything in memory and follows the server's rules for paths,
+names, conflicts, quotas, the trash and users. It acts as a signed-in admin and does not model
+access, so nothing is refused for lack of permission. As over HTTP, a refusal or a cancellation
+comes through the returned task; only an argument the rules refuse may throw from the call itself.
+The admin is `CurrentUser`; pass `email` and
+`password` to choose who it is (a test of `ChangePasswordAsync` needs the password), a
+`TimeProvider` to control timestamps and when the trash is purged, and `restoreWindow` to change
+the 30 days.
+
+Replication is modelled by its rules and state only: an in-memory client can follow another in the
+same process with its pairing code, after which it refuses writes until promoted, but a follower
+copies no data, and it is never behind.
+
+```csharp
+InMemoryByteShelfClient client = new InMemoryByteShelfClient(email: "me@example.com", password: "a-long-password");
+await client.CreateShelfAsync("receipts");
+await client.Shelf("receipts").SetGrantAsync(client.CurrentUser.Id, ShelfAccessPermission.Read);
+```
+
+The server's test suite runs the same contract tests against both clients.

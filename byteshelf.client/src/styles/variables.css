@@ -1,0 +1,43 @@
+/*
+ * Theme variables for raw CSS (gradients, keyframes, scrollbars, the focus ring) that cannot go
+ * through a Tailwind utility. The colour scales themselves are emitted by src/ui/tailwind/colors.js;
+ * these name steps of them, or hold the few literal values the shimmer needs.
+ */
+@property --angle {
+    syntax: "<angle>";
+    initial-value: 53deg;
+    inherits: false;
+}
+
+:root {
+    --brand:             rgb(var(--brand-9));
+    --brand-light:       rgb(var(--brand-7));
+    --brand-dark:        rgb(var(--brand-11));
+    --brand-extra-light: rgb(var(--brand-3));
+    --brand-rgb:         var(--brand-9);
+
+    --brand-gradient: linear-gradient(135deg, var(--brand) 0%, var(--brand-light) 100%);
+
+    --focus-glow-color: rgba(0, 0, 0, 0.08);
+
+    --border-light: #E3E3E3;     /* colors.neutral[3].light, the `border` alias */
+    --border-dark: #313344;      /* colors.neutral[3].dark, the `border` alias */
+
+    --shimmer-neutral-base: #E3E3E3;              /* colors.neutral[3].light */
+    --shimmer-neutral-highlight: #ECECEC;         /* colors.neutral[2].light */
+    --shimmer-neutral-canvas-base: #DADADA;       /* colors.neutral[4].light */
+    --shimmer-neutral-canvas-highlight: #E3E3E3;  /* colors.neutral[3].light */
+    --shimmer-brand-base: #EFEEFA;
+    --shimmer-brand-highlight: #F8F7FE;
+}
+
+.dark {
+    --focus-glow-color: rgba(255, 255, 255, 0.08);
+
+    --shimmer-neutral-base: #313344;              /* colors.neutral[3].dark */
+    --shimmer-neutral-highlight: #3E4055;         /* colors.neutral[4].dark */
+    --shimmer-neutral-canvas-base: #3E4055;       /* colors.neutral[4].dark */
+    --shimmer-neutral-canvas-highlight: #4B4D65;  /* colors.neutral[5].dark */
+    --shimmer-brand-base: #1D1C40;
+    --shimmer-brand-highlight: #25234C;
+}

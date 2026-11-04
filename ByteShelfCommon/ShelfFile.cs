@@ -1,69 +1,45 @@
 namespace ByteShelfCommon
 {
-    /// <summary>
-    /// Represents a file with its metadata and content stream.
-    /// </summary>
-    /// <remarks>
-    /// This class combines file metadata with a content provider that can supply the actual file content.
-    /// The content is accessed through a stream, which should be disposed when no longer needed.
-    /// This class implements <see cref="IDisposable"/> to ensure proper cleanup of the content provider.
-    /// </remarks>
-    public class ShelfFile : IDisposable
+    /// <summary>A stored file: its record on a shelf, without its contents.</summary>
+    public sealed class ShelfFile
     {
-        /// <summary>
-        /// Gets the metadata information for this file.
-        /// </summary>
-        /// <remarks>
-        /// This contains all the file information except the actual content.
-        /// </remarks>
-        public ShelfFileMetadata Metadata { get; }
+        /// <summary>The file's id. A file stored again at the same path gets a new one.</summary>
+        public required Guid Id { get; init; }
 
-        private readonly IContentProvider _contentProvider;
+        /// <summary>The id of the shelf that holds the file.</summary>
+        public required Guid ShelfId { get; init; }
 
-        /// <summary>
-        /// Initializes a new instance of the <see cref="ShelfFile"/> class.
-        /// </summary>
-        /// <param name="metadata">The metadata information for the file.</param>
-        /// <param name="contentProvider">The content provider that can supply the file's content stream.</param>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="metadata"/> or <paramref name="contentProvider"/> is null.</exception>
-        /// <remarks>
-        /// The content provider will be disposed when this <see cref="ShelfFile"/> is disposed.
-        /// </remarks>
-        public ShelfFile(
-            ShelfFileMetadata metadata,
-            IContentProvider contentProvider)
-        {
-            Metadata = metadata ?? throw new ArgumentNullException(nameof(metadata));
-            _contentProvider = contentProvider ?? throw new ArgumentNullException(nameof(contentProvider));
-        }
+        /// <summary>The id of the directory that holds the file.</summary>
+        public required Guid DirectoryId { get; init; }
 
-        /// <summary>
-        /// Gets a stream for reading the file content.
-        /// </summary>
-        /// <returns>A stream that can be used to read the file content.</returns>
-        /// <remarks>
-        /// Each call to this method returns a new stream instance.
-        /// The returned stream should be disposed when no longer needed.
-        /// </remarks>
-        public Stream GetContentStream()
-        {
-            return _contentProvider.GetStream();
-        }
+        /// <summary>The file's full path on its shelf, e.g. <c>/invoices/2026/march.pdf</c>.</summary>
+        public required string Path { get; init; }
+
+        /// <summary>The file's name, the last part of <see cref="Path"/>.</summary>
+        public required string Name { get; init; }
+
+        /// <summary>The MIME type given when the file was uploaded.</summary>
+        public required string ContentType { get; init; }
+
+        /// <summary>The size of the contents in bytes.</summary>
+        public required long SizeBytes { get; init; }
+
+        /// <summary>The lowercase hex SHA-256 of the contents, computed by the server.</summary>
+        public required string Sha256 { get; init; }
+
+        /// <summary>When the file was stored.</summary>
+        public required DateTimeOffset CreatedAt { get; init; }
+
+        /// <summary>When the file's record last changed.</summary>
+        public required DateTimeOffset UpdatedAt { get; init; }
+
+        /// <summary>What the file is, in free text; null when it has none. Search matches it.</summary>
+        public string? Description { get; init; }
 
         /// <summary>
-        /// Releases the resources used by this <see cref="ShelfFile"/>.
+        /// Whether the contents are an age file encrypted with a password (<see cref="FileEncryption"/>):
+        /// a client asks for the password and decrypts them; the server never can.
         /// </summary>
-        /// <remarks>
-        /// This method disposes the content provider if it implements <see cref="IDisposable"/>.
-        /// </remarks>
-        public void Dispose()
-        {
-            if (_contentProvider is IDisposable disposable)
-            {
-                disposable.Dispose();
-            }
-
-            GC.SuppressFinalize(this);
-        }
+        public required bool Encrypted { get; init; }
     }
 }

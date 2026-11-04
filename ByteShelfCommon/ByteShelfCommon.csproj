@@ -1,13 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <!-- net8.0 and AOT-compatible on purpose: some consumers publish native AOT on net8.0. -->
     <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <IsAotCompatible>true</IsAotCompatible>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <DocumentationFile></DocumentationFile>
-    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+    <PackageId>ByteShelfCommon</PackageId>
     <Title>ByteShelf.Common</Title>
     <Authors>Adam Tovatt</Authors>
     <PackageIcon>ByteShelfIcon256.png</PackageIcon>
@@ -15,10 +13,11 @@
     <IncludeSymbols>True</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <PackageProjectUrl>https://github.com/AdamTovatt/byte-shelf</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/AdamTovatt/byte-shelf</RepositoryUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <Description>Common part of ByteShelf which is a three-part C# file storage system: server, client and common</Description>
+    <Description>Shared contract of ByteShelf, a self-hosted file store: the request and response types the server and ByteShelfClient exchange, path rules, and source-generated JSON.</Description>
     <Copyright>MIT</Copyright>
-    <Version>1.3.0</Version>
+    <Version>2.0.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,17 +25,10 @@
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>
     </None>
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Include="System.Text.Json" Version="9.0.6" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Update="README.md">
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>
     </None>
   </ItemGroup>
 
-</Project> 
+</Project>

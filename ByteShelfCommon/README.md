@@ -1,596 +1,69 @@
 # ByteShelfCommon
 
-ByteShelfCommon is a shared library that contains the core data structures, interfaces, and models used across the ByteShelf ecosystem. It ensures type safety and consistency between the client and server components, providing a common contract for file storage operations.
-
-## 🎯 Purpose
-
-This library serves as the foundation for the ByteShelf system by defining:
-- **Data Structures**: File metadata, tenant information, and storage details
-- **Interfaces**: Contracts for file operations and content providers
-- **Models**: Request/response models for API communication
-- **Types**: Common types and enums used throughout the system
-
-## 📦 Project Structure
-
-```
-ByteShelfCommon/
-├── ShelfFileMetadata.cs           # File metadata structure
-├── ShelfFile.cs                   # File representation with content
-├── IContentProvider.cs            # Content provider interface
-├── IShelfFileProvider.cs          # File provider interface
-├── TenantInfo.cs                  # Tenant information model with hierarchy
-├── TenantStorageInfo.cs           # Tenant storage usage information
-├── QuotaCheckResult.cs            # Storage quota check results
-├── CreateTenantRequest.cs         # Tenant creation request model
-├── CreateSubTenantRequest.cs      # Subtenant creation request model
-├── UpdateStorageLimitRequest.cs   # Storage limit update request
-└── ByteShelfCommon.csproj         # Project file
-```
-
-## 🔌 Core Interfaces
-
-### IShelfFileProvider
-
-The main interface for file storage operations, implemented by both client and server components.
-
-```csharp
-public interface IShelfFileProvider
-{
-    // Core file operations
-    Task<Guid> WriteFileAsync(string filename, string contentType, Stream content);
-    Task<ShelfFile> ReadFileAsync(Guid fileId);
-    Task<ShelfFile> ReadFileAsync(Guid fileId, bool useChunked);
-    Task DeleteFileAsync(Guid fileId);
-    Task<IEnumerable<ShelfFileMetadata>> GetFilesAsync();
-    
-    // Enhanced file operations with quota checking
-    Task<Guid> WriteFileWithQuotaCheckAsync(string filename, string contentType, Stream content, bool checkQuotaFirst = true);
-    
-    // Tenant-specific file operations (parent access required)
-    Task<Guid> WriteFileForTenantAsync(string targetTenantId, string filename, string contentType, Stream content);
-    Task<ShelfFile> ReadFileForTenantAsync(string targetTenantId, Guid fileId);
-    Task DeleteFileForTenantAsync(string targetTenantId, Guid fileId);
-    Task<IEnumerable<ShelfFileMetadata>> GetFilesForTenantAsync(string targetTenantId);
-    
-    // Storage management
-    Task<TenantStorageInfo> GetStorageInfoAsync();
-    Task<QuotaCheckResult> CanStoreFileAsync(long fileSizeBytes);
-    
-    // Tenant information and management
-    Task<TenantInfoResponse> GetTenantInfoAsync();
-    Task<Dictionary<string, TenantInfoResponse>> GetSubTenantsAsync();
-    Task<TenantInfoResponse> GetSubTenantAsync(string subTenantId);
-    Task<Dictionary<string, TenantInfoResponse>> GetSubTenantsUnderSubTenantAsync(string parentSubtenantId);
-    
-    // Subtenant management
-    Task<string> CreateSubTenantAsync(string displayName);
-    Task<string> CreateSubTenantUnderSubTenantAsync(string parentSubtenantId, string displayName);
-    Task UpdateSubTenantStorageLimitAsync(string subTenantId, long storageLimitBytes);
-    Task DeleteSubTenantAsync(string subTenantId);
-}
-```
-
-**Core File Operations:**
-- `WriteFileAsync()` - Write a file to storage with automatic chunking
-- `ReadFileAsync()` - Read a file with configurable retrieval method (chunked vs single endpoint)
-- `DeleteFileAsync()` - Delete a file and all its chunks
-- `GetFilesAsync()` - Get metadata for all stored files
-
-**Enhanced File Operations:**
-- `WriteFileWithQuotaCheckAsync()` - Write file with optional quota checking before upload
-
-**Tenant-Specific Operations:**
-- `WriteFileForTenantAsync()` - Write file to a specific tenant
-- `ReadFileForTenantAsync()` - Read file from a specific tenant
-- `DeleteFileForTenantAsync()` - Delete file from a specific tenant
-- `GetFilesForTenantAsync()` - Get files from a specific tenant
-
-**Storage Management:**
-- `GetStorageInfoAsync()` - Get current storage usage and limits
-- `CanStoreFileAsync()` - Check if a file can be stored within quota
-
-**Tenant Information:**
-- `GetTenantInfoAsync()` - Get current tenant information including admin status
-- `GetSubTenantsAsync()` - Get all subtenants of the current tenant
-- `GetSubTenantAsync()` - Get information about a specific subtenant
-- `GetSubTenantsUnderSubTenantAsync()` - Get subtenants under a specific subtenant
-
-**Subtenant Management:**
-- `CreateSubTenantAsync()` - Create a new subtenant under the current tenant
-- `CreateSubTenantUnderSubTenantAsync()` - Create a subtenant under another subtenant
-- `UpdateSubTenantStorageLimitAsync()` - Update a subtenant's storage limit
-- `DeleteSubTenantAsync()` - Delete a subtenant
-
-### IContentProvider
-
-Interface for providing file content streams, used for efficient content delivery.
-
-```csharp
-public interface IContentProvider
-{
-    Stream GetContentStream();
-}
-```
-
-## 📊 Data Models
-
-### ShelfFileMetadata
-
-Represents file metadata without the actual content.
-
-```csharp
-public class ShelfFileMetadata
-{
-    public Guid FileId { get; set; }
-    public string OriginalFilename { get; set; }
-    public string ContentType { get; set; }
-    public long FileSize { get; set; }
-    public List<Guid> ChunkIds { get; set; }
-    public DateTime CreatedAt { get; set; }
-}
-```
-
-**Properties:**
-- `FileId`: Unique identifier for the file
-- `OriginalFilename`: Original name of the uploaded file
-- `ContentType`: MIME type of the file
-- `FileSize`: Total size of the file in bytes
-- `ChunkIds`: List of chunk IDs that make up the file
-- `CreatedAt`: Timestamp when the file was created
-
-### ShelfFile
-
-Represents a complete file with both metadata and content.
-
-```csharp
-public class ShelfFile
-{
-    public ShelfFileMetadata Metadata { get; }
-    public IContentProvider ContentProvider { get; }
-    
-    public Stream GetContentStream() => ContentProvider.GetContentStream();
-}
-```
-
-**Usage:**
-```csharp
-ShelfFile file = await provider.ReadFileAsync(fileId);
-
-// Access metadata
-Console.WriteLine($"File: {file.Metadata.OriginalFilename}");
-Console.WriteLine($"Size: {file.Metadata.FileSize} bytes");
-
-// Access content
-using Stream content = file.GetContentStream();
-// Process the content...
-```
-
-### TenantInfo
-
-Represents tenant configuration and information, including hierarchical relationships.
-
-```csharp
-public class TenantInfo
-{
-    public string ApiKey { get; set; }
-    public long StorageLimitBytes { get; set; }
-    public string DisplayName { get; set; }
-    public bool IsAdmin { get; set; }
-    public TenantInfo? Parent { get; set; }
-    public Dictionary<string, TenantInfo> SubTenants { get; set; }
-}
-```
-
-**Properties:**
-- `ApiKey`: API key for authentication
-- `StorageLimitBytes`: Maximum storage allowed (0 = unlimited for admins)
-- `DisplayName`: Human-readable name for the tenant
-- `IsAdmin`: Whether the tenant has administrative privileges
-- `Parent`: Reference to the parent tenant (null for root tenants)
-- `SubTenants`: Dictionary of subtenants keyed by tenant ID
-
-**Hierarchical Features:**
-- **Parent References**: Runtime navigation to parent tenant (not serialized to avoid circular references)
-- **Subtenant Management**: Support for nested tenant structures up to 10 levels deep
-- **Shared Storage**: Parent and subtenants can share storage quotas
-- **API Key Inheritance**: Subtenants can access parent's files, but not vice versa
-
-### TenantStorageInfo
-
-Represents current storage usage for a tenant.
-
-```csharp
-public class TenantStorageInfo
-{
-    public long UsedBytes { get; set; }
-    public long LimitBytes { get; set; }
-    public long AvailableBytes { get; set; }
-    public int FileCount { get; set; }
-}
-```
-
-**Properties:**
-- `UsedBytes`: Current storage usage in bytes
-- `LimitBytes`: Storage limit in bytes (0 = unlimited)
-- `AvailableBytes`: Available storage space
-- `FileCount`: Number of files stored
-
-### TenantInfoResponse
-
-Represents tenant information returned by the API, including admin status and current usage.
-
-```csharp
-public class TenantInfoResponse
-{
-    public string TenantId { get; }
-    public string DisplayName { get; }
-    public bool IsAdmin { get; }
-    public long StorageLimitBytes { get; }
-    public long CurrentUsageBytes { get; }
-    public long AvailableSpaceBytes { get; }
-    public double UsagePercentage { get; }
-}
-```
-
-**Properties:**
-- `TenantId`: Unique identifier for the tenant
-- `DisplayName`: Human-readable name for the tenant
-- `IsAdmin`: Whether the tenant has administrative privileges
-- `StorageLimitBytes`: Maximum storage allowed (0 = unlimited for admins)
-- `CurrentUsageBytes`: Current storage usage in bytes
-- `AvailableSpaceBytes`: Available storage space in bytes
-- `UsagePercentage`: Percentage of storage used (0-100)
-
-### QuotaCheckResult
-
-Result of a storage quota check operation.
-
-```csharp
-public class QuotaCheckResult
-{
-    public bool CanStore { get; set; }
-    public long RequiredBytes { get; set; }
-    public long AvailableBytes { get; set; }
-    public string? ErrorMessage { get; set; }
-}
-```
-
-**Properties:**
-- `CanStore`: Whether the file can be stored
-- `RequiredBytes`: Bytes required for the file
-- `AvailableBytes`: Available storage space
-- `ErrorMessage`: Error message if storage is not possible
-
-## 📝 Request/Response Models
-
-### UpdateStorageLimitRequest
-
-Request model for updating tenant storage limits.
-
-```csharp
-public class UpdateStorageLimitRequest
-{
-    public long StorageLimitBytes { get; set; }
-}
-```
-
-### CreateTenantRequest
-
-Request model for creating a new tenant.
-
-```csharp
-public class CreateTenantRequest
-{
-    public string TenantId { get; set; }
-    public string DisplayName { get; set; }
-    public long StorageLimitBytes { get; set; }
-    public bool IsAdmin { get; set; }
-}
-```
-
-### CreateSubTenantRequest
-
-Request model for creating a new subtenant.
-
-```csharp
-public class CreateSubTenantRequest
-{
-    public string DisplayName { get; set; }
-}
-```
-
-**Properties:**
-- `DisplayName`: Human-readable name for the subtenant
-
-**Notes:**
-- The subtenant ID is automatically generated as a GUID
-- The API key is automatically generated as a unique key
-- The storage limit is initially set to match the parent's limit
-- The subtenant inherits the parent's storage quota
-
-## 🔧 Usage Examples
-
-### Working with File Metadata
-
-```csharp
-// Create metadata
-ShelfFileMetadata metadata = new ShelfFileMetadata
-{
-    FileId = Guid.NewGuid(),
-    OriginalFilename = "example.txt",
-    ContentType = "text/plain",
-    FileSize = 1024,
-    ChunkIds = new List<Guid> { Guid.NewGuid() },
-    CreatedAt = DateTime.UtcNow
-};
-
-// Access metadata properties
-Console.WriteLine($"File ID: {metadata.FileId}");
-Console.WriteLine($"Filename: {metadata.OriginalFilename}");
-Console.WriteLine($"Size: {metadata.FileSize} bytes");
-Console.WriteLine($"Chunks: {metadata.ChunkIds.Count}");
-```
-
-### Working with Tenant Information
-
-```csharp
-// Create tenant info
-TenantInfo tenant = new TenantInfo
-{
-    TenantId = "tenant1",
-    DisplayName = "Tenant 1",
-    ApiKey = "secure-api-key",
-    StorageLimitBytes = 1073741824, // 1GB
-    IsAdmin = false
-};
-
-// Check if tenant is admin
-if (tenant.IsAdmin)
-{
-    Console.WriteLine($"{tenant.DisplayName} has admin privileges");
-}
-
-// Check storage limit
-if (tenant.StorageLimitBytes == 0)
-{
-    Console.WriteLine($"{tenant.DisplayName} has unlimited storage");
-}
-else
-{
-    Console.WriteLine($"{tenant.DisplayName} has {tenant.StorageLimitBytes} bytes limit");
-}
-```
-
-### Working with Storage Information
-
-```csharp
-// Get storage info
-TenantStorageInfo storageInfo = await provider.GetStorageInfoAsync();
-
-// Display usage information
-Console.WriteLine($"Used: {storageInfo.UsedBytes} bytes");
-Console.WriteLine($"Limit: {storageInfo.LimitBytes} bytes");
-Console.WriteLine($"Available: {storageInfo.AvailableBytes} bytes");
-Console.WriteLine($"Files: {storageInfo.FileCount}");
-
-// Check if storage is unlimited
-bool isUnlimited = storageInfo.LimitBytes == 0;
-if (isUnlimited)
-{
-    Console.WriteLine("Storage is unlimited");
-}
-else
-{
-    double usagePercent = (double)storageInfo.UsedBytes / storageInfo.LimitBytes * 100;
-    Console.WriteLine($"Usage: {usagePercent:F1}%");
-}
-```
-
-### Working with Tenant Information and Admin Status
-
-```csharp
-// Get tenant information including admin status
-TenantInfoResponse tenantInfo = await provider.GetTenantInfoAsync();
-
-// Display tenant information
-Console.WriteLine($"Tenant: {tenantInfo.DisplayName}");
-Console.WriteLine($"Admin: {tenantInfo.IsAdmin}");
-Console.WriteLine($"Storage Limit: {tenantInfo.StorageLimitBytes} bytes");
-Console.WriteLine($"Current Usage: {tenantInfo.CurrentUsageBytes} bytes");
-Console.WriteLine($"Usage Percentage: {tenantInfo.UsagePercentage:F1}%");
-
-// Check admin privileges
-if (tenantInfo.IsAdmin)
-{
-    Console.WriteLine("This tenant has administrative privileges");
-    // Enable admin-specific features
-    // Show admin UI controls
-    // Allow access to admin endpoints
-}
-else
-{
-    Console.WriteLine("This is a regular tenant");
-    // Show regular user interface
-    // Hide admin-specific features
-}
-```
-
-### Working with Quota Checks
-
-```csharp
-// Check if a file can be stored
-long fileSize = 1024 * 1024; // 1MB
-QuotaCheckResult result = await provider.CheckQuotaAsync(fileSize);
-
-if (result.CanStore)
-{
-    Console.WriteLine($"Can store {fileSize} bytes");
-    Console.WriteLine($"Available: {result.AvailableBytes} bytes");
-}
-else
-{
-    Console.WriteLine($"Cannot store file: {result.ErrorMessage}");
-    Console.WriteLine($"Required: {result.RequiredBytes} bytes");
-    Console.WriteLine($"Available: {result.AvailableBytes} bytes");
-}
-```
-
-### Working with Hierarchical Tenant Structures
-
-```csharp
-// Create a subtenant
-string subTenantId = await provider.CreateSubTenantAsync("Department A");
-
-// List all subtenants
-var subTenants = await provider.GetSubTenantsAsync();
-foreach (var subTenant in subTenants)
-{
-    Console.WriteLine($"Subtenant: {subTenant.DisplayName}");
-    Console.WriteLine($"Storage Limit: {subTenant.StorageLimitBytes} bytes");
-}
-
-// Get specific subtenant information
-var subTenant = await provider.GetSubTenantAsync(subTenantId);
-Console.WriteLine($"Subtenant ID: {subTenantId}");
-Console.WriteLine($"Display Name: {subTenant.DisplayName}");
-Console.WriteLine($"Storage Limit: {subTenant.StorageLimitBytes} bytes");
-Console.WriteLine($"Current Usage: {subTenant.CurrentUsageBytes} bytes");
-
-// Update subtenant storage limit
-long newLimit = 500 * 1024 * 1024; // 500MB
-await provider.UpdateSubTenantStorageLimitAsync(subTenantId, newLimit);
-
-// Delete a subtenant
-await provider.DeleteSubTenantAsync(subTenantId);
-```
-
-### Working with Shared Storage Quotas
-
-```csharp
-// Check storage availability considering shared quotas
-TenantInfoResponse tenantInfo = await provider.GetTenantInfoAsync();
-
-if (tenantInfo.StorageLimitBytes > 0)
-{
-    // Tenant has a specific storage limit
-    double usagePercent = tenantInfo.UsagePercentage;
-    long availableBytes = tenantInfo.AvailableSpaceBytes;
-    
-    Console.WriteLine($"Usage: {usagePercent:F1}%");
-    Console.WriteLine($"Available: {availableBytes} bytes");
-    
-    if (usagePercent > 90)
-    {
-        Console.WriteLine("Warning: Storage usage is high!");
-    }
-}
-else
-{
-    // Unlimited storage (admin tenant)
-    Console.WriteLine("Unlimited storage available");
-}
-
-// Check if a large file can be stored (considers shared quotas)
-long largeFileSize = 100 * 1024 * 1024; // 100MB
-bool canStore = await provider.CanStoreFileAsync(largeFileSize);
-
-if (canStore)
-{
-    Console.WriteLine("Large file can be stored");
-}
-else
-{
-    Console.WriteLine("Cannot store large file - quota exceeded");
-}
-```
-
-## 🧪 Testing
-
-### Unit Tests
-```bash
-dotnet test ByteShelfCommon.Tests
-```
-
-### Test Coverage
-The ByteShelfCommon library includes comprehensive unit tests for:
-- Data model validation
-- Interface contract verification
-- Serialization/deserialization
-- Edge cases and error conditions
-
-## 🔒 Type Safety
-
-### Nullable Reference Types
-The library uses nullable reference types to ensure type safety:
-- Required properties are non-nullable
-- Optional properties are nullable
-- Proper null checking is enforced at compile time
-
-### Validation
-Data models include validation attributes where appropriate:
-- Required fields are marked as required
-- String lengths are validated
-- Numeric ranges are enforced
-
-## 📚 Integration
-
-### Client Integration
-The ByteShelfClient library implements `IShelfFileProvider` and uses these data models for all operations.
-
-### Server Integration
-The ByteShelf API server uses these models for:
-- API request/response serialization
-- Internal data representation
-- Database storage (where applicable)
-
-### Cross-Platform Compatibility
-The library is designed to work across different .NET platforms:
-- .NET 8.0+
-- ASP.NET Core
-- Console applications
-- Desktop applications
-
-## 🔧 Development
-
-### Adding New Models
-1. Create the new model class
-2. Add appropriate properties with proper types
-3. Include XML documentation
-4. Add unit tests
-5. Update this README if needed
-
-### Adding New Interfaces
-1. Define the interface contract
-2. Document all methods and properties
-3. Add unit tests for interface compliance
-4. Update implementations in client and server
-
-### Versioning
-- Follow semantic versioning
-- Maintain backward compatibility when possible
-- Document breaking changes clearly
-
-### Working with Parent Access to Subtenant Files
-The ByteShelf system supports hierarchical access where parent tenants can access files from their subtenants:
-
-```csharp
-// List files from a subtenant
-IEnumerable<ShelfFileMetadata> subtenantFiles = await provider.GetFilesForTenantAsync("subtenant-id");
-
-// Download a file from a subtenant
-ShelfFile subtenantFile = await provider.ReadFileForTenantAsync("subtenant-id", fileId);
-
-// Upload a file to a subtenant
-Guid uploadedFileId = await provider.WriteFileForTenantAsync("subtenant-id", "filename.txt", "text/plain", contentStream);
-
-// Delete a file from a subtenant
-await provider.DeleteFileForTenantAsync("subtenant-id", fileId);
-```
-
-**Access Control**: All tenant-specific operations require that the authenticated tenant has access to the target tenant (either be the same tenant or a parent). If access is denied, an `UnauthorizedAccessException` is thrown.
-
-## 📚 Related Documentation
-
-- [ByteShelf API Server](../ByteShelf/README.md) - Server implementation
-- [ByteShelfClient](../ByteShelfClient/README.md) - Client implementation
-- [Main README](../README.md) - Overview of the entire solution 
+The contract shared by the ByteShelf server and its clients: the request and response types they
+exchange, the rules for paths and shelf names, and source-generated JSON. Targets net8.0 and is
+AOT-compatible.
+
+## Types
+
+| Type | What it is |
+|---|---|
+| `ShelfInfo` | A shelf with its quota and usage. |
+| `CreateShelfRequest`, `UpdateShelfRequest` | Creates a shelf, and replaces its name and quota. |
+| `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps, description, and whether its contents are encrypted (`Encrypted`). |
+| `SetDescriptionRequest`, `FileDescription` | Setting a file's description, and its rules. |
+| `FileSearch`, `FileSearchResults` | What to look for among a shelf's files, and one page of what was found. |
+| `DownloadLink` | A link to a file's contents that works without a token until it runs out, and the bounds of its lifetime (`Lifetime`: a day by default, at most 7 days). |
+| `UploadLink`, `CreateUploadLinkRequest`, `NormalizedUploadLinkRequest` | A link that stores one file sent to it without a token, and asking for one (`Lifetime`: 15 minutes by default, at most 24 hours). |
+| `LinkLifetime` | One kind of link's lifetime rule: its default, its bounds and `Normalize`. |
+| `FileEncryption`, `EncryptedFolder`, `PathEncryption`, `SetFolderEncryptionRequest` | Password encryption: how an age file starts, an encrypted directory's check text, an encrypted directory with its check, what a path is encrypted under, and encrypting a directory. |
+| `ShelfDirectory`, `DirectoryListing`, `ListedDirectory` | A directory and whether it is encrypted (`Encrypted`), what one holds, and a directory in a listing with the size and count of the files under it, and how many are encrypted. |
+| `TreeQuery`, `DirectoryTree`, `TreeEntry` | What to list of everything under a directory (a depth, a page), one page of it, and one entry of a page, a directory or a file. |
+| `StoredOrder` | The order names and paths are listed in: by code point, as the server's database sorts them. |
+| `CreateDirectoryRequest`, `MoveRequest` | Creates a directory; moves or renames a file or directory. |
+| `StartUploadRequest`, `StartContentSwapRequest`, `UploadSession` | Starting and following a resumable upload, of a new file or swapping a file's contents in place. |
+| `TrashEntry`, `TrashEntryKind` | A deletion that can still be restored. |
+| `ShelfAccessGrant`, `SetShelfAccessRequest`, `ShelfAccessPermission` | A user's access to a shelf, and giving it. |
+| `ShelfKeyInfo`, `CreateShelfKeyRequest`, `CreatedShelfKey`, `ShelfKeyPermission` | A program's key to one shelf, and creating one. |
+| `ShelfKeys` | The `X-Api-Key` header a key is sent in, and the secret's prefix, which also tells a key sent as the bearer token from a session token. |
+| `EntryReference` | Names a file or directory by path or by id; a path or an id converts to one. |
+| `UserInfo`, `CreateUserRequest`, `UpdateRolesRequest`, `UpdatePasswordRequest`, `UserRoles` | Users and changing them. |
+| `RequestPasswordResetRequest`, `CompletePasswordResetRequest` | Asking for a reset link, and using it. |
+| `SignInRequest`, `SessionTokens`, `RefreshTokenRequest` | Signing in, refreshing and signing out at `/api/auth`. |
+| `ReplicationStatus`, `ReplicaInfo`, `ReplicationSourceInfo`, `PairingCodeResponse`, `PairWithPrimaryRequest`, `PromoteResponse` | A server's replicas or the primary it follows, pairing one, and promoting it. |
+| `ErrorResponse`, `ErrorCodes` | Every error body, with a machine-readable code. |
+| `UploadLimits` | The server's limits, such as the largest chunk. |
+
+## Rules
+
+- `ShelfPath` normalizes and validates paths inside a shelf: a leading `/`, names separated by `/`,
+  no empty names, `.`, `..`, backslashes, control or invisible formatting characters, and every
+  name in Unicode normalization form C. Names that are valid on a shelf are not always valid file
+  names on every operating system (Windows refuses `CON` and a trailing dot), so a client that
+  writes files to disk maps them itself.
+- `ShelfName` validates shelf names: 1 to 63 lowercase letters, digits, `-`, `_` and `.`, starting
+  with a letter or digit. `ShelfSettings` adds that a quota cannot be negative.
+- `FileDescription` trims a description and puts it in normalization form C; blank is none, and it
+  holds at most 2,000 characters, counted as code points.
+- `FileSearch.Normalize` checks a search: a page of 1 to 1,000 files (100 by default), sizes not
+  negative and ranges not empty (a range includes its start and excludes its end), a content type
+  that is one media type or a family such as `image/*`, and a SHA-256 of 64 hex digits. `Fold` is
+  how search compares text, both sides: normalization form C, then invariant lowercase.
+- `ContentTypes` checks the media type stored with a file, and `ForUpload` picks it when an upload
+  gives none: the one its path's extension names, else `application/octet-stream`.
+- `NormalizedUploadLinkRequest.Create` checks an upload link's request: a file's path (never the
+  root), a description, a lifetime within `UploadLink.Lifetime`, and at most 4,096 bytes of UTF-8 for
+  the path and description together, since the link's URL carries both.
+- `PasswordPolicy` checks a password,
+  `UserFields` an email and display name, `DisplayText` short names such as a key's, and
+  `UserRoles` a user's roles.
+- The server applies every rule, and so does the in-memory client in ByteShelfClient. The HTTP
+  client applies `ShelfPath`, `ContentTypes`, `FileDescription`, `FileSearch`, the link lifetimes
+  and `NormalizedUploadLinkRequest` before sending,
+  since they shape the request, and leaves the rest to the server.
+
+## JSON
+
+`ByteShelfCommon.Serialization.ByteShelfJsonContext` serializes every type without reflection, in
+camelCase like the server. Enums are written as camelCase strings and read back ignoring case, by
+`CamelCaseEnumConverter`, set on each enum type so the server and every client agree.

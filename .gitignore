@@ -1,21 +1,37 @@
-.vs/
-/ByteShelf/bin/*
-/ByteShelf/obj/*
-/ByteShelf/Properties/launchSettings.json
-/ByteShelfCommon/bin/*
-/ByteShelfCommon/obj/*
-/ByteShelfClient/bin/*
-/ByteShelfClient/obj/*
-/ByteShelfCommon.Tests/bin/*
-/ByteShelfCommon.Tests/obj/*
-/ByteShelfClient.Tests/bin/*
-/ByteShelfClient.Tests/obj/*
-/ByteShelf.Tests/bin/*
-/ByteShelf.Tests/obj/*
-/ByteShelf.Integration.Tests/bin/*
-/ByteShelf.Integration.Tests/obj/*
-/linux-deploy/
+## .NET
+bin/
+obj/
+# The JavaScript SDK names its intermediate folder obj\Debug, backslash included, off Windows.
+obj\\*
+publish/
+*.user
+*.suo
+*.sln.docstates
+launchSettings.json
 
-# Generated XML documentation files
-**/bin/**/*.xml
-**/obj/**/*.xml 
+## Node
+node_modules/
+dist/
+test-results/
+playwright-report/
+e2e-root/
+*.tsbuildinfo
+
+## IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+
+## OS
+.DS_Store
+Thumbs.db
+
+## Environment
+.env
+*.env.local
+EnvironmentVariables.txt
+
+## ByteShelf
+# A local root folder for running the server in development.
+dev-root/

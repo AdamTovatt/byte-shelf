@@ -1,0 +1,47 @@
+/* Inter as one variable font, bundled rather than fetched from a font service, so a self-hosted
+   server's pages need nothing from elsewhere. */
+@import '@fontsource-variable/inter';
+@import '../ui/typography.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-canvas;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    @apply bg-canvas text-fg;
+  }
+
+  /* Form controls draw their own focus styling. */
+  input,
+  textarea,
+  select {
+    outline: none !important;
+  }
+
+  input:focus,
+  textarea:focus,
+  select:focus,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    outline: none !important;
+  }
+
+  /* Autofill keeps the field's own colours rather than the browser's yellow, in both themes. */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px rgb(var(--field)) inset !important;
+    -webkit-text-fill-color: rgb(var(--fg)) !important;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+}

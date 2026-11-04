@@ -1,0 +1,471 @@
+/*
+ * Plain (non-layered) classes and keyframes the components in src/ui name by className: the busy
+ * outline, modal and toast animations, the Skeleton shimmer, the Spinner, scrollbars and the shared
+ * focus ring. Depends on the theme variables in src/styles/variables.css (--brand, --shimmer-*,
+ * --focus-glow-color). Imported once, by main.tsx.
+ */
+
+/* Busy outline — a short stroke travelling once around a control's edge, for `BusyOutline`.
+   Offset, not rotation: the dash moves ALONG the path, so it keeps a constant speed whatever the
+   box's proportions, where a rotating gradient would race the short edges and crawl the long ones.
+   One lap is exactly 100 units because the path declares `pathLength="100"`, which is also what
+   makes the dash a tenth of the perimeter at any size. */
+@keyframes busy-outline-travel {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+/* The stroke arriving: it grows out of the point it starts at rather than appearing at full length.
+   Only the DASH grows — offset stays at 0 through this phase, which pins the tail to the start point
+   while the head runs ahead, so it reads as something emerging from a hole rather than as a line
+   fading in. Expressible as two numbers only because `pathLength="100"` already put the dash in
+   percentages; against a real perimeter this would need the length measured first.
+   It starts at 0.5 rather than 0: a zero-length dash with a round cap is a dot in some browsers and
+   nothing at all in others, and a half-unit stub is the same dot everywhere. */
+@keyframes busy-outline-emerge {
+  from {
+    stroke-dasharray: 0.5 99.5;
+  }
+  to {
+    stroke-dasharray: 10 90;
+  }
+}
+
+/* Two animations on two different properties, so they compose rather than fight: the emerge runs
+   once and `forwards` leaves the dash at full length, and the travel is held back by exactly that
+   long so the stroke does not move until it is whole.
+
+   THE EMERGE'S DURATION IS NOT A TASTE SETTING — it is derived, and the derivation is what stops the
+   stroke hitching. During the emerge the tail is pinned, so the head's speed IS the dash's growth
+   rate; during the travel the head moves at the lap speed. Pick those two independently and the head
+   changes pace at the handover: at `0.4s ease-out` it decelerated to roughly a third of the travel
+   speed and then jumped to it, which reads as expand, pause, go. Measured, not guessed — sampling
+   the head's position across the boundary showed the step fall to 1.02 and then leap to 2.86.
+
+   So the emerge covers the 9.5 units the head crosses (0.5 stub to a 10-unit dash) at exactly the lap
+   speed of 100 units per lap, and runs `linear` so it holds that speed the whole way. Written as a
+   calc off the lap so the two cannot drift apart: change the lap and the emerge follows. */
+/* One home for both timings, because the two classes below must agree on them exactly: the travel's
+   duration and delay have to be byte-identical across the pair or the lap restarts mid-stride on the
+   swap, and the emerge and shrink have to be the same length or the stroke leaves at a different
+   speed than it arrived. Written twice, that is a rule kept by whoever remembers; written here, it is
+   one value the two classes read. */
+.animate-busy-outline,
+.animate-busy-outline-exit {
+  --busy-outline-lap: 1.4s;
+  --busy-outline-emerge: calc(var(--busy-outline-lap) * 9.5 / 100);
+}
+
+.animate-busy-outline {
+  animation:
+    busy-outline-emerge var(--busy-outline-emerge) linear 1 forwards,
+    busy-outline-travel var(--busy-outline-lap) linear var(--busy-outline-emerge) infinite;
+}
+
+/* The stroke leaving, by the same trick as its arrival read backwards: the dash shrinks while the
+   travel keeps running, so the TAIL catches the head up and swallows it into the point the head
+   stopped at.
+
+   Nothing here has to know WHERE that point is, which is what makes an exit possible at all — the
+   stroke stops at whatever moment the work finishes. Both halves are rates: the tail advances at the
+   lap speed because the travel is still turning, and the dash shrinks at the same speed, so the
+   head's velocity is the difference between them, which is zero. It freezes wherever it happens to be.
+
+   `busy-outline-travel` is listed again, identically and at the same position in the list. That is
+   load-bearing: an animation whose name stays put across a style change keeps its start time, so the
+   lap carries on mid-stride. Rename it, reorder the two, or change its duration here and it restarts
+   from zero — the stroke would jump back to the path's start on its way out. */
+@keyframes busy-outline-shrink {
+  from {
+    stroke-dasharray: 10 90;
+  }
+  to {
+    stroke-dasharray: 0.5 99.5;
+  }
+}
+
+.animate-busy-outline-exit {
+  animation:
+    busy-outline-shrink var(--busy-outline-emerge) linear 1 forwards,
+    busy-outline-travel var(--busy-outline-lap) linear var(--busy-outline-emerge) infinite;
+}
+
+@keyframes modalBackdrop {
+  from {
+    opacity: 0;
+    backdrop-filter: blur(0);
+  }
+  to {
+    opacity: 1;
+    backdrop-filter: blur(4px);
+  }
+}
+
+.animate-modal-backdrop {
+  animation: modalBackdrop 300ms cubic-bezier(0.25, 0.1, 0.25, 1) forwards;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* Single shimmer cycle: highlight sweeps from off-screen right to off-screen left.
+   With background-size: 200% (image twice the container width), the gradient is
+   fully off-screen when bg-position-x is ≤ -100% (image's left edge tangent to
+   the container's right edge) or ≥ 200% (image's right edge tangent to the
+   container's left edge). At those endpoints the container shows pure base
+   color from background-color, so the loop is seamless — no snap.
+   Range is asymmetric on purpose: that's the minimal seamless travel. Shorten
+   the dark dwell further by widening the bright plateau in the gradient stops
+   below, not by clipping this range. */
+@keyframes skeleton-shimmer {
+  0%   { background-position-x: -100%; }
+  100% { background-position-x:  200%; }
+}
+
+/* `Spinner` — the ring turns once every 0.8s; reduced motion holds it still. */
+@keyframes spinner-turn {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  animation: spinner-turn 800ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+
+/* Toast enter/leave: slide horizontally from the right edge. Driven by react-hot-toast's
+   `t.visible` flag (enter on mount, leave during the dismiss window) — see ToastViewport. */
+@keyframes toastSlideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes toastSlideOutRight {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.animate-toast-in {
+  animation: toastSlideInRight 300ms cubic-bezier(0.25, 0.1, 0.25, 1) both;
+}
+
+.animate-toast-out {
+  animation: toastSlideOutRight 300ms cubic-bezier(0.25, 0.1, 0.25, 1) both;
+}
+
+/* Neutral skeleton (gray) — used by the Skeleton primitive for content placeholders.
+   Gradient stops use a wide bright plateau (25-75%) so the highlight covers most
+   of the container during the sweep, shortening the perceived dark dwell. The
+   shimmer variables are theme-aware (see variables.css). */
+.animate-shimmer {
+  background-color: var(--shimmer-neutral-base);
+  background-image: linear-gradient(90deg, var(--shimmer-neutral-base) 0%, var(--shimmer-neutral-highlight) 25%, var(--shimmer-neutral-highlight) 75%, var(--shimmer-neutral-base) 100%);
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-shimmer 1.8s linear infinite;
+}
+
+/* The same neutral skeleton, tinted for the PAGE background rather than for a card.
+   A skeleton's base has to sit a constant distance from whatever it is drawn on, and
+   `canvas` and a card's `panel` are a step apart — so the card tint above, used on the
+   page background, lands one step from its ground and reads as almost nothing. See the
+   `-canvas-` pair in variables.css for the per-theme values and why the shift reverses
+   in dark. */
+.animate-shimmer-canvas {
+  background-color: var(--shimmer-neutral-canvas-base);
+  background-image: linear-gradient(90deg, var(--shimmer-neutral-canvas-base) 0%, var(--shimmer-neutral-canvas-highlight) 25%, var(--shimmer-neutral-canvas-highlight) 75%, var(--shimmer-neutral-canvas-base) 100%);
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-shimmer 1.8s linear infinite;
+}
+
+/* The neutral skeleton on PAPER — a page-preview card's page panel (#2726), which pins the light
+   theme of the app's family. Built from the theme's steps rather than the shimmer variables: the
+   pin re-declares the steps, so this follows it inside a dark app, where under the cool `light` pin
+   the variables above would keep their dark values (they have no `[data-theme="light"]` block). The base is one step darker than the paper (`neutral-2` under `panel`'s
+   `neutral-1`) and the highlight is the paper itself, so the sweep reads as light passing over the
+   page. Still under reduced motion: a flat panel at the base, with nothing passing over it. */
+.animate-shimmer-paper {
+  background-color: rgb(var(--neutral-2));
+  background-image: linear-gradient(90deg, rgb(var(--neutral-2)) 0%, rgb(var(--panel)) 25%, rgb(var(--panel)) 75%, rgb(var(--neutral-2)) 100%);
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-shimmer 1.8s linear infinite;
+}
+
+/* Only the paper shimmer stands still, and that is scope rather than policy: this one was built
+   (#2726) with reduced motion as part of its design. The three others predate it and run on every
+   loading surface in the app, so stilling them changes what every skeleton does, a decision of its
+   own rather than a rider on one card's placeholder. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-shimmer-paper {
+    animation: none;
+    background-image: none;
+  }
+}
+
+/* Brand skeleton — used while AI auto-fill is generating content */
+.animate-shimmer-brand {
+  background-color: var(--shimmer-brand-base);
+  background-image: linear-gradient(90deg, var(--shimmer-brand-base) 0%, var(--shimmer-brand-highlight) 25%, var(--shimmer-brand-highlight) 75%, var(--shimmer-brand-base) 100%);
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-shimmer 1.8s linear infinite;
+}
+
+/* `Skeleton`'s `still`: any of the shimmers above held flat at its base colour, for a place reserved
+   for something that is not on its way (#2726). After every shimmer class on purpose — the same
+   specificity, so being declared later is what lets it win over whichever tint it is paired with. */
+.skeleton-still {
+  animation: none;
+  background-image: none;
+}
+
+.animate-scale-in {
+  animation: scaleIn 400ms cubic-bezier(0.25, 0.1, 0.25, 1) both;
+}
+
+/* Thick glassy divider — uses border token colors */
+.divider-thick {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    var(--border-light) 15%,
+    var(--border-light) 85%,
+    transparent 100%
+  );
+}
+
+.dark .divider-thick {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    var(--border-dark) 15%,
+    var(--border-dark) 85%,
+    transparent 100%
+  );
+}
+
+.transition-elegant {
+  transition: all 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+/* Hide the native scrollbar of anything that scrolls. A general utility applied by class name, and
+   shared with the scroll containers further down that paint their own overlay track in its place. */
+.scrollbar-hidden,
+.custom-scroll-inner,
+.overflow-scroll-inner {
+  scrollbar-width: none; /* Firefox */
+}
+
+.scrollbar-hidden::-webkit-scrollbar,
+.custom-scroll-inner::-webkit-scrollbar,
+.overflow-scroll-inner::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Edge */
+}
+
+/* ── Scrollbars: CustomScroll, OverflowScroll, ScrollbarOverlay ──
+ *
+ * CustomScroll and OverflowScroll own the scroll container they render around and are vertical-only;
+ * ScrollbarOverlay is bi-directional and attaches to a scroll container the caller owns.
+ *
+ * They look alike by construction: a declaration more than one of them needs is written once and
+ * shared by grouping the selectors, so a retune reaches all three by default. Shared by default is
+ * all it is — nothing compares the families, so splitting one back out with its own values would go
+ * unnoticed. The single value pinned from outside is `.scrollbar-overlay-track-h`'s footprint, which
+ * `scrollbarOverlayGutter.test.ts` parses back out of this file.
+ *
+ * Grouping rather than a shared base class keeps the sharing in this file: no component markup
+ * depends on the grouping, and the class names stay put. Renaming is a local edit for only two of the
+ * three — `.scrollbar-overlay-track-h` is an e2e locator too (see `TestingSystem.md`) as well as that
+ * gutter test's input, while the `custom-scroll-*` and `overflow-scroll-*` names appear nowhere
+ * outside this package. Rules that are one family's own — the overlay's stacking context and its
+ * horizontal axis among them — stand separately below.
+ */
+
+/* ── Containers ── */
+.custom-scroll,
+.overflow-scroll-root {
+  position: relative;
+  overflow: hidden;
+}
+
+.custom-scroll-outer {
+  position: relative;
+  height: 100%;
+}
+
+.custom-scroll-inner,
+.overflow-scroll-inner {
+  height: 100%;
+  overflow-y: scroll;
+}
+
+/* Callers cap the OverflowScroll root itself (`max-h-32`, `max-h-48`); this is what carries that cap
+   down to the scroller, which would otherwise size to its content and never scroll. */
+.overflow-scroll-inner {
+  max-height: inherit;
+}
+
+.custom-scroll-track-wrapper {
+  position: relative;
+  height: 100%;
+  width: 0;
+  float: right;
+  z-index: 1; /* Lifts the track over the scroll container, which follows the wrapper in DOM order */
+}
+
+/* ── Track ── */
+.custom-scroll-track,
+.overflow-scroll-track,
+.scrollbar-overlay-track {
+  position: absolute;
+  opacity: 0;
+  transition: opacity 0.4s ease-out;
+  cursor: pointer;
+}
+
+/* The vertical geometry, written once. CustomScroll and OverflowScroll carry no axis suffix because
+   vertical is the only axis they have, so they take the same values ScrollbarOverlay's -v variant
+   does — each measured from its own containing block: the zero-width wrapper floated to
+   CustomScroll's right, OverflowScroll's own root, and whichever positioned ancestor a
+   ScrollbarOverlay caller owns. */
+.custom-scroll-track,
+.overflow-scroll-track,
+.scrollbar-overlay-track-v {
+  top: 0;
+  right: 3px;
+  bottom: 0;
+  width: 8px;
+}
+
+.scrollbar-overlay-track-h {
+  left: 0;
+  right: 0;
+  bottom: 3px;
+  height: 8px;
+}
+
+/* Keeps the track above content that gives itself a z-index. CustomScroll needs no rule of its own
+   here: its track sits inside `.custom-scroll-track-wrapper`, which carries the same lift. */
+.overflow-scroll-track {
+  z-index: 1;
+}
+
+.scrollbar-overlay-track {
+  z-index: 30; /* Above the sticky layers a consumer stacks inside its own scroll container */
+}
+
+.custom-scroll-track-visible,
+.overflow-scroll-track-visible,
+.scrollbar-overlay-track-visible {
+  opacity: 1;
+  transition-duration: 0.2s;
+}
+
+/* ── Handle ── */
+.custom-scroll-handle,
+.overflow-scroll-handle,
+.scrollbar-overlay-handle {
+  position: absolute;
+  cursor: grab;
+}
+
+.custom-scroll-handle,
+.overflow-scroll-handle,
+.scrollbar-overlay-handle-v {
+  left: 0;
+  right: 0;
+}
+
+.scrollbar-overlay-handle-h {
+  top: 0;
+  bottom: 0;
+}
+
+.custom-scroll-handle:active,
+.overflow-scroll-handle:active,
+.scrollbar-overlay-handle:active {
+  cursor: grabbing;
+}
+
+/*
+ * The shared focus ring — every focusable thing that is not a form control, which draws its own.
+ *
+ * <b>ONE SELECTOR IN EVERY THEME; only the colour moves, through `--focus-ring`.</b> The selector is
+ * (0,1,3), so an element that opts out with `focus-visible:outline-none` — (0,2,0) — beats it whatever
+ * the theme. The dark colour used to be a second rule, `.dark *:focus-visible…`, and the `.dark`
+ * scope lifted it to (0,2,3): every opt-out then lost in dark and won in light, so the report editor's
+ * host drew a ring around the whole document in one theme only, and every `Button` drew this outline
+ * on top of its own `focus-visible:ring-*`. A theme may change the variable; it must never add a
+ * selector here, because any scope prefix raises specificity and the opt-outs lose again.
+ *
+ * Declared HERE rather than in each app's `variables.css`, so a consuming app cannot import this rule
+ * and miss its colour; what it needs from the app is the `--brand` / `--brand-light` pair named in the
+ * header. The dark half is a bare `.dark`, not `:root.dark`: a `Sidebar` with `forceDark` wraps itself
+ * in `.dark` under a light page, and its elements take `--brand-light` exactly as the old `.dark *`
+ * rule gave them.
+ */
+:root {
+  --focus-ring: var(--brand);
+}
+
+.dark {
+  --focus-ring: var(--brand-light);
+}
+
+*:focus-visible:not(input):not(textarea):not(select) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

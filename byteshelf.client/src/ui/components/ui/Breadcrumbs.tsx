@@ -1,0 +1,253 @@
+import { Fragment, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { Link } from 'react-router-dom';
+import { Icon, type IconComponent } from './Icon';
+import { Skeleton } from './Skeleton';
+import { Tooltip } from './Tooltip';
+import { useMeasuredSize } from './useMeasuredSize';
+import { cn } from '../../lib/utils';
+
+/** One crumb: its words, where it leads, and whether the words are still being read. */
+export interface BreadcrumbItem {
+  /** Stable identity for the crumb — the React key, and what the app's own invariants compare. */
+  key: string;
+  label: string;
+  /** Absolute address, or `null` for a crumb naming something with no page of its own. */
+  to: string | null;
+  /** True while the label stands in for a read that has not landed. Renders as a skeleton. */
+  pending?: boolean;
+  /**
+   * An optional mark to the left of the words, naming what KIND of thing the crumb is.
+   *
+   * Optional rather than required because a crumb can name something the app has no icon for, and a
+   * placeholder glyph would say less than nothing. Where one is given it should be the SAME icon the
+   * app uses for that thing elsewhere — the sidebar's Help icon for the Help crumb, the project icon
+   * for a project — so the trail and the navigation agree about what a thing looks like.
+   *
+   * Purely decorative: it is `aria-hidden`, and the crumb's own words are what is announced. An icon
+   * that carried meaning the label did not would be a fact only sighted readers get.
+   */
+  icon?: IconComponent;
+  /**
+   * When the trail does not fit on one line, crumbs with an order drop their words and show only
+   * their icon, the lowest order first, one at a time until it fits; only once all of them have does
+   * the trail wrap. Ignored on a crumb without an icon. An icon-only crumb keeps its words as its
+   * accessible name and in a tooltip.
+   */
+  collapseOrder?: number;
+}
+
+export interface BreadcrumbsProps {
+  items: BreadcrumbItem[];
+  /**
+   * How large the trail is set.
+   *
+   * `lg` (the default) is the chrome's own naming of the page — one step above the body copy it sits
+   * over. `md` is for a trail that shares its row with controls rather than heading a page: the
+   * project header's, where the same 14px the app defaults to keeps the row one line high.
+   */
+  size?: 'md' | 'lg';
+  className?: string;
+  /**
+   * Wraps each crumb as rendered, link or text, such as to make it a drop target. The trail's layout,
+   * collapsing and separators stay the component's own.
+   */
+  wrapCrumb?: (item: BreadcrumbItem, crumb: ReactNode) => ReactNode;
+}
+
+/** The width a pending crumb reserves — a plausible name's worth, so the trail does not jump far. */
+const PENDING_LABEL_WIDTH = '6rem';
+
+/**
+ * The trail across the top of the dashboard: where the reader is, and every step back out of it.
+ *
+ * Presentational, and deliberately so — it takes the crumbs it is given and derives nothing. Which
+ * crumbs a route shows is a fact about the app's routes, so it lives in the app
+ * (`ordo.client/src/lib/breadcrumbs.ts`), where the route table it is checked against also lives.
+ *
+ * **The last crumb never links.** It names the page the reader is already on, so it renders as text
+ * carrying `aria-current="page"` whatever its `to` says — which is what lets the app give a crumb
+ * one address and use it at both positions: a leaf here, a step in the trail on a deeper route. A
+ * PENDING last crumb still carries it, on the placeholder standing in for the words.
+ *
+ * A crumb whose `to` is `null` renders as text at ANY position, not only the last (D1/#2105) — a
+ * section of the trail that is a tab held in state rather than a route is the case.
+ *
+ * Not to be confused with `BreadcrumbNav` and `DetailBreadcrumb`, which predate the dashboard chrome:
+ * this is the one that renders real `<Link>`s and takes a whole trail; those take one or two
+ * hand-built steps and navigate imperatively.
+ *
+ * Those two have **no consumers at all** — not in either client, not in the showcase — and had none
+ * before this component existed either, so they are pre-existing dead code rather than the thing the
+ * unmigrated pages use. Stated because the first draft of this note guessed the opposite, and a
+ * comment asserting a component is in use is what stops the next person checking.
+ */
+/**
+ * What a crumb shows while its name is still being read: the label to a screen reader, a placeholder
+ * to the eye. Shared so the linked and unlinked positions cannot drift apart in what they announce.
+ */
+function PendingLabel({ label }: { label: string }) {
+  return (
+    <>
+      <span className="sr-only">{label}</span>
+      <Skeleton
+        aria-hidden="true"
+        variant="text"
+        surface="canvas"
+        width={PENDING_LABEL_WIDTH}
+        height="1rem"
+      />
+    </>
+  );
+}
+
+/**
+ * The icon size the trail draws at — matched to the 16px `text-body-lg` of the `lg` size.
+ *
+ * The same at `md`, deliberately: a mark two pixels smaller does not read as a smaller mark, it reads
+ * as a blurrier one, and the row it sits in is already sized by its own controls.
+ */
+const CRUMB_ICON_SIZE = 16;
+
+/**
+ * A crumb's contents: its optional mark, then its words.
+ *
+ * One component for all four positions — pending or resolved, linked or not — because the icon has
+ * to appear identically in each and four copies of that is four places to forget one.
+ *
+ * `aria-hidden` on the glyph: the mark repeats what the label already says, and a screen reader
+ * announcing it as well would read the kind of thing twice.
+ *
+ * `truncate` sits on the WORDS rather than on the row. On the row it would clip the icon first, since
+ * the icon is the leading child — a crumb whose name is too long for the space would lose its mark
+ * and keep the overflow, which is backwards.
+ */
+function CrumbContent({ item, iconOnly = false }: { item: BreadcrumbItem; iconOnly?: boolean }) {
+  if (iconOnly && item.icon && !item.pending) {
+    // The words stay for a screen reader, and show in a tooltip to the eye.
+    return (
+      <Tooltip content={item.label} position="bottom" as="span" className="flex">
+        <Icon icon={item.icon} size={CRUMB_ICON_SIZE} aria-hidden className="shrink-0" />
+        <span className="sr-only">{item.label}</span>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <>
+      {item.icon && (
+        <Icon icon={item.icon} size={CRUMB_ICON_SIZE} aria-hidden className="shrink-0" />
+      )}
+      {item.pending ? <PendingLabel label={item.label} /> : <span className="truncate">{item.label}</span>}
+    </>
+  );
+}
+
+/** Whether a flex-wrapped list runs onto a second line: taller than half again its tallest item. */
+function wraps(list: HTMLOListElement): boolean {
+  const tallest = Math.max(...Array.from(list.children, (child) => (child as HTMLElement).offsetHeight));
+  return list.offsetHeight > tallest * 1.5;
+}
+
+/**
+ * How many crumbs (by `collapseOrder`) show only their icon: none while the trail fits its width on
+ * one line, then one more each time it does not, measured on the real layout rather than at a
+ * breakpoint. Starts again from none whenever the width or the crumbs change. Each step re-renders
+ * in a layout effect, before the browser paints, so the steps are never seen.
+ */
+function useCollapsedCount(items: BreadcrumbItem[], width: number, list: RefObject<HTMLOListElement | null>): number {
+  const collapsible = items.filter((item) => item.collapseOrder !== undefined && item.icon).length;
+  const key = `${width}|${items.map((item) => `${item.key}:${item.label}:${item.pending ? 1 : 0}`).join('/')}`;
+  const [measured, setMeasured] = useState({ key: '', count: 0 });
+  const count = measured.key === key ? measured.count : 0;
+
+  useLayoutEffect(() => {
+    if (list.current && count < collapsible && wraps(list.current)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the state follows a measurement of the layout just rendered
+      setMeasured({ key, count: count + 1 });
+    }
+  }, [list, key, count, collapsible]);
+
+  return count;
+}
+
+export function Breadcrumbs({ items, size = 'lg', className, wrapCrumb = (_item, crumb) => crumb }: BreadcrumbsProps) {
+  const { ref: navRef, width } = useMeasuredSize<HTMLElement>();
+  const listRef = useRef<HTMLOListElement>(null);
+  const collapsedCount = useCollapsedCount(items, width, listRef);
+  const iconOnlyKeys = new Set(
+    items
+      .filter((item) => item.collapseOrder !== undefined && item.icon)
+      .sort((a, b) => a.collapseOrder! - b.collapseOrder!)
+      .slice(0, collapsedCount)
+      .map((item) => item.key),
+  );
+
+  if (items.length === 0) return null;
+
+  return (
+    <nav ref={navRef} aria-label="Breadcrumb" className={cn('min-w-0', className)}>
+      {/* At `lg`, `text-body-lg` (16px) rather than the 14px the app defaults to: the trail is the
+          chrome's own naming of the page rather than body copy inside it, so it is set one step above
+          the content it sits over — the size the leaf reads at is the size the page's name reads at.
+          At `md` it comes back down to that default, because a trail sharing its row with controls is
+          one control among them and a 16px name would make the row two sizes tall. */}
+      <ol ref={listRef} className={cn('flex flex-wrap items-center gap-1.5', size === 'lg' ? 'text-body-lg' : 'text-body-md')}>
+        {items.map((item, index) => {
+          const isLast = index === items.length - 1;
+          return (
+            <Fragment key={item.key}>
+              {index > 0 && (
+                <li aria-hidden="true" className="text-neutral-8 select-none">
+                  /
+                </li>
+              )}
+              <li className="min-w-0">
+                {wrapCrumb(item, item.pending ? (
+                  // The words are still being read, but the trail must still SAY where the reader
+                  // is: a bare placeholder leaves the nav announcing no current page for as long as
+                  // the read takes. The type label is what the crumb would render if the read never
+                  // landed, so it is the honest thing to announce meanwhile.
+                  //
+                  // And it must still GO there. A pending crumb mid-trail is a step the reader can
+                  // still want — on `/projects/:id/reports/:reportId` the pending one is the project,
+                  // which is the way back out — so pending decides what the crumb SAYS, and position
+                  // decides whether it is a link, exactly as for a resolved one. Testing `pending`
+                  // first and stopping there made every pending crumb inert, including that one.
+                  isLast || item.to === null ? (
+                    <span aria-current={isLast ? 'page' : undefined} className="flex items-center gap-1.5 min-w-0">
+                      <CrumbContent item={item} iconOnly={iconOnlyKeys.has(item.key)} />
+                    </span>
+                  ) : (
+                    <Link
+                      to={item.to}
+                      className="flex items-center gap-1.5 min-w-0 text-muted hover:text-fg transition-colors no-underline"
+                    >
+                      <CrumbContent item={item} iconOnly={iconOnlyKeys.has(item.key)} />
+                    </Link>
+                  )
+                ) : isLast || item.to === null ? (
+                  <span
+                    aria-current={isLast ? 'page' : undefined}
+                    className={cn(
+                      'flex items-center gap-1.5 min-w-0',
+                      isLast ? 'text-fg font-medium' : 'text-muted',
+                    )}
+                  >
+                    <CrumbContent item={item} iconOnly={iconOnlyKeys.has(item.key)} />
+                  </span>
+                ) : (
+                  <Link
+                    to={item.to}
+                    className="flex items-center gap-1.5 min-w-0 text-muted hover:text-fg transition-colors no-underline"
+                  >
+                    <CrumbContent item={item} iconOnly={iconOnlyKeys.has(item.key)} />
+                  </Link>
+                ))}
+              </li>
+            </Fragment>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}

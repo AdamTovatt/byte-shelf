@@ -1,0 +1,128 @@
+# Users
+
+People who sign in: email and password, refresh tokens, roles, the first admin, password change,
+password reset, and the server's user commands. Every change to a user and to their logins, password hash included, is in the
+change log (see [ChangeLog.md](../ChangeLog/ChangeLog.md)).
+
+## Identity (two tables)
+
+- `user_account`, who the user is: a unique **email** (case-insensitive; the sign-in name and
+  reset channel), a **display name**, and `roles`, a JSON array of strings in a `TEXT` column.
+- `user_login`, how they prove it: `provider` + `provider_user_id` + `credential`. The password
+  hash lives on the `provider = 'local'` row, so another sign-in provider later is another row.
+
+## Roles
+
+`admin` is the only role. An admin creates shelves and users and reaches every shelf; anyone else
+uses the shelves they have been given access to (see [Access.md](../Access/Access.md)). The last
+admin cannot lose the role or be deleted.
+A role change reaches a signed-in user at their next request. Every request with an access token
+reads the user from the database as the token is validated (`CurrentUserTokenValidation`): the
+request gets the roles the user has now, whatever the token was minted with, and a token whose user
+has been deleted no longer authenticates (401). So a demoted or deleted admin loses admin at once.
+`CurrentRolesRefreshResolver` also puts the current roles on every refreshed token.
+
+## Endpoints
+
+Requests and answers are ByteShelfCommon types (`UserInfo`, `CreateUserRequest`, `SignInRequest`,
+`SessionTokens` and the rest), and the rules for an email, display name, password and roles live
+there too (`UserFields`, `PasswordPolicy`, `UserRoles`), so the in-memory client refuses what the
+server refuses. The HTTP client sends them unchecked and reports the server's answer.
+
+| Method and route | Who | What it does |
+|---|---|---|
+| `POST /api/auth/login` | anyone | Signs in with `username` (the email) and `password`; answers a 1-hour JWT and a refresh token. |
+| `POST /api/auth/refresh`, `/api/auth/logout` | anyone | Rotates a refresh token; ends a session. |
+| `GET /api/users/me` | signed in | The signed-in user. |
+| `PUT /api/users/me/password` | signed in | Changes the password and ends the user's other sessions; the one making the change carries on. A wrong current one is 401 `invalid_credentials` without a `WWW-Authenticate` challenge, which tells a client its token is fine and must not be renewed and resent. |
+| `GET /api/users` | admin | Every user. |
+| `POST /api/users` | admin | Creates a user. |
+| `PUT /api/users/{id}/roles` | admin | Replaces a user's roles; 409 for the last admin. |
+| `DELETE /api/users/{id}` | admin | Deletes a user with their logins, reset tokens, shelf access and sessions; 409 for the last admin. The access token they still hold is refused from then on. |
+| `POST /api/password-reset/request` | anyone | Queues a reset link; 204 whether or not the email has an account. |
+| `POST /api/password-reset/complete` | anyone | Sets a new password with a link's token and ends every session; 400 for a bad token. |
+
+## Sign-in
+
+EasyReasy.Auth handles the endpoints; `AuthRequestValidationService` checks the credentials and
+issues the tokens, with expiry from the injected `TimeProvider`. A sign-in with an unknown email
+still runs the password hasher, so its timing does not tell which emails have accounts. Refresh
+tokens rotate within a family, one family per device, and reuse of a consumed token invalidates the
+family. A token stored into a family that is already invalidated is stored invalidated, so a
+refresh racing a password reset cannot keep a session alive. Sign-in and renewal share a strict rate
+limit per address ([rate limits](../../DEPLOYMENT.md#rate-limits)).
+
+Every session is stamped with the password it was signed in with (`CredentialStamp`): its refresh
+token stores the SHA-256 of the password hash as it was when the password was checked. A refresh is
+refused once the user's password hash is another, so a password change or reset ends every session
+that predates it, set to the same password again included. A sign-in that checked the password just
+before a reset committed is refused rather than handed out. A session without a stamp
+ends at its next refresh.
+
+A reset, by a link or by the server's `--reset-password`, also refuses at once every access token the
+user holds: it sets the user's `sessions_ended_at`, and `CurrentUserTokenValidation` refuses a token
+issued before then. A token's issue time is in whole seconds, so one issued in the same second as the
+reset is refused too, even just after it. Changing your own password sets none: your other sessions
+end at their next refresh, within the hour an access token lasts.
+
+## Password reset
+
+A request stores a single-use, 1-hour, SHA-256-hashed token and hands the link to
+`ResetLinkOutbox`; `ResetLinkSender` sends it in the background through `IEmailSender`, so the
+response takes as long whether or not the email has an account. Asking again leaves earlier links
+working until one of them is used, which invalidates the rest and ends every session.
+`APP_BASE_URL` is where links point; it is required outside Development.
+
+Reset emails go through Postmark when it is configured ([Email](../Email/Email.md)). Without it the
+link goes into remote-claude's dev mail folder when one is set; else, in Development, to the log;
+anywhere else it is neither sent nor logged, and a forgotten password cannot be reset by email, only
+with `--reset-password` on the server's machine ([below](#from-the-servers-command-line)). The outbox
+holds at most 100 links waiting to be sent: when it is full a new link is dropped (with a warning in
+the log) and the user has to ask again.
+It lives in memory, so links still waiting are lost on a restart, and a send that fails is logged
+and not tried again.
+
+Changing your own password ends your other sessions; the session you changed it from carries on.
+The access token names its session, so the server moves that one session onto the new password.
+
+## The first admin
+
+`InitialAccountSeeder` creates an admin from `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD`
+(display name from `INITIAL_ADMIN_DISPLAY_NAME`, else the email's local part) while there are no
+users, and does nothing once there are, so both can be removed after the first start. Both are
+optional: without them it logs how to create the first admin with `--create-user`. A replica makes
+no one, whether or not they are set: its users are its primary's and come with the first copy, so until
+that lands it logs that it is waiting for the copy.
+
+## From the server's command line
+
+`UserCommand` runs `ByteShelf.Server --create-user`, `--reset-password`, `--set-admin` and
+`--unset-admin` against `BYTESHELF_ROOT`, with the server running or stopped, for whoever can run the
+server's executable on its machine (DEPLOYMENT.md). It builds the domain services the API uses
+(`Program.AddDomainServices`) without the web host, so the rules and the change log are the API's:
+`IUserService` creates users and changes roles (the last admin is kept), and
+`IPasswordResetService.SetPasswordAsync` sets a password as a reset link does, ending the user's
+sessions and reset links. A replica refuses them, as its API refuses writes. `RootCommand` frames them,
+as it does the replication commands: it refuses a database with migrations still to run (the server
+may be running on it, so they never migrate it), and closes the pooled connections. A root with no
+database yet is created and migrated for `--create-user` only (`StartsARoot`), so the first admin can
+be made before the first start, and removed again when the command does not finish; the other
+commands refuse it. Passwords come from `IPasswordReader`: stdin when redirected, else typed twice at
+the terminal, never an argument. A new user's email and name, and a user to change, are checked before the password is asked
+for. Closing the connections before it exits means that with the server stopped SQLite removes the
+`-wal` and `-shm` files it made rather than leaving them owned by whoever ran it.
+
+## Cleanup
+
+`ExpiredTokenCleanupWorker` deletes expired refresh and reset tokens at startup and then daily,
+recorded as `users.expired_token_cleanup`.
+
+## On a replica
+
+A replica's users are its primary's, taken whole when it pairs (the ones it had are removed, and their
+sessions end), so people sign in there with their accounts on the primary. Signing in, renewing and
+signing out work as anywhere; every change to accounts, passwords and roles is refused with 409
+`read_only_replica` ([Replication](../Replication/Replication.md)). Sessions are the replica's own: a
+session on the primary does not carry over. A password changed or reset on the primary reaches the
+replica with the login row, and the replica's sessions signed in with the old password end at their
+next refresh, as on the primary.

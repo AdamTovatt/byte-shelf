@@ -1,23 +1,31 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
-    <PackageReference Include="MSTest.TestAdapter" Version="3.1.1" />
-    <PackageReference Include="MSTest.TestFramework" Version="3.1.1" />
-    <PackageReference Include="coverlet.collector" Version="6.0.0" />
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ByteShelfClient\ByteShelfClient.csproj" />
-    <ProjectReference Include="..\ByteShelfCommon\ByteShelfCommon.csproj" />
   </ItemGroup>
 
-</Project> 
+  <ItemGroup>
+    <!-- age's official test vectors, from C2SP CCTV (its license allows copies without attribution). -->
+    <None Include="Encryption\AgeVectors\*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- An age file typage (the web UI's age) encrypted; the web client's tests open one this library wrote. -->
+    <None Include="Encryption\Interop\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
