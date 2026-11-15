@@ -1,0 +1,130 @@
+name: Publish NuGet
+
+# client-v<version> publishes ByteShelfCommon and ByteShelfClient together, always as a pair at one
+# version. cli-v<version> publishes ByteShelf.Cli. Nothing here publishes or deploys the server.
+on:
+  push:
+    tags:
+      - 'client-v*'
+      - 'cli-v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    # id-token: write lets NuGet/login exchange GitHub's OIDC token for a short-lived
+    # nuget.org API key through the trusted publishing policy, so no long-lived key is stored.
+    permissions:
+      contents: read
+      id-token: write
+
+    # Values that come from the tag reach the scripts through env, never pasted in with ${{ }},
+    # so the tag's text is data to the shell and can never run as a command.
+    steps:
+    - uses: actions/checkout@v6
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: 10.0.x
+
+    - name: Parse tag
+      id: tag
+      run: |
+        TAG="${GITHUB_REF_NAME}"
+        PACKAGE="${TAG%-v*}"
+        VERSION="${TAG##*-v}"
+        echo "PACKAGE=${PACKAGE}" >> "$GITHUB_OUTPUT"
+        echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+        echo "Publishing '${PACKAGE}' version ${VERSION}"
+
+    # Only the published projects and their own test projects are built, never the solution: the
+    # server and its web UI play no part, so the runner needs no Node. That leaves out the client
+    # contract and CLI login tests in ByteShelf.Server.Tests, which need the server and so Node;
+    # keeping the server out of the release is settled in issue #6.
+    # PROJECTS lists Common before Client, the order they are pushed in, so ByteShelfClient never
+    # goes live before the ByteShelfCommon version it depends on.
+    - name: Resolve projects
+      id: projects
+      env:
+        PACKAGE: ${{ steps.tag.outputs.PACKAGE }}
+      run: |
+        case "$PACKAGE" in
+          client) PROJECTS="ByteShelfCommon ByteShelfClient"; TEST_PROJECTS="ByteShelfCommon.Tests ByteShelfClient.Tests" ;;
+          cli)    PROJECTS="ByteShelf.Cli";                   TEST_PROJECTS="ByteShelf.Cli.Tests" ;;
+          *)      echo "::error::Unknown package: ${PACKAGE}" && exit 1 ;;
+        esac
+        echo "PROJECTS=${PROJECTS}" >> "$GITHUB_OUTPUT"
+        echo "TEST_PROJECTS=${TEST_PROJECTS}" >> "$GITHUB_OUTPUT"
+        echo "Projects: ${PROJECTS}"
+        echo "Test projects: ${TEST_PROJECTS}"
+
+    # Each csproj's <Version> is the single source of truth for its version; the tag only selects
+    # what to publish. Fail fast if any published project disagrees, so a mistyped tag can never
+    # publish an unintended version or split the client pair. Build and pack deliberately do NOT
+    # pass -p:Version: a global Version property propagates into referenced projects and would
+    # stamp ByteShelfClient's dependency on ByteShelfCommon at whatever the tag said.
+    - name: Verify tag version matches csproj
+      env:
+        VERSION: ${{ steps.tag.outputs.VERSION }}
+        PROJECTS: ${{ steps.projects.outputs.PROJECTS }}
+      run: |
+        for PROJECT in $PROJECTS; do
+          CSPROJ="${PROJECT}/${PROJECT}.csproj"
+          CSPROJ_VERSION=$(grep -oP '(?<=<Version>)[^<]+' "$CSPROJ" || true)
+          if [ -z "$CSPROJ_VERSION" ]; then
+            echo "::error::No <Version> found in ${CSPROJ}; add one so the published version is explicit and verifiable."
+            exit 1
+          fi
+          if [ "$CSPROJ_VERSION" != "$VERSION" ]; then
+            echo "::error::Tag version ${VERSION} does not match ${CSPROJ} <Version> ${CSPROJ_VERSION}. Bump the csproj or fix the tag."
+            exit 1
+          fi
+          echo "Version check OK: ${PROJECT} ${VERSION}"
+        done
+
+    # dotnet build restores first; test and pack then reuse this Release output.
+    - name: Build
+      env:
+        PROJECTS: ${{ steps.projects.outputs.PROJECTS }}
+        TEST_PROJECTS: ${{ steps.projects.outputs.TEST_PROJECTS }}
+      run: |
+        for PROJECT in $PROJECTS $TEST_PROJECTS; do
+          dotnet build "$PROJECT" --configuration Release
+        done
+
+    - name: Test
+      env:
+        TEST_PROJECTS: ${{ steps.projects.outputs.TEST_PROJECTS }}
+      run: |
+        for PROJECT in $TEST_PROJECTS; do
+          dotnet test "$PROJECT" --no-build --configuration Release
+        done
+
+    # The client libraries set IncludeSymbols with the snupkg format, so pack writes a .snupkg
+    # beside each .nupkg, and dotnet nuget push sends it along with its package.
+    - name: Pack
+      env:
+        PROJECTS: ${{ steps.projects.outputs.PROJECTS }}
+      run: |
+        for PROJECT in $PROJECTS; do
+          dotnet pack "$PROJECT" --no-build --configuration Release --output ./nupkgs
+        done
+
+    # Right before the push: the key this returns lives for about an hour.
+    - name: Log in to NuGet through trusted publishing
+      id: nuget-login
+      uses: NuGet/login@v1
+      with:
+        user: AdamTovatt
+
+    # One package at a time in PROJECTS order, not a glob (which sorts ByteShelfClient first).
+    # --skip-duplicate lets a rerun after a partial failure push only what is missing.
+    - name: Publish to NuGet
+      env:
+        VERSION: ${{ steps.tag.outputs.VERSION }}
+        PROJECTS: ${{ steps.projects.outputs.PROJECTS }}
+        NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+      run: |
+        for PROJECT in $PROJECTS; do
+          dotnet nuget push "./nupkgs/${PROJECT}.${VERSION}.nupkg" --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY" --skip-duplicate
+        done
