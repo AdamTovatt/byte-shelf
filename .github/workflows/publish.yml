@@ -1,7 +1,7 @@
 name: Publish NuGet
 
 # client-v<version> publishes ByteShelfCommon and ByteShelfClient together, always as a pair at one
-# version. cli-v<version> publishes ByteShelf.Cli. Nothing here publishes or deploys the server.
+# version. cli-v<version> publishes ByteShelf.Cli. The server is released by release.yml.
 on:
   push:
     tags:

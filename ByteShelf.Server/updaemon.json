@@ -1,3 +1,19 @@
 {
-  "executablePath": "ByteShelf.Server"
+  "executable": "ByteShelf.Server",
+  "command": "byteshelf-server",
+  "service": {},
+  "settings": {
+    "BYTESHELF_ROOT": { "description": "Root folder for the database, objects and keys, owned by the user the server runs as", "required": true },
+    "APP_BASE_URL": { "description": "Public URL, e.g. https://shelf.example.com", "required": true },
+    "ASPNETCORE_URLS": { "description": "Where the server listens, e.g. http://127.0.0.1:5000 behind a reverse proxy" },
+    "BYTESHELF_TRUSTED_PROXIES": { "description": "Comma-separated IPs or CIDR ranges of the reverse proxies in front of the server" },
+    "POSTMARK_API_KEY": { "description": "Postmark server token; without it no email is sent", "secret": true },
+    "EMAIL_FROM_ADDRESS": { "description": "Address mail is from, a sender confirmed in Postmark; required with POSTMARK_API_KEY" },
+    "EMAIL_FROM_NAME": { "description": "Name mail is from (ByteShelf by default)" },
+    "INITIAL_ADMIN_EMAIL": { "description": "First admin's email, created while there are no users; remove once it exists" },
+    "INITIAL_ADMIN_PASSWORD": { "description": "First admin's password; remove once it exists", "secret": true },
+    "INITIAL_ADMIN_DISPLAY_NAME": { "description": "First admin's display name" },
+    "BYTESHELF_RESTORE_WINDOW_DAYS": { "description": "Days a deletion can be restored before it is purged (30 by default)" },
+    "BYTESHELF_REPLICATION_ALERT_MINUTES": { "description": "Minutes replication may go wrong before the admins are emailed (60 by default)" }
+  }
 }

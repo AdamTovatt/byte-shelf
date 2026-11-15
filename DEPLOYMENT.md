@@ -1,7 +1,8 @@
 # Deploying ByteShelf
 
-ByteShelf is installed and updated with updaemon: `dotnet publish ByteShelf.Server` produces the
-executable with its `updaemon.json`, which names it, and the web UI's build in `wwwroot/`. Publishing
+ByteShelf is installed and updated with updaemon 1.0 or later from this repository's GitHub releases.
+`dotnet publish ByteShelf.Server` produces the executable with its `updaemon.json`, which tells
+updaemon how to run it and which settings it reads, and the web UI's build in `wwwroot/`. Publishing
 builds the web UI, so it needs Node.js and npm. The running server needs one writable folder, the
 root, and nothing else on disk. The publish carries SkiaSharp's native library, which `/mcp` makes
 image previews with, for Linux x64 and arm64 (glibc, no system libraries needed), macOS and Windows
@@ -11,25 +12,47 @@ x64 (`Directory.Build.targets`). Elsewhere (musl, 32-bit arm, Windows on arm) th
 The server finds `wwwroot/` and `appsettings.json` beside its executable, whichever folder it is
 started from; `--contentRoot` and `ASPNETCORE_CONTENTROOT` are ignored.
 
+## Releases
+
+Pushing a tag `server-v<version>`, such as `server-v2.0.0`, runs `.github/workflows/release.yml`.
+The tag's version must equal `<Version>` in `ByteShelf.Server.csproj`, or nothing is released. The
+release holds `byteshelf-linux-arm64.zip` and `byteshelf-linux-x64.zip`, each a self-contained
+publish with `updaemon.json` at its root, and a `SHA256SUMS` that updaemon checks the download
+against. The `client-v` and `cli-v` tags publish to NuGet and make no GitHub release, so the latest
+release is always the server's, which is the one updaemon installs and updates to.
+
 ## Installing
 
-1. Publish: `dotnet publish ByteShelf.Server -c Release -o <folder>`, and install that folder with
-   updaemon (or run the `ByteShelf.Server` executable in it under any service manager).
-2. Set `BYTESHELF_ROOT` to an empty folder the service user owns and `APP_BASE_URL` to the public URL
-   (table below).
-3. Choose where it listens with `ASPNETCORE_URLS`, such as `http://127.0.0.1:5000` behind a reverse
-   proxy. Unset, Kestrel listens on `http://localhost:5000`.
-4. Start it. The first start creates the root (unless step 5 ran first), migrates its database and
-   generates its secrets, and logs that there are no users yet.
-5. Create the first admin on the server's machine, as the service user, while it runs or before its
-   first start, which this then does in its place for the root and its database:
-   `BYTESHELF_ROOT=<root> ByteShelf.Server --create-user <email> --name "<name>" --admin`, which asks
-   for the password (see [Users from the command line](#users-from-the-command-line)). Then sign in at
-   `APP_BASE_URL`. Whoever runs it owns a root it creates, and the server opens only a root its own
-   user owns, so never run it with `sudo` before the first start.
+1. Install it with updaemon, giving the two required settings (table below):
+
+   ```bash
+   updaemon install byteshelf --from github:AdamTovatt/byte-shelf \
+     --set BYTESHELF_ROOT=<root> --set APP_BASE_URL=https://shelf.example.com
+   ```
+
+   `BYTESHELF_ROOT` is a folder that the user the service runs as owns or can create: root for a
+   system-wide install, unless `--run-as <user>` is given. updaemon asks for any required
+   setting not given, and `updaemon set byteshelf KEY=VALUE` sets the others later, such as
+   `POSTMARK_API_KEY`, which it keeps as a secret. Without updaemon, publish with
+   `dotnet publish ByteShelf.Server -c Release -o <folder>` and run the `ByteShelf.Server`
+   executable in it under any service manager, with the same variables in its environment.
+2. Choose where it listens with `ASPNETCORE_URLS`, such as `http://127.0.0.1:5000` behind a reverse
+   proxy (`--set ASPNETCORE_URLS=...`). Unset, Kestrel listens on `http://localhost:5000`.
+3. updaemon starts it as a service, and restarts it after each `updaemon set`. The first start
+   creates the root (unless step 4 ran first), migrates its database and generates its secrets, and
+   logs that there are no users yet.
+4. Create the first admin on the server's machine, as the user the service runs as, while it runs or
+   before its first start, which this then does in its place for the root and its database:
+   `byteshelf-server --create-user <email> --name "<name>" --admin`, which asks for the password (see
+   [Users from the command line](#users-from-the-command-line)). Then sign in at `APP_BASE_URL`.
+   `byteshelf-server` is the command updaemon puts on PATH: it runs `ByteShelf.Server` with the
+   app's settings, `BYTESHELF_ROOT` among them; without updaemon, run
+   `BYTESHELF_ROOT=<root> ByteShelf.Server` with the same arguments. Whoever runs it owns a root it
+   creates, and the server opens only a root its own user owns, so never run it as another user
+   before the first start.
 
 Setting `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` before the first start creates that admin
-instead of step 5; remove them once it exists.
+instead of step 4; remove them once it exists.
 
 Every start migrates the database first. `ByteShelf.Server --migrate-only` (with `BYTESHELF_ROOT`)
 only migrates it and exits, for running migrations as their own step before a start.
@@ -163,7 +186,7 @@ of the primary and follows it ([Replication](ByteShelf.Server/Replication/Replic
 reach the primary's `APP_BASE_URL`, which must be the address the primary answers at (the replica
 follows no redirects); nothing needs to reach the replica but its own admins and readers.
 
-1. Start the replica on a new, empty root with its own first admin (step 5 of
+1. Start the replica on a new, empty root with its own first admin (step 4 of
    [Installing](#installing)), and create no shelves on it. Not
    a copy of the primary's root: that would be the same instance, and pairing would be refused.
 2. On the primary, as an admin, on the Replication page, make a pairing code. It works once, for

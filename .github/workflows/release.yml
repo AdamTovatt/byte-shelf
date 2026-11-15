@@ -1,0 +1,79 @@
+name: Release server
+
+# server-v<version> publishes ByteShelf.Server as a GitHub release that updaemon installs: one
+# self-contained zip per runtime, named byteshelf-<rid>.zip with updaemon.json at its root, and a
+# SHA256SUMS over them that updaemon checks each download against. updaemon takes the version from
+# the tag and installs the repository's latest release, so these are the only releases it makes.
+on:
+  push:
+    tags:
+      - 'server-v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    # contents: write lets gh create the release and upload its assets.
+    permissions:
+      contents: write
+
+    # Values that come from the tag reach the scripts through env, never pasted in with ${{ }},
+    # so the tag's text is data to the shell and can never run as a command.
+    steps:
+    - uses: actions/checkout@v6
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: 10.0.x
+
+    # Publishing builds the web UI into wwwroot/, so it needs Node and the client's packages.
+    - name: Setup Node
+      uses: actions/setup-node@v5
+      with:
+        node-version: 24
+        cache: npm
+        cache-dependency-path: byteshelf.client/package-lock.json
+
+    - name: Install web UI packages
+      working-directory: byteshelf.client
+      run: npm ci
+
+    # The csproj's <Version> is the single source of truth for the version, as in publish.yml; the
+    # tag must agree with it, so a mistyped tag can never release under a version the server does
+    # not report. Publish deliberately does NOT pass -p:Version.
+    - name: Verify tag version matches csproj
+      run: |
+        VERSION="${GITHUB_REF_NAME#server-v}"
+        CSPROJ="ByteShelf.Server/ByteShelf.Server.csproj"
+        CSPROJ_VERSION=$(grep -oP '(?<=<Version>)[^<]+' "$CSPROJ" || true)
+        if [ -z "$CSPROJ_VERSION" ]; then
+          echo "::error::No <Version> found in ${CSPROJ}; add one so the released version is explicit and verifiable."
+          exit 1
+        fi
+        if [ "$CSPROJ_VERSION" != "$VERSION" ]; then
+          echo "::error::Tag version ${VERSION} does not match ${CSPROJ} <Version> ${CSPROJ_VERSION}. Bump the csproj or fix the tag."
+          exit 1
+        fi
+        echo "Version check OK: ByteShelf.Server ${VERSION}"
+
+    # Each publish folder is zipped from inside, so updaemon.json, the executable and wwwroot/ sit
+    # at the archive root, which updaemon takes as the release root.
+    - name: Publish and zip
+      run: |
+        mkdir release
+        for RID in linux-arm64 linux-x64; do
+          dotnet publish ByteShelf.Server --configuration Release --runtime "$RID" --self-contained true --output "publish/${RID}"
+          test -f "publish/${RID}/updaemon.json"
+          (cd "publish/${RID}" && zip -qr "../../release/byteshelf-${RID}.zip" .)
+        done
+
+    - name: Write SHA256SUMS
+      working-directory: release
+      run: |
+        sha256sum * > SHA256SUMS
+        cat SHA256SUMS
+
+    - name: Create GitHub release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: gh release create "$GITHUB_REF_NAME" release/* --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
