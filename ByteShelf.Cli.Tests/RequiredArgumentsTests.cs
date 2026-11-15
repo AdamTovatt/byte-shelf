@@ -9,7 +9,7 @@ namespace ByteShelf.Cli.Tests
     /// <summary>Which required arguments a call leaves out, by the tool's own schema, and that both servers check for them.</summary>
     public sealed class RequiredArgumentsTests
     {
-        private static readonly JsonElement MoveSchema = JsonDocument.Parse("""{"type":"object","properties":{"path":{},"toPath":{},"shelf":{}},"required":["path","toPath"]}""").RootElement;
+        private static readonly JsonElement MoveSchema = JsonElement.Parse("""{"type":"object","properties":{"path":{},"toPath":{},"shelf":{}},"required":["path","toPath"]}""");
 
         [Fact]
         public void MissingFrom_EveryRequiredGiven_IsNone()
@@ -38,7 +38,7 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public void MissingFrom_SchemaWithoutRequired_IsNone()
         {
-            JsonElement schema = JsonDocument.Parse("""{"type":"object","properties":{"shelf":{}}}""").RootElement;
+            JsonElement schema = JsonElement.Parse("""{"type":"object","properties":{"shelf":{}}}""");
 
             Assert.Empty(RequiredArguments.MissingFrom(schema, null));
         }

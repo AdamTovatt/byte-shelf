@@ -22,7 +22,8 @@ namespace ByteShelf.Server.Tests.TestUtilities
             while (!signal.IsCompleted && elapsed.Elapsed < RealTimeLimit)
             {
                 time.Advance(step);
-                await Task.WhenAny(signal, Task.Delay(TimeSpan.FromMilliseconds(20)));
+                // The signal's own failure is left to the WaitAsync after the loop to throw.
+                await signal.WaitAsync(TimeSpan.FromMilliseconds(20)).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             }
 
             await signal.WaitAsync(TimeSpan.FromSeconds(1));

@@ -330,7 +330,7 @@ namespace ByteShelf.Tools
             private string LocalPathFor(string path)
             {
                 string relative = _shelfPath == ShelfPath.Root ? path[1..] : path[(_shelfPath.Length + 1)..];
-                string local = Path.GetFullPath(Path.Combine(_root, Path.Combine(relative.Split(ShelfPath.Separator))));
+                string local = Path.GetFullPath(Path.Combine([_root, .. relative.Split(ShelfPath.Separator)]));
                 if (!local.StartsWith(Path.TrimEndingDirectorySeparator(_root) + Path.DirectorySeparatorChar, StringComparison.Ordinal))
                 {
                     throw new UsageException("its name is not one a local file can have here.");
