@@ -35,7 +35,7 @@ SHA-256, so `sha256sum` verifies it, and identical contents are stored once.
 ## Concepts
 
 - A **shelf** holds files: one storage place with its own directories and quota, made per purpose.
-- A **user** signs in with email and password and is given read or read-write access to shelves.
+- A **user** signs in with email and password, or with a passkey they added, and is given read or read-write access to shelves.
   Admins create shelves and users and reach every shelf.
 - A **key** lets a program use one shelf: read, add-only (store new files, never overwrite or
   delete) or read-write. It is sent in the `X-Api-Key` header or as a bearer token.

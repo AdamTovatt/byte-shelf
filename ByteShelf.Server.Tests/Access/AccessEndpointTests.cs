@@ -46,8 +46,7 @@ namespace ByteShelf.Server.Tests.Access
         public async Task KeyAsBearerToken_ListsTheShelf()
         {
             string secret = (await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read)).Secret;
-            using HttpClient client = _host.CreateClient();
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secret);
+            using HttpClient client = _host.CreateClient(secret);
 
             HttpResponseMessage response = await client.GetAsync("/api/shelves/docs/entries");
 
@@ -193,8 +192,7 @@ namespace ByteShelf.Server.Tests.Access
         public async Task KeyAsBearerToken_UserEndpoint_Returns401()
         {
             string secret = (await _host.CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite)).Secret;
-            using HttpClient client = _host.CreateClient();
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secret);
+            using HttpClient client = _host.CreateClient(secret);
 
             HttpResponseMessage response = await client.GetAsync("/api/users/me");
 

@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
@@ -54,8 +53,7 @@ namespace ByteShelf.Server.Tests.Access
 
         private async Task<HttpStatusCode> GetEntriesAsync(string bearer)
         {
-            using HttpClient client = _host.CreateClient();
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
+            using HttpClient client = _host.CreateClient(bearer);
             return (await client.GetAsync("/api/shelves/docs/entries")).StatusCode;
         }
 

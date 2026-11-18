@@ -29,6 +29,10 @@ namespace ByteShelf.Server.Tests.Replication
             "POST api/auth/refresh",
             "POST api/auth/logout",
 
+            // So does signing in with a passkey, which records the sign-in on the replica alone.
+            "POST api/auth/passkey/ceremony",
+            "POST api/auth/passkey",
+
             // The MCP tools write through the server's own API, which the filter guards.
             "POST mcp/",
 

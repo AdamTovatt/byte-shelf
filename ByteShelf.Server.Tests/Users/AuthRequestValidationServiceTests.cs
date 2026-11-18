@@ -40,7 +40,7 @@ namespace ByteShelf.Server.Tests.Users
             Assert.Equal(user.Id.ToString("D"), result.AttemptedSubject);
             Assert.False(string.IsNullOrEmpty(result.AuthResponse!.RefreshToken));
             DateTimeOffset expiresAt = DateTimeOffset.Parse(result.AuthResponse.ExpiresAt, CultureInfo.InvariantCulture);
-            Assert.Equal(TestInstants.Now + AuthRequestValidationService.AccessTokenLifetime, expiresAt);
+            Assert.Equal(TestInstants.Now + SessionIssuer.AccessTokenLifetime, expiresAt);
         }
 
         [Fact]
@@ -134,13 +134,13 @@ namespace ByteShelf.Server.Tests.Users
         private async Task<IReadOnlyList<Claim>> CurrentStampAsync(Guid userId)
         {
             UserCredentials credentials = (await Services.GetRequiredService<IUserLoginRepository>().GetCredentialsByUserIdAsync(userId))!;
-            return CredentialStamp.ClaimsFor(credentials.PasswordHash);
+            return CredentialStamp.ClaimsFor(credentials.PasswordHash, passkeyId: null);
         }
 
         private async Task<RefreshClaimsDecision> ResolveRefreshAsync(Guid userId, IReadOnlyList<Claim> storedClaims)
         {
             return await Services.GetRequiredService<IRefreshClaimsResolver>().ResolveAsync(
-                new RefreshClaimsContext(userId.ToString("D"), AuthRequestValidationService.AuthType, storedClaims, new[] { UserRoles.Admin }, null),
+                new RefreshClaimsContext(userId.ToString("D"), SessionIssuer.AuthType, storedClaims, new[] { UserRoles.Admin }, null),
                 CancellationToken.None);
         }
 
@@ -180,7 +180,7 @@ namespace ByteShelf.Server.Tests.Users
         public async Task CurrentRolesRefreshResolver_UserGone_DeniesTheRefresh()
         {
             RefreshClaimsDecision decision = await Services.GetRequiredService<IRefreshClaimsResolver>().ResolveAsync(
-                new RefreshClaimsContext(Guid.NewGuid().ToString("D"), AuthRequestValidationService.AuthType, Array.Empty<Claim>(), new[] { UserRoles.Admin }, null),
+                new RefreshClaimsContext(Guid.NewGuid().ToString("D"), SessionIssuer.AuthType, Array.Empty<Claim>(), new[] { UserRoles.Admin }, null),
                 CancellationToken.None);
 
             Assert.True(decision.IsDenied);

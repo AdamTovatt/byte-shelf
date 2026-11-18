@@ -169,7 +169,7 @@ namespace ByteShelf.Server.Tests.Users
         {
             User member = await UserService.CreateUserAsync("member@example.com", "Member", "correct-password");
             RefreshTokenCreationResult session = await Services.GetRequiredService<IRefreshTokenService>().CreateRefreshTokenWithFamilyAsync(
-                member.Id.ToString("D"), AuthRequestValidationService.AuthType, null, RefreshTokenClaims.SerializeRoles(Array.Empty<string>()));
+                member.Id.ToString("D"), SessionIssuer.AuthType, null, RefreshTokenClaims.SerializeRoles(Array.Empty<string>()));
 
             await UserService.DeleteUserAsync(member.Id);
 

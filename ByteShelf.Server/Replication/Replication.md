@@ -36,6 +36,11 @@ cannot hold the sync, and the gate with it, for good.
 A replica takes the primary's users, its own included: its admins sign in with their accounts on the
 primary from then on, and the sessions of the users it had end with the copy.
 
+Passkeys come with the users, but each server counts their sign-ins on its own: a passkey's sign count and
+last use are not in the change log, and a replicated write leaves the replica's as they are. A passkey is
+made for one host, so it signs in on a replica only when the replica is reached at that host
+([Users](../Users/Users.md#passkeys)).
+
 ## Following the log
 
 `ReplicaSyncWorker` steps through `ReplicaSync` without waiting while there is more, then every two
@@ -118,11 +123,12 @@ copy was read is applied after it as well.
 
 On a replica `ReplicaReadOnlyFilter`, applied to every controller, refuses every action but GET and HEAD
 with 409 `read_only_replica`, unless it carries `[AllowedOnReplica]`: asking for a download link,
-revoking a link, and promoting. A replica's links are its own `shelf_link` rows, which the change log
+revoking a link, signing in with a passkey (which records the sign-in on the replica alone), and
+promoting. A replica's links are its own `shelf_link` rows, which the change log
 leaves out, so replication never carries them either way and a whole copy leaves them be. They go with
 the shelf, key or user they name when replication removes it. A file the primary deletes only goes to
 the replica's trash, where its links answer 404, and they go when the replica purges it
-([Storage](../Storage/Storage.md#links-shelf_link-linkservice)). Signing in, renewing and signing out are not controller actions and work as anywhere, and so
+([Storage](../Storage/Storage.md#links-shelf_link-linkservice)). Signing in with a password, renewing and signing out are not controller actions and work as anywhere, and so
 does `/mcp`, whose tools write through the filtered API. `ReplicaWriteCoverageTests` goes through every
 endpoint the server maps, minimal APIs included, and lists each one that takes a write on a replica, so a
 new one is refused there, or fails that test, until somebody decides otherwise.

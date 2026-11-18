@@ -110,7 +110,7 @@ namespace ByteShelf.Server.Tests.Users
             User user = await UserService.CreateUserAsync(Email, "Known", "old-password");
             IRefreshTokenService refreshTokens = Services.GetRequiredService<IRefreshTokenService>();
             RefreshTokenCreationResult session = await refreshTokens.CreateRefreshTokenWithFamilyAsync(
-                user.Id.ToString("D"), AuthRequestValidationService.AuthType, null, RefreshTokenClaims.SerializeRoles(Array.Empty<string>()));
+                user.Id.ToString("D"), SessionIssuer.AuthType, null, RefreshTokenClaims.SerializeRoles(Array.Empty<string>()));
             await ResetService.RequestResetAsync(Email);
             ResetLink link = (await TryTakeLinkAsync())!;
 
@@ -125,7 +125,7 @@ namespace ByteShelf.Server.Tests.Users
         {
             User user = await UserService.CreateUserAsync(Email, "Known", "old-password");
             RefreshTokenCreationResult session = await Services.GetRequiredService<IRefreshTokenService>().CreateRefreshTokenWithFamilyAsync(
-                user.Id.ToString("D"), AuthRequestValidationService.AuthType, null, RefreshTokenClaims.SerializeRoles(Array.Empty<string>()));
+                user.Id.ToString("D"), SessionIssuer.AuthType, null, RefreshTokenClaims.SerializeRoles(Array.Empty<string>()));
             await ResetService.RequestResetAsync(Email);
             ResetLink link = (await TryTakeLinkAsync())!;
 
@@ -239,6 +239,11 @@ namespace ByteShelf.Server.Tests.Users
                 return inner.ValidateCredentialsAsync(email, password);
             }
 
+            public Task<bool> IsPasswordAsync(Guid userId, string password)
+            {
+                return inner.IsPasswordAsync(userId, password);
+            }
+
             public Task<User?> GetUserByIdAsync(Guid userId)
             {
                 return inner.GetUserByIdAsync(userId);
@@ -254,9 +259,9 @@ namespace ByteShelf.Server.Tests.Users
                 return inner.CreateUserAsync(email, displayName, password, roles);
             }
 
-            public Task<bool> UpdatePasswordAsync(Guid userId, string currentPassword, string newPassword, string? keepSessionFamilyId = null)
+            public Task<bool> UpdatePasswordAsync(Guid userId, string currentPassword, string newPassword, SignedInSession? keepSession = null)
             {
-                return inner.UpdatePasswordAsync(userId, currentPassword, newPassword, keepSessionFamilyId);
+                return inner.UpdatePasswordAsync(userId, currentPassword, newPassword, keepSession);
             }
 
             public Task<IReadOnlyList<User>> GetAllUsersAsync()

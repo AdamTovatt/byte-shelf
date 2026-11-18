@@ -20,6 +20,7 @@ namespace ByteShelf.Server.Users.Services
     {
         private readonly IUserRepository _userRepository;
         private readonly IUserLoginRepository _userLoginRepository;
+        private readonly IPasskeyRepository _passkeyRepository;
         private readonly IShelfGrantRepository _grantRepository;
         private readonly IRefreshTokenStore _refreshTokenStore;
         private readonly ISessionStampStore _sessionStamps;
@@ -31,6 +32,7 @@ namespace ByteShelf.Server.Users.Services
         public UserService(
             IUserRepository userRepository,
             IUserLoginRepository userLoginRepository,
+            IPasskeyRepository passkeyRepository,
             IShelfGrantRepository grantRepository,
             IRefreshTokenStore refreshTokenStore,
             ISessionStampStore sessionStamps,
@@ -40,6 +42,7 @@ namespace ByteShelf.Server.Users.Services
         {
             _userRepository = userRepository;
             _userLoginRepository = userLoginRepository;
+            _passkeyRepository = passkeyRepository;
             _grantRepository = grantRepository;
             _refreshTokenStore = refreshTokenStore;
             _sessionStamps = sessionStamps;
@@ -63,6 +66,13 @@ namespace ByteShelf.Server.Users.Services
             }
 
             return _passwordHasher.ValidatePassword(password, credentials.PasswordHash) ? credentials : null;
+        }
+
+        /// <inheritdoc />
+        public async Task<bool> IsPasswordAsync(Guid userId, string password)
+        {
+            UserCredentials? credentials = await _userLoginRepository.GetCredentialsByUserIdAsync(userId);
+            return credentials != null && _passwordHasher.ValidatePassword(password, credentials.PasswordHash);
         }
 
         /// <inheritdoc />
@@ -117,18 +127,11 @@ namespace ByteShelf.Server.Users.Services
         }
 
         /// <inheritdoc />
-        public async Task<bool> UpdatePasswordAsync(Guid userId, string currentPassword, string newPassword, string? keepSessionFamilyId = null)
+        public async Task<bool> UpdatePasswordAsync(Guid userId, string currentPassword, string newPassword, SignedInSession? keepSession = null)
         {
             PasswordPolicy.Validate(newPassword);
 
-            User? user = await _userRepository.GetByIdAsync(userId);
-            if (user == null)
-            {
-                return false;
-            }
-
-            UserCredentials? credentials = await _userLoginRepository.GetCredentialsByEmailAsync(user.Email);
-            if (credentials == null || !_passwordHasher.ValidatePassword(currentPassword, credentials.PasswordHash))
+            if (!await IsPasswordAsync(userId, currentPassword))
             {
                 return false;
             }
@@ -144,9 +147,10 @@ namespace ByteShelf.Server.Users.Services
 
                 // The new credential ends every session signed in with the old one (CredentialStamp),
                 // except the one the change was made from, which moves onto the new credential with it.
-                if (!string.IsNullOrEmpty(keepSessionFamilyId))
+                if (keepSession != null)
                 {
-                    await _sessionStamps.RestampFamilyAsync(userId.ToString("D"), keepSessionFamilyId, CredentialStamp.SerializeClaimsFor(passwordHash), session);
+                    await _sessionStamps.RestampFamilyAsync(
+                        userId.ToString("D"), keepSession.FamilyId, CredentialStamp.SerializeClaimsFor(passwordHash, keepSession.PasskeyId), session);
                 }
 
                 await session.CommitAsync();
@@ -208,6 +212,7 @@ namespace ByteShelf.Server.Users.Services
         public async Task<bool> RemoveUserAsync(Guid userId, DateTimeOffset at, IDbSession session)
         {
             await _grantRepository.DeleteForUserAsync(userId, at, session);
+            await _passkeyRepository.DeleteForUserAsync(userId, at, session);
             await _userLoginRepository.DeleteForUserAsync(userId, at, session);
             return await _userRepository.DeleteAsync(userId, at, session);
         }

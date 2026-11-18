@@ -29,15 +29,22 @@ namespace ByteShelf.Server.Shared.Auth
             options.CookieTokenPaths = [CookieTokenPath];
         }
 
+        /// <summary>Where a passkey sign-in begins, for anyone.</summary>
+        public const string PasskeyCeremonyRoute = "api/auth/passkey/ceremony";
+
+        /// <summary>Where a passkey sign-in finishes, for anyone.</summary>
+        public const string PasskeySignInRoute = "api/auth/passkey";
+
         /// <summary>
-        /// Whether the request was routed to signing in or renewing a session, which the rate limiter holds
-        /// to a strict tier. By the route matched rather than the path sent, so no spelling of the path
-        /// escapes it.
+        /// Whether the request was routed to signing in, with a password or a passkey, or to renewing a
+        /// session, which the rate limiter holds to a strict tier. By the route matched rather than the path
+        /// sent, so no spelling of the path escapes it. The library maps its routes with a leading slash and
+        /// controllers theirs without one.
         /// </summary>
         public static bool IsSignIn(HttpContext httpContext)
         {
-            string? route = (httpContext.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText;
-            return route is "/api/auth/login" or "/api/auth/refresh";
+            string? route = (httpContext.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText?.TrimStart('/');
+            return route is "api/auth/login" or "api/auth/refresh" or PasskeyCeremonyRoute or PasskeySignInRoute;
         }
 
         /// <summary>Maps <c>/api/auth/login</c>, <c>/refresh</c> and <c>/logout</c>; programs authenticate with shelf keys instead.</summary>

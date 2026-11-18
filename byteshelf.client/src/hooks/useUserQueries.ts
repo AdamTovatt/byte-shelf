@@ -11,6 +11,7 @@ import {
   type CreateUserRequest,
   type UpdatePasswordRequest,
 } from '../services/userService';
+import { addPasskey, fetchPasskeys, removePasskey, renamePasskey } from '../services/passkeyService';
 
 export function useCurrentUser() {
   return useQuery({ queryKey: queryKeys.users.me, queryFn: fetchCurrentUser });
@@ -45,6 +46,32 @@ export function useSetRoles() {
 export function useDeleteUser() {
   const invalidate = useInvalidateUsers();
   return useMutation({ mutationFn: (userId: string) => deleteUser(userId), onSuccess: invalidate });
+}
+
+export function usePasskeys() {
+  return useQuery({ queryKey: queryKeys.users.passkeys, queryFn: fetchPasskeys });
+}
+
+function useInvalidatePasskeys() {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.users.passkeys });
+  };
+}
+
+export function useAddPasskey() {
+  const invalidate = useInvalidatePasskeys();
+  return useMutation({ mutationFn: (currentPassword: string) => addPasskey(currentPassword), onSuccess: invalidate });
+}
+
+export function useRenamePasskey() {
+  const invalidate = useInvalidatePasskeys();
+  return useMutation({ mutationFn: ({ passkeyId, name }: { passkeyId: string; name: string }) => renamePasskey(passkeyId, name), onSuccess: invalidate });
+}
+
+export function useRemovePasskey() {
+  const invalidate = useInvalidatePasskeys();
+  return useMutation({ mutationFn: (passkeyId: string) => removePasskey(passkeyId), onSuccess: invalidate });
 }
 
 export function useChangeOwnPassword() {

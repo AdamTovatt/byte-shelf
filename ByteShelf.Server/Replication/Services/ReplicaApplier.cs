@@ -38,6 +38,7 @@ namespace ByteShelf.Server.Replication.Services
             IUserRepository userRepository,
             IUserService userService,
             IUserLoginRepository loginRepository,
+            IPasskeyRepository passkeyRepository,
             IShelfRepository shelfRepository,
             IDirectoryRepository directoryRepository,
             IFileRepository fileRepository,
@@ -76,6 +77,11 @@ namespace ByteShelf.Server.Replication.Services
                     "object_metadata",
                     (entry, at, session, _) => metadataRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<ObjectMetadata>(entry.Payload!), entry.Action, at, session),
                     metadataRepository.DeleteByIdAsync),
+                new EntityHandler(
+                    ChangeEntityType.Passkey,
+                    "passkey",
+                    (entry, at, session, _) => passkeyRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<Passkey>(entry.Payload!), entry.Action, at, session),
+                    passkeyRepository.DeleteByIdAsync),
                 new EntityHandler(
                     ChangeEntityType.File,
                     "file",

@@ -1,15 +1,16 @@
 # Users
 
-People who sign in: email and password, refresh tokens, roles, the first admin, password change,
-password reset, and the server's user commands. Every change to a user and to their logins, password hash included, is in the
-change log (see [ChangeLog.md](../ChangeLog/ChangeLog.md)).
+People who sign in: email and password, passkeys, refresh tokens, roles, the first admin, password change,
+password reset, and the server's user commands. Every change to a user, to their logins, password hash included, and to their
+passkeys is in the change log (see [ChangeLog.md](../ChangeLog/ChangeLog.md)).
 
-## Identity (two tables)
+## Identity (two tables, and passkeys)
 
 - `user_account`, who the user is: a unique **email** (case-insensitive; the sign-in name and
   reset channel), a **display name**, and `roles`, a JSON array of strings in a `TEXT` column.
 - `user_login`, how they prove it: `provider` + `provider_user_id` + `credential`. The password
   hash lives on the `provider = 'local'` row, so another sign-in provider later is another row.
+- `passkey`, many per user beside the password ([Passkeys](#passkeys)).
 
 ## Roles
 
@@ -38,26 +39,36 @@ server refuses. The HTTP client sends them unchecked and reports the server's an
 | `GET /api/users` | admin | Every user. |
 | `POST /api/users` | admin | Creates a user. |
 | `PUT /api/users/{id}/roles` | admin | Replaces a user's roles; 409 for the last admin. |
-| `DELETE /api/users/{id}` | admin | Deletes a user with their logins, reset tokens, shelf access and sessions; 409 for the last admin. The access token they still hold is refused from then on. |
+| `DELETE /api/users/{id}` | admin | Deletes a user with their logins, passkeys, reset tokens, shelf access and sessions; 409 for the last admin. The access token they still hold is refused from then on. |
+| `GET /api/users/me/passkeys` | signed in | The user's passkeys (name, added, last used here), whether passkeys are on, and whether one can be added here (not on a replica). |
+| `POST /api/users/me/passkeys/ceremony` | signed in | Begins adding a passkey with the user's `currentPassword`; a wrong one is 401 `invalid_credentials` without a challenge, as for `PUT /api/users/me/password`. 404 while passkeys are off. |
+| `POST /api/users/me/passkeys` | signed in | Finishes adding a passkey; 400 for a bad name, a ceremony that is not open, or a passkey that does not verify; 409 for one already added. |
+| `PUT /api/users/me/passkeys/{id}/name`, `DELETE /api/users/me/passkeys/{id}` | signed in | Renames or removes one of the user's passkeys; 400 for a bad name, 404 for anyone else's. |
+| `POST /api/auth/passkey/ceremony`, `POST /api/auth/passkey` | anyone | Begins and finishes signing in with a passkey; answers what `/api/auth/login` answers, or 401. 404 while passkeys are off; 400 for a credential that is not an assertion. |
 | `POST /api/password-reset/request` | anyone | Queues a reset link; 204 whether or not the email has an account. |
 | `POST /api/password-reset/complete` | anyone | Sets a new password with a link's token and ends every session; 400 for a bad token. |
 
 ## Sign-in
 
-EasyReasy.Auth handles the endpoints; `AuthRequestValidationService` checks the credentials and
-issues the tokens, with expiry from the injected `TimeProvider`. A sign-in with an unknown email
+EasyReasy.Auth handles the password sign-in, renewal and sign-out endpoints, and `PasskeySignInController`
+the passkey ones; `AuthRequestValidationService` checks a password and `PasskeyService` a passkey, and
+`SessionIssuer` issues the tokens for both, with expiry from the injected `TimeProvider`. A sign-in with an unknown email
 still runs the password hasher, so its timing does not tell which emails have accounts. Refresh
 tokens rotate within a family, one family per device, and reuse of a consumed token invalidates the
 family. A token stored into a family that is already invalidated is stored invalidated, so a
-refresh racing a password reset cannot keep a session alive. Sign-in and renewal share a strict rate
-limit per address ([rate limits](../../DEPLOYMENT.md#rate-limits)).
+refresh racing a password reset cannot keep a session alive. Sign-in, by password or passkey, and
+renewal share a strict rate limit per address ([rate limits](../../DEPLOYMENT.md#rate-limits)): every
+request counts, a refused one included.
 
 Every session is stamped with the password it was signed in with (`CredentialStamp`): its refresh
 token stores the SHA-256 of the password hash as it was when the password was checked. A refresh is
 refused once the user's password hash is another, so a password change or reset ends every session
 that predates it, set to the same password again included. A sign-in that checked the password just
 before a reset committed is refused rather than handed out. A session without a stamp
-ends at its next refresh.
+ends at its next refresh. A passkey session is stamped with the password too, so a password change or
+reset ends it as well, and it also names its passkey: once the passkey is gone, the session's refresh
+and every request with its access token are refused (`CurrentRolesRefreshResolver`,
+`CurrentUserTokenValidation`), so removing a passkey ends the sessions signed in with it at once.
 
 A reset, by a link or by the server's `--reset-password`, also refuses at once every access token the
 user holds: it sets the user's `sessions_ended_at`, and `CurrentUserTokenValidation` refuses a token
@@ -83,7 +94,35 @@ It lives in memory, so links still waiting are lost on a restart, and a send tha
 and not tried again.
 
 Changing your own password ends your other sessions; the session you changed it from carries on.
-The access token names its session, so the server moves that one session onto the new password.
+The access token names its session, so the server moves that one session onto the new password, still
+tied to its passkey when it was signed in with one (`SignedInSession`).
+
+## Passkeys
+
+Usernameless passkey sign-in through EasyReasy.Auth's discoverable WebAuthn methods (`PasskeyService`):
+the browser offers the passkeys it holds for the site, the user picks one and verifies (user verification
+is always required), and the passkey's owner is signed in. Every account keeps its password beside its
+passkeys.
+
+- **Relying party.** The host of `APP_BASE_URL`, at its origin (`PasskeyRelyingParty`). Without
+  `APP_BASE_URL`, or with one no browser makes passkeys for (plain http to anything but loopback, logged
+  as a warning), passkeys are off: the ceremonies answer 404 and the list says so. A passkey works only on
+  the host it was made for.
+- **Ceremonies.** Each begin answers options and a random ceremony id; the challenge is kept in memory
+  (`PasskeyChallenges`) for 5 minutes, which is also the browser's timeout, and is taken once, before
+  anything is checked, whether the ceremony then passes or fails. One for adding a passkey is bound to the
+  user who began it, and begins only with the user's password: a passkey outlives a reset, so a session
+  alone, which a stolen access token is, must not be enough to add one. At most 10,000 are kept; past that the oldest goes, so a flood of sign-ins begun
+  costs ceremonies their challenge, never the server its memory. A restart drops the few under way.
+- **Sign-in.** The passkey is looked up by its credential id across all users; the user is its owner,
+  never anything the request names. The assertion's user handle must be the owner's, the bytes of their
+  id, which every passkey is made with. The sign count is written back on every success, never lowered
+  by two sign-ins at once.
+- **The table.** `passkey` holds the credential id (unique), public key, transports, name
+  and when it was added, which the change log carries; and the sign count and last use, which belong to
+  the server that saw the sign-in and are not logged.
+- **A reset leaves passkeys in place**: removing them is the user's own step. Deleting a user removes
+  theirs.
 
 ## The first admin
 
@@ -121,8 +160,12 @@ recorded as `users.expired_token_cleanup`.
 
 A replica's users are its primary's, taken whole when it pairs (the ones it had are removed, and their
 sessions end), so people sign in there with their accounts on the primary. Signing in, renewing and
-signing out work as anywhere; every change to accounts, passwords and roles is refused with 409
-`read_only_replica` ([Replication](../Replication/Replication.md)). Sessions are the replica's own: a
+signing out work as anywhere, with a passkey too; every change to accounts, passwords, passkeys and roles
+is refused with 409 `read_only_replica` ([Replication](../Replication/Replication.md)). Sessions are the replica's own: a
 session on the primary does not carry over. A password changed or reset on the primary reaches the
 replica with the login row, and the replica's sessions signed in with the old password end at their
-next refresh, as on the primary.
+next refresh, as on the primary. Passkeys reach the replica the same way, and one removed on the primary
+ends the replica's sessions signed in with it. A sign-in on the replica counts against the replica's own
+sign count, which the primary never sees, as the primary's never reaches the replica. A replica under
+another hostname than its primary's has its own relying party, which none of the primary's passkeys is
+made for: its users sign in there with their password.

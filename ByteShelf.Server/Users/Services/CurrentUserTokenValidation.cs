@@ -60,6 +60,13 @@ namespace ByteShelf.Server.Users.Services
                 return;
             }
 
+            // A session signed in with a passkey ends with it, at once, as a reset's does.
+            if (await CredentialStamp.PasskeyRemovedAsync(identity.Claims, userId, context.HttpContext.RequestServices.GetRequiredService<IPasskeyRepository>()))
+            {
+                context.Fail("The passkey this token was signed in with has been removed.");
+                return;
+            }
+
             foreach (Claim role in identity.FindAll(identity.RoleClaimType).ToList())
             {
                 identity.RemoveClaim(role);

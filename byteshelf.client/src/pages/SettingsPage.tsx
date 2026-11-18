@@ -1,13 +1,14 @@
 import { useState, type FormEvent } from 'react';
 import toast from 'react-hot-toast';
 import { Button, ButtonGroup, Icon, PageLayout, iconMap, useTheme } from '../ui';
+import { PasskeysSection } from '../components/PasskeysSection';
 import { PasswordInput } from '../components/PasswordInput';
 import { SectionTitle } from '../components/SectionTitle';
 import { useChangeOwnPassword } from '../hooks/useUserQueries';
 import { useSubmit } from '../hooks/useSubmit';
 import { validateNewPassword } from '../lib/passwordValidation';
 
-/** The signed-in user's own settings: the theme and their password. Signing out is in the account menu. */
+/** The signed-in user's own settings: the theme, their password and their passkeys. Signing out is in the account menu. */
 export function SettingsPage() {
   const { theme, setTheme } = useTheme();
 
@@ -30,6 +31,7 @@ export function SettingsPage() {
       </section>
 
       <ChangePasswordSection />
+      <PasskeysSection />
     </PageLayout>
   );
 }

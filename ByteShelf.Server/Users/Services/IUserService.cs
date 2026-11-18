@@ -12,6 +12,12 @@ namespace ByteShelf.Server.Users.Services
         /// </summary>
         Task<UserCredentials?> ValidateCredentialsAsync(string email, string password);
 
+        /// <summary>
+        /// Whether <paramref name="password"/> is the user's password, for a change a signed-in session alone
+        /// must not be enough for; false when there is no such user.
+        /// </summary>
+        Task<bool> IsPasswordAsync(Guid userId, string password);
+
         Task<User?> GetUserByIdAsync(Guid userId);
 
         /// <summary>The user with <paramref name="email"/>, matched without regard to case; null when there is none.</summary>
@@ -24,9 +30,9 @@ namespace ByteShelf.Server.Users.Services
         /// <summary>
         /// Changes the user's password after verifying the current one; false when it does not match. Every
         /// session signed in with the old password ends at its next refresh, except
-        /// <paramref name="keepSessionFamilyId"/>, the session the change was made from, when given.
+        /// <paramref name="keepSession"/>, the session the change was made from, when given.
         /// </summary>
-        Task<bool> UpdatePasswordAsync(Guid userId, string currentPassword, string newPassword, string? keepSessionFamilyId = null);
+        Task<bool> UpdatePasswordAsync(Guid userId, string currentPassword, string newPassword, SignedInSession? keepSession = null);
 
         Task<IReadOnlyList<User>> GetAllUsersAsync();
 
@@ -36,7 +42,7 @@ namespace ByteShelf.Server.Users.Services
         Task UpdateRolesAsync(Guid userId, IEnumerable<string> roles);
 
         /// <summary>
-        /// Deletes a user with their logins, reset tokens, shelf access and sessions. An access token they
+        /// Deletes a user with their logins, passkeys, reset tokens, shelf access and sessions. An access token they
         /// already hold is refused from then on, since every request looks the user up.
         /// </summary>
         /// <exception cref="Shared.Errors.NotFoundException">There is no such user.</exception>
@@ -44,7 +50,7 @@ namespace ByteShelf.Server.Users.Services
         Task DeleteUserAsync(Guid userId);
 
         /// <summary>
-        /// Removes a user with their logins, reset tokens and shelf access in the caller's transaction,
+        /// Removes a user with their logins, passkeys, reset tokens and shelf access in the caller's transaction,
         /// without the checks <see cref="DeleteUserAsync"/> makes; false when there is no such user. End
         /// their sessions with <see cref="EndSessionsAsync"/> once it commits.
         /// </summary>

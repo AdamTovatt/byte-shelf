@@ -6,6 +6,7 @@ export const queryKeys = {
     root: ['users'] as const,
     me: ['users', 'me'] as const,
     list: ['users', 'list'] as const,
+    passkeys: ['users', 'me', 'passkeys'] as const,
   },
   shelves: {
     root: ['shelves'] as const,

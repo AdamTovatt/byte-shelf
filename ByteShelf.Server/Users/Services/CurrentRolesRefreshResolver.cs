@@ -6,16 +6,18 @@ namespace ByteShelf.Server.Users.Services
 {
     /// <summary>
     /// Puts the user's roles as they are now on every refreshed token, rather than the ones stored when
-    /// they signed in, and refuses the refresh once the user no longer exists or their password is not
-    /// the one the session was signed in with (<see cref="CredentialStamp"/>).
+    /// they signed in, and refuses the refresh once the user no longer exists, their password is not the
+    /// one the session was signed in with, or the passkey it was signed in with is gone (<see cref="CredentialStamp"/>).
     /// </summary>
     public class CurrentRolesRefreshResolver : IRefreshClaimsResolver
     {
         private readonly IUserLoginRepository _loginRepository;
+        private readonly IPasskeyRepository _passkeyRepository;
 
-        public CurrentRolesRefreshResolver(IUserLoginRepository loginRepository)
+        public CurrentRolesRefreshResolver(IUserLoginRepository loginRepository, IPasskeyRepository passkeyRepository)
         {
             _loginRepository = loginRepository;
+            _passkeyRepository = passkeyRepository;
         }
 
         public async Task<RefreshClaimsDecision> ResolveAsync(RefreshClaimsContext context, CancellationToken cancellationToken)
@@ -27,6 +29,11 @@ namespace ByteShelf.Server.Users.Services
 
             UserCredentials? credentials = await _loginRepository.GetCredentialsByUserIdAsync(userId);
             if (credentials == null || !CredentialStamp.Matches(context.StoredClaims, credentials.PasswordHash))
+            {
+                return RefreshClaimsDecision.Deny();
+            }
+
+            if (await CredentialStamp.PasskeyRemovedAsync(context.StoredClaims, userId, _passkeyRepository))
             {
                 return RefreshClaimsDecision.Deny();
             }

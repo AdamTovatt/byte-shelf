@@ -30,14 +30,16 @@ namespace ByteShelf.Server.Tests.Replication
         /// <param name="idleTimeout">How long the replica waits on a silent primary; the server's own by default.</param>
         /// <param name="pageSize">How many entries the replica asks for at a time; the server's own by default.</param>
         /// <param name="primaryClock">The clock the replica times its calls to the primary by; the real one by default.</param>
+        /// <param name="withPasskeys">Whether both servers make passkeys, for the one public address (<see cref="ServerTestHost.StartWithPasskeysAsync"/>).</param>
         public static async Task<ReplicationPair> StartAsync(
             Func<HttpMessageHandler, HttpMessageHandler>? wrapPrimary = null,
             TimeSpan? idleTimeout = null,
             int? pageSize = null,
-            TimeProvider? primaryClock = null)
+            TimeProvider? primaryClock = null,
+            bool withPasskeys = false)
         {
-            ServerTestHost primary = await ServerTestHost.StartAsync();
-            return new ReplicationPair(primary, await StartServerToFollowAsync(primary, wrapPrimary, idleTimeout, pageSize, primaryClock));
+            ServerTestHost primary = withPasskeys ? await ServerTestHost.StartWithPasskeysAsync() : await ServerTestHost.StartAsync();
+            return new ReplicationPair(primary, await StartServerToFollowAsync(primary, wrapPrimary, idleTimeout, pageSize, primaryClock, withPasskeys));
         }
 
         /// <summary>
@@ -49,9 +51,10 @@ namespace ByteShelf.Server.Tests.Replication
             Func<HttpMessageHandler, HttpMessageHandler>? wrapPrimary = null,
             TimeSpan? idleTimeout = null,
             int? pageSize = null,
-            TimeProvider? primaryClock = null)
+            TimeProvider? primaryClock = null,
+            bool withPasskeys = false)
         {
-            return ServerTestHost.StartAsync(services =>
+            void Configure(IServiceCollection services)
             {
                 services.Remove(services.Single(service => service.ServiceType == typeof(IHostedService) && service.ImplementationType == typeof(ReplicaSyncWorker)));
                 services
@@ -73,7 +76,9 @@ namespace ByteShelf.Server.Tests.Replication
                         provider.GetRequiredService<ReplicationOptions>(),
                         primaryClock)));
                 }
-            });
+            }
+
+            return withPasskeys ? ServerTestHost.StartWithPasskeysAsync(Configure) : ServerTestHost.StartAsync(Configure);
         }
 
         /// <summary>Makes a code on the primary and pairs the replica with it.</summary>

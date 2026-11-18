@@ -51,8 +51,8 @@ namespace ByteShelf.Server.Users.Controllers
         {
             Guid userId = HttpContext.GetUserGuid();
 
-            // The family comes from the caller's own signed token, never the request body.
-            if (!await _userService.UpdatePasswordAsync(userId, request.CurrentPassword, request.NewPassword, HttpContext.GetRefreshFamilyId()))
+            // The session comes from the caller's own signed token, never the request body.
+            if (!await _userService.UpdatePasswordAsync(userId, request.CurrentPassword, request.NewPassword, SignedInSession.Of(HttpContext)))
             {
                 return Unauthorized(new ErrorResponse { Message = "The current password is incorrect.", Code = ErrorCodes.InvalidCredentials });
             }
