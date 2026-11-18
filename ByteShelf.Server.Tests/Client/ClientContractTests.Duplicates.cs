@@ -99,6 +99,19 @@ namespace ByteShelf.Server.Tests.Client
         }
 
         [Fact]
+        public async Task FindDuplicatesAsync_NoDescription_CountsOnlyTheUndescribedCopies()
+        {
+            await UploadTextAsync("/a.txt", "same");
+            await UploadTextAsync("/b.txt", "same");
+            await Shelf.UploadAsync("/c.txt", Text("same"), new UploadOptions { Description = "The kept copy" });
+
+            DuplicateSearchResults found = await Shelf.FindDuplicatesAsync(new DuplicateSearch { HasDescription = false });
+
+            DuplicateGroup group = Assert.Single(found.Groups);
+            Assert.Equal(new[] { "/a.txt", "/b.txt" }, group.Files.Select(file => file.Path));
+        }
+
+        [Fact]
         public async Task FindDuplicatesAsync_Pages_ComeMostRepeatedBytesThenBySha256UntilNoCursorIsLeft()
         {
             ShelfFile largest = await UploadTextAsync("/c1.txt", "ccc");

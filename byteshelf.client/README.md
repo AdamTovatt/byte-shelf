@@ -3,9 +3,9 @@
 The ByteShelf web UI: React, TypeScript, Vite, Tailwind and TanStack Query, built on the house
 template. Everyone browses the shelves they reach, searches a folder and everything below it by
 name, description, or the title or camera read from its contents (the options at the search
-field's end narrow it, as "Duplicates only" does to the files with the same contents), uploads
-(dropping files on a directory works too), opens and downloads files, shows a file's details
-with what the server read from its contents
+field's end narrow it: "Duplicates only" to the files with the same contents, "No description" to
+the files still to describe), uploads (dropping files on a directory works too), opens and
+downloads files, shows a file's details with what the server read from its contents
 (`FileDetailsDialog`: when and where a photo was taken, the camera, a video's length, a PDF's
 title and pages), describes, shares by a link, moves, renames and deletes them, encrypts files and
 folders with a password, and restores them from the trash or downloads a deleted file from it

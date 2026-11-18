@@ -25,7 +25,7 @@ namespace ByteShelf.Cli.Commands
         private const string OrPasswordFile = " or in a file with --password-file";
 
         /// <summary>The usage of find and find-duplicates: the criteria <see cref="Criteria"/> reads, then the paging.</summary>
-        private const string CriteriaUsage = "<shelf>[:<path>] [<text>] [--type <content-type>|'<type>/*'] [--min-size <bytes>] [--max-size <bytes>] [--created-from <time>] [--created-before <time>] [--updated-from <time>] [--updated-before <time>] [--sha256 <hex>] [--taken-from <time>] [--taken-before <time>] [--has-gps] [--min-duration <seconds>] [--max-duration <seconds>] [--min-pages <n>] [--max-pages <n>] [--limit <n>] [--after <cursor>]";
+        private const string CriteriaUsage = "<shelf>[:<path>] [<text>] [--type <content-type>|'<type>/*'] [--min-size <bytes>] [--max-size <bytes>] [--created-from <time>] [--created-before <time>] [--updated-from <time>] [--updated-before <time>] [--sha256 <hex>] [--has-description|--no-description] [--taken-from <time>] [--taken-before <time>] [--has-gps] [--min-duration <seconds>] [--max-duration <seconds>] [--min-pages <n>] [--max-pages <n>] [--limit <n>] [--after <cursor>]";
 
         private readonly IClientSource _clients;
         private readonly Terminal _terminal;
@@ -72,7 +72,7 @@ namespace ByteShelf.Cli.Commands
                     Section.Files,
                     "find",
                     CriteriaUsage,
-                    "files under a directory whose name, description, or the title or camera its contents carry holds <text>, ignoring case, and that meet every option; the --taken, --has-gps, duration and page options ask what the server read from the contents; times are ISO 8601, local without an offset",
+                    "files under a directory whose name, description, or the title or camera its contents carry holds <text>, ignoring case, and that meet every option; --no-description finds the files left to describe; the --taken, --has-gps, duration and page options ask what the server read from the contents; times are ISO 8601, local without an offset",
                     FindAsync),
                 new Command(
                     Section.Files,
@@ -614,6 +614,7 @@ namespace ByteShelf.Cli.Commands
                 UpdatedFrom = arguments.Time("--updated-from"),
                 UpdatedBefore = arguments.Time("--updated-before"),
                 Sha256 = arguments.Value("--sha256"),
+                HasDescription = HasDescription(arguments),
                 TakenFrom = arguments.Time("--taken-from"),
                 TakenBefore = arguments.Time("--taken-before"),
                 HasGps = arguments.Flag("--has-gps"),
@@ -622,6 +623,30 @@ namespace ByteShelf.Cli.Commands
                 MinPageCount = arguments.Count("--min-pages"),
                 MaxPageCount = arguments.Count("--max-pages"),
             };
+        }
+
+        /// <summary>Whether a file must have a description: true for --has-description, false for --no-description, null for neither.</summary>
+        /// <exception cref="UsageException">Both are given.</exception>
+        private static bool? HasDescription(ArgumentList arguments)
+        {
+            bool has = arguments.Flag("--has-description");
+            bool none = arguments.Flag("--no-description");
+            if (has && none)
+            {
+                throw new UsageException("--has-description and --no-description cannot both be given.");
+            }
+
+            if (has)
+            {
+                return true;
+            }
+
+            if (none)
+            {
+                return false;
+            }
+
+            return null;
         }
 
         private async Task TreeAsync(ArgumentList arguments, CancellationToken cancellationToken)

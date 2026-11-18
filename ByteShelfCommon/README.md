@@ -12,7 +12,7 @@ AOT-compatible.
 | `CreateShelfRequest`, `UpdateShelfRequest` | Creates a shelf, and replaces its name and quota. |
 | `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps, description, and whether its contents are encrypted (`Encrypted`). |
 | `SetDescriptionRequest`, `FileDescription` | Setting a file's description, and its rules. |
-| `FileCriteria` | Which of a shelf's files a search looks at: the directory, text, type, sizes, times, SHA-256 and what the server read from the contents (taken times, a GPS position, durations, page counts), checked by `NormalizeCriteria`. Both searches below take their criteria from it. |
+| `FileCriteria` | Which of a shelf's files a search looks at: the directory, text, type, sizes, times, SHA-256, whether it has a description, and what the server read from the contents (taken times, a GPS position, durations, page counts), checked by `NormalizeCriteria`. Both searches below take their criteria from it. |
 | `FileSearch`, `FileSearchResults` | The files that meet the criteria, a page at a time by path, and one page of them. |
 | `DuplicateSearch`, `DuplicateSearchResults`, `DuplicateGroup`, `DuplicateCursor` | The groups of plain, non-empty files with the same contents among those that meet the criteria, a page of groups at a time, most repeated bytes first, and where a page ended. `DuplicateSearchResults.Page` groups, orders and pages them, for the server and the in-memory client alike. |
 | `DownloadLink` | A link to a file's contents that works without a token until it runs out or is revoked, with its id, and the bounds of its lifetime (`Lifetime`: a day by default, at most 7 days). |

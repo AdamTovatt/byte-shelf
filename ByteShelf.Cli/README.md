@@ -18,16 +18,17 @@ one (such as `restore`). `--` ends the options, for a path that starts with `--`
 
 `find` searches under a directory by text in a file's name or description, and by `--type`,
 `--min-size` and `--max-size`, `--created-from` and `--created-before`, `--updated-from` and
-`--updated-before`, and `--sha256`; a file must meet every one given. The text also matches the
-title or camera the server read from a file's contents, and `--taken-from` and `--taken-before`,
-`--has-gps`, `--min-duration` and `--max-duration` (seconds), and `--min-pages` and `--max-pages`
-ask what else it read: when a photo or video was taken, whether it carries a GPS position, how long
-it plays, and a PDF's pages. Encrypted files carry none. `find` answers a page at a time
-(`--limit`, 100 by default) and ends a page that has more after it with the `--after` to pass. Quote
-a type family, as in `--type 'image/*'`, or the shell expands it. A time without an offset, such as
-`2026-03-01`, is local time. `find-duplicates` takes the same options and lists the files `find`
-would find that have exactly the same contents, in groups, most repeated bytes first; only files
-under the directory count, encrypted and empty files are left out, and `--limit` counts groups.
+`--updated-before`, `--sha256`, and `--has-description` or `--no-description` (the files still to
+describe); a file must meet every one given. The text also matches the title or camera the server
+read from a file's contents, and `--taken-from` and `--taken-before`, `--has-gps`, `--min-duration`
+and `--max-duration` (seconds), and `--min-pages` and `--max-pages` ask what else it read: when a
+photo or video was taken, whether it carries a GPS position, how long it plays, and a PDF's pages.
+Encrypted files carry none. `find` answers a page at a time (`--limit`, 100 by default) and ends a
+page that has more after it with the `--after` to pass. Quote a type family, as in
+`--type 'image/*'`, or the shell expands it. A time without an offset, such as `2026-03-01`, is
+local time. `find-duplicates` takes the same options and lists the files `find` would find that
+have exactly the same contents, in groups, most repeated bytes first; only files under the
+directory count, encrypted and empty files are left out, and `--limit` counts groups.
 `stat` shows what was read with a file's record (`stat --json` prints the record alone, as the
 server answers it). `describe` sets one description on the files named before it (`describe
 docs:/a.pdf /b.pdf "Signed"`) and `describe --clear` removes theirs; `put --description` stores one

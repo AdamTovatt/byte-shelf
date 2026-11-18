@@ -109,6 +109,27 @@ namespace ByteShelfCommon.Tests
                 search.ToQuery());
         }
 
+        [Theory]
+        [InlineData(true, "hasDescription=true")]
+        [InlineData(false, "hasDescription=false")]
+        [InlineData(null, "")]
+        public void ToQuery_HasDescription_CarriesEitherAnswerAndNothingWhenUnchecked(bool? hasDescription, string query)
+        {
+            Assert.Equal(query, new FileSearch { HasDescription = hasDescription }.ToQuery());
+        }
+
+        [Fact]
+        public void Normalize_HasDescription_KeepsIt()
+        {
+            Assert.False(new FileSearch { HasDescription = false }.Normalize().HasDescription);
+        }
+
+        [Fact]
+        public void AsksForMetadata_HasDescription_IsNotMetadata()
+        {
+            Assert.False(new FileSearch { HasDescription = false }.Normalize().AsksForMetadata());
+        }
+
         [Fact]
         public void ToQuery_MetadataCriteria_CarriesEachAndHasGpsOnlyWhenAsked()
         {

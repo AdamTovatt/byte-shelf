@@ -885,7 +885,8 @@ namespace ByteShelfClient.InMemory
                 && (search.CreatedBefore == null || file.CreatedAt < search.CreatedBefore)
                 && (search.UpdatedFrom == null || file.UpdatedAt >= search.UpdatedFrom)
                 && (search.UpdatedBefore == null || file.UpdatedAt < search.UpdatedBefore)
-                && (search.Sha256 == null || file.Sha256 == search.Sha256);
+                && (search.Sha256 == null || file.Sha256 == search.Sha256)
+                && (search.HasDescription == null || (file.Description != null) == search.HasDescription);
         }
 
         private static void Trash(FileNode file, Guid deletionId, DateTimeOffset at)

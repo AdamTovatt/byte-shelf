@@ -40,9 +40,21 @@ function duplicateGroup(name: string, sha256: string) {
 
 /** What the search for duplicates answers: a page with a.txt's group, then, after its cursor, one with b.txt's. */
 function duplicates(after: string | null) {
+  if (findNothing) return { groups: [], nextCursor: null };
   return after === null
     ? { groups: [duplicateGroup('a.txt', 'a'.repeat(64))], nextCursor: `1:${'a'.repeat(64)}` }
     : { groups: [duplicateGroup('b.txt', 'b'.repeat(64))], nextCursor: null };
+}
+
+/** Whether both searches find nothing; a test sets it to see what an empty search says. */
+let findNothing: boolean;
+
+/** What search answers: a page with /reports/c.txt, then, after its cursor, one with /reports/d.txt. */
+function searched(after: string | null) {
+  if (findNothing) return { files: [], nextCursor: null };
+  return after === null
+    ? { files: [{ ...file('c.txt'), path: '/reports/c.txt' }], nextCursor: 'next' }
+    : { files: [{ ...file('d.txt'), path: '/reports/d.txt' }], nextCursor: null };
 }
 
 describe('the shelf page\'s rows', () => {
@@ -62,9 +74,11 @@ describe('the shelf page\'s rows', () => {
     installFakeWebLocks();
     saveTokens({ token: 't', expiresAt: inAnHour(), refreshToken: 'r' });
     rootFiles = [file('a.txt'), file('b.txt')];
+    findNothing = false;
     sent = stubServer(async (request) => {
       const url = new URL(request.url);
       if (url.pathname === '/api/shelves/docs/duplicates') return json(duplicates(url.searchParams.get('after')));
+      if (url.pathname === '/api/shelves/docs/search') return json(searched(url.searchParams.get('after')));
       if (url.pathname === '/api/shelves/docs/files/metadata') return json({ readable: false, readAt: null });
       return url.pathname === '/api/shelves/docs/entries' ? json(listing(url.searchParams.get('path')!)) : json({ message: 'Not here.' }, 404);
     });
@@ -176,16 +190,26 @@ describe('the shelf page\'s rows', () => {
     });
   }
 
-  /** Opens the search options and flips Duplicates only; answers its row. */
-  async function toggleDuplicates(): Promise<HTMLButtonElement> {
-    click(container.querySelector('button[aria-label="Search options"]')!);
+  /** Opens the search options and flips the filter labelled `label`; answers its row. */
+  async function toggleFilter(label: string): Promise<HTMLButtonElement> {
+    if (!document.querySelector('[role="group"][aria-label="Search options"]')) {
+      click(container.querySelector('button[aria-label="Search options"]')!);
+    }
     const toggle = await vi.waitFor(() => {
-      const found = Array.from(document.querySelectorAll<HTMLButtonElement>('[aria-label="Search options"] button')).find((button) => button.textContent === 'Duplicates only');
+      const found = Array.from(document.querySelectorAll<HTMLButtonElement>('[aria-label="Search options"] button')).find((button) => button.textContent === label);
       expect(found).toBeDefined();
       return found!;
     });
     click(toggle);
     return toggle;
+  }
+
+  function toggleDuplicates(): Promise<HTMLButtonElement> {
+    return toggleFilter('Duplicates only');
+  }
+
+  function showMoreButton(): HTMLButtonElement | undefined {
+    return Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Show more');
   }
 
   function requests(prefix: string): string[] {
@@ -246,6 +270,50 @@ describe('the shelf page\'s rows', () => {
 
     await vi.waitFor(() => expect(row('a.txt')).not.toBeNull());
     expect(container.textContent).not.toContain('copies of');
+  });
+
+  it('searches for the files without a description once No description is on, with no text, a page at a time', async () => {
+    const toggle = await toggleFilter('No description');
+
+    await vi.waitFor(() => expect(container.textContent).toContain('reports/c.txt'));
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(requests('GET /api/shelves/docs/search?under=%2F&hasDescription=false ')).toHaveLength(1);
+
+    click(await vi.waitFor(() => {
+      expect(showMoreButton()).toBeDefined();
+      return showMoreButton()!;
+    }));
+
+    await vi.waitFor(() => expect(container.textContent).toContain('reports/d.txt'));
+    expect(container.textContent).toContain('reports/c.txt');
+    expect(requests('GET /api/shelves/docs/search?under=%2F&hasDescription=false&after=next ')).toHaveLength(1);
+    expect(showMoreButton()).toBeUndefined();
+  });
+
+  it('sends No description with the text, and to the search for duplicates while Duplicates only is on', async () => {
+    await toggleFilter('No description');
+    type(searchField(), 'notes');
+    await vi.waitFor(() => expect(requests('GET /api/shelves/docs/search?under=%2F&text=notes&hasDescription=false ')).toHaveLength(1));
+
+    await toggleDuplicates();
+
+    await vi.waitFor(() => expect(requests('GET /api/shelves/docs/duplicates?under=%2F&text=notes&hasDescription=false ')).toHaveLength(1));
+  });
+
+  it.each<[string[], string, string]>([
+    [[], 'notes', 'No file here or below has “notes” in its name, description, title or camera.'],
+    [['No description'], '', 'Every file here and below has a description.'],
+    [['No description'], 'notes', 'No file here or below without a description has “notes” in its name, title or camera.'],
+    [['Duplicates only'], '', 'No two files here or below have the same contents.'],
+    [['Duplicates only'], 'notes', 'No files here or below with “notes” in their name, description, title or camera have the same contents.'],
+    [['Duplicates only', 'No description'], '', 'No two files here or below without a description have the same contents.'],
+    [['Duplicates only', 'No description'], 'notes', 'No files here or below without a description with “notes” in their name, title or camera have the same contents.'],
+  ])('says what it looked for when %j with “%s” finds nothing', async (filters, text, said) => {
+    findNothing = true;
+    for (const label of filters) await toggleFilter(label);
+    if (text) type(searchField(), text);
+
+    await vi.waitFor(() => expect(container.textContent).toContain(said));
   });
 
   it('shows a file\'s details from its menu', async () => {

@@ -52,7 +52,8 @@ spaces.
 | Empty the trash for good | `byteshelf empty-trash docs` (nothing in it can come back afterwards) |
 
 - `find` matches text in a file's name or its description, ignoring case, so describe what you store.
-  Quote a type family: `--type 'image/*'`.
+  `find docs --no-description` lists the files still to describe. Quote a type family:
+  `--type 'image/*'`.
 - The server reads what photos, videos and PDFs carry: `find` also matches a PDF's title or a
   camera, and takes `--taken-from`/`--taken-before`, `--has-gps`, `--min-duration`/`--max-duration`
   (seconds) and `--min-pages`/`--max-pages`, as in `byteshelf find photos --taken-from 2024-06-01

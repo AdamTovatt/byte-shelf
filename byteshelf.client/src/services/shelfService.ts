@@ -1,5 +1,6 @@
 import { apiClient, unwrapNoContentResponse, unwrapResponse } from './apiClient';
 import type { components } from '../types/api';
+import type { SearchCriteria } from '../lib/searchFilters';
 
 export type ShelfInfo = components['schemas']['ShelfInfo'];
 export type DirectoryListing = components['schemas']['DirectoryListing'];
@@ -88,21 +89,22 @@ export function setDescription(shelf: string, id: string, description: string | 
   return unwrapResponse(apiClient.PUT('/api/shelves/{shelf}/files/description', { params: { ...shelfPath(shelf), query: { id } }, body: { description } }));
 }
 
-/**
- * The first page of the live files under `under` whose name, description, or the title or camera
- * read from its contents holds `text`, by path.
- */
-export function searchFiles(shelf: string, under: string, text: string): Promise<FileSearchResults> {
-  return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/search', { params: { ...shelfPath(shelf), query: { under, text } } }));
+/** The query a search sends for `criteria` under `under`, from the page after the cursor `after`. */
+function searchQuery(under: string, criteria: SearchCriteria, after: string | undefined) {
+  return { under, text: criteria.text || undefined, hasDescription: criteria.hasDescription, after };
+}
+
+/** A page of the live files under `under` that meet `criteria`, by path: the first, or the one after the cursor `after`. */
+export function searchFiles(shelf: string, under: string, criteria: SearchCriteria, after?: string): Promise<FileSearchResults> {
+  return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/search', { params: { ...shelfPath(shelf), query: searchQuery(under, criteria, after) } }));
 }
 
 /**
  * A page of the groups of plain files under `under` with the same contents, most repeated bytes
- * first: the first, or the one after the cursor `after`. With `text`, only files whose name,
- * description, or the title or camera read from its contents holds it count.
+ * first: the first, or the one after the cursor `after`. Only files that meet `criteria` count.
  */
-export function findDuplicates(shelf: string, under: string, text: string, after?: string): Promise<DuplicateSearchResults> {
-  return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/duplicates', { params: { ...shelfPath(shelf), query: { under, text: text || undefined, after } } }));
+export function findDuplicates(shelf: string, under: string, criteria: SearchCriteria, after?: string): Promise<DuplicateSearchResults> {
+  return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/duplicates', { params: { ...shelfPath(shelf), query: searchQuery(under, criteria, after) } }));
 }
 
 export function deleteFile(shelf: string, id: string): Promise<TrashEntry> {

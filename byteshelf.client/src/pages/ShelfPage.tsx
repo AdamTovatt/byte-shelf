@@ -21,6 +21,7 @@ import {
 import { FileDetailsDialog } from '../components/FileDetailsDialog';
 import { FormDialog } from '../components/FormDialog';
 import { LoadError } from '../components/LoadError';
+import { PagedResults } from '../components/PagedResults';
 import { CardList } from '../components/CardList';
 import { MoveDialog } from '../components/MoveDialog';
 import { ShelfHeader } from '../components/ShelfHeader';
@@ -45,9 +46,9 @@ import { joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../
 import { copyWhenReady } from '../lib/clipboard';
 import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
-import { directoryEntry, entrySizeBytes, nameOrCount, type DuplicateGroup, type Entry, type FileSearchResults, type ShelfFile } from '../services/shelfService';
+import { directoryEntry, entrySizeBytes, nameOrCount, type DuplicateGroup, type Entry, type ShelfFile } from '../services/shelfService';
 import { SearchOptions } from '../components/SearchOptions';
-import { NO_SEARCH_FILTERS, anySearchFilter } from '../lib/searchFilters';
+import { NO_SEARCH_FILTERS, isSearch, searchCriteria } from '../lib/searchFilters';
 
 // Its toasts and dialogs stay here with the page rather than in modules of their own: each is small
 // and serves this page alone, so apart they would only be moved, not made simpler or shared.
@@ -76,10 +77,11 @@ export function ShelfPage() {
   const typedHere = typed.shelf === shelf && typed.path === path;
   const searchText = typedHere ? typed.text : '';
   const filters = typedHere ? typed.filters : NO_SEARCH_FILTERS;
-  const searching = searchText.trim() !== '' || anySearchFilter(filters);
+  const searching = isSearch(searchText, filters);
   const settledText = useDebouncedValue(searchText, SEARCH_DELAY_MS);
-  const found = useFileSearch(shelf, path, settledText, !filters.duplicates);
-  const duplicates = useDuplicateSearch(shelf, path, settledText, filters.duplicates);
+  const criteria = searchCriteria(settledText, filters);
+  const found = useFileSearch(shelf, path, criteria, isSearch(settledText, filters) && !filters.duplicates);
+  const duplicates = useDuplicateSearch(shelf, path, criteria, filters.duplicates);
 
   /** Uploads into this folder; in an encrypted one, encrypted with its password, asked for if this tab has not unlocked it. */
   async function upload(files: File[]): Promise<void> {
@@ -347,17 +349,27 @@ export function ShelfPage() {
         {searching ? (
           filters.duplicates
             ? (
-              <DuplicateResults
-                groups={duplicates.data?.pages.flatMap((page) => page.groups)}
-                isLoading={duplicates.isLoading}
-                error={duplicates.error}
-                text={searchText.trim()}
-                row={foundRow}
-                onShowMore={duplicates.hasNextPage ? () => void duplicates.fetchNextPage() : undefined}
-                loadingMore={duplicates.isFetchingNextPage}
-              />
+              <PagedResults
+                query={duplicates}
+                itemsOf={(page) => page.groups}
+                failure="Could not look for duplicates"
+                empty={noDuplicatesFound(searchText.trim(), filters.undescribed)}
+                className="space-y-4"
+              >
+                {(groups) => groups.map((group) => <DuplicateGroupList key={group.sha256} group={group} row={foundRow} />)}
+              </PagedResults>
             )
-            : <SearchResults results={found.data} isLoading={found.isLoading} error={found.error} text={searchText.trim()} row={foundRow} />
+            : (
+              <PagedResults
+                query={found}
+                itemsOf={(page) => page.files}
+                failure="Could not search"
+                empty={noFileFound(searchText.trim(), filters.undescribed)}
+                className="space-y-2"
+              >
+                {(files) => <CardList className="overflow-hidden">{files.map(foundRow)}</CardList>}
+              </PagedResults>
+            )
         ) : (
           <>
             {isLoading && <Spinner />}
@@ -392,64 +404,36 @@ export function ShelfPage() {
 /** How long typing must pause before a search is sent. */
 const SEARCH_DELAY_MS = 250;
 
-interface SearchResultsProps {
-  results: FileSearchResults | undefined;
-  isLoading: boolean;
-  error: Error | null;
-  text: string;
-  row: (file: ShelfFile) => ReactNode;
+/** What the search's text is matched against: a file without a description has only the rest. */
+function matchedFields(undescribed: boolean): string {
+  return undescribed ? 'name, title or camera' : 'name, description, title or camera';
 }
 
-function SearchResults({ results, isLoading, error, text, row }: SearchResultsProps) {
-  if (error) return <LoadError error={error} failure="Could not search" />;
-  if (isLoading || !results) return <Spinner />;
-  if (results.files.length === 0) return <EmptyState message={`No file here or below has “${text}” in its name or description.`} />;
+/** What an empty search says it looked for. */
+function noFileFound(text: string, undescribed: boolean): string {
+  if (!text) return 'Every file here and below has a description.';
+  const without = undescribed ? ' without a description' : '';
+  return `No file here or below${without} has “${text}” in its ${matchedFields(undescribed)}.`;
+}
 
+/** What an empty search for duplicates says it looked among. */
+function noDuplicatesFound(text: string, undescribed: boolean): string {
+  const without = undescribed ? ' without a description' : '';
+  if (!text) return `No two files here or below${without} have the same contents.`;
+  return `No files here or below${without} with “${text}” in their ${matchedFields(undescribed)} have the same contents.`;
+}
+
+/** One group of files with the same contents: how many copies and bytes, then a row per file. */
+function DuplicateGroupList({ group, row }: { group: DuplicateGroup; row: (file: ShelfFile) => ReactNode }) {
   return (
-    <div className="space-y-2">
+    <section className="space-y-1.5">
+      <h2 className="text-body-sm text-muted">
+        {group.files.length} copies of {formatBytes(group.sizeBytes)}, {formatBytes(group.repeatedBytes)} repeated
+      </h2>
       <CardList className="overflow-hidden">
-        {results.files.map(row)}
+        {group.files.map(row)}
       </CardList>
-      {results.nextCursor && <p className="text-body-sm text-muted">Showing the first {results.files.length} matches. Type more to narrow them.</p>}
-    </div>
-  );
-}
-
-interface DuplicateResultsProps {
-  /** Every group of the pages fetched so far. */
-  groups: DuplicateGroup[] | undefined;
-  isLoading: boolean;
-  error: Error | null;
-  /** The search's text, blank for every file here and below. */
-  text: string;
-  row: (file: ShelfFile) => ReactNode;
-  /** Fetches the next page of groups; absent when there is none. */
-  onShowMore?: () => void;
-  loadingMore: boolean;
-}
-
-/** The files here and below with the same contents, a list per group, most repeated bytes first. */
-function DuplicateResults({ groups, isLoading, error, text, row, onShowMore, loadingMore }: DuplicateResultsProps) {
-  if (error) return <LoadError error={error} failure="Could not look for duplicates" />;
-  if (isLoading || !groups) return <Spinner />;
-  if (groups.length === 0) {
-    return <EmptyState message={text ? `No files here or below with “${text}” in their name or description have the same contents.` : 'No two files here or below have the same contents.'} />;
-  }
-
-  return (
-    <div className="space-y-4">
-      {groups.map((group) => (
-        <section key={group.sha256} className="space-y-1.5">
-          <h2 className="text-body-sm text-muted">
-            {group.files.length} copies of {formatBytes(group.sizeBytes)}, {formatBytes(group.repeatedBytes)} repeated
-          </h2>
-          <CardList className="overflow-hidden">
-            {group.files.map(row)}
-          </CardList>
-        </section>
-      ))}
-      {onShowMore && <Button variant="secondary" onClick={onShowMore} loading={loadingMore}>Show more</Button>}
-    </div>
+    </section>
   );
 }
 

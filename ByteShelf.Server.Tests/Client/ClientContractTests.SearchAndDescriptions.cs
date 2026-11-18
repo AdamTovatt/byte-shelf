@@ -182,6 +182,20 @@ namespace ByteShelf.Server.Tests.Client
         }
 
         [Fact]
+        public async Task SearchAsync_HasDescription_FindsOnlyDescribedOrOnlyUndescribedFiles()
+        {
+            await Shelf.UploadAsync("/described.txt", Text("a"), new UploadOptions { Description = "The March invoice" });
+            await UploadTextAsync("/never.txt", "b");
+            ShelfFile cleared = await Shelf.UploadAsync("/cleared.txt", Text("c"), new UploadOptions { Description = "Draft" });
+            await Shelf.SetDescriptionAsync(cleared.Id, "  ");
+
+            Assert.Equal(new[] { "/described.txt" }, await SearchPathsAsync(new FileSearch { HasDescription = true }));
+            Assert.Equal(new[] { "/cleared.txt", "/never.txt" }, await SearchPathsAsync(new FileSearch { HasDescription = false }));
+            Assert.Equal(new[] { "/never.txt" }, await SearchPathsAsync(new FileSearch { HasDescription = false, Text = "NEVER" }));
+            Assert.Equal(3, (await SearchPathsAsync(new FileSearch())).Length);
+        }
+
+        [Fact]
         public async Task SearchAsync_TimeRanges_IncludeTheirStartAndExcludeTheirEnd()
         {
             ShelfFile stored = await UploadTextAsync("/a.txt", "a");

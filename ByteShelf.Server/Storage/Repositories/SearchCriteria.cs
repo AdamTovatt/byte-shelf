@@ -20,6 +20,7 @@ namespace ByteShelf.Server.Storage.Repositories
         DateTimeOffset? UpdatedFrom,
         DateTimeOffset? UpdatedBefore,
         string? Sha256,
+        bool? HasDescription,
         DateTimeOffset? TakenFrom,
         DateTimeOffset? TakenBefore,
         bool HasGps,
@@ -61,6 +62,7 @@ namespace ByteShelf.Server.Storage.Repositories
             AND (@{nameof(UpdatedFrom)} IS NULL OR file.updated_at >= @{nameof(UpdatedFrom)})
             AND (@{nameof(UpdatedBefore)} IS NULL OR file.updated_at < @{nameof(UpdatedBefore)})
             AND (@{nameof(Sha256)} IS NULL OR file.sha256 = @{nameof(Sha256)})
+            AND (@{nameof(HasDescription)} IS NULL OR (file.description IS NOT NULL) = @{nameof(HasDescription)})
             AND (@{nameof(TakenFrom)} IS NULL OR meta.taken_at >= @{nameof(TakenFrom)})
             AND (@{nameof(TakenBefore)} IS NULL OR meta.taken_at < @{nameof(TakenBefore)})
             AND (NOT @{nameof(HasGps)} OR meta.latitude IS NOT NULL)
@@ -83,6 +85,7 @@ namespace ByteShelf.Server.Storage.Repositories
                 search.UpdatedFrom,
                 search.UpdatedBefore,
                 search.Sha256,
+                search.HasDescription,
                 search.TakenFrom,
                 search.TakenBefore,
                 search.HasGps,
@@ -105,6 +108,7 @@ namespace ByteShelf.Server.Storage.Repositories
             parameters.Add(nameof(UpdatedFrom), UpdatedFrom);
             parameters.Add(nameof(UpdatedBefore), UpdatedBefore);
             parameters.Add(nameof(Sha256), Sha256);
+            parameters.Add(nameof(HasDescription), HasDescription);
             parameters.Add(nameof(TakenFrom), TakenFrom);
             parameters.Add(nameof(TakenBefore), TakenBefore);
             parameters.Add(nameof(HasGps), HasGps);
