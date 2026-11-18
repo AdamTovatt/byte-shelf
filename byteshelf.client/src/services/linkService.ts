@@ -4,7 +4,7 @@ import type { components } from '../types/api';
 export type ShelfLink = components['schemas']['ShelfLink'];
 export type DownloadLink = components['schemas']['DownloadLink'];
 
-/** The shelf's share and upload links that still work: the caller's own, or every one when it may write there. */
+/** The shelf's share and upload links that have not run out: the caller's own, or every one when it may write there. */
 export function fetchLinks(shelf: string): Promise<ShelfLink[]> {
   return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/links', { params: { path: { shelf } } }));
 }

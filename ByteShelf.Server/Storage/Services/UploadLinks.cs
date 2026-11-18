@@ -16,8 +16,8 @@ namespace ByteShelf.Server.Storage.Services
         /// <summary>The route links point at; a link is this, a slash and its token.</summary>
         public const string Route = "api/upload-links";
 
-        public UploadLinks(LinkTokens tokens, ILinkRepository linkRepository, PublicAddress publicAddress, TimeProvider timeProvider)
-            : base(tokens, linkRepository, publicAddress, timeProvider, ShelfLinkKind.Upload, Route, purpose: "upload-link")
+        public UploadLinks(LinkTokens tokens, ILinkRepository linkRepository, PublicAddress publicAddress, TimeProvider timeProvider, LinkAccess linkAccess)
+            : base(tokens, linkRepository, publicAddress, timeProvider, linkAccess, Route, purpose: "upload-link")
         {
         }
 

@@ -27,7 +27,7 @@ under the directory count, encrypted and empty files are left out, and `--limit`
 `describe` sets a file's description and `describe --clear` removes
 it; `put --description` stores one with the file. `share` prints a link that opens a file without
 signing in, for 24 hours or the `--expires` given (`30m`, `12h`, up to `7d`), and the link's id.
-`link list` shows a shelf's share and upload links that still work, with their ids: yours, or every
+`link list` shows a shelf's share and upload links that have not run out, with their ids: yours, or every
 one on the shelf if you may write there. `link revoke` ends one by its id, under the same rule. A link
 also stops working while whoever made it may no longer read the shelf (store there, for an upload
 link).

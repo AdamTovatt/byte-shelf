@@ -194,7 +194,10 @@ namespace ByteShelf.Tools
                 : Lines(links.Select(link => $"{link.Id:D}  {LinkReach(link)}  by {link.CreatedBy.Name}{(link.CreatedBy.IsCaller ? " (you)" : string.Empty)}  until {Time(link.ExpiresAt)}"));
         }
 
-        /// <summary>What revokes a link sooner, after "unless revoked sooner: ".</summary>
+        /// <summary>
+        /// What revokes a link sooner, after "unless revoked sooner: ". It names the id and no command, as
+        /// the CLI (<c>byteshelf link revoke</c>) and the MCP tools (<c>revoke_link</c>) both print it.
+        /// </summary>
         private static string RevokeHint(Guid linkId)
         {
             return $"its id is {linkId:D}";

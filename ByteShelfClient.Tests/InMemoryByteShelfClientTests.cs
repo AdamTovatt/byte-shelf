@@ -55,5 +55,34 @@ namespace ByteShelfClient.Tests
             Assert.Equal(ErrorCodes.Conflict, exception.Code);
             Assert.Empty((await primary.GetReplicationAsync()).Replicas);
         }
+
+        [Fact]
+        public async Task GetLinks_LinkThatRanOut_IsLeftOut()
+        {
+            FakeTimeProvider clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+            InMemoryByteShelfClient client = new InMemoryByteShelfClient(timeProvider: clock);
+            await client.CreateShelfAsync("docs");
+            IShelfClient shelf = client.Shelf("docs");
+            UploadLink link = await shelf.CreateUploadLinkAsync("/a.txt", new UploadLinkOptions { Lifetime = TimeSpan.FromMinutes(5) });
+
+            clock.Advance(TimeSpan.FromMinutes(5) - TimeSpan.FromSeconds(1));
+            Assert.Equal(link.Id, Assert.Single(await shelf.GetLinksAsync()).Id);
+
+            clock.Advance(TimeSpan.FromSeconds(1));
+            Assert.Empty(await shelf.GetLinksAsync());
+        }
+
+        [Fact]
+        public async Task GetLinks_MakerDeleted_LeavesTheirLinksOut()
+        {
+            InMemoryByteShelfClient client = new InMemoryByteShelfClient();
+            await client.CreateShelfAsync("docs");
+            await client.Shelf("docs").CreateUploadLinkAsync("/a.txt");
+            await client.CreateUserAsync(new CreateUserRequest { Email = "other@byteshelf.test", DisplayName = "Other", Password = "password-for-tests", Roles = new[] { UserRoles.Admin } });
+
+            await client.DeleteUserAsync(client.CurrentUser.Id);
+
+            Assert.Empty(await client.Shelf("docs").GetLinksAsync());
+        }
     }
 }

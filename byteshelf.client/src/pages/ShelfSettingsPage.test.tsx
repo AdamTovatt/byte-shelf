@@ -156,10 +156,12 @@ describe('a shelf\'s settings tabs', () => {
     expect(container.textContent).toContain('Upload link, replaces a file there · by backup job · until ');
   });
 
-  it('says so when no link works on the shelf', async () => {
+  it('says so when the shelf has no links', async () => {
     links = [];
 
-    await open('/shelves/docs/settings/links', 'No links work on this shelf.');
+    await open('/shelves/docs/settings/links', 'No links on this shelf.');
+
+    expect(container.querySelector('[aria-label^="Revoke the link"]')).toBeNull();
   });
 
   it('revokes a link once confirmed, and lists it no more', async () => {
@@ -200,6 +202,8 @@ describe('a shelf\'s settings tabs', () => {
     links = [TRASHED_LINK];
 
     await open('/shelves/docs/settings/links', 'A file in the trash');
+
+    expect(container.querySelector('[aria-label="Revoke the link to A file in the trash"]')).not.toBeNull();
   });
 
   it('says why when who is signed in could not be loaded, rather than sending them to another tab', async () => {

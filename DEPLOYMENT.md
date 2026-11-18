@@ -105,10 +105,11 @@ path. Exit codes: 0 done, 1 refused or failed (the reason is logged), 2 the argu
 Two secrets are generated into `keys/` on first start, readable by the owner only: `jwt-secret`
 signs sign-ins, `link-secret` signs links that work without signing in: the share links any key or
 user with read access can make for up to 7 days, and the upload links any key or user that may store can make for up to 24 hours. They travel with the root,
-so a copied or restored root, together with its database, keeps its sign-ins and its unexpired links,
-share links included. A single link is revoked in the web UI's shelf settings (Links), with
-`byteshelf link revoke`, or with the API; deleting `link-secret` and restarting ends every link at
-once, and a new secret is generated.
+so a copied or restored root keeps its sign-ins and its unexpired links, share links included. A
+single link is revoked in the web UI's shelf settings (Links), with `byteshelf link revoke`, or with
+the API; deleting `link-secret` and restarting ends every link at once, and a new secret is
+generated. A link works only in the token form of the version that made it: an upgrade that changes
+that form ends every link made before it, and its release notes say so.
 
 ## Email
 

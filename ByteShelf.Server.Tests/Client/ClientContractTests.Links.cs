@@ -5,7 +5,8 @@ namespace ByteShelf.Server.Tests.Client
 {
     /// <summary>
     /// Listing and revoking a shelf's links, the same in both clients. A link that ran out is left out
-    /// by both, which needs a clock to show: the server's tests (<c>LinksTests</c>) do.
+    /// by both, which needs a clock to show: the server's tests (<c>LinksTests</c>) do, and
+    /// <c>InMemoryByteShelfClientTests</c> for the in-memory client.
     /// </summary>
     public abstract partial class ClientContractTests
     {

@@ -83,7 +83,7 @@ namespace ByteShelf.Server.Mcp
         internal static string InstructionsFor(string shelf, ShelfKeyPermission permission, ShelfAccess access, bool isReplica, Uri server)
         {
             string reach = isReplica
-                ? "This server is a replica, a read-only copy of another, so only reading tools are offered."
+                ? "This server is a replica, a read-only copy of another, so only the tools that need read access are offered: they read, and make, list and revoke this server's own links."
                 : $"The key's access is {PermissionNames.Of(permission)}, and only the tools it allows are offered.";
             bool stores = !isReplica && access.AllowsStore(overwrite: false);
             bool overwrites = stores && access.AllowsStore(overwrite: true);

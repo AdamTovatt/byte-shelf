@@ -1,6 +1,5 @@
 using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Storage.Models;
-using ByteShelfCommon;
 using EasyReasy.Database;
 
 namespace ByteShelf.Server.Storage.Repositories
@@ -13,8 +12,8 @@ namespace ByteShelf.Server.Storage.Repositories
     {
         Task InsertAsync(LinkRecord link, IDbSession? session = null);
 
-        /// <summary>The link of <paramref name="kind"/> with <paramref name="id"/>, unless it has run out by <paramref name="now"/> or is gone.</summary>
-        Task<LinkRecord?> GetLiveAsync(Guid id, ShelfLinkKind kind, DateTimeOffset now, IDbSession? session = null);
+        /// <summary>The link with <paramref name="id"/>, unless it has run out by <paramref name="now"/> or is gone.</summary>
+        Task<LinkRecord?> GetLiveAsync(Guid id, DateTimeOffset now, IDbSession? session = null);
 
         /// <summary>
         /// The shelf's links that have not run out by <paramref name="now"/>, newest first: every one, or

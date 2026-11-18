@@ -36,6 +36,9 @@ namespace ByteShelf.Server.Storage.Models
         public required DateTimeOffset ExpiresAt { get; init; }
     }
 
-    /// <summary>A link as listed: its row, and the name of the user or key that made it.</summary>
-    public sealed record ListedLinkRecord(LinkRecord Link, string MakerName);
+    /// <summary>
+    /// A link as listed: its row, the name of the user or key that made it, and for a download link its
+    /// file's path while the file is live (null while it is in the trash, and for an upload link).
+    /// </summary>
+    public sealed record ListedLinkRecord(LinkRecord Link, string MakerName, string? LiveFilePath);
 }

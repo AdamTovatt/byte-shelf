@@ -213,11 +213,19 @@ namespace ByteShelf.Server.Tests.Storage
             DownloadLink own = (await made.Content.ReadFromJsonAsync<DownloadLink>())!;
             await CreateLinkAsync("/a.txt");
 
-            HttpResponseMessage response = await key.GetAsync("/api/shelves/docs/links");
-            string json = await response.Content.ReadAsStringAsync();
-            ShelfLink listed = Assert.Single((await response.Content.ReadFromJsonAsync<IReadOnlyList<ShelfLink>>())!);
+            ShelfLink listed = Assert.Single((await key.GetFromJsonAsync<IReadOnlyList<ShelfLink>>("/api/shelves/docs/links"))!);
 
             Assert.Equal((own.Id, ShelfLinkKind.Download, "/a.txt", LinkMakerKind.Key, true, own.ExpiresAt), (listed.Id, listed.Kind, listed.Path, listed.CreatedBy.Kind, listed.CreatedBy.IsCaller, listed.ExpiresAt));
+        }
+
+        [Fact]
+        public async Task Links_Listed_NameTheirKindsInLowercase()
+        {
+            await PutAsync("/a.txt", "a");
+            await CreateLinkAsync("/a.txt");
+
+            string json = await _host.AdminClient.GetStringAsync("/api/shelves/docs/links");
+
             Assert.Contains("\"kind\":\"download\"", json, StringComparison.Ordinal);
         }
 

@@ -27,9 +27,8 @@ namespace ByteShelfClient.InMemory
             TimeProvider? timeProvider = null,
             TimeSpan? restoreWindow = null)
         {
-            Guid currentUserId = Guid.NewGuid();
-            _store = new InMemoryStore(timeProvider ?? TimeProvider.System, restoreWindow ?? DefaultRestoreWindow, currentUserId);
-            CurrentUser = AddUser(new CreateUserRequest { Email = email, DisplayName = "Admin", Password = password, Roles = new[] { UserRoles.Admin } }, currentUserId);
+            _store = new InMemoryStore(timeProvider ?? TimeProvider.System, restoreWindow ?? DefaultRestoreWindow);
+            CurrentUser = AddUser(new CreateUserRequest { Email = email, DisplayName = "Admin", Password = password, Roles = new[] { UserRoles.Admin } });
         }
 
         /// <summary>The admin the client acts as.</summary>
@@ -43,7 +42,7 @@ namespace ByteShelfClient.InMemory
         {
             ArgumentNullException.ThrowIfNull(name);
             ShelfName.Validate(name);
-            return new InMemoryShelfClient(_store, name);
+            return new InMemoryShelfClient(_store, name, CurrentUser.Id);
         }
 
         /// <inheritdoc />
@@ -110,7 +109,7 @@ namespace ByteShelfClient.InMemory
         public Task<UserInfo> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(request);
-            return _store.WriteAsync(() => AddUser(request, Guid.NewGuid()), cancellationToken);
+            return _store.WriteAsync(() => AddUser(request), cancellationToken);
         }
 
         /// <inheritdoc />
@@ -199,7 +198,7 @@ namespace ByteShelfClient.InMemory
             return !_store.Users.Any(other => other != user && other.Roles.Contains(UserRoles.Admin));
         }
 
-        private UserInfo AddUser(CreateUserRequest request, Guid id)
+        private UserInfo AddUser(CreateUserRequest request)
         {
             InMemoryErrors.Checked(() => UserFields.ValidateEmail(request.Email));
             string displayName = InMemoryErrors.Checked(() => UserFields.NormalizeDisplayName(request.DisplayName));
@@ -213,7 +212,7 @@ namespace ByteShelfClient.InMemory
 
             InMemoryStore.UserRow added = new InMemoryStore.UserRow
             {
-                Id = id,
+                Id = Guid.NewGuid(),
                 Email = request.Email,
                 DisplayName = displayName,
                 Roles = roles,

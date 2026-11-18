@@ -244,6 +244,22 @@ namespace ByteShelf.Server.Tests.Storage
             await AssertNothingAtAsync("docs", "/a.txt");
         }
 
+        [Fact]
+        public async Task Link_RevokedWhileItsBodyArrives_StillStoresTheFile()
+        {
+            UploadLink link = await CreateLinkAsync(_host.AdminClient, new CreateUploadLinkRequest { Path = "/a.bin" });
+            PausedContent content = new PausedContent(new byte[1024 * 1024], new byte[] { 1, 2, 3 });
+
+            Task<HttpResponseMessage> sending = _host.AnonymousClient.PutAsync(link.Url, content);
+            await content.FirstPartTaken.WaitAsync(TimeSpan.FromSeconds(30));
+            (await _host.AdminClient.DeleteAsync($"/api/shelves/docs/links/{link.Id}")).EnsureSuccessStatusCode();
+            content.Resume.SetResult();
+            HttpResponseMessage response = await sending.WaitAsync(TimeSpan.FromSeconds(30));
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal((1024L * 1024) + 3, (await response.Content.ReadFromJsonAsync<ShelfFile>())!.SizeBytes);
+        }
+
         private async Task AssertNothingAtAsync(string shelf, string path)
         {
             Assert.Equal(HttpStatusCode.NotFound, (await _host.AdminClient.GetAsync($"/api/shelves/{shelf}/files?path={Uri.EscapeDataString(path)}")).StatusCode);
@@ -259,6 +275,43 @@ namespace ByteShelf.Server.Tests.Storage
         private Task<HttpResponseMessage> PutAsync(UploadLink link, string text)
         {
             return _host.AnonymousClient.PutAsync(link.Url, new ByteArrayContent(Encoding.UTF8.GetBytes(text)));
+        }
+
+        /// <summary>
+        /// A body sent in two parts, pausing between them until <see cref="Resume"/>. The first part is far
+        /// past what the test server's request pipe holds unread, so it is taken only while the server
+        /// reads the body: <see cref="FirstPartTaken"/> means the request is past the link's check.
+        /// </summary>
+        private sealed class PausedContent : HttpContent
+        {
+            private readonly byte[] _first;
+            private readonly byte[] _rest;
+            private readonly TaskCompletionSource _firstPartTaken = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public PausedContent(byte[] first, byte[] rest)
+            {
+                _first = first;
+                _rest = rest;
+            }
+
+            public Task FirstPartTaken => _firstPartTaken.Task;
+
+            public TaskCompletionSource Resume { get; } = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+            {
+                await stream.WriteAsync(_first);
+                await stream.FlushAsync();
+                _firstPartTaken.SetResult();
+                await Resume.Task;
+                await stream.WriteAsync(_rest);
+            }
+
+            protected override bool TryComputeLength(out long length)
+            {
+                length = _first.Length + _rest.Length;
+                return true;
+            }
         }
     }
 }

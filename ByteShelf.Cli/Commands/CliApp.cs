@@ -66,7 +66,7 @@ namespace ByteShelf.Cli.Commands
                 new Command(Section.Files, "decrypt", "<shelf>:<path> [--password-file <file>]", "remove a file's or a folder's encryption", DecryptAsync),
                 new Command(Section.Files, "describe", "<shelf>:<path> <text> | --clear", "set a file's description, which find matches too", DescribeAsync),
                 new Command(Section.Files, "share", "<shelf>:<path> [--expires <30m|12h|7d>]", string.Create(CultureInfo.InvariantCulture, $"a link to a file that works without signing in; {DownloadLink.Lifetime.Default.TotalHours} hours by default, at most {DownloadLink.Lifetime.Max.TotalDays} days, or until revoked"), ShareAsync),
-                new Command(Section.Files, "link list", "<shelf>", "the shelf's share and upload links that still work: yours, or every one if you may write there", ListLinksAsync),
+                new Command(Section.Files, "link list", "<shelf>", "the shelf's share and upload links that have not run out: yours, or every one if you may write there", ListLinksAsync),
                 new Command(Section.Files, "link revoke", "<shelf> <link-id>", "end a link, so nothing more is served through it: yours, or any if you may write there", RevokeLinkAsync),
                 new Command(
                     Section.Files,

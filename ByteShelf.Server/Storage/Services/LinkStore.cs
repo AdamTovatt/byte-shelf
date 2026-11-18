@@ -1,9 +1,9 @@
 using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Auth;
+using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
-using ByteShelfCommon;
 
 namespace ByteShelf.Server.Storage.Services
 {
@@ -27,19 +27,19 @@ namespace ByteShelf.Server.Storage.Services
         private readonly ILinkRepository _linkRepository;
         private readonly PublicAddress _publicAddress;
         private readonly TimeProvider _timeProvider;
-        private readonly ShelfLinkKind _kind;
+        private readonly LinkAccess _linkAccess;
         private readonly string _route;
         private readonly string _purpose;
 
         /// <param name="route">The route the kind's links point at; a link is this, a slash and its token.</param>
         /// <param name="purpose">What the kind's signing key is derived from: changing it ends every link of the kind made before.</param>
-        private protected LinkStore(LinkTokens tokens, ILinkRepository linkRepository, PublicAddress publicAddress, TimeProvider timeProvider, ShelfLinkKind kind, string route, string purpose)
+        private protected LinkStore(LinkTokens tokens, ILinkRepository linkRepository, PublicAddress publicAddress, TimeProvider timeProvider, LinkAccess linkAccess, string route, string purpose)
         {
             _tokens = tokens;
             _linkRepository = linkRepository;
             _publicAddress = publicAddress;
             _timeProvider = timeProvider;
-            _kind = kind;
+            _linkAccess = linkAccess;
             _route = route;
             _purpose = purpose;
         }
@@ -52,9 +52,24 @@ namespace ByteShelf.Server.Storage.Services
                 return null;
             }
 
-            // The row is read by kind, so its target is this kind's.
-            LinkRecord? link = await _linkRepository.GetLiveAsync(linkId, _kind, _timeProvider.GetUtcNow());
+            // Each kind signs with its own purpose, so a row of another kind is never named; the match on
+            // the target's type is what guarantees it.
+            LinkRecord? link = await _linkRepository.GetLiveAsync(linkId, _timeProvider.GetUtcNow());
             return link is { Target: TTarget target } ? new FoundLink<TTarget>(link, target) : null;
+        }
+
+        /// <summary>
+        /// What a public request through a link works with: the link's target, and its maker's access as
+        /// it is now, once the maker may still do what the link does (<see cref="LinkAccess.ResolveAsync"/>).
+        /// </summary>
+        /// <exception cref="NotFoundException">
+        /// No such link, it ran out or was revoked, or its maker has no access to the shelf any more;
+        /// <paramref name="notValidMessage"/> in every case, which tells the holder no more than that.
+        /// </exception>
+        public async Task<(ShelfAccess Access, TTarget Target)> OpenAsync(string token, string notValidMessage)
+        {
+            FoundLink<TTarget> found = await FindAsync(token) ?? throw new NotFoundException(notValidMessage);
+            return (await _linkAccess.ResolveAsync(found.Link, notValidMessage), found.Target);
         }
 
         /// <summary>

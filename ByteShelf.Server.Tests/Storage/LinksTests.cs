@@ -71,16 +71,17 @@ namespace ByteShelf.Server.Tests.Storage
         {
             ShelfFile file = await StoreTextAsync(_shelf, "/a.txt", "a");
             ShelfAccess reader = await GrantedAsync("reader@byteshelf.test", ShelfAccessPermission.Read);
+            ShelfAccess writer = await GrantedAsync("writer@byteshelf.test", ShelfAccessPermission.ReadWrite);
             DownloadLink readers = await DownloadLinks.CreateAsync(reader, file.Id, null);
             Clock.Advance(TimeSpan.FromSeconds(1));
-            UploadLink admins = await UploadLinks.CreateAsync(_admin, new CreateUploadLinkRequest { Path = "/b.txt", Overwrite = true, Description = "the report" }.Normalize());
+            UploadLink writers = await UploadLinks.CreateAsync(writer, new CreateUploadLinkRequest { Path = "/b.txt", Overwrite = true, Description = "the report" }.Normalize());
 
-            IReadOnlyList<ShelfLink> links = await LinkService.ListAsync(_admin);
+            IReadOnlyList<ShelfLink> links = await LinkService.ListAsync(writer);
 
             Assert.Equal(
                 new[]
                 {
-                    (admins.Id, ShelfLinkKind.Upload, "/b.txt", (Guid?)null, true, "the report", "Test user", true),
+                    (writers.Id, ShelfLinkKind.Upload, "/b.txt", (Guid?)null, true, "the report", "writer", true),
                     (readers.Id, ShelfLinkKind.Download, "/a.txt", file.Id, false, (string?)null, "reader", false),
                 },
                 links.Select(link => (link.Id, link.Kind, link.Path!, link.FileId, link.Overwrite, link.Description, link.CreatedBy.Name, link.CreatedBy.IsCaller)));
@@ -127,12 +128,12 @@ namespace ByteShelf.Server.Tests.Storage
             ShelfFile file = await StoreTextAsync(_shelf, "/a.txt", "a");
             await DownloadLinks.CreateAsync(_admin, file.Id, null);
 
-            await FileService.MoveFileAsync(_shelf, EntryReference.ForId(file.Id), "/moved/b.txt");
+            await FileService.MoveFileAsync(_shelf, EntryReference.ForId(file.Id), "/moved/deeper/b.txt");
             string? moved = Assert.Single(await LinkService.ListAsync(_admin)).Path;
             await FileService.DeleteFileAsync(_shelf, EntryReference.ForId(file.Id));
             ShelfLink trashed = Assert.Single(await LinkService.ListAsync(_admin));
 
-            Assert.Equal(("/moved/b.txt", null, file.Id), (moved, trashed.Path, trashed.FileId));
+            Assert.Equal(("/moved/deeper/b.txt", null, file.Id), (moved, trashed.Path, trashed.FileId));
         }
 
         [Fact]

@@ -56,7 +56,7 @@ npm run codegen    # in a second terminal
   (`services/uploadService.ts`); a file whose name is taken is replaced only when asked. "Copy link"
   in a file's menu copies one that works for a day, for someone without access; where the browser
   offers no clipboard (plain HTTP), the toast shows it to copy by hand. A shelf's settings show
-  everyone a Links tab listing the share and upload links that still work (their own, or every one
+  everyone a Links tab listing the share and upload links that have not run out (their own, or every one
   for someone who may change the shelf's files) and revoking them; only admins see the other tabs.
   A folder's rows select as in Finder (`hooks/useSelection.ts`): a click selects one, Cmd or Ctrl
   adds or takes one away, Shift selects a range, Space toggles the focused row, Cmd or Ctrl+A selects

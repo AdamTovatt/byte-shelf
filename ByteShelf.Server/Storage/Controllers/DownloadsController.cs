@@ -17,13 +17,11 @@ namespace ByteShelf.Server.Storage.Controllers
         private const string NotValid = "This download link is not valid, has run out or was revoked.";
 
         private readonly DownloadLinks _downloadLinks;
-        private readonly LinkAccess _linkAccess;
         private readonly IFileService _fileService;
 
-        public DownloadsController(DownloadLinks downloadLinks, LinkAccess linkAccess, IFileService fileService)
+        public DownloadsController(DownloadLinks downloadLinks, IFileService fileService)
         {
             _downloadLinks = downloadLinks;
-            _linkAccess = linkAccess;
             _fileService = fileService;
         }
 
@@ -40,9 +38,8 @@ namespace ByteShelf.Server.Storage.Controllers
         [ProducesResponseType(typeof(ErrorResponse), 409)]
         public async Task<IActionResult> Get(string token, [FromQuery] bool download = false)
         {
-            FoundLink<DownloadLinkTarget> found = await _downloadLinks.FindAsync(token) ?? throw new NotFoundException(NotValid);
-            ShelfAccess access = await _linkAccess.ResolveAsync(found.Link, NotValid);
-            FileContent content = await _fileService.GetContentAsync(access.Shelf, EntryReference.ForId(found.Target.FileId));
+            (ShelfAccess access, DownloadLinkTarget target) = await _downloadLinks.OpenAsync(token, NotValid);
+            FileContent content = await _fileService.GetContentAsync(access.Shelf, EntryReference.ForId(target.FileId));
 
             // The link names the file by id, which an in-place encryption keeps: refused while it is encrypted.
             if (content.File.Encrypted)

@@ -17,13 +17,11 @@ namespace ByteShelf.Server.Storage.Controllers
         private const string NotValid = "This upload link is not valid, has run out or was revoked.";
 
         private readonly UploadLinks _uploadLinks;
-        private readonly LinkAccess _linkAccess;
         private readonly IUploadService _uploadService;
 
-        public UploadLinksController(UploadLinks uploadLinks, LinkAccess linkAccess, IUploadService uploadService)
+        public UploadLinksController(UploadLinks uploadLinks, IUploadService uploadService)
         {
             _uploadLinks = uploadLinks;
-            _linkAccess = linkAccess;
             _uploadService = uploadService;
         }
 
@@ -46,9 +44,7 @@ namespace ByteShelf.Server.Storage.Controllers
         [ProducesResponseType(typeof(ErrorResponse), 507)]
         public async Task<IActionResult> Put(string token, CancellationToken cancellationToken)
         {
-            FoundLink<UploadLinkTarget> found = await _uploadLinks.FindAsync(token) ?? throw new NotFoundException(NotValid);
-            ShelfAccess access = await _linkAccess.ResolveAsync(found.Link, NotValid);
-            UploadLinkTarget target = found.Target;
+            (ShelfAccess access, UploadLinkTarget target) = await _uploadLinks.OpenAsync(token, NotValid);
             StartUploadRequest request = SingleUpload.Of(
                 Request, target.Path, target.Overwrite, target.Description, encrypted: false, "An upload link needs Content-Length: send a file, as curl -T does, not a stream of unknown length.");
 

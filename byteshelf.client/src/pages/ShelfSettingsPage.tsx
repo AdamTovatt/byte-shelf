@@ -38,7 +38,7 @@ const TABS: Record<ShelfSettingsTab, { label: string; icon: IconComponent; admin
 /**
  * One shelf's settings, as tabs that are routes, so each can be linked to and the back button steps
  * between them: for an admin General (name, quota and deleting it), Access (who may use it) and Keys
- * (which programs may); for everyone Links (the share and upload links that still work). The tab
+ * (which programs may); for everyone Links (the share and upload links that have not run out). The tab
  * comes from the route (`SHELF_ROUTE_PATTERNS.settings`); none, or one not shown to this user, goes to
  * the first one shown.
  */
@@ -322,7 +322,7 @@ function LinksSection({ shelf }: { shelf: string }) {
         Links
       </SectionTitle>
       <LoadError error={error} failure="Could not load the links" />
-      {links?.length === 0 && <p className="text-body-sm text-muted">No links work on this shelf.</p>}
+      {links?.length === 0 && <p className="text-body-sm text-muted">No links on this shelf.</p>}
       {links && links.length > 0 && (
         <CardList>
           {links.map((link) => (

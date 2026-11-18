@@ -50,17 +50,17 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<LinkRecord?> GetLiveAsync(Guid id, ShelfLinkKind kind, DateTimeOffset now, IDbSession? session = null)
+        public async Task<LinkRecord?> GetLiveAsync(Guid id, DateTimeOffset now, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>
             {
                 string query = $@"
                     SELECT {SelectColumns}
                     FROM shelf_link link
-                    WHERE link.id = @{nameof(id)} AND link.kind = @Kind AND link.expires_at > @{nameof(now)}";
+                    WHERE link.id = @{nameof(id)} AND link.expires_at > @{nameof(now)}";
 
                 LinkEntity? entity = await dbSession.Connection.QuerySingleOrDefaultAsync<LinkEntity>(
-                    query, new { id, Kind = ToColumn(kind), now }, transaction: dbSession.Transaction);
+                    query, new { id, now }, transaction: dbSession.Transaction);
 
                 return entity?.ToDomain();
             }, session);
@@ -71,11 +71,29 @@ namespace ByteShelf.Server.Storage.Repositories
         {
             return await UseSessionAsync(async (dbSession) =>
             {
+                // file_path walks up from each download link's live file, a directory a step, prefixing
+                // each name; the row that has reached the shelf's root holds the whole path. One query
+                // for the whole list, however many links it holds.
                 string query = $@"
-                    SELECT {SelectColumns}, COALESCE(maker_user.display_name, maker_key.name) AS {nameof(LinkEntity.MakerName)}
+                    WITH RECURSIVE file_path (link_id, directory_id, path) AS (
+                        SELECT link.id, f.directory_id, '/' || f.name
+                        FROM shelf_link link
+                        JOIN file f ON f.id = link.file_id AND f.deleted_at IS NULL
+                        WHERE link.shelf_id = @{nameof(shelfId)} AND link.expires_at > @{nameof(now)} AND {MadeByFilter}
+                        UNION ALL
+                        SELECT file_path.link_id, d.parent_id, '/' || d.name || file_path.path
+                        FROM file_path
+                        JOIN directory d ON d.id = file_path.directory_id
+                        WHERE d.parent_id IS NOT NULL
+                    )
+                    SELECT {SelectColumns},
+                        COALESCE(maker_user.display_name, maker_key.name) AS {nameof(LinkEntity.MakerName)},
+                        live_file.path AS {nameof(LinkEntity.LiveFilePath)}
                     FROM shelf_link link
                     LEFT JOIN user_account maker_user ON maker_user.id = link.created_by_user_id
                     LEFT JOIN shelf_key maker_key ON maker_key.id = link.created_by_key_id
+                    LEFT JOIN file_path live_file ON live_file.link_id = link.id
+                        AND live_file.directory_id = (SELECT id FROM directory WHERE shelf_id = @{nameof(shelfId)} AND parent_id IS NULL)
                     WHERE link.shelf_id = @{nameof(shelfId)} AND link.expires_at > @{nameof(now)} AND {MadeByFilter}
                     ORDER BY link.created_at DESC, link.id";
 
@@ -83,7 +101,9 @@ namespace ByteShelf.Server.Storage.Repositories
                 IEnumerable<LinkEntity> entities = await dbSession.Connection.QueryAsync<LinkEntity>(
                     query, new { shelfId, now, filter.MakerUserId, filter.MakerKeyId }, transaction: dbSession.Transaction);
 
-                return (IReadOnlyList<ListedLinkRecord>)entities.Select(entity => new ListedLinkRecord(entity.ToDomain(), entity.MakerName)).ToList();
+                return (IReadOnlyList<ListedLinkRecord>)entities
+                    .Select(entity => new ListedLinkRecord(entity.ToDomain(), entity.MakerName, entity.LiveFilePath))
+                    .ToList();
             }, session);
         }
 
@@ -147,6 +167,7 @@ namespace ByteShelf.Server.Storage.Repositories
             public DateTimeOffset CreatedAt { get; set; }
             public DateTimeOffset ExpiresAt { get; set; }
             public string MakerName { get; set; } = string.Empty;
+            public string? LiveFilePath { get; set; }
 
             public static LinkEntity From(LinkRecord link)
             {

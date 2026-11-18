@@ -18,8 +18,8 @@ permissions: read, add-only (read, and store new files, never replace or remove)
   JPEG, GIF or WebP image of up to 1 MiB (any other file stored as an image, up to 32 MiB, as a
   preview at most 1568 pixels on its long side), and use share_file for a link to anything else, or
   create_upload_link for a link that stores one file sent to it with curl. Both answer the link's
-  id: list_links shows the links that still work and revoke_link ends one sooner, so a file read
-  once goes through a link made for a few minutes and revoked after. Add it to
+  id: list_links shows the links that have not run out and revoke_link ends one sooner, so a file
+  read once goes through a link made for a few minutes and revoked after. Add it to
   Claude Code with this server's address and the key:
   `claude mcp add --transport http byteshelf https://<this-server>/mcp --header "Authorization: Bearer bsk_..."`
 - Files and folders can be encrypted with a password (as age files) in the web UI and with the CLI. The
@@ -49,8 +49,8 @@ permissions: read, add-only (read, and store new files, never replace or remove)
 - `POST /api/shelves/<shelf>/upload-link` with `{ "path": "/in/q3.pdf" }` answers a link that
   stores one file PUT to it without the key (`curl -fsS -T ./q3.pdf "<link>"`), for 15 minutes or
   `expiresInMinutes` (at most 1440); `overwrite` and `description` are optional.
-- `GET /api/shelves/<shelf>/links` lists the share and upload links that still work, with their ids
-  (the key's own, or every one for a read-write key), and `DELETE /api/shelves/<shelf>/links/<id>`
+- `GET /api/shelves/<shelf>/links` lists the share and upload links that have not run out, with
+  their ids (the key's own, or every one for a read-write key), and `DELETE /api/shelves/<shelf>/links/<id>`
   revokes one. A link also stops working while whoever made it lacks the access it needs: a share
   link while they cannot read the shelf, an upload link while they cannot store there (or replace a
   file, for one that overwrites).

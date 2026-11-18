@@ -9,10 +9,14 @@ namespace ByteShelfClient.InMemory
     {
         private readonly InMemoryStore _store;
 
-        public InMemoryShelfClient(InMemoryStore store, string name)
+        /// <summary>The admin every call acts as (<see cref="InMemoryByteShelfClient.CurrentUser"/>), who makes every link.</summary>
+        private readonly Guid _currentUserId;
+
+        public InMemoryShelfClient(InMemoryStore store, string name, Guid currentUserId)
         {
             _store = store;
             Name = name;
+            _currentUserId = currentUserId;
         }
 
         public string Name { get; }
@@ -627,7 +631,7 @@ namespace ByteShelfClient.InMemory
                 Path = path,
                 Overwrite = overwrite,
                 Description = description,
-                MakerId = _store.CurrentUserId,
+                MakerId = _currentUserId,
                 CreatedAt = _store.Now,
                 ExpiresAt = _store.Now + lifetime,
             };
@@ -637,7 +641,7 @@ namespace ByteShelfClient.InMemory
         }
 
         /// <summary>
-        /// The links that work: not run out, and with their maker and file still there, which the server
+        /// The links listed: not run out, and with their maker and file still there, which the server
         /// removes a link with.
         /// </summary>
         private IEnumerable<LinkRow> LiveLinks(InMemoryShelf shelf)
@@ -663,7 +667,7 @@ namespace ByteShelfClient.InMemory
                     Kind = LinkMakerKind.User,
                     Id = link.MakerId,
                     Name = _store.Users.Single(user => user.Id == link.MakerId).DisplayName,
-                    IsCaller = link.MakerId == _store.CurrentUserId,
+                    IsCaller = link.MakerId == _currentUserId,
                 },
                 CreatedAt = link.CreatedAt,
                 ExpiresAt = link.ExpiresAt,
