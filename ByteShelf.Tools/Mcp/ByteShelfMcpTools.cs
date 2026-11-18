@@ -45,7 +45,7 @@ namespace ByteShelf.Tools.Mcp
 
         // The criteria search_files and find_duplicates share (FileCriteria), described once for both.
         private const string UnderDescription = "The directory to search under; / (the default) for the whole shelf.";
-        private const string TextDescription = "Text the file's name or description contains, ignoring case.";
+        private const string TextDescription = "Text the file's name or description contains, ignoring case, or the title or camera its contents carry.";
         private const string ContentTypeDescription = "A media type such as application/pdf, or a family such as image/*.";
         private const string MinSizeDescription = "The fewest bytes.";
         private const string MaxSizeDescription = "The most bytes.";
@@ -54,6 +54,13 @@ namespace ByteShelf.Tools.Mcp
         private const string UpdatedFromDescription = "Last changed at or after this ISO 8601 time.";
         private const string UpdatedBeforeDescription = "Last changed before this ISO 8601 time.";
         private const string Sha256Description = "The contents' SHA-256 in hex, to find copies of a file.";
+        private const string TakenFromDescription = "A photo or video taken at or after this ISO 8601 time, as its contents say.";
+        private const string TakenBeforeDescription = "A photo or video taken before this ISO 8601 time.";
+        private const string HasGpsDescription = "Only files whose contents carry a GPS position.";
+        private const string MinDurationDescription = "The fewest seconds a video plays (read from QuickTime and MP4 files).";
+        private const string MaxDurationDescription = "The most seconds a video plays (read from QuickTime and MP4 files).";
+        private const string MinPageCountDescription = "The fewest pages a PDF has.";
+        private const string MaxPageCountDescription = "The most pages a PDF has.";
         private const string AfterDescription = "The cursor a previous page ended with, for the next page.";
 
         /// <summary>Why a tool never reads an encrypted file's contents, after the file's path.</summary>
@@ -249,34 +256,39 @@ namespace ByteShelf.Tools.Mcp
             [Description(UpdatedFromDescription)] DateTimeOffset? updatedFrom = null,
             [Description(UpdatedBeforeDescription)] DateTimeOffset? updatedBefore = null,
             [Description(Sha256Description)] string? sha256 = null,
-            [Description("A photo or video taken at or after this ISO 8601 time, as its contents say.")] DateTimeOffset? takenFrom = null,
-            [Description("A photo or video taken before this ISO 8601 time.")] DateTimeOffset? takenBefore = null,
-            [Description("Only files whose contents carry a GPS position.")] bool hasGps = false,
-            [Description("The fewest seconds a video plays (read from QuickTime and MP4 files).")] double? minDurationSeconds = null,
-            [Description("The most seconds a video plays (read from QuickTime and MP4 files).")] double? maxDurationSeconds = null,
-            [Description("The fewest pages a PDF has.")] int? minPageCount = null,
-            [Description("The most pages a PDF has.")] int? maxPageCount = null,
+            [Description(TakenFromDescription)] DateTimeOffset? takenFrom = null,
+            [Description(TakenBeforeDescription)] DateTimeOffset? takenBefore = null,
+            [Description(HasGpsDescription)] bool hasGps = false,
+            [Description(MinDurationDescription)] double? minDurationSeconds = null,
+            [Description(MaxDurationDescription)] double? maxDurationSeconds = null,
+            [Description(MinPageCountDescription)] int? minPageCount = null,
+            [Description(MaxPageCountDescription)] int? maxPageCount = null,
             [Description("Files per page, 1 to 1000; 100 by default.")] int? limit = null,
             [Description(AfterDescription)] string? after = null,
             [Description(ShelfDescription)] string? shelf = null,
             CancellationToken cancellationToken = default)
         {
-            FileCriteria criteria = Criteria(under, text, contentType, minSizeBytes, maxSizeBytes, createdFrom, createdBefore, updatedFrom, updatedBefore, sha256);
-            FileSearch search = new FileSearch(criteria)
-            {
-                TakenFrom = takenFrom,
-                TakenBefore = takenBefore,
-                HasGps = hasGps,
-                MinDurationSeconds = minDurationSeconds,
-                MaxDurationSeconds = maxDurationSeconds,
-                MinPageCount = minPageCount,
-                MaxPageCount = maxPageCount,
-                Limit = limit,
-                After = after,
-            };
+            FileCriteria criteria = Criteria(
+                under: under,
+                text: text,
+                contentType: contentType,
+                minSizeBytes: minSizeBytes,
+                maxSizeBytes: maxSizeBytes,
+                createdFrom: createdFrom,
+                createdBefore: createdBefore,
+                updatedFrom: updatedFrom,
+                updatedBefore: updatedBefore,
+                sha256: sha256,
+                takenFrom: takenFrom,
+                takenBefore: takenBefore,
+                hasGps: hasGps,
+                minDurationSeconds: minDurationSeconds,
+                maxDurationSeconds: maxDurationSeconds,
+                minPageCount: minPageCount,
+                maxPageCount: maxPageCount);
 
             return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.SearchResults(
-                await shelfClient.SearchAsync(search, cancellationToken),
+                await shelfClient.SearchAsync(new FileSearch(criteria) { Limit = limit, After = after }, cancellationToken),
                 MoreAfter));
         }
 
@@ -294,12 +306,36 @@ namespace ByteShelf.Tools.Mcp
             [Description(UpdatedFromDescription)] DateTimeOffset? updatedFrom = null,
             [Description(UpdatedBeforeDescription)] DateTimeOffset? updatedBefore = null,
             [Description(Sha256Description)] string? sha256 = null,
+            [Description(TakenFromDescription)] DateTimeOffset? takenFrom = null,
+            [Description(TakenBeforeDescription)] DateTimeOffset? takenBefore = null,
+            [Description(HasGpsDescription)] bool hasGps = false,
+            [Description(MinDurationDescription)] double? minDurationSeconds = null,
+            [Description(MaxDurationDescription)] double? maxDurationSeconds = null,
+            [Description(MinPageCountDescription)] int? minPageCount = null,
+            [Description(MaxPageCountDescription)] int? maxPageCount = null,
             [Description("Groups per page, 1 to 1000; 100 by default.")] int? limit = null,
             [Description(AfterDescription)] string? after = null,
             [Description(ShelfDescription)] string? shelf = null,
             CancellationToken cancellationToken = default)
         {
-            FileCriteria criteria = Criteria(under, text, contentType, minSizeBytes, maxSizeBytes, createdFrom, createdBefore, updatedFrom, updatedBefore, sha256);
+            FileCriteria criteria = Criteria(
+                under: under,
+                text: text,
+                contentType: contentType,
+                minSizeBytes: minSizeBytes,
+                maxSizeBytes: maxSizeBytes,
+                createdFrom: createdFrom,
+                createdBefore: createdBefore,
+                updatedFrom: updatedFrom,
+                updatedBefore: updatedBefore,
+                sha256: sha256,
+                takenFrom: takenFrom,
+                takenBefore: takenBefore,
+                hasGps: hasGps,
+                minDurationSeconds: minDurationSeconds,
+                maxDurationSeconds: maxDurationSeconds,
+                minPageCount: minPageCount,
+                maxPageCount: maxPageCount);
 
             return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.Duplicates(
                 await shelfClient.FindDuplicatesAsync(new DuplicateSearch(criteria) { Limit = limit, After = after == null ? null : DuplicateCursor.Parse(after) }, cancellationToken),
@@ -317,7 +353,14 @@ namespace ByteShelf.Tools.Mcp
             DateTimeOffset? createdBefore,
             DateTimeOffset? updatedFrom,
             DateTimeOffset? updatedBefore,
-            string? sha256)
+            string? sha256,
+            DateTimeOffset? takenFrom,
+            DateTimeOffset? takenBefore,
+            bool hasGps,
+            double? minDurationSeconds,
+            double? maxDurationSeconds,
+            int? minPageCount,
+            int? maxPageCount)
         {
             return new FileCriteria
             {
@@ -331,6 +374,13 @@ namespace ByteShelf.Tools.Mcp
                 UpdatedFrom = updatedFrom,
                 UpdatedBefore = updatedBefore,
                 Sha256 = sha256,
+                TakenFrom = takenFrom,
+                TakenBefore = takenBefore,
+                HasGps = hasGps,
+                MinDurationSeconds = minDurationSeconds,
+                MaxDurationSeconds = maxDurationSeconds,
+                MinPageCount = minPageCount,
+                MaxPageCount = maxPageCount,
             };
         }
 

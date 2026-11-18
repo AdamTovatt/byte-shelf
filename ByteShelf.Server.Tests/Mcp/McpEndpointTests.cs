@@ -122,19 +122,39 @@ namespace ByteShelf.Server.Tests.Mcp
             Assert.StartsWith("/q3.pdf", found, StringComparison.Ordinal);
         }
 
-        [Fact]
-        public async Task SearchFiles_EveryMetadataCriterion_IsAskedOfTheServer()
+        [Theory]
+        [InlineData("search_files")]
+        [InlineData("find_duplicates")]
+        public async Task SearchTool_EveryMetadataCriterion_IsAskedOfTheServer(string tool)
         {
+            // The matching file, then one per criterion that fails only that one, each stored twice so
+            // find_duplicates groups it. Built once each: two builds of a PDF differ in their bytes.
             DateTimeOffset taken = new DateTimeOffset(2024, 6, 1, 9, 0, 0, TimeSpan.Zero);
-            await StoreAsync("/trip.mov", TestMedia.Movie(taken, TimeSpan.FromSeconds(90), location: "+59.3293+018.0686/"), "video/quicktime");
-            await StoreAsync("/indoors.mov", TestMedia.Movie(taken, TimeSpan.FromSeconds(90)), "video/quicktime");
-            await StoreAsync("/q3.pdf", TestMedia.Pdf(pages: 3, title: "Q3 report"), "application/pdf");
-            await StoreAsync("/memo.pdf", TestMedia.Pdf(pages: 1, title: "Memo"), "application/pdf");
+            const string Gps = "+59.3293+018.0686/";
+            Dictionary<string, byte[]> files = new Dictionary<string, byte[]>
+            {
+                ["trip.mov"] = TestMedia.Movie(taken, TimeSpan.FromSeconds(90), location: Gps),
+                ["indoors.mov"] = TestMedia.Movie(taken, TimeSpan.FromSeconds(90)),
+                ["early.mov"] = TestMedia.Movie(new DateTimeOffset(2024, 5, 31, 23, 0, 0, TimeSpan.Zero), TimeSpan.FromSeconds(90), location: Gps),
+                ["late.mov"] = TestMedia.Movie(new DateTimeOffset(2024, 6, 2, 0, 0, 0, TimeSpan.Zero), TimeSpan.FromSeconds(90), location: Gps),
+                ["short.mov"] = TestMedia.Movie(taken, TimeSpan.FromSeconds(30), location: Gps),
+                ["long.mov"] = TestMedia.Movie(taken, TimeSpan.FromSeconds(150), location: Gps),
+                ["q3.pdf"] = TestMedia.Pdf(pages: 3, title: "Q3 report"),
+                ["memo.pdf"] = TestMedia.Pdf(pages: 1, title: "Memo"),
+                ["thesis.pdf"] = TestMedia.Pdf(pages: 4, title: "Thesis"),
+            };
+            foreach (string copy in new[] { "a", "b" })
+            {
+                foreach ((string name, byte[] content) in files)
+                {
+                    await StoreAsync($"/{copy}/{name}", content, name.EndsWith(".pdf", StringComparison.Ordinal) ? "application/pdf" : "video/quicktime");
+                }
+            }
+
             await _host.Services.ReadMetadataAsync();
             await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read), asBearer: true);
 
-            // Each range is lopsided, so a criterion sent as its other end is refused as an empty range.
-            string videos = TextOf(await client.CallToolAsync("search_files", new Dictionary<string, object?>
+            string videos = TextOf(await client.CallToolAsync(tool, new Dictionary<string, object?>
             {
                 ["takenFrom"] = "2024-06-01T00:00:00Z",
                 ["takenBefore"] = "2024-06-02T00:00:00Z",
@@ -142,11 +162,10 @@ namespace ByteShelf.Server.Tests.Mcp
                 ["minDurationSeconds"] = 60,
                 ["maxDurationSeconds"] = 120,
             }));
-            string documents = TextOf(await client.CallToolAsync("search_files", new Dictionary<string, object?> { ["minPageCount"] = 2, ["maxPageCount"] = 3 }));
+            string documents = TextOf(await client.CallToolAsync(tool, new Dictionary<string, object?> { ["minPageCount"] = 2, ["maxPageCount"] = 3 }));
 
-            Assert.Equal(("/trip.mov", "/q3.pdf"), (videos.Split('\n')[0].Split(' ')[0], documents.Split('\n')[0].Split(' ')[0]));
-            Assert.DoesNotContain("indoors", videos, StringComparison.Ordinal);
-            Assert.DoesNotContain("memo", documents, StringComparison.Ordinal);
+            Assert.Equal(["/a/trip.mov", "/b/trip.mov"], PathsIn(videos));
+            Assert.Equal(["/a/q3.pdf", "/b/q3.pdf"], PathsIn(documents));
         }
 
         [Fact]
@@ -501,6 +520,12 @@ namespace ByteShelf.Server.Tests.Mcp
         }
 
         /// <summary>Stores <paramref name="content"/> on the docs shelf as the admin, typed <paramref name="contentType"/>.</summary>
+        /// <summary>The stored files' paths a tool's answer names, in order.</summary>
+        private static List<string> PathsIn(string answer)
+        {
+            return Regex.Matches(answer, @"/[ab]/[\w.]+").Select(match => match.Value).Order(StringComparer.Ordinal).ToList();
+        }
+
         private async Task StoreAsync(string path, byte[] content, string contentType)
         {
             await _host.PutAsAdminAsync("docs", path, content, contentType);

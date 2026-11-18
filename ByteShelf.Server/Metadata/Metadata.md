@@ -47,12 +47,12 @@ file still holds them, and the change log forgets the row's earlier states
 
 ## Search
 
-`FileSearch` asks about metadata with `TakenFrom` and `TakenBefore` (a start included, an end
-excluded), `HasGps`, `MinDurationSeconds` and `MaxDurationSeconds`, and `MinPageCount` and
-`MaxPageCount` (inclusive), and its text matches the title and camera as it does a name. The search
-query joins each file to its contents' row, none for an encrypted file
-(`Metadata/Repositories/MetadataSearch`), so a file not read yet, or never to be read, fails every
-metadata criterion.
+`FileCriteria`, which search and the search for duplicates share, asks about metadata with
+`TakenFrom` and `TakenBefore` (a start included, an end excluded), `HasGps`, `MinDurationSeconds`
+and `MaxDurationSeconds`, and `MinPageCount` and `MaxPageCount` (inclusive), and its text matches
+the title and camera as it does a name. The server's query joins each file to its contents' row,
+none for an encrypted file (`SearchCriteria.Join`, in Storage/Repositories), so a file not read
+yet, or never to be read, fails every metadata criterion.
 
 ## The job (`metadata.reading`)
 

@@ -172,9 +172,7 @@ namespace ByteShelfClient.InMemory
             {
                 // The one-more-than-a-page paging here is also in DirectoryTree.Page and the server's
                 // FileService; left as is, since sharing it would reshape working code for a few lines.
-                // No file here has metadata, so a criterion about it matches none.
                 List<ShelfFile> found = Found(shelf, normalized)
-                    .Where(_ => !normalized.AsksForMetadata())
                     .Select(shelf.ToShelfFile)
                     .Where(file => IsAfter(file.Path, normalized.After))
                     .OrderBy(file => file.Path, StoredOrder.Instance)
@@ -795,10 +793,14 @@ namespace ByteShelfClient.InMemory
         }
 
         /// <summary>Whether a file meets every criterion of a normalized search but where it is, as the server's query decides.</summary>
-        /// <remarks>Text matches no title or camera: no file here has metadata, which only the server reads.</remarks>
+        /// <remarks>
+        /// No file here has metadata, which only the server reads, so a criterion about it matches none,
+        /// and text matches no title or camera.
+        /// </remarks>
         private static bool Matches(FileCriteria search, FileNode file)
         {
-            return (search.Text == null
+            return !search.AsksForMetadata()
+                && (search.Text == null
                     || FileCriteria.Fold(file.Name).Contains(search.Text, StringComparison.Ordinal)
                     || (file.Description != null && FileCriteria.Fold(file.Description).Contains(search.Text, StringComparison.Ordinal)))
                 && search.MatchesContentType(file.ContentType)

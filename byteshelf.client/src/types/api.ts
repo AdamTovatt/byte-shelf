@@ -1041,13 +1041,6 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
-                    takenFrom?: string;
-                    takenBefore?: string;
-                    hasGps?: boolean;
-                    minDurationSeconds?: number;
-                    maxDurationSeconds?: number;
-                    minPageCount?: number;
-                    maxPageCount?: number;
                     limit?: number;
                     after?: string;
                     under?: string;
@@ -1060,6 +1053,13 @@ export interface paths {
                     updatedFrom?: string;
                     updatedBefore?: string;
                     sha256?: string;
+                    takenFrom?: string;
+                    takenBefore?: string;
+                    hasGps?: boolean;
+                    minDurationSeconds?: number;
+                    maxDurationSeconds?: number;
+                    minPageCount?: number;
+                    maxPageCount?: number;
                 };
                 header?: never;
                 path: {
@@ -1134,6 +1134,13 @@ export interface paths {
                     updatedFrom?: string;
                     updatedBefore?: string;
                     sha256?: string;
+                    takenFrom?: string;
+                    takenBefore?: string;
+                    hasGps?: boolean;
+                    minDurationSeconds?: number;
+                    maxDurationSeconds?: number;
+                    minPageCount?: number;
+                    maxPageCount?: number;
                 };
                 header?: never;
                 path: {

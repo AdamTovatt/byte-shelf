@@ -636,6 +636,21 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
+        public async Task FindDuplicates_MetadataOption_IsAskedOfTheShelf()
+        {
+            await UploadAsync("/a.pdf", "same");
+            await UploadAsync("/b.pdf", "same");
+
+            // The in-memory shelf reads no contents, so a metadata criterion that reaches it matches nothing.
+            CliRun all = await RunAsync("find-duplicates", "docs");
+            CliRun withGps = await RunAsync("find-duplicates", "docs", "--has-gps");
+
+            Assert.StartsWith("2 copies of 4 B", all.Output, StringComparison.Ordinal);
+            Assert.Equal(CliApp.Succeeded, withGps.ExitCode);
+            Assert.DoesNotContain("copies of", withGps.Output, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public async Task Find_DurationThatIsNotSeconds_FailsAsMisuse()
         {
             CliRun run = await RunAsync("find", "docs", "--min-duration", "1m");

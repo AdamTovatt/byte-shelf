@@ -81,6 +81,28 @@ namespace ByteShelf.Server.Tests.Metadata
             Assert.Equal(["/plain.pdf"], await PathsAsync(new FileSearch { MinPageCount = 3, MaxPageCount = 3 }));
         }
 
+        [Fact]
+        public async Task FindDuplicatesAsync_MetadataCriterion_GroupsOnlyTheFilesThatMeetIt()
+        {
+            // Each built once and stored twice: two builds of a PDF differ in their bytes.
+            byte[] photo = TestMedia.Photo("2024:08:01 10:00:00", "+00:00", (59.3293, 18.0686), "Apple", "iPhone 15");
+            byte[] memo = TestMedia.Pdf(pages: 1, title: "Memo");
+            foreach (string copy in new[] { "a", "b" })
+            {
+                await StoreAsync(_shelf, $"/copies/{copy}.jpg", photo, "image/jpeg");
+                await StoreAsync(_shelf, $"/copies/{copy}.pdf", memo, "application/pdf");
+            }
+
+            await Services.ReadMetadataAsync();
+
+            DuplicateSearchResults all = await FileService.FindDuplicatesAsync(_shelf, new DuplicateSearch { Under = "/copies" });
+            DuplicateSearchResults found = await FileService.FindDuplicatesAsync(_shelf, new DuplicateSearch { Under = "/copies", HasGps = true });
+
+            Assert.Equal(2, all.Groups.Count);
+            DuplicateGroup group = Assert.Single(found.Groups);
+            Assert.Equal(["/copies/a.jpg", "/copies/b.jpg"], group.Files.Select(file => file.Path));
+        }
+
         private async Task<List<string>> PathsAsync(FileSearch search)
         {
             FileSearchResults results = await FileService.SearchAsync(_shelf, search);

@@ -88,15 +88,18 @@ export function setDescription(shelf: string, id: string, description: string | 
   return unwrapResponse(apiClient.PUT('/api/shelves/{shelf}/files/description', { params: { ...shelfPath(shelf), query: { id } }, body: { description } }));
 }
 
-/** The first page of the live files under `under` whose name or description holds `text`, by path. */
+/**
+ * The first page of the live files under `under` whose name, description, or the title or camera
+ * read from its contents holds `text`, by path.
+ */
 export function searchFiles(shelf: string, under: string, text: string): Promise<FileSearchResults> {
   return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/search', { params: { ...shelfPath(shelf), query: { under, text } } }));
 }
 
 /**
  * A page of the groups of plain files under `under` with the same contents, most repeated bytes
- * first: the first, or the one after the cursor `after`. With `text`, only files whose name or
- * description holds it count.
+ * first: the first, or the one after the cursor `after`. With `text`, only files whose name,
+ * description, or the title or camera read from its contents holds it count.
  */
 export function findDuplicates(shelf: string, under: string, text: string, after?: string): Promise<DuplicateSearchResults> {
   return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/duplicates', { params: { ...shelfPath(shelf), query: { under, text: text || undefined, after } } }));

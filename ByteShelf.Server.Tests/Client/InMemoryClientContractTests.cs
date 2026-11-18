@@ -47,5 +47,20 @@ namespace ByteShelf.Server.Tests.Client
 
             Assert.Empty(found.Files);
         }
+
+        [Fact]
+        public async Task FindDuplicatesAsync_MetadataCriterion_MatchesNothingSinceNothingIsRead()
+        {
+            byte[] pdf = TestMedia.Pdf(pages: 2, title: "Q3 report");
+            await Shelf.UploadAsync("/a.pdf", new MemoryStream(pdf), new UploadOptions { ContentType = "application/pdf" });
+            await Shelf.UploadAsync("/b.pdf", new MemoryStream(pdf), new UploadOptions { ContentType = "application/pdf" });
+
+            // Any PDF the server had read meets at least zero pages, so finding none means nothing was read.
+            DuplicateSearchResults found = await Shelf.FindDuplicatesAsync(new DuplicateSearch { MinPageCount = 0 });
+            DuplicateSearchResults withoutTheCriterion = await Shelf.FindDuplicatesAsync(new DuplicateSearch());
+
+            Assert.Empty(found.Groups);
+            Assert.Single(withoutTheCriterion.Groups);
+        }
     }
 }
