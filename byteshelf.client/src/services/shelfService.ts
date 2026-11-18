@@ -11,6 +11,7 @@ export type DeletionTree = components['schemas']['DeletionTree'];
 export type FileSearchResults = components['schemas']['FileSearchResults'];
 export type DuplicateSearchResults = components['schemas']['DuplicateSearchResults'];
 export type DuplicateGroup = components['schemas']['DuplicateGroup'];
+export type FileMetadata = components['schemas']['FileMetadata'];
 
 /**
  * A directory or a file in a listing, as the shelf page and its dialogs act on it. A directory
@@ -75,6 +76,11 @@ export function moveFile(shelf: string, id: string, toPath: string): Promise<She
 
 export function moveDirectory(shelf: string, id: string, toPath: string): Promise<ShelfDirectory> {
   return unwrapResponse(apiClient.POST('/api/shelves/{shelf}/directories/move', { params: { ...shelfPath(shelf), query: { id } }, body: { toPath } }));
+}
+
+/** What the server read from a file's contents; `readAt` is null until it has, and for good when `readable` is false (an encrypted file, or a type it does not read). */
+export function fetchFileMetadata(shelf: string, id: string): Promise<FileMetadata> {
+  return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/files/metadata', { params: { ...shelfPath(shelf), query: { id } } }));
 }
 
 /** Sets a file's description; null or blank removes it. */

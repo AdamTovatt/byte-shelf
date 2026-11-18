@@ -57,6 +57,9 @@ login, grant or key removed) and a later entry puts it back, so the result is al
 write is logged in the replica's own change log, so its pages update live and a promoted replica keeps a
 whole log.
 
+What the primary read from files' contents arrives the same way, as `object_metadata` entries: a replica
+never reads contents itself, and starts to once promoted ([Metadata](../Metadata/Metadata.md)).
+
 An entry naming contents the primary no longer holds for that file is passed over: the file was purged,
 or its contents swapped (encrypted or decrypted in place) before the replica fetched them. The primary
 serves a file's bytes only while they are still the SHA-256 asked for, and the log goes on to the file's

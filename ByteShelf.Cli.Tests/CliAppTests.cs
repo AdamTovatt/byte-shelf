@@ -622,6 +622,39 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
+        public async Task Find_MetadataOption_IsAskedOfTheShelf()
+        {
+            await UploadAsync("/scan-0.pdf", "a");
+
+            // The in-memory shelf reads no contents, so a metadata criterion that reaches it matches
+            // nothing. The name holds the option's value, so a value read as search text would find it.
+            CliRun all = await RunAsync("find", "docs");
+            CliRun withPages = await RunAsync("find", "docs", "--min-pages", "0");
+
+            Assert.StartsWith("/scan-0.pdf", all.Output, StringComparison.Ordinal);
+            Assert.Equal((CliApp.Succeeded, "No files found."), (withPages.ExitCode, withPages.Output.Trim()));
+        }
+
+        [Fact]
+        public async Task Find_DurationThatIsNotSeconds_FailsAsMisuse()
+        {
+            CliRun run = await RunAsync("find", "docs", "--min-duration", "1m");
+
+            Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.Equal("--min-duration takes a number of seconds, such as 90 or 1.5, not '1m'.", run.Error.Trim());
+        }
+
+        [Fact]
+        public async Task Stat_AFileInText_SaysItsContentsAreNotRead()
+        {
+            await UploadAsync("/a.txt", "a");
+
+            CliRun run = await RunAsync("stat", "docs:/a.txt");
+
+            Assert.Contains("metadata     not read for this type of file", run.Output, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public async Task Stat_AFileOrADirectory_PrintsItsRecord()
         {
             ShelfFile file = await UploadAsync("/a/b.txt", "b");

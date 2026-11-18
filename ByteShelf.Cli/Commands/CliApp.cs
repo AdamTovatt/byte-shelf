@@ -58,7 +58,7 @@ namespace ByteShelf.Cli.Commands
                 new Command(Section.Shelves, "shelf delete", "<shelf>", "delete an empty shelf, trash included", DeleteShelfAsync),
 
                 new Command(Section.Files, "ls", "<shelf>[:<path>]", "what a directory holds", ListAsync),
-                new Command(Section.Files, "stat", "<shelf>:<path>", "a file's record, or a directory's", StatAsync),
+                new Command(Section.Files, "stat", "<shelf>:<path>", "a file's record with what the server read from its contents (when and where it was taken, the camera, its length, a PDF's title and pages), or a directory's record", StatAsync),
                 new Command(Section.Files, "tree", "<shelf>[:<path>] [--depth <n>] [--limit <n>] [--after <cursor>]", "everything under a directory, by path, at any depth or down to --depth levels", TreeAsync),
                 new Command(Section.Files, "put", "<local-file>|<local-folder>|- <shelf>:<path> [--overwrite] [--type <content-type>] [--description <text>] [--encrypt] [--password-file <file>]", "store a file, - for stdin, or a whole folder; a path ending in / keeps the local name; encrypted with the folder's password under an encrypted folder, or with a new one given --encrypt", PutAsync),
                 new Command(Section.Files, "get", "<shelf>:<path> [<local-file>|<local-folder>|-] [--overwrite] [--decrypt] [--password-file <file>]", "save a file, - for stdout, or a whole directory; an encrypted file is saved as its age bytes, named .age in a folder, unless --decrypt or --password-file decrypts it", GetAsync),
@@ -71,8 +71,8 @@ namespace ByteShelf.Cli.Commands
                 new Command(
                     Section.Files,
                     "find",
-                    CriteriaUsage,
-                    "files under a directory whose name or description holds <text>, ignoring case, and that meet every option; times are ISO 8601, local without an offset",
+                    "<shelf>[:<path>] [<text>] [--type <content-type>|'<type>/*'] [--min-size <bytes>] [--max-size <bytes>] [--created-from <time>] [--created-before <time>] [--updated-from <time>] [--updated-before <time>] [--sha256 <hex>] [--taken-from <time>] [--taken-before <time>] [--has-gps] [--min-duration <seconds>] [--max-duration <seconds>] [--min-pages <n>] [--max-pages <n>] [--limit <n>] [--after <cursor>]",
+                    "files under a directory whose name, description, or the title or camera its contents carry holds <text>, ignoring case, and that meet every option; the --taken, --has-gps, duration and page options ask what the server read from the contents; times are ISO 8601, local without an offset",
                     FindAsync),
                 new Command(
                     Section.Files,
@@ -315,7 +315,16 @@ namespace ByteShelf.Cli.Commands
         {
             ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
             arguments.EnsureAllUsed();
-            PrintEntry(await Entries.GetAsync(await ShelfAsync(location.Shelf, cancellationToken), location.Path, cancellationToken), TextFormat.Entry);
+            IShelfClient shelf = await ShelfAsync(location.Shelf, cancellationToken);
+            if (_json)
+            {
+                // The record as the server answers it; what the contents say is another answer.
+                PrintEntry(await Entries.GetAsync(shelf, location.Path, cancellationToken), TextFormat.Entry);
+                return;
+            }
+
+            (Entry entry, FileMetadata? metadata) = await Entries.GetWithMetadataAsync(shelf, location.Path, cancellationToken);
+            PrintEntry(entry, described => TextFormat.Info(described, metadata));
         }
 
         private async Task PutAsync(ArgumentList arguments, CancellationToken cancellationToken)
@@ -558,6 +567,13 @@ namespace ByteShelf.Cli.Commands
             ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
             FileSearch search = new FileSearch(Criteria(location, arguments))
             {
+                TakenFrom = arguments.Time("--taken-from"),
+                TakenBefore = arguments.Time("--taken-before"),
+                HasGps = arguments.Flag("--has-gps"),
+                MinDurationSeconds = arguments.Seconds("--min-duration"),
+                MaxDurationSeconds = arguments.Seconds("--max-duration"),
+                MinPageCount = arguments.Count("--min-pages"),
+                MaxPageCount = arguments.Count("--max-pages"),
                 Limit = arguments.Count("--limit"),
                 After = arguments.Value("--after"),
             };

@@ -78,6 +78,16 @@ namespace ByteShelf.Server.Storage.Controllers
             return Ok(await _fileService.GetFileAsync(Shelf, EntryReference.From(path, id)));
         }
 
+        /// <summary>What a file's contents say about it, as read in the background after it was stored.</summary>
+        [HttpGet("files/metadata")]
+        [ShelfAccess(ShelfOperation.Read)]
+        [ProducesResponseType(typeof(FileMetadata), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        public async Task<IActionResult> GetFileMetadata([FromQuery] string? path, [FromQuery] Guid? id)
+        {
+            return Ok(await _fileService.GetMetadataAsync(Shelf, EntryReference.From(path, id)));
+        }
+
         /// <summary>Moves a file to the trash.</summary>
         [HttpDelete("files")]
         [ShelfAccess(ShelfOperation.Write)]

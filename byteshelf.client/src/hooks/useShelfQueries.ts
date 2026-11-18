@@ -8,6 +8,7 @@ import {
   deleteFile,
   deleteShelf,
   emptyTrash,
+  fetchFileMetadata,
   fetchListing,
   fetchShelf,
   fetchShelves,
@@ -87,6 +88,18 @@ export function useDuplicateSearch(shelf: string, under: string, text: string, e
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     enabled,
     placeholderData: keepPreviousData,
+  });
+}
+
+/**
+ * What the server read from a file's contents, fetched afresh each time it is asked for: reading it
+ * is not in the live updates, which would refetch every open listing for each file read.
+ */
+export function useFileMetadata(shelf: string, id: string) {
+  return useQuery({
+    queryKey: queryKeys.shelfContents.metadata(shelf, id),
+    queryFn: () => fetchFileMetadata(shelf, id),
+    staleTime: 0,
   });
 }
 

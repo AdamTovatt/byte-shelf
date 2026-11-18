@@ -95,6 +95,13 @@ namespace ByteShelf.Server.Tests.TestUtilities
             return UploadService.StoreAsync(shelf, Single(path, bytes.Length, "text/plain", overwrite), Uploader, new MemoryStream(bytes), CancellationToken.None);
         }
 
+        /// <summary>Stores <paramref name="contents"/> typed <paramref name="contentType"/> through a single PUT, sent as encrypted or not.</summary>
+        protected Task<ShelfFile> StoreAsync(Shelf shelf, string path, byte[] contents, string contentType, bool encrypted = false)
+        {
+            StartUploadRequest request = new StartUploadRequest { Path = path, SizeBytes = contents.Length, ContentType = contentType, Encrypted = encrypted };
+            return UploadService.StoreAsync(shelf, request, Uploader, new MemoryStream(contents), CancellationToken.None);
+        }
+
         /// <summary>What a single PUT of <paramref name="sizeBytes"/> to <paramref name="path"/> asks for.</summary>
         protected static StartUploadRequest Single(string path, long sizeBytes, string? contentType = null, bool overwrite = false)
         {

@@ -108,6 +108,48 @@ namespace ByteShelf.Server.Tests.Mcp
         }
 
         [Fact]
+        public async Task GetInfoAndSearchFiles_ReadPdf_ShowAndFindWhatItsContentsSay()
+        {
+            await StoreAsync("/q3.pdf", TestMedia.Pdf(pages: 3, title: "Q3 report"), "application/pdf");
+            await _host.Services.ReadMetadataAsync();
+
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read), asBearer: true);
+            string info = TextOf(await client.CallToolAsync("get_info", new Dictionary<string, object?> { ["path"] = "/q3.pdf" }));
+            string found = TextOf(await client.CallToolAsync("search_files", new Dictionary<string, object?> { ["text"] = "q3 report", ["minPageCount"] = 3 }));
+
+            Assert.Contains("pages        3", info, StringComparison.Ordinal);
+            Assert.Contains("title        Q3 report", info, StringComparison.Ordinal);
+            Assert.StartsWith("/q3.pdf", found, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task SearchFiles_EveryMetadataCriterion_IsAskedOfTheServer()
+        {
+            DateTimeOffset taken = new DateTimeOffset(2024, 6, 1, 9, 0, 0, TimeSpan.Zero);
+            await StoreAsync("/trip.mov", TestMedia.Movie(taken, TimeSpan.FromSeconds(90), location: "+59.3293+018.0686/"), "video/quicktime");
+            await StoreAsync("/indoors.mov", TestMedia.Movie(taken, TimeSpan.FromSeconds(90)), "video/quicktime");
+            await StoreAsync("/q3.pdf", TestMedia.Pdf(pages: 3, title: "Q3 report"), "application/pdf");
+            await StoreAsync("/memo.pdf", TestMedia.Pdf(pages: 1, title: "Memo"), "application/pdf");
+            await _host.Services.ReadMetadataAsync();
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read), asBearer: true);
+
+            // Each range is lopsided, so a criterion sent as its other end is refused as an empty range.
+            string videos = TextOf(await client.CallToolAsync("search_files", new Dictionary<string, object?>
+            {
+                ["takenFrom"] = "2024-06-01T00:00:00Z",
+                ["takenBefore"] = "2024-06-02T00:00:00Z",
+                ["hasGps"] = true,
+                ["minDurationSeconds"] = 60,
+                ["maxDurationSeconds"] = 120,
+            }));
+            string documents = TextOf(await client.CallToolAsync("search_files", new Dictionary<string, object?> { ["minPageCount"] = 2, ["maxPageCount"] = 3 }));
+
+            Assert.Equal(("/trip.mov", "/q3.pdf"), (videos.Split('\n')[0].Split(' ')[0], documents.Split('\n')[0].Split(' ')[0]));
+            Assert.DoesNotContain("indoors", videos, StringComparison.Ordinal);
+            Assert.DoesNotContain("memo", documents, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public async Task CallTools_ShelfLeftOut_ActOnTheKeysShelf()
         {
             await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
@@ -461,8 +503,7 @@ namespace ByteShelf.Server.Tests.Mcp
         /// <summary>Stores <paramref name="content"/> on the docs shelf as the admin, typed <paramref name="contentType"/>.</summary>
         private async Task StoreAsync(string path, byte[] content, string contentType)
         {
-            using ByteArrayContent body = new ByteArrayContent(content) { Headers = { ContentType = new MediaTypeHeaderValue(contentType) } };
-            (await _host.AdminClient.PutAsync($"/api/shelves/docs/content?path={path}", body)).EnsureSuccessStatusCode();
+            await _host.PutAsAdminAsync("docs", path, content, contentType);
         }
 
         private static string TextOf(CallToolResult result)

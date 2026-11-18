@@ -1,3 +1,5 @@
+using ByteShelf.Server.Metadata.Repositories;
+using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
@@ -20,6 +22,8 @@ namespace ByteShelf.Server.Storage.Services
         private readonly ObjectStore _objectStore;
         private readonly ObjectCollector _objectCollector;
         private readonly UploadLocks _uploadLocks;
+        private readonly MetadataReadingSignal _metadataSignal;
+        private readonly IObjectMetadataRepository _metadataRepository;
         private readonly StorageOptions _options;
         private readonly TimeProvider _timeProvider;
 
@@ -35,6 +39,8 @@ namespace ByteShelf.Server.Storage.Services
             ObjectStore objectStore,
             ObjectCollector objectCollector,
             UploadLocks uploadLocks,
+            MetadataReadingSignal metadataSignal,
+            IObjectMetadataRepository metadataRepository,
             StorageOptions options,
             TimeProvider timeProvider)
         {
@@ -49,6 +55,8 @@ namespace ByteShelf.Server.Storage.Services
             _objectStore = objectStore;
             _objectCollector = objectCollector;
             _uploadLocks = uploadLocks;
+            _metadataSignal = metadataSignal;
+            _metadataRepository = metadataRepository;
             _options = options;
             _timeProvider = timeProvider;
         }
@@ -345,6 +353,7 @@ namespace ByteShelf.Server.Storage.Services
                 await _objectCollector.RemoveReleasedAsync([committed.Sha256]);
             }
 
+            _metadataSignal.ContentsStored();
             return stored;
         }
 
@@ -402,6 +411,10 @@ namespace ByteShelf.Server.Storage.Services
             // The repository's own guard on the SHA-256 holds even for a caller that skipped the check above.
             FileRecord swapped = await _fileRepository.SwapContentAsync(file.Id, swap.Sha256, sha256, upload.SizeBytes, upload.Encrypted, now, session)
                 ?? throw ChangedSinceRead(path);
+
+            // What was read from the plain contents goes with them, at once and from the log too (see
+            // ChangeEntityType.ForgetsRemovedStates), unless another file still holds them.
+            await _metadataRepository.DeleteUnreferencedAsync(swap.Sha256, now, session);
             return StorageContracts.ToShelfFile(swapped, ShelfPath.GetParent(path));
         }
 

@@ -35,6 +35,17 @@ namespace ByteShelf.Server.ChangeLog.Repositories
                 INSERT INTO change_log (entity_type, entity_id, action, payload, created_at)
                 VALUES (@{nameof(entityType)}, @{nameof(entityId)}, @{nameof(action)}, @{nameof(payload)}, @{nameof(createdAt)})";
 
+            if (state == null && ChangeEntityType.ForgetsRemovedStates(entityType))
+            {
+                // Each earlier entry then reads as a removal, which a follower replaying it applies
+                // harmlessly before the removal itself.
+                string forgetQuery = $@"
+                    UPDATE change_log SET payload = NULL
+                    WHERE entity_type = @{nameof(entityType)} AND entity_id = @{nameof(entityId)} AND payload IS NOT NULL";
+
+                await session.Connection.ExecuteAsync(forgetQuery, new { entityType, entityId }, transaction: session.Transaction);
+            }
+
             await session.Connection.ExecuteAsync(
                 query, new { entityType, entityId, action, payload, createdAt }, transaction: session.Transaction);
         }

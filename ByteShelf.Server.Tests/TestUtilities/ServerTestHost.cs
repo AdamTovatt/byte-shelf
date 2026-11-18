@@ -71,6 +71,15 @@ namespace ByteShelf.Server.Tests.TestUtilities
             return (await response.Content.ReadFromJsonAsync<ShelfInfo>())!;
         }
 
+        /// <summary>Stores <paramref name="contents"/> on <paramref name="shelf"/> as the admin, typed <paramref name="contentType"/>, and answers the file.</summary>
+        public async Task<ShelfFile> PutAsAdminAsync(string shelf, string path, byte[] contents, string contentType)
+        {
+            using ByteArrayContent body = new ByteArrayContent(contents) { Headers = { ContentType = new MediaTypeHeaderValue(contentType) } };
+            HttpResponseMessage response = await AdminClient.PutAsync($"/api/shelves/{shelf}/content?path={Uri.EscapeDataString(path)}", body);
+            response.EnsureSuccessStatusCode();
+            return (await response.Content.ReadFromJsonAsync<ShelfFile>())!;
+        }
+
         /// <summary>Creates a key to <paramref name="shelf"/> as the admin, and answers it with its secret.</summary>
         public async Task<CreatedShelfKey> CreateKeyAsync(string shelf, ShelfKeyPermission permission)
         {

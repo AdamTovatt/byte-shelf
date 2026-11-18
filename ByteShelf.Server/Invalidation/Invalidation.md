@@ -31,6 +31,10 @@ the next poll.
 | `shelf-contents` | a shelf's changes, its files and directories (the trash included) | the shelf's id; none for a purge, which no longer knows its shelf |
 | `shelf-access` | a shelf's changes, its grants and keys | the shelf's id; none once the grant or key is gone |
 
+What was read from files' contents ([Metadata](../Metadata/Metadata.md)) makes nothing stale: an
+entry names an object, not a shelf, and refreshing every open listing for each file read would cost
+more than it shows. The web UI fetches a file's metadata afresh whenever it shows it.
+
 Every constant in `InvalidationResources` needs an entry in the web UI's map from resources to
 queries; a missing one silently stops that resource from refreshing, and a client test checks the
 two lists match.

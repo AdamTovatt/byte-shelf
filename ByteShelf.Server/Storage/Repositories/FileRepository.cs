@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Text.Json;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
+using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Storage.Models;
 using ByteShelfCommon;
@@ -272,12 +273,31 @@ namespace ByteShelf.Server.Storage.Repositories
             DynamicParameters parameters = FoundParameters(directoryId, directoryPath, search);
             parameters.Add(nameof(after), after);
             parameters.Add(nameof(maxRows), maxRows);
+            MetadataSearch.AddParameters(parameters, search);
 
             return await UseSessionAsync(async (dbSession) =>
             {
                 string query = $@"
                     {SubtreeWalk.Sql}
-                    {FoundSql}
+                    SELECT {SelectColumns}, tree.node_path || '/' || file.name AS {nameof(FileSearchEntity.FullPath)}
+                    FROM file JOIN tree ON file.directory_id = tree.node_id
+                    {MetadataSearch.Join}
+                    WHERE file.deleted_at IS NULL
+                      AND (@{nameof(SearchCriteria.Text)} IS NULL
+                           OR instr(file.name_fold, @{nameof(SearchCriteria.Text)}) > 0
+                           OR instr(coalesce(file.description_fold, ''), @{nameof(SearchCriteria.Text)}) > 0
+                           OR {MetadataSearch.TextCondition(nameof(SearchCriteria.Text))})
+                      AND (@{nameof(SearchCriteria.MediaType)} IS NULL OR file.media_type = @{nameof(SearchCriteria.MediaType)})
+                      AND (@{nameof(SearchCriteria.MediaPrefix)} IS NULL
+                           OR substr(file.media_type, 1, length(@{nameof(SearchCriteria.MediaPrefix)})) = @{nameof(SearchCriteria.MediaPrefix)})
+                      AND (@{nameof(SearchCriteria.MinSize)} IS NULL OR file.size_bytes >= @{nameof(SearchCriteria.MinSize)})
+                      AND (@{nameof(SearchCriteria.MaxSize)} IS NULL OR file.size_bytes <= @{nameof(SearchCriteria.MaxSize)})
+                      AND (@{nameof(SearchCriteria.CreatedFrom)} IS NULL OR file.created_at >= @{nameof(SearchCriteria.CreatedFrom)})
+                      AND (@{nameof(SearchCriteria.CreatedBefore)} IS NULL OR file.created_at < @{nameof(SearchCriteria.CreatedBefore)})
+                      AND (@{nameof(SearchCriteria.UpdatedFrom)} IS NULL OR file.updated_at >= @{nameof(SearchCriteria.UpdatedFrom)})
+                      AND (@{nameof(SearchCriteria.UpdatedBefore)} IS NULL OR file.updated_at < @{nameof(SearchCriteria.UpdatedBefore)})
+                      AND (@{nameof(SearchCriteria.Sha256)} IS NULL OR file.sha256 = @{nameof(SearchCriteria.Sha256)})
+                      AND {MetadataSearch.Conditions}
                       AND (@{nameof(after)} IS NULL OR {nameof(FileSearchEntity.FullPath)} > @{nameof(after)})
                     ORDER BY {nameof(FileSearchEntity.FullPath)}
                     LIMIT @{nameof(maxRows)}";

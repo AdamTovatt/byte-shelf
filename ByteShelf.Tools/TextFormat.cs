@@ -77,6 +77,73 @@ namespace ByteShelf.Tools
 
         public static string File(ShelfFile file)
         {
+            return Lines(FileLines(file));
+        }
+
+        /// <summary>The file or directory as get_info and stat show it: a file's record with what its contents say.</summary>
+        public static string Info(Entry entry, FileMetadata? metadata)
+        {
+            return entry.File is ShelfFile file && metadata != null
+                ? Lines(FileLines(file).Concat(MetadataLines(file, metadata)))
+                : Entry(entry);
+        }
+
+        private static IEnumerable<string> MetadataLines(ShelfFile file, FileMetadata metadata)
+        {
+            if (metadata.ReadAt == null)
+            {
+                // An encrypted file's line already says why it has none.
+                return file.Encrypted ? []
+                    : metadata.Readable ? [Field("metadata", "none read from the contents yet")]
+                    : [Field("metadata", "not read for this type of file")];
+            }
+
+            List<string> lines = new List<string>();
+            if (metadata.TakenAt is DateTimeOffset takenAt)
+            {
+                lines.Add(Field("taken", Time(takenAt)));
+            }
+
+            if (metadata.Latitude is double latitude && metadata.Longitude is double longitude)
+            {
+                lines.Add(Field("position", string.Create(CultureInfo.InvariantCulture, $"{latitude:0.######}, {longitude:0.######}")));
+            }
+
+            if (metadata.DurationSeconds is double seconds)
+            {
+                lines.Add(Field("duration", Duration(seconds)));
+            }
+
+            if (metadata.PageCount is int pages)
+            {
+                lines.Add(Field("pages", pages.ToString(CultureInfo.InvariantCulture)));
+            }
+
+            if (metadata.Title != null)
+            {
+                lines.Add(Field("title", metadata.Title));
+            }
+
+            if (metadata.Camera != null)
+            {
+                lines.Add(Field("camera", metadata.Camera));
+            }
+
+            return lines;
+        }
+
+        /// <summary>A length to play, such as <c>25:00:00</c>, <c>1:05:09</c> or <c>3:07</c>, rounded to the second.</summary>
+        private static string Duration(double seconds)
+        {
+            TimeSpan duration = TimeSpan.FromSeconds(Math.Round(seconds));
+            int hours = (int)duration.TotalHours;
+            return hours >= 1
+                ? string.Create(CultureInfo.InvariantCulture, $"{hours}:{duration:mm\\:ss}")
+                : duration.ToString(@"m\:ss", CultureInfo.InvariantCulture);
+        }
+
+        private static List<string> FileLines(ShelfFile file)
+        {
             List<string> lines = new List<string>
             {
                 Field("path", file.Path),
@@ -98,7 +165,7 @@ namespace ByteShelf.Tools
                 lines.Add(Field("encrypted", "with a password, as an age file; size and sha256 are of the encrypted bytes"));
             }
 
-            return Lines(lines);
+            return lines;
         }
 
         /// <summary>A labelled line of a record, its value starting in one column; a value's further lines start there too.</summary>

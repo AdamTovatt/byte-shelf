@@ -18,6 +18,7 @@ export const queryKeys = {
     trash: (shelf: string) => ['shelfContents', shelf, 'trash'] as const,
     search: (shelf: string, under: string, text: string) => ['shelfContents', shelf, 'search', under, text] as const,
     duplicates: (shelf: string, under: string, text: string) => ['shelfContents', shelf, 'duplicates', under, text] as const,
+    metadata: (shelf: string, id: string) => ['shelfContents', shelf, 'metadata', id] as const,
   },
   shelfAccess: {
     root: ['shelfAccess'] as const,

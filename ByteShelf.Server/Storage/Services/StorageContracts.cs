@@ -1,3 +1,4 @@
+using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Storage.Models;
 using ByteShelfCommon;
 
@@ -22,6 +23,29 @@ namespace ByteShelf.Server.Storage.Services
                 UpdatedAt = file.UpdatedAt,
                 Description = file.Description,
                 Encrypted = file.Encrypted,
+            };
+        }
+
+        /// <summary>What was read from a file's contents, and whether they are read at all; <see cref="FileMetadata.None"/> for a file never read.</summary>
+        public static FileMetadata ToFileMetadata(bool readable, ObjectMetadata? read)
+        {
+            if (read == null)
+            {
+                return readable ? new FileMetadata { Readable = true } : FileMetadata.None;
+            }
+
+            ContentMetadata metadata = read.Metadata;
+            return new FileMetadata
+            {
+                Readable = readable,
+                ReadAt = read.ReadAt,
+                TakenAt = metadata.TakenAt,
+                Latitude = metadata.Latitude,
+                Longitude = metadata.Longitude,
+                DurationSeconds = metadata.DurationSeconds,
+                PageCount = metadata.PageCount,
+                Title = metadata.Title,
+                Camera = metadata.Camera,
             };
         }
 

@@ -1,9 +1,16 @@
 # Change log
 
 A numbered record of every change to shelves, directories, files, users and their logins, shelf
-grants and shelf keys, written for replicas to follow. Each row holds the entity's type and id, a
-descriptive action, and the entity's whole state afterwards as JSON (`null` once the entity is
-gone). Applying a row is an upsert or a delete by id, so applying it twice is harmless.
+grants and shelf keys, and what was read from files' contents ([Metadata](../Metadata/Metadata.md)),
+written for replicas to follow. Each row holds the entity's type and id, a descriptive action, and
+the entity's whole state afterwards as JSON (`null` once the entity is gone). Applying a row is an
+upsert or a delete by id, so applying it twice is harmless.
+
+What was read from contents is the one entity whose earlier states the log forgets when it is
+removed (`ChangeEntityType.ForgetsRemovedStates`): its entries' payloads are blanked in the
+removal's transaction, so each reads as a removal. A photo encrypted in place loses its row at once,
+and its position and camera must not stay in the log, on the primary or a replica, for the
+compaction window below.
 
 Download and upload links (`shelf_link`) are not logged: each server keeps the links it signed
 itself, and the database removes one with what it names ([Storage](../Storage/Storage.md#links-shelf_link-linkservice)).
