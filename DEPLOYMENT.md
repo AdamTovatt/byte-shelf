@@ -90,7 +90,7 @@ path. Exit codes: 0 done, 1 refused or failed (the reason is logged), 2 the argu
 | Variable | Required | Meaning |
 |---|---|---|
 | `BYTESHELF_ROOT` | yes | The root folder. Created on first start, or by `--create-user` or `--follow` run before it, with `objects/`, `staging/` and `keys/` inside, owned by whoever created it. The server makes it reachable by its owner only on every start, so it must be owned by the user the server runs as. |
-| `APP_BASE_URL` | outside Development | The public URL, e.g. `https://shelf.example.com`. Password-reset links, the download links the API answers (share links, the web UI's Copy link, MCP's `share_file`) and upload links point at it. |
+| `APP_BASE_URL` | outside Development | The public URL, e.g. `https://shelf.example.com`. Password-reset links, the download links the API answers (share links, the web UI's Copy link, MCP's `share_file`) and upload links point at it. Passkeys are made for its host, and are off without it or when it is plain http to anything but this machine. |
 | `POSTMARK_API_KEY` | to send email | A Postmark server token. Without it no email is sent (see [Email](#email)). |
 | `EMAIL_FROM_ADDRESS` | with `POSTMARK_API_KEY` | The address mail is from, a sender confirmed in Postmark. The server refuses to start with a token and no address. |
 | `EMAIL_FROM_NAME` | no | The name mail is from. `ByteShelf` by default. |
@@ -145,7 +145,7 @@ the shelf key, or else the client's address, which behind a proxy needs `BYTESHE
 | Tier | Requests per minute | Applies to |
 |---|---|---|
 | Global | 1,200 | every request, beside any tier below |
-| Strict | 60 | signing in and renewing a session together (`/api/auth/login`, `/api/auth/refresh`); changing your own password |
+| Strict | 60 | signing in, with a password or a passkey, and renewing a session together (`/api/auth/login`, `/api/auth/passkey/ceremony`, `/api/auth/passkey`, `/api/auth/refresh`); changing your own password |
 | Very strict | 10 | asking for a password reset and completing one; a replica accepting a pairing code |
 
 A request past a limit gets 429 with an error message, and the window starts over each minute.
@@ -168,6 +168,8 @@ credential, are outside the limits.
   which a browser keeps only over HTTPS. Over plain HTTP it falls back to reading each file whole into
   the page, which works but holds large files in memory. Do not log request or response headers at
   the proxy: that cookie carries the token, as `Authorization` does.
+- Passkeys need the browser to reach the server at `APP_BASE_URL`'s host, over HTTPS (or plain HTTP
+  to localhost): a passkey is made for that host and works on no other.
 - Allow long request lines: a path of up to 4096 characters travels in the query string,
   percent-encoded, and the server accepts lines of about 98 KB. For nginx:
   `large_client_header_buffers 4 128k;` (its default of 8k answers 414 for a long path).
@@ -196,6 +198,8 @@ follows no redirects); nothing needs to reach the replica but its own admins and
 3. On the replica, as its admin, on the Replication page, choose Follow a primary, paste the code
    and give the replica a name, which the primary lists it by. The replica copies the primary, its
    users included: from then on its admins sign in with their accounts on the primary.
+   Passkeys come with them, but one signs in only at the host it was made for: on a replica under
+   another hostname than the primary's, users sign in with their password.
 
 The same page shows on the primary each replica and how far behind it is, and on a replica the
 primary it follows and the last error (`GET /api/replication` answers the same). A replica only reads.

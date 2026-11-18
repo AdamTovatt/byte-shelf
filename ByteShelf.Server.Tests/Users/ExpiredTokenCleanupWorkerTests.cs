@@ -55,7 +55,7 @@ namespace ByteShelf.Server.Tests.Users
             {
                 TokenHash = tokenHash,
                 Subject = Guid.NewGuid().ToString("D"),
-                AuthType = AuthRequestValidationService.AuthType,
+                AuthType = SessionIssuer.AuthType,
                 FamilyId = Guid.NewGuid().ToString("N"),
                 CreatedAt = TestInstants.Now.UtcDateTime.AddDays(-2),
                 ExpiresAt = expiresAt,

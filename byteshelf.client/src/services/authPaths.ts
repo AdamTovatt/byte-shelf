@@ -10,6 +10,8 @@ export const AUTH_PATHS = {
   LOGIN: '/api/auth/login',
   REFRESH: '/api/auth/refresh',
   LOGOUT: '/api/auth/logout',
+  PASSKEY_CEREMONY: '/api/auth/passkey/ceremony',
+  PASSKEY: '/api/auth/passkey',
 } as const satisfies Record<string, keyof paths>;
 
 export const PASSWORD_RESET_PATHS = {

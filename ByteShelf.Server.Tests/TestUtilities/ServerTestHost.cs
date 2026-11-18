@@ -28,6 +28,9 @@ namespace ByteShelf.Server.Tests.TestUtilities
         public const string MemberEmail = "member@byteshelf.test";
         public const string Password = "password-for-tests";
 
+        /// <summary>A public address for a host that makes passkeys: the in-memory server's own, a loopback origin browsers accept over http.</summary>
+        public const string PasskeyAddress = SoftwareAuthenticator.Origin + "/";
+
         private readonly WebApplication _app;
 
         private ServerTestHost(WebApplication app, TestRoot root)
@@ -55,6 +58,14 @@ namespace ByteShelf.Server.Tests.TestUtilities
         public HttpClient CreateClient()
         {
             return _app.GetTestClient();
+        }
+
+        /// <summary>A client of the in-memory server sending <paramref name="bearer"/>, an access token or a shelf key, as <c>Authorization: Bearer</c>.</summary>
+        public HttpClient CreateClient(string bearer)
+        {
+            HttpClient client = _app.GetTestClient();
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
+            return client;
         }
 
         /// <summary>A handler sending requests to the in-memory server at <c>http://localhost/</c>, for code that makes its own clients.</summary>
@@ -151,6 +162,16 @@ namespace ByteShelf.Server.Tests.TestUtilities
             await host.SignInAsync(host.AdminClient, AdminEmail);
             await host.SignInAsync(host.MemberClient, MemberEmail);
             return host;
+        }
+
+        /// <summary>A host with <see cref="PasskeyAddress"/> as its public address, so passkeys are on.</summary>
+        public static Task<ServerTestHost> StartWithPasskeysAsync(Action<IServiceCollection>? configureServices = null)
+        {
+            return StartAsync(services =>
+            {
+                services.AddSingleton(new PublicAddress(PasskeyAddress));
+                configureServices?.Invoke(services);
+            });
         }
 
         /// <summary>Stops the server, leaving its root in place until the host is disposed, for work on a root no server runs on.</summary>

@@ -55,6 +55,12 @@ npm run codegen    # in a second terminal
   renewals run one at a time across tabs (the Web Locks API), and each first takes up a token another
   tab renewed to. Signing out ends the session on the server too. The access token also rides in an
   `HttpOnly` cookie on `/api/open` only, which the server sets and clears; the app never reads it.
+- **Passkeys:** the sign-in page has a passkey button and, where the browser offers it, the saved
+  passkeys as suggestions in the email field (`hooks/usePasskeySignIn.ts`), asking the server for a
+  new ceremony before the one offered runs out. Settings adds, renames and removes them
+  (`components/PasskeysSection.tsx`); a new one is named after the browser and device
+  (`lib/deviceName.ts`). The ceremonies go through the browser's own WebAuthn JSON helpers
+  (`lib/webauthn.ts`); a browser without them gets no passkeys.
 - **Files:** uploads up to 8 MiB go in one request, larger ones as a resumable upload in 8 MiB chunks
   (`services/uploadService.ts`); a file whose name is taken is replaced only when asked. "Copy link"
   in a file's menu copies one that works for a day, for someone without access; where the browser

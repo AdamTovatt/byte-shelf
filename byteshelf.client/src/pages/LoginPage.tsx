@@ -1,13 +1,20 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Button, Input } from '../ui';
+import { Button, Icon, Input, iconMap } from '../ui';
 import { Notice } from '../components/Notice';
 import { AuthLayout } from '../components/layout/AuthLayout';
 import type { AuthResponse } from '../services/authTypes';
 import { AUTH_PATHS } from '../services/authPaths';
 import { ROUTES } from '../lib/routes';
+import { usePasskeySignIn } from '../hooks/usePasskeySignIn';
+
+/**
+ * The one line for every passkey failure but a closed prompt, a rate limit and an unreachable server
+ * included: unlike the password form's, it does not vary by cause, as issue #15 settles.
+ */
+const PASSKEY_FAILED = 'Could not sign in with that passkey';
 
 /** Signing in; App's route sends a signed-in user home instead. */
 export function LoginPage() {
@@ -17,6 +24,14 @@ export function LoginPage() {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  const signedIn = useCallback((data: AuthResponse) => {
+    login(data);
+    navigate(ROUTES.HOME);
+  }, [login, navigate]);
+
+  // A passkey that fails leaves the password form as it is.
+  const passkey = usePasskeySignIn({ onSignedIn: signedIn, onFailed: () => setError(PASSKEY_FAILED) });
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
@@ -48,9 +63,7 @@ export function LoginPage() {
         return;
       }
 
-      const data: AuthResponse = await response.json();
-      login(data);
-      navigate(ROUTES.HOME);
+      signedIn(await response.json() as AuthResponse);
     } catch {
       setError('Could not reach the server');
       setIsLoading(false);
@@ -75,7 +88,8 @@ export function LoginPage() {
           placeholder="Enter your email"
           disabled={isLoading}
           required
-          autoComplete="email"
+          // "webauthn" lets the browser offer the saved passkeys here as suggestions.
+          autoComplete="username webauthn"
         />
 
         <Input
@@ -100,6 +114,24 @@ export function LoginPage() {
         >
           Sign in
         </Button>
+
+        {passkey.available && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="lg"
+            className="w-full"
+            icon={<Icon icon={iconMap.key} size={16} />}
+            disabled={isLoading}
+            loading={passkey.pending}
+            onClick={() => {
+              setError('');
+              void passkey.signIn();
+            }}
+          >
+            Sign in with passkey
+          </Button>
+        )}
 
         <Link
           to={ROUTES.FORGOT_PASSWORD}

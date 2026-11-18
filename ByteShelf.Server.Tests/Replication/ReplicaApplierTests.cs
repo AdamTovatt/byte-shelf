@@ -144,6 +144,36 @@ namespace ByteShelf.Server.Tests.Replication
         }
 
         [Fact]
+        public async Task ApplyAsync_PasskeyRenamed_KeepsThisServersSignCountAndLastUse()
+        {
+            User user = await CreateUserAsync("a@example.com");
+            Passkey passkey = Passkey(user, "credential-a", "Laptop");
+            await ApplyAsync(Entry(ChangeEntityType.Passkey, passkey.Id, passkey));
+            IPasskeyRepository passkeys = Services.GetRequiredService<IPasskeyRepository>();
+            await passkeys.RecordSignInAsync(passkey.Id, 9, TestInstants.Now);
+
+            Passkey renamed = Passkey(user, "credential-a", "Old laptop", passkey.Id);
+            await ApplyAsync(Entry(ChangeEntityType.Passkey, renamed.Id, renamed));
+
+            StoredPasskey? stored = await passkeys.GetByCredentialIdAsync("credential-a");
+            Assert.Equal(("Old laptop", 9u, TestInstants.Now), (stored?.Passkey.Name, stored?.SignCount, stored?.LastUsedAt));
+        }
+
+        [Fact]
+        public async Task ApplyAsync_PasskeyWithAnothersCredentialId_RemovesTheOther()
+        {
+            User user = await CreateUserAsync("a@example.com");
+            Passkey earlier = Passkey(user, "credential-a", "Laptop");
+            await ApplyAsync(Entry(ChangeEntityType.Passkey, earlier.Id, earlier));
+
+            Passkey replicated = Passkey(user, "credential-a", "Phone");
+            await ApplyAsync(Entry(ChangeEntityType.Passkey, replicated.Id, replicated));
+
+            StoredPasskey listed = Assert.Single(await Services.GetRequiredService<IPasskeyRepository>().GetForUserAsync(user.Id));
+            Assert.Equal(replicated.Id, listed.Passkey.Id);
+        }
+
+        [Fact]
         public async Task ApplyAsync_GrantForTheSameShelfAndUser_RemovesTheOther()
         {
             Shelf shelf = await CreateShelfAsync();
@@ -239,6 +269,20 @@ namespace ByteShelf.Server.Tests.Replication
         private ChangeLogEntry Removal(string entityType, Guid id)
         {
             return new ChangeLogEntry { Sequence = ++_sequence, EntityType = entityType, EntityId = id, Action = ChangeAction.Purged, CreatedAt = TestInstants.Now };
+        }
+
+        private static Passkey Passkey(User user, string credentialId, string name, Guid? id = null)
+        {
+            return new Passkey
+            {
+                Id = id ?? Guid.NewGuid(),
+                UserId = user.Id,
+                CredentialId = credentialId,
+                PublicKey = "public-key",
+                Transports = new[] { "internal" },
+                Name = name,
+                CreatedAt = TestInstants.Now,
+            };
         }
 
         private async Task ApplyAsync(params ChangeLogEntry[] entries)

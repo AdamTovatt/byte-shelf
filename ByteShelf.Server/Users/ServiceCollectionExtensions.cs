@@ -60,10 +60,22 @@ namespace ByteShelf.Server.Users
 
             services.AddScoped<IUserRepository, UserRepository>();
             services.AddScoped<IUserLoginRepository, UserLoginRepository>();
+            services.AddScoped<IPasskeyRepository, PasskeyRepository>();
             services.AddScoped<IPasswordResetTokenRepository, PasswordResetTokenRepository>();
 
             services.AddScoped<IUserService, UserService>();
+            services.AddScoped<SessionIssuer>();
             services.AddScoped<IAuthRequestValidationService, AuthRequestValidationService>();
+
+            // Built on first use from the registered public address, which a test may replace.
+            services.AddSingleton(provider => PasskeyRelyingParty.For(
+                provider.GetRequiredService<PublicAddress>(),
+                provider.GetRequiredService<ILogger<PasskeyRelyingParty>>()));
+            services.AddSingleton<PasskeyChallenges>();
+            services.AddScoped<PasskeyService>();
+
+            // Passkeys are listed as not to be added on a replica, which refuses writes.
+            services.AddReplicationState();
             services.AddScoped<IPasswordResetService, PasswordResetService>();
             services.AddScoped<IPasswordResetNotifier, EmailPasswordResetNotifier>();
 

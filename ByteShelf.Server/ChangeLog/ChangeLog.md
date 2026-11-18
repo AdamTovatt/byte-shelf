@@ -1,10 +1,10 @@
 # Change log
 
-A numbered record of every change to shelves, directories, files, users and their logins, shelf
-grants and shelf keys, and what was read from files' contents ([Metadata](../Metadata/Metadata.md)),
-written for replicas to follow. Each row holds the entity's type and id, a descriptive action, and
-the entity's whole state afterwards as JSON (`null` once the entity is gone). Applying a row is an
-upsert or a delete by id, so applying it twice is harmless.
+A numbered record of every change to shelves, directories, files, users and their logins and
+passkeys, shelf grants and shelf keys, and what was read from files' contents
+([Metadata](../Metadata/Metadata.md)), written for replicas to follow. Each row holds the entity's
+type and id, a descriptive action, and the entity's whole state afterwards as JSON (`null` once the
+entity is gone). Applying a row is an upsert or a delete by id, so applying it twice is harmless.
 
 What was read from contents is the one entity whose earlier states the log forgets when it is
 removed (`ChangeEntityType.ForgetsRemovedStates`): its entries' payloads are blanked in the
@@ -27,8 +27,9 @@ log already holds those rows as deleted, and each purge is logged; a replica kee
 own trash for its own window, which logging the new time would cut short.
 
 Credentials are logged as the server stores them: a user's `user_login` rows with the password hash,
-and a key with the SHA-256 of its secret. A replica holds every file already, and a replica promoted
-to primary must let its users sign in, so it is trusted with them too; the replication feed that
+a passkey with its public key, and a key with the SHA-256 of its secret. A passkey's sign count and
+last use are left out: they belong to the server that saw the sign-in, as its sessions do. A replica
+holds every file already, and a replica promoted to primary must let its users sign in, so it is trusted with them too; the replication feed that
 carries the log needs a replica's credential ([Replication](../Replication/Replication.md)).
 
 ## Compaction

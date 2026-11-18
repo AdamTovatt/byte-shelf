@@ -1,5 +1,4 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Tests.TestUtilities;
@@ -170,9 +169,7 @@ namespace ByteShelf.Server.Tests.Users
             login.EnsureSuccessStatusCode();
             SessionTokens tokens = (await login.Content.ReadFromJsonAsync<SessionTokens>())!;
 
-            HttpClient client = _host.CreateClient();
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.Token);
-            return (client, tokens.RefreshToken);
+            return (_host.CreateClient(tokens.Token), tokens.RefreshToken);
         }
 
         private Task<HttpResponseMessage> RefreshAsync(string refreshToken)

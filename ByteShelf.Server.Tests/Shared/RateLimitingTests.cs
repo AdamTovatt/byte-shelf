@@ -46,6 +46,21 @@ namespace ByteShelf.Server.Tests.Shared
         }
 
         [Fact]
+        public async Task PasskeySignIn_FailuresCountWithPasswordSignIn_Answer429()
+        {
+            using HttpClient client = CreateClientFrom(Caller);
+
+            for (int request = 0; request < RateLimitPolicies.StrictPermitsPerMinute; request++)
+            {
+                string path = (request % 3) switch { 0 => "/api/auth/login", 1 => "/api/auth/passkey", _ => "/api/auth/passkey/ceremony" };
+                Assert.NotEqual(HttpStatusCode.TooManyRequests, (await client.PostAsJsonAsync(path, new { })).StatusCode);
+            }
+
+            await AssertRefusedAsync(await client.PostAsJsonAsync("/api/auth/passkey", new { }));
+            await AssertRefusedAsync(await client.PostAsJsonAsync("/api/auth/passkey/ceremony", new { }));
+        }
+
+        [Fact]
         public async Task SignIn_OneCallerPastTheStrictTier_LeavesAnotherCallerAlone()
         {
             using HttpClient client = CreateClientFrom(Caller);
