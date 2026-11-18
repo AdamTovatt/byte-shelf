@@ -111,6 +111,37 @@ namespace ByteShelfClient.Http
                 cancellationToken);
         }
 
+        public Task<IReadOnlyList<EntryMoveResult>> MoveAsync(MoveEntriesRequest request, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            // Checked here so a refused request throws before anything is sent; sent as given, since the
+            // server normalizes it the same way.
+            _ = request.Normalize();
+            return _connection.SendAsync(
+                HttpMethod.Post,
+                $"{_base}/entries/move",
+                request,
+                ByteShelfJsonContext.Default.MoveEntriesRequest,
+                ByteShelfJsonContext.Default.IReadOnlyListEntryMoveResult,
+                cancellationToken);
+        }
+
+        public Task<IReadOnlyList<DescriptionResult>> SetDescriptionsAsync(SetDescriptionsRequest request, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            // As MoveAsync's; sent as given, so one description for many files goes once.
+            _ = request.Normalize();
+            return _connection.SendAsync(
+                HttpMethod.Put,
+                $"{_base}/files/descriptions",
+                request,
+                ByteShelfJsonContext.Default.SetDescriptionsRequest,
+                ByteShelfJsonContext.Default.IReadOnlyListDescriptionResult,
+                cancellationToken);
+        }
+
         public Task<FileSearchResults> SearchAsync(FileSearch search, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(search);

@@ -232,14 +232,16 @@ namespace ByteShelf.Tools.Mcp
 
         [McpServerTool(Name = "set_description", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
         [ToolNeeds(ToolNeed.Write)]
-        [Description("Sets what a file is, in up to 2000 characters of free text, shown with the file and matched by search_files. Omit description to remove it.")]
+        [Description("Sets what files are, each in up to 2000 characters of free text, shown with the file and matched by search_files; up to 1000 files in one call. Give descriptions, each file with its own, or paths with one description for them all; a description left out or blank removes the file's. Each is applied on its own, in the order given; the answer has a line per file, done or refused with its reason.")]
         public Task<string> SetDescriptionAsync(
-            [Description("The file's path.")] string path,
-            [Description("The new description; omit or leave blank to remove it.")] string? description = null,
+            [Description("Each file as {\"path\": its path, \"description\": its new description, left out to remove it}; one file is a list of one. Leave out paths and description with these.")] IReadOnlyList<DescriptionChange>? descriptions = null,
+            [Description("Files that all get description.")] IReadOnlyList<string>? paths = null,
+            [Description("The description for every file in paths; leave it out or blank to remove theirs.")] string? description = null,
             [Description(ShelfDescription)] string? shelf = null,
             CancellationToken cancellationToken = default)
         {
-            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.File(await shelfClient.SetDescriptionAsync(path, description, cancellationToken)));
+            SetDescriptionsRequest request = new SetDescriptionsRequest { Descriptions = descriptions, Paths = paths, Description = description };
+            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.Descriptions(await shelfClient.SetDescriptionsAsync(request, cancellationToken)));
         }
 
         [McpServerTool(Name = "search_files", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -487,14 +489,16 @@ namespace ByteShelf.Tools.Mcp
 
         [McpServerTool(Name = "move", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
         [ToolNeeds(ToolNeed.Write)]
-        [Description("Moves or renames a file or a directory (with everything in it) within its shelf. Never overwrites; missing parent directories are created.")]
+        [Description("Moves or renames files and directories (each with everything in it) within a shelf, up to 1000 in one call: give moves, each with its own new path, or paths with intoDirectory to move them all into one directory keeping their names. Each is applied on its own, in the order given, so a later one may use a path an earlier one made; the answer has a line per item, moved or refused with its reason, and a refused one undoes nothing. Never overwrites; missing parent directories are created.")]
         public Task<string> MoveAsync(
-            [Description("The file's or directory's current path.")] string path,
-            [Description("Its new path.")] string toPath,
+            [Description("Each move as {\"path\": the current path, \"toPath\": the new path}; one move is a list of one. Leave out paths and intoDirectory with these.")] IReadOnlyList<EntryMove>? moves = null,
+            [Description("Files and directories to move into intoDirectory, each keeping its name.")] IReadOnlyList<string>? paths = null,
+            [Description("The directory paths move into, such as /archive; created if missing.")] string? intoDirectory = null,
             [Description(ShelfDescription)] string? shelf = null,
             CancellationToken cancellationToken = default)
         {
-            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.Moved(await Entries.MoveAsync(shelfClient, path, toPath, cancellationToken)));
+            MoveEntriesRequest request = new MoveEntriesRequest { Moves = moves, Paths = paths, IntoDirectory = intoDirectory };
+            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.Moves(await shelfClient.MoveAsync(request, cancellationToken)));
         }
 
         [McpServerTool(Name = "delete", ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]

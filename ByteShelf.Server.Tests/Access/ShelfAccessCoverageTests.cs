@@ -27,6 +27,8 @@ namespace ByteShelf.Server.Tests.Access
             ["EntriesController.DeleteFile"] = ShelfOperation.Write,
             ["EntriesController.MoveFile"] = ShelfOperation.Write,
             ["EntriesController.SetDescription"] = ShelfOperation.Write,
+            ["EntriesController.MoveEntries"] = ShelfOperation.Write,
+            ["EntriesController.SetDescriptions"] = ShelfOperation.Write,
             ["EntriesController.Search"] = ShelfOperation.Read,
             ["EntriesController.FindDuplicates"] = ShelfOperation.Read,
             ["EntriesController.ListTree"] = ShelfOperation.Read,

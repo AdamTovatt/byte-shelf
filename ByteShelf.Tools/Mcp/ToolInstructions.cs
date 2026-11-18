@@ -37,15 +37,18 @@ namespace ByteShelf.Tools.Mcp
 
             Storing: upload_file stores text, or a binary file's contents as base64, each up to 256 KiB,
             creating missing directories. It never replaces a file unless overwrite is true, and then
-            the old one goes to the trash. create_directory makes an empty directory. Describe a file
-            with set_description (or upload_file's description) so it can be found later.
+            the old one goes to the trash. create_directory makes an empty directory. Describe files
+            with set_description (or upload_file's description) so they can be found later.
             create_upload_link makes a link that stores one file at a path when anyone who has it PUTs
             the contents to it, for 15 minutes or the time asked for (at most 24 hours), with the curl
             command that does it: use it for a file too large to pass here, or one a person or another
             program will send.
 
-            Changing: move renames or moves a file or directory and never overwrites. delete moves it
-            to the trash; list_trash shows what can come back, restore brings a deletion back, and
+            Changing: move renames or moves files and directories and never overwrites. move and
+            set_description take a list, so one call tidies many entries (a list of one for a single
+            entry): each item is applied on its own, in order, and the answer says for each whether it
+            was done or why it was refused; a refused one undoes nothing. delete moves a file or
+            directory to the trash; list_trash shows what can come back, restore brings a deletion back, and
             empty_trash deletes the trash for good. download_deleted reads what a deletion took without
             restoring it, as download_file and download_directory read; a replica answers it too, which
             gives back a file purged on its primary while it is still in the replica's trash.

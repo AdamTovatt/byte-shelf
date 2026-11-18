@@ -128,15 +128,6 @@ namespace ByteShelf.Tools
             while (after != null);
         }
 
-        /// <summary>Moves or renames the file or directory at <paramref name="path"/>, answering it where it is now.</summary>
-        public static async Task<Entry> MoveAsync(IShelfClient shelf, string path, string toPath, CancellationToken cancellationToken)
-        {
-            Entry entry = await GetAsync(shelf, path, cancellationToken);
-            return entry.File != null
-                ? Entry.Of(await shelf.MoveFileAsync(entry.File.Id, toPath, cancellationToken))
-                : Entry.Of(await shelf.MoveDirectoryAsync(entry.Directory!.Id, toPath, cancellationToken));
-        }
-
         /// <summary>Moves the file, or the directory with everything in it, at <paramref name="path"/> to the trash.</summary>
         public static async Task<TrashEntry> DeleteAsync(IShelfClient shelf, string path, CancellationToken cancellationToken)
         {

@@ -83,6 +83,13 @@ namespace ByteShelf.Cli.Commands
             return index < _positionals.Count ? _positionals[index] : null;
         }
 
+        /// <summary>Every positional argument from <paramref name="index"/> on, for a command that takes any number.</summary>
+        public IReadOnlyList<string> From(int index)
+        {
+            _positionalsUsed = Math.Max(_positionalsUsed, _positionals.Count);
+            return _positionals.Skip(index).ToList();
+        }
+
         public bool Flag(string name)
         {
             _used.Add(name);

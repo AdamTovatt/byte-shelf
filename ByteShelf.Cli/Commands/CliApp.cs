@@ -64,7 +64,7 @@ namespace ByteShelf.Cli.Commands
                 new Command(Section.Files, "get", "<shelf>:<path> [<local-file>|<local-folder>|-] [--overwrite] [--decrypt] [--password-file <file>]", "save a file, - for stdout, or a whole directory; an encrypted file is saved as its age bytes, named .age in a folder, unless --decrypt or --password-file decrypts it", GetAsync),
                 new Command(Section.Files, "encrypt", "<shelf>:<path> [--password-file <file>]", "encrypt a file, or a folder and every file under it, with a password that never leaves this machine; the unencrypted contents are deleted at once, and a lost password cannot be recovered", EncryptAsync),
                 new Command(Section.Files, "decrypt", "<shelf>:<path> [--password-file <file>]", "remove a file's or a folder's encryption", DecryptAsync),
-                new Command(Section.Files, "describe", "<shelf>:<path> <text> | --clear", "set a file's description, which find matches too", DescribeAsync),
+                new Command(Section.Files, "describe", "<shelf>:<path> [[<shelf>:]<path>...] <text> | --clear", "set one description on files, which find matches too, or remove theirs with --clear", DescribeAsync),
                 new Command(Section.Files, "share", "<shelf>:<path> [--expires <30m|12h|7d>]", string.Create(CultureInfo.InvariantCulture, $"a link to a file that works without signing in; {DownloadLink.Lifetime.Default.TotalHours} hours by default, at most {DownloadLink.Lifetime.Max.TotalDays} days, or until revoked"), ShareAsync),
                 new Command(Section.Files, "link list", "<shelf>", "the shelf's share and upload links that have not run out: yours, or every one if you may write there", ListLinksAsync),
                 new Command(Section.Files, "link revoke", "<shelf> <link-id>", "end a link, so nothing more is served through it: yours, or any if you may write there", RevokeLinkAsync),
@@ -81,7 +81,7 @@ namespace ByteShelf.Cli.Commands
                     "files with exactly the same contents, in groups, most repeated bytes first, among the files find would find; encrypted and empty files are left out",
                     FindDuplicatesAsync),
                 new Command(Section.Files, "mkdir", "<shelf>:<path>", "create a directory with any missing parents", MakeDirectoryAsync),
-                new Command(Section.Files, "mv", "<shelf>:<path> [<shelf>:]<new-path>", "move or rename a file or a directory within its shelf", MoveAsync),
+                new Command(Section.Files, "mv", "<shelf>:<path> [[<shelf>:]<path>...] [<shelf>:]<new-path>", "move or rename a file or a directory within its shelf, or several into the directory last named; a new path ending in / is a directory to move into", MoveAsync),
                 new Command(Section.Files, "rm", "<shelf>:<path>", "move a file, or a directory with everything in it, to the trash", RemoveAsync),
 
                 new Command(Section.Trash, "trash", "<shelf>", "what can be restored, with each deletion's id", TrashAsync),
@@ -523,17 +523,25 @@ namespace ByteShelf.Cli.Commands
 
         private async Task DescribeAsync(ArgumentList arguments, CancellationToken cancellationToken)
         {
-            ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
-            string? text = arguments.Optional(1);
             bool clear = arguments.Flag("--clear");
+            IReadOnlyList<string> words = arguments.From(0);
             arguments.EnsureAllUsed();
-            if ((text == null) == !clear)
+
+            // With --clear every word is a file; without it the last is the text. Text given with --clear
+            // is read as one more file, which is refused as not found and fails the command: refusing
+            // words that look unlike a path would be a path rule no other command has, as every command
+            // takes a path without its leading /.
+            int files = clear ? words.Count : words.Count - 1;
+            if (files < 1)
             {
-                throw new UsageException("Give the description's <text>, or --clear to remove it, one of them.");
+                throw new UsageException("Give the files' <shelf>:<path> and the description's <text>, or --clear to remove theirs.");
             }
 
-            ShelfFile described = await (await ShelfAsync(location.Shelf, cancellationToken)).SetDescriptionAsync(location.Path, clear ? null : text, cancellationToken);
-            Print(described, ByteShelfJsonContext.Default.ShelfFile, TextFormat.File);
+            (string shelf, IReadOnlyList<string> paths) = ShelfLocation.ParseAll(words.Take(files).ToList());
+            SetDescriptionsRequest request = new SetDescriptionsRequest { Paths = paths, Description = clear ? null : words[^1] };
+
+            IReadOnlyList<DescriptionResult> results = await (await ShelfAsync(shelf, cancellationToken)).SetDescriptionsAsync(request, cancellationToken);
+            PrintBatch(results, ByteShelfJsonContext.Default.IReadOnlyListDescriptionResult, TextFormat.Descriptions);
         }
 
         private async Task ShareAsync(ArgumentList arguments, CancellationToken cancellationToken)
@@ -659,11 +667,24 @@ namespace ByteShelf.Cli.Commands
 
         private async Task MoveAsync(ArgumentList arguments, CancellationToken cancellationToken)
         {
-            ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
-            string toPath = ShelfLocation.PathOn(location.Shelf, arguments.Required(1, "new-path"));
+            IReadOnlyList<string> words = arguments.From(0);
             arguments.EnsureAllUsed();
-            Entry moved = await Entries.MoveAsync(await ShelfAsync(location.Shelf, cancellationToken), location.Path, toPath, cancellationToken);
-            PrintEntry(moved, TextFormat.Moved);
+            if (words.Count < 2)
+            {
+                throw new UsageException(words.Count == 0 ? "Missing <shelf:path>." : "Missing <new-path>.");
+            }
+
+            (string shelf, IReadOnlyList<string> paths) = ShelfLocation.ParseAll(words.SkipLast(1).ToList());
+            ShelfLocation destination = ShelfLocation.On(shelf, words[^1]);
+
+            // Into a directory, each keeping its name, for several or for a destination written ending
+            // in /, as put keeps a file's name there; else one move to the new path.
+            MoveEntriesRequest request = paths.Count > 1 || destination.NamesADirectory
+                ? new MoveEntriesRequest { Paths = paths, IntoDirectory = destination.Path }
+                : new MoveEntriesRequest { Moves = new[] { new EntryMove { Path = paths[0], ToPath = destination.Path } } };
+
+            IReadOnlyList<EntryMoveResult> results = await (await ShelfAsync(shelf, cancellationToken)).MoveAsync(request, cancellationToken);
+            PrintBatch(results, ByteShelfJsonContext.Default.IReadOnlyListEntryMoveResult, TextFormat.Moves);
         }
 
         private async Task RemoveAsync(ArgumentList arguments, CancellationToken cancellationToken)
@@ -872,6 +893,19 @@ namespace ByteShelf.Cli.Commands
         private void Print<T>(T value, JsonTypeInfo<T> type, Func<T, string> text)
         {
             _terminal.Output.WriteLine(_json ? JsonSerializer.Serialize(value, type) : text(value));
+        }
+
+        /// <summary>Prints a batch's results; one with a refused item fails after, so a script sees it.</summary>
+        /// <exception cref="IOException">An item was refused.</exception>
+        private void PrintBatch<T>(IReadOnlyList<T> results, JsonTypeInfo<IReadOnlyList<T>> type, Func<IReadOnlyList<T>, string> text)
+            where T : IEntryBatchResult
+        {
+            Print(results, type, text);
+            int refused = results.Count(result => result.Error != null);
+            if (refused > 0)
+            {
+                throw new IOException(TextFormat.Refused(refused, results.Count));
+            }
         }
 
         private void PrintEntry(Entry entry, Func<Entry, string> text)

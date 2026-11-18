@@ -1,5 +1,5 @@
 using ByteShelf.Server.Shared.Database;
-using ByteShelf.Server.Shared.Middleware;
+using ByteShelf.Server.Shared.Errors;
 
 namespace ByteShelf.Server.Shared.Root
 {
@@ -56,11 +56,11 @@ namespace ByteShelf.Server.Shared.Root
 
                 result = await RunOnAsync(root, logger, apply);
             }
-            catch (Exception exception) when (exception is FileNotFoundException || ExceptionHandlingMiddleware.RefusalMessage(exception) != null)
+            catch (Exception exception) when (exception is FileNotFoundException || Refusals.Of(exception) != null)
             {
                 // What the person running it can act on, as the API would answer it; a root without a
                 // database besides.
-                logger.LogError("{Message}", ExceptionHandlingMiddleware.RefusalMessage(exception) ?? exception.Message);
+                logger.LogError("{Message}", Refusals.Of(exception)?.Message ?? exception.Message);
                 result = Failed;
             }
             catch (Exception exception)

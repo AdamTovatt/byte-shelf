@@ -316,10 +316,32 @@ namespace ByteShelf.Server.Tests.Mcp
         {
             await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
 
-            CallToolResult moved = await client.CallToolAsync("move", new Dictionary<string, object?> { ["path"] = "/a.txt" });
+            CallToolResult shared = await client.CallToolAsync("share_file", new Dictionary<string, object?> { ["expiresIn"] = "1h" });
 
-            Assert.Equal(true, moved.IsError);
-            Assert.Equal("move needs toPath.", TextOf(moved));
+            Assert.Equal(true, shared.IsError);
+            Assert.Equal("share_file needs path.", TextOf(shared));
+        }
+
+        [Fact]
+        public async Task CallTool_MoveAndSetDescriptionWithLists_ApplyEachItem()
+        {
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+            AssertSucceeded(await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["path"] = "/a.txt", ["text"] = "a" }));
+            AssertSucceeded(await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["path"] = "/b.txt", ["text"] = "b" }));
+
+            CallToolResult moved = await client.CallToolAsync("move", new Dictionary<string, object?>
+            {
+                ["moves"] = new[] { new Dictionary<string, string> { ["path"] = "/a.txt", ["toPath"] = "/archive/a.txt" } },
+            });
+            CallToolResult intoDirectory = await client.CallToolAsync("move", new Dictionary<string, object?> { ["paths"] = new[] { "/b.txt" }, ["intoDirectory"] = "/archive" });
+            CallToolResult described = await client.CallToolAsync("set_description", new Dictionary<string, object?>
+            {
+                ["descriptions"] = new[] { new Dictionary<string, string> { ["path"] = "/archive/a.txt", ["description"] = "Signed" } },
+            });
+
+            Assert.Equal("Moved /a.txt to /archive/a.txt", TextOf(moved));
+            Assert.Equal("Moved /b.txt to /archive/b.txt", TextOf(intoDirectory));
+            Assert.Equal("Described /archive/a.txt", TextOf(described));
         }
 
         [Fact]

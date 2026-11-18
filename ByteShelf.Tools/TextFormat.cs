@@ -336,9 +336,32 @@ namespace ByteShelf.Tools
             return $"Saved {localPath}, encrypted as it is stored; --decrypt saves it decrypted, and age -d opens it too.";
         }
 
-        public static string Moved(Entry entry)
+        /// <summary>A line per move of a batch, in order: where each entry went, or why it did not.</summary>
+        public static string Moves(IReadOnlyList<EntryMoveResult> results)
         {
-            return $"Moved to {entry.Path}";
+            return Lines(results.Select(result => result.Error != null
+                ? $"Did not move {result.Path}: {Refusal(result.Error.Message, result.Error.Code)}"
+                : $"Moved {result.Path} to {result.File?.Path ?? result.Directory!.Path}"));
+        }
+
+        /// <summary>A line per file of a batch of descriptions, in order: what changed, or why it did not.</summary>
+        public static string Descriptions(IReadOnlyList<DescriptionResult> results)
+        {
+            return Lines(results.Select(result => result.Error != null
+                ? $"Did not describe {result.Path}: {Refusal(result.Error.Message, result.Error.Code)}"
+                : result.File!.Description == null ? $"Removed the description of {result.Path}" : $"Described {result.Path}"));
+        }
+
+        /// <summary>How many items of a batch were refused, for a command that fails when any was.</summary>
+        public static string Refused(int refused, int total)
+        {
+            return $"{refused} of {total} refused.";
+        }
+
+        /// <summary>A refusal as it reads to a person or an agent: the server's reason, then its code in parentheses.</summary>
+        public static string Refusal(string message, string? code)
+        {
+            return $"{message} ({code ?? "error"})";
         }
 
         public static string Trashed(TrashEntry entry)

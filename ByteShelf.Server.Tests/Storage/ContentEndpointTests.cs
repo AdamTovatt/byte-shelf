@@ -134,6 +134,44 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
+        public async Task MoveEntries_BothForms_Returns400AndMovesNothing()
+        {
+            await PutAsync("/a.txt", "a");
+            MoveEntriesRequest request = new MoveEntriesRequest
+            {
+                Moves = new[] { new EntryMove { Path = "/a.txt", ToPath = "/b.txt" } },
+                Paths = new[] { "/a.txt" },
+                IntoDirectory = "/c",
+            };
+
+            HttpResponseMessage response = await _host.AdminClient.PostAsJsonAsync("/api/shelves/docs/entries/move", request);
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal(ErrorCodes.InvalidRequest, (await response.Content.ReadFromJsonAsync<ErrorResponse>())?.Code);
+            Assert.Equal(HttpStatusCode.OK, (await _host.AdminClient.GetAsync("/api/shelves/docs/files?path=/a.txt")).StatusCode);
+        }
+
+        [Fact]
+        public async Task SetDescriptions_ADescriptionTooLong_Returns400AndChangesNothing()
+        {
+            await PutAsync("/a.txt", "a");
+            SetDescriptionsRequest request = new SetDescriptionsRequest
+            {
+                Descriptions = new[]
+                {
+                    new DescriptionChange { Path = "/a.txt", Description = "Signed" },
+                    new DescriptionChange { Path = "/a.txt", Description = new string('a', FileDescription.MaxLength + 1) },
+                },
+            };
+
+            HttpResponseMessage response = await _host.AdminClient.PutAsJsonAsync("/api/shelves/docs/files/descriptions", request);
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Equal(ErrorCodes.InvalidRequest, (await response.Content.ReadFromJsonAsync<ErrorResponse>())?.Code);
+            Assert.Null((await _host.AdminClient.GetFromJsonAsync<ShelfFile>("/api/shelves/docs/files?path=/a.txt"))!.Description);
+        }
+
+        [Fact]
         public async Task PutThenGet_WithRange_ReturnsThePartAskedFor()
         {
             ShelfFile file = await PutAsync("/notes/hello.txt", "Hello, shelf!");

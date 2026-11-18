@@ -77,6 +77,8 @@ namespace ByteShelf.Cli.Tests
             { "upload_file", "base64", $"at most {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)}" },
             { "upload_file", "description", $"up to {FileDescription.MaxLength} characters" },
             { "set_description", null, $"up to {FileDescription.MaxLength} characters" },
+            { "set_description", null, $"up to {EntryBatch.MaxItems} files in one call" },
+            { "move", null, $"up to {EntryBatch.MaxItems} in one call" },
             { "download_file", null, $"at most {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)}" },
             { "download_file", null, $"WebP of at most {TextFormat.Size(ByteShelfMcpTools.MaxInlineImageBytes)}" },
             { "download_file", null, $"of at most {TextFormat.Size(ImagePreview.MaxSourceBytes)} is answered as a JPEG preview at most {ImagePreview.LongSide} pixels" },
@@ -418,10 +420,37 @@ namespace ByteShelf.Cli.Tests
         {
             await _tools.UploadFileAsync("/a.txt", text: "a", shelf: "docs");
 
-            string answer = await _tools.MoveAsync("/a.txt", "/b/c.txt", shelf: "docs", CancellationToken.None);
+            string answer = await _tools.MoveAsync(moves: new[] { Move("/a.txt", "/b/c.txt") }, shelf: "docs");
 
-            Assert.Equal("Moved to /b/c.txt", answer);
+            Assert.Equal("Moved /a.txt to /b/c.txt", answer);
             Assert.Equal("a", TextOf(await _tools.DownloadFileAsync("/b/c.txt", shelf: "docs")));
+        }
+
+        [Fact]
+        public async Task Move_PathsIntoADirectory_AnswersALinePerItemInOrderWithEachRefusalsCode()
+        {
+            await _tools.UploadFileAsync("/a.txt", text: "a", shelf: "docs");
+            await _tools.UploadFileAsync("/c.txt", text: "c", shelf: "docs");
+
+            string answer = await _tools.MoveAsync(paths: new[] { "/c.txt", "/missing.txt", "/a.txt" }, intoDirectory: "/archive", shelf: "docs");
+
+            Assert.Equal(
+                new[]
+                {
+                    "Moved /c.txt to /archive/c.txt",
+                    "Did not move /missing.txt: Neither a file nor a directory is at '/missing.txt' on this shelf. (not_found)",
+                    "Moved /a.txt to /archive/a.txt",
+                },
+                answer.Split(Environment.NewLine));
+        }
+
+        [Fact]
+        public async Task Move_BothForms_FailsSayingWhichToGive()
+        {
+            McpException refused = await Assert.ThrowsAsync<McpException>(() =>
+                _tools.MoveAsync(moves: new[] { Move("/a.txt", "/b.txt") }, paths: new[] { "/c.txt" }, intoDirectory: "/d", shelf: "docs"));
+
+            Assert.Equal("Give moves, or paths with intoDirectory, not both.", refused.Message);
         }
 
         [Fact]
@@ -618,22 +647,39 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
-        public async Task SetDescription_Text_SetsItAndAnswersTheRecord()
+        public async Task SetDescription_EachItsOwn_SetsThemAndAnswersALinePerFile()
         {
             await _tools.UploadFileAsync("/a.txt", text: "a", shelf: "docs");
+            await _tools.UploadFileAsync("/b.txt", text: "b", description: "Old", shelf: "docs");
 
-            string described = await _tools.SetDescriptionAsync("/a.txt", "Draft", shelf: "docs");
+            string described = await _tools.SetDescriptionAsync(
+                descriptions: new[] { new DescriptionChange { Path = "/a.txt", Description = "Draft" }, new DescriptionChange { Path = "/b.txt" } },
+                shelf: "docs");
 
-            Assert.EndsWith("description  Draft", described, StringComparison.Ordinal);
-            Assert.Equal("Draft", (await Docs.GetFileAsync("/a.txt")).Description);
+            Assert.Equal(new[] { "Described /a.txt", "Removed the description of /b.txt" }, described.Split(Environment.NewLine));
+            Assert.Equal(("Draft", (string?)null), ((await Docs.GetFileAsync("/a.txt")).Description, (await Docs.GetFileAsync("/b.txt")).Description));
         }
 
         [Fact]
-        public async Task SetDescription_Without_RemovesIt()
+        public async Task SetDescription_OneForSeveralPaths_SetsItOnEachAndRefusesADirectory()
+        {
+            await _tools.UploadFileAsync("/a.txt", text: "a", shelf: "docs");
+            await _tools.UploadFileAsync("/d/b.txt", text: "b", shelf: "docs");
+
+            string described = await _tools.SetDescriptionAsync(paths: new[] { "/a.txt", "/d", "/d/b.txt" }, description: "Draft", shelf: "docs");
+
+            Assert.Equal(
+                new[] { "Described /a.txt", "Did not describe /d: There is no file '/d' on this shelf. (not_found)", "Described /d/b.txt" },
+                described.Split(Environment.NewLine));
+            Assert.Equal("Draft", (await Docs.GetFileAsync("/d/b.txt")).Description);
+        }
+
+        [Fact]
+        public async Task SetDescription_PathsWithout_RemovesTheirs()
         {
             await _tools.UploadFileAsync("/a.txt", text: "a", description: "Draft", shelf: "docs");
 
-            await _tools.SetDescriptionAsync("/a.txt", shelf: "docs");
+            await _tools.SetDescriptionAsync(paths: new[] { "/a.txt" }, shelf: "docs");
 
             Assert.Null((await Docs.GetFileAsync("/a.txt")).Description);
         }
@@ -825,6 +871,11 @@ namespace ByteShelf.Cli.Tests
         private Task<ShelfFile> StoreEncryptedAsync(string path)
         {
             return Transfers.UploadAsync(Docs, path, new MemoryStream(Encoding.UTF8.GetBytes("secret")), new UploadOptions(), CancellationToken.None, new Encryptor("pw", 10));
+        }
+
+        private static EntryMove Move(string path, string toPath)
+        {
+            return new EntryMove { Path = path, ToPath = toPath };
         }
 
         private static string TextOf(IEnumerable<ContentBlock> answer)

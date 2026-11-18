@@ -44,9 +44,9 @@ spaces.
 | Back up or restore a folder | `byteshelf put ./site docs:/backups/` and `byteshelf get docs:/backups/site ./site-copy` |
 | Give someone a link | `byteshelf share docs:/2026/report.pdf --expires 2d` |
 | See or end links | `byteshelf link list docs`, then `byteshelf link revoke docs <id>` |
-| Say what a file is | `byteshelf describe docs:/2026/report.pdf "Signed by both parties"` |
+| Say what a file is | `byteshelf describe docs:/2026/report.pdf "Signed by both parties"` (several files before the text get the same one) |
 | Make a directory | `byteshelf mkdir docs:/2026/q2` (missing parents too) |
-| Move or rename | `byteshelf mv docs:/2026/draft.pdf /2026/final.pdf` (the new path may repeat the shelf, `docs:/2026/final.pdf`; a name holding a colon starts with `/`, as in `/notes:2026.txt`) |
+| Move or rename | `byteshelf mv docs:/2026/draft.pdf /2026/final.pdf` (the new path may repeat the shelf, `docs:/2026/final.pdf`; a name holding a colon starts with `/`, as in `/notes:2026.txt`); several into one directory: `byteshelf mv docs:/a.pdf /b.pdf /2026/` |
 | Delete (to the trash) | `byteshelf rm docs:/2026/old.pdf`, then `byteshelf trash docs` and `byteshelf restore docs <id>` |
 | Save something deleted without restoring it | `byteshelf get-deleted docs <id> ./out` (`--path <path>` for one file or directory it took; a replica's trash too, for a file purged on its primary) |
 | Empty the trash for good | `byteshelf empty-trash docs` (nothing in it can come back afterwards) |

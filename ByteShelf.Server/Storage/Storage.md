@@ -33,6 +33,8 @@ path that is not allowed is a 400.
 | `DELETE files?path=` | Moves a file to the trash; answers the deletion. |
 | `POST files/move?path=` | Moves or renames a file to the body's `toPath`; missing directories above it are created. 400 for `/`, 409 when the path is taken. |
 | `PUT files/description?path=` | Sets the body's `description`, or removes it when null or blank; 400 over `FileDescription.MaxLength` characters. |
+| `POST entries/move` | Moves or renames files and directories in one request (`MoveEntriesRequest`): `moves`, each `{ path, toPath }`, or `paths` into `intoDirectory`, each keeping its name. See "Batches" below. |
+| `PUT files/descriptions` | Sets or removes files' descriptions in one request (`SetDescriptionsRequest`): `descriptions`, each `{ path, description }`, or `paths` that all get `description` (null or blank removes theirs). See "Batches" below. |
 | `GET search?under=&text=&…` | One page of the live files under `under` (the root by default) that match every criterion given: `text`, `contentType`, `minSizeBytes`, `maxSizeBytes`, `createdFrom`, `createdBefore`, `updatedFrom`, `updatedBefore`, `sha256`, the metadata criteria `takenFrom`, `takenBefore`, `hasGps`, `minDurationSeconds`, `maxDurationSeconds`, `minPageCount` and `maxPageCount` ([Metadata](../Metadata/Metadata.md)), `limit` (1 to 1000, 100 by default) and `after` (the previous page's `nextCursor`). Sizes are inclusive; a time range includes its start and excludes its end. 400 for a criterion `FileSearch.Normalize` refuses, 404 when `under` is missing or names a file. See "Descriptions and search" below. |
 | `GET duplicates?under=&text=&…` | One page of the duplicates among the live plain, non-empty files `search` would find with the same criteria: `groups` of two or more files with the same SHA-256, each with its `sha256`, `sizeBytes`, `repeatedBytes` (the size times the copies after the first) and `files` by path, most `repeatedBytes` first, then by SHA-256. `limit` (1 to 1000, 100 by default) counts groups; `after` takes the previous page's `nextCursor`, written `bytes:sha256`. 400 for a criterion or limit `DuplicateSearch.Normalize` refuses or an `after` that is not such a cursor, 404 as for `search`. See "Duplicates" below. |
 | `POST directories` | Creates the directory at the body's `path` and any missing one above it; an existing one is answered as it is. |
@@ -269,6 +271,19 @@ A move or rename changes only the moved row: everything under a moved directory 
 object is touched. Missing directories above the destination are created, and nothing is ever
 overwritten. A directory move is refused when any path under it, the trash included, would grow
 longer than `ShelfPath.MaxPathLength`, since such a path could no longer be named.
+
+## Batches (`EntryBatches`)
+
+`POST entries/move` and `PUT files/descriptions` take 1 to `EntryBatch.MaxItems` items. Each item goes
+through the one-entry service (a move by path tries a file, then a directory), in its own
+transaction with its own change-log entry, in the order given, so a later item may use a path an
+earlier one made. The answer is one result per item in that order: the file or directory as it is
+now, or `error` with the code the one-entry endpoint would answer and its reason; a move whose path
+names nothing says neither a file nor a directory is there. A refused item undoes
+nothing and stops nothing. A request in neither or both forms, empty, too long, or with a path or
+description the rules refuse is 400 before any item is applied; a new path that is too long only
+once joined to `intoDirectory` is that item's refusal. A fault ends the request with 500, leaving
+the items before it done; a client that goes away stops it between items.
 
 ## Removing objects safely (`ObjectCollector`)
 

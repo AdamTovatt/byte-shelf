@@ -28,6 +28,17 @@ namespace ByteShelf.Tools
         }
 
         /// <summary>
+        /// Places a command names one after another, all on one shelf: the first written
+        /// <c>shelf:/path</c>, which names the shelf, and the rest as <see cref="PathOn"/> reads them there.
+        /// </summary>
+        /// <exception cref="UsageException">One is not allowed, or names another shelf.</exception>
+        public static (string Shelf, IReadOnlyList<string> Paths) ParseAll(IReadOnlyList<string> words)
+        {
+            ShelfLocation first = Parse(words[0]);
+            return (first.Shelf, words.Skip(1).Select(word => PathOn(first.Shelf, word)).Prepend(first.Path).ToList());
+        }
+
+        /// <summary>
         /// A path on <paramref name="shelf"/> as written: a path, or <c>shelf:path</c> naming that same
         /// shelf, read so when a colon comes before any <c>/</c>. One starting with <c>/</c> is always a
         /// path, so a name holding a colon is written <c>/a:b</c>.
@@ -35,11 +46,18 @@ namespace ByteShelf.Tools
         /// <exception cref="UsageException">It names another shelf or no shelf before its colon, or is not allowed.</exception>
         public static string PathOn(string shelf, string text)
         {
+            return On(shelf, text).Path;
+        }
+
+        /// <summary>A place on <paramref name="shelf"/> as written, read as <see cref="PathOn"/> reads it.</summary>
+        /// <exception cref="UsageException">It names another shelf or no shelf before its colon, or is not allowed.</exception>
+        public static ShelfLocation On(string shelf, string text)
+        {
             int colon = text.IndexOf(':', StringComparison.Ordinal);
             int separator = text.IndexOf(ShelfPath.Separator, StringComparison.Ordinal);
             if (colon < 0 || (separator >= 0 && separator < colon))
             {
-                return Of(shelf, text).Path;
+                return Of(shelf, text);
             }
 
             // Both refusals may be a name holding a colon, written without the leading / that keeps it.
@@ -52,7 +70,7 @@ namespace ByteShelf.Tools
 
             ShelfLocation location = Of(named, text[(colon + 1)..]);
             return location.Shelf == shelf
-                ? location.Path
+                ? location
                 : throw new UsageException($"'{text}' is on the shelf '{location.Shelf}', not '{shelf}'. {keepTheColon}");
         }
 

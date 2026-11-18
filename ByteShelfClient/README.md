@@ -33,10 +33,11 @@ await session.SignOutAsync();   // ends it on the server; disposing alone leaves
 it: `GetReplicationAsync` (the replicas and how far behind each is, or the primary followed),
 `CreatePairingCodeAsync`, `FollowPrimaryAsync`, `RemoveReplicaAsync` and `PromoteAsync`. `IShelfClient` works on one shelf:
 list a directory or its whole tree, search, find duplicates (`FindDuplicatesAsync`), read what the
-server read from a file's contents (`GetFileMetadataAsync`), upload, open, describe, share by a
-link, make an upload
+server read from a file's contents (`GetFileMetadataAsync`), upload, open, describe (many files in
+one request with `SetDescriptionsAsync`), share by a link, make an upload
 link, encrypt directories and swap a file's contents in place (`SwapContentAsync`), create
-directories, move, delete, the trash (`ListDeletionAsync` and `OpenDeletedReadAsync` read what a
+directories, move (many entries in one request with `MoveAsync`; a batch applies each item on its
+own, in order, and answers each one's result), delete, the trash (`ListDeletionAsync` and `OpenDeletedReadAsync` read what a
 deletion took without restoring it, on a replica too; the listing also says what the deletion took
 and the encrypted folder its files were stored in), and for admins the shelf's settings, grants
 and keys.
