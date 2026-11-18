@@ -483,6 +483,27 @@ namespace ByteShelf.Server.Tests.Replication
         }
 
         [Fact]
+        public async Task Replica_KeepsItsOwnLinksAndRevokesThemWhileThePrimaryNeverHasThem()
+        {
+            await _pair.PutOnPrimaryAsync("docs", "/a.txt", "a");
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            HttpResponseMessage made = await replica.PostAsync("/api/shelves/docs/download-link?path=/a.txt", null);
+            DownloadLink link = (await made.Content.ReadFromJsonAsync<DownloadLink>())!;
+            await _pair.PutOnPrimaryAsync("docs", "/b.txt", "b");
+            await _pair.SyncAsync();
+
+            IReadOnlyList<ShelfLink>? onPrimary = await _pair.Primary.AdminClient.GetFromJsonAsync<IReadOnlyList<ShelfLink>>("/api/shelves/docs/links");
+            ShelfLink? listedOnReplica = (await replica.GetFromJsonAsync<IReadOnlyList<ShelfLink>>("/api/shelves/docs/links"))?.SingleOrDefault();
+            HttpResponseMessage revoked = await replica.DeleteAsync($"/api/shelves/docs/links/{link.Id}");
+
+            Assert.Empty(onPrimary!);
+            Assert.Equal(link.Id, listedOnReplica?.Id);
+            Assert.Equal(HttpStatusCode.NoContent, revoked.StatusCode);
+        }
+
+        [Fact]
         public async Task Primary_ListsTheReplicaWithHowFarBehindItIs()
         {
             await _pair.PairAsync();

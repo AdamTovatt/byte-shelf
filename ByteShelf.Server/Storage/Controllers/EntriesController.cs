@@ -165,8 +165,10 @@ namespace ByteShelf.Server.Storage.Controllers
 
         /// <summary>
         /// A link to a file's contents that needs no token for <c>expiresInMinutes</c> (24 hours by
-        /// default, at most 7 days), to share the file. Making one is a read; 400 for a lifetime outside
-        /// those bounds, 409 for an encrypted file.
+        /// default, at most 7 days), to share the file, until it is revoked (<see cref="LinksController"/>).
+        /// It reads with the caller's access, checked again each time it is used. Making one is a read
+        /// (and on a replica, a link of the replica's own); 400 for a lifetime outside those bounds, 409
+        /// for an encrypted file.
         /// </summary>
         [HttpPost("download-link")]
         [ShelfAccess(ShelfOperation.Read)]
@@ -179,7 +181,7 @@ namespace ByteShelf.Server.Storage.Controllers
         {
             ShelfFile file = await _fileService.GetFileAsync(Shelf, EntryReference.From(path, id));
             ShelfEncryption.RequireDownloadLinkTarget(file);
-            return Ok(_downloadLinks.Create(Shelf.Id, file.Id, expiresInMinutes is int minutes ? TimeSpan.FromMinutes(minutes) : null));
+            return Ok(await _downloadLinks.CreateAsync(Access, file.Id, expiresInMinutes is int minutes ? TimeSpan.FromMinutes(minutes) : null));
         }
 
         /// <summary>
@@ -199,7 +201,7 @@ namespace ByteShelf.Server.Storage.Controllers
             Access.RequireStore(request.Overwrite);
             NormalizedUploadLinkRequest normalized = request.Normalize();
             await _encryption.RequireLinkTargetAsync(Shelf.Id, normalized.Path);
-            return Ok(_uploadLinks.Create(Shelf.Id, Access.Caller.Reference, normalized));
+            return Ok(await _uploadLinks.CreateAsync(Access, normalized));
         }
 
         /// <summary>

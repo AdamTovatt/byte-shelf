@@ -15,8 +15,9 @@ AOT-compatible.
 | `FileCriteria` | Which of a shelf's files a search looks at: the directory, text, type, sizes, times and SHA-256, checked by `NormalizeCriteria`. Both searches below take their criteria from it. |
 | `FileSearch`, `FileSearchResults` | The files that meet the criteria, a page at a time by path, and one page of them. |
 | `DuplicateSearch`, `DuplicateSearchResults`, `DuplicateGroup`, `DuplicateCursor` | The groups of plain, non-empty files with the same contents among those that meet the criteria, a page of groups at a time, most repeated bytes first, and where a page ended. `DuplicateSearchResults.Page` groups, orders and pages them, for the server and the in-memory client alike. |
-| `DownloadLink` | A link to a file's contents that works without a token until it runs out, and the bounds of its lifetime (`Lifetime`: a day by default, at most 7 days). |
-| `UploadLink`, `CreateUploadLinkRequest`, `NormalizedUploadLinkRequest` | A link that stores one file sent to it without a token, and asking for one (`Lifetime`: 15 minutes by default, at most 24 hours). |
+| `DownloadLink` | A link to a file's contents that works without a token until it runs out or is revoked, with its id, and the bounds of its lifetime (`Lifetime`: a day by default, at most 7 days). |
+| `UploadLink`, `CreateUploadLinkRequest`, `NormalizedUploadLinkRequest` | A link that stores one file sent to it without a token, with its id, and asking for one (`Lifetime`: 15 minutes by default, at most 24 hours). |
+| `ShelfLink`, `ShelfLinkKind`, `LinkMaker`, `LinkMakerKind` | A download or upload link as listed, to revoke by its id: what it reaches, who made it, and when it runs out. |
 | `LinkLifetime` | One kind of link's lifetime rule: its default, its bounds and `Normalize`. |
 | `FileEncryption`, `EncryptedFolder`, `PathEncryption`, `SetFolderEncryptionRequest` | Password encryption: how an age file starts, an encrypted directory's check text, an encrypted directory with its check, what a path is encrypted under, and encrypting a directory. |
 | `ShelfDirectory`, `DirectoryListing`, `ListedDirectory` | A directory and whether it is encrypted (`Encrypted`), what one holds, and a directory in a listing with the size and count of the files under it, and how many are encrypted. |
@@ -56,8 +57,7 @@ AOT-compatible.
 - `ContentTypes` checks the media type stored with a file, and `ForUpload` picks it when an upload
   gives none: the one its path's extension names, else `application/octet-stream`.
 - `NormalizedUploadLinkRequest.Create` checks an upload link's request: a file's path (never the
-  root), a description, a lifetime within `UploadLink.Lifetime`, and at most 4,096 bytes of UTF-8 for
-  the path and description together, since the link's URL carries both.
+  root), a description, and a lifetime within `UploadLink.Lifetime`.
 - `PasswordPolicy` checks a password,
   `UserFields` an email and display name, `DisplayText` short names such as a key's, and
   `UserRoles` a user's roles.

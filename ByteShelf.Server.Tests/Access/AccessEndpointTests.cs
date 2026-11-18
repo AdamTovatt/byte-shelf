@@ -373,7 +373,7 @@ namespace ByteShelf.Server.Tests.Access
         }
 
         [Fact]
-        public async Task DownloadLinkMadeWithAKey_KeyDeleted_StillServesTheFile()
+        public async Task DownloadLinkMadeWithAKey_KeyDeleted_IsNotFound()
         {
             CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);
             using HttpClient key = _host.CreateKeyClient(created.Secret);
@@ -381,17 +381,21 @@ namespace ByteShelf.Server.Tests.Access
 
             (await _host.AdminClient.DeleteAsync($"/api/shelves/docs/keys/{created.Key.Id}")).EnsureSuccessStatusCode();
 
-            Assert.Equal("old", await _host.AnonymousClient.GetStringAsync(link.Url));
+            Assert.Equal(HttpStatusCode.NotFound, (await _host.AnonymousClient.GetAsync(link.Url)).StatusCode);
         }
 
         [Fact]
-        public async Task DownloadLinkMadeByAMember_GrantTakenAway_StillServesTheFile()
+        public async Task DownloadLinkMadeByAMember_GrantTakenAwayAndGivenBack_IsNotFoundThenServesTheFile()
         {
             await _host.GrantMemberAsync("docs", ShelfAccessPermission.Read);
             DownloadLink link = await CreateLinkAsync(_host.MemberClient, "/existing.txt");
 
             (await _host.AdminClient.DeleteAsync($"/api/shelves/docs/access/{_host.MemberId}")).EnsureSuccessStatusCode();
+            HttpResponseMessage withoutAccess = await _host.AnonymousClient.GetAsync(link.Url);
+            await _host.GrantMemberAsync("docs", ShelfAccessPermission.Read);
 
+            Assert.Equal(HttpStatusCode.NotFound, withoutAccess.StatusCode);
+            Assert.DoesNotContain("docs", (await withoutAccess.Content.ReadFromJsonAsync<ErrorResponse>())!.Message, StringComparison.Ordinal);
             Assert.Equal("old", await _host.AnonymousClient.GetStringAsync(link.Url));
         }
 

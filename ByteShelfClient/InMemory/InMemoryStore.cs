@@ -5,10 +5,14 @@ namespace ByteShelfClient.InMemory
     /// <summary>Everything an <see cref="InMemoryByteShelfClient"/> holds, behind one lock.</summary>
     internal sealed class InMemoryStore
     {
-        public InMemoryStore(TimeProvider timeProvider, TimeSpan restoreWindow)
+        /// <param name="timeProvider">The clock everything is stamped with.</param>
+        /// <param name="restoreWindow">How long deleted things can be restored.</param>
+        /// <param name="currentUserId">The id of the admin every call acts as, whom the client adds as its first user.</param>
+        public InMemoryStore(TimeProvider timeProvider, TimeSpan restoreWindow, Guid currentUserId)
         {
             TimeProvider = timeProvider;
             RestoreWindow = restoreWindow;
+            CurrentUserId = currentUserId;
             Replication = new InMemoryReplication(this);
         }
 
@@ -22,6 +26,9 @@ namespace ByteShelfClient.InMemory
         public List<InMemoryShelf> Shelves { get; } = new List<InMemoryShelf>();
 
         public List<UserRow> Users { get; } = new List<UserRow>();
+
+        /// <summary>The admin every call acts as (<see cref="InMemoryByteShelfClient.CurrentUser"/>), who makes every link.</summary>
+        public Guid CurrentUserId { get; }
 
         public InMemoryReplication Replication { get; }
 

@@ -1,15 +1,20 @@
 namespace ByteShelfCommon
 {
     /// <summary>
-    /// A link to one file's contents that works without signing in until it runs out: for a browser to
-    /// open or save, or to share with someone who has no access to the shelf. It names that file, so a
-    /// file stored over it later is a new file it does not reach; while the file is in the trash the
-    /// link answers not found, and once the file is restored it works again until it runs out.
+    /// A link to one file's contents that works without signing in until it runs out or is revoked:
+    /// for a browser to open or save, or to share with someone who has no access to the shelf. It names
+    /// that file, so a file stored over it later is a new file it does not reach; while the file is in
+    /// the trash the link answers not found, and once the file is restored it works again. It reads
+    /// with the access of whoever made it, checked again each time, so it stops working while that
+    /// access is gone.
     /// </summary>
     public sealed record DownloadLink
     {
         /// <summary>How long a download link may work: a day by default, long enough to pass on to someone, and at most 7 days.</summary>
         public static readonly LinkLifetime Lifetime = new LinkLifetime(TimeSpan.FromHours(24), TimeSpan.FromDays(7));
+
+        /// <summary>The link's id, which revokes it (<see cref="ShelfLink.Id"/>).</summary>
+        public required Guid Id { get; init; }
 
         /// <summary>
         /// The link. The server answers it on its public URL when it has one configured, and otherwise

@@ -1,3 +1,4 @@
+using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
@@ -13,32 +14,35 @@ namespace ByteShelf.Server.Storage.Controllers
     [AllowAnonymous]
     public class DownloadsController : ControllerBase
     {
+        private const string NotValid = "This download link is not valid, has run out or was revoked.";
+
         private readonly DownloadLinks _downloadLinks;
-        private readonly IShelfService _shelfService;
+        private readonly LinkAccess _linkAccess;
         private readonly IFileService _fileService;
 
-        public DownloadsController(DownloadLinks downloadLinks, IShelfService shelfService, IFileService fileService)
+        public DownloadsController(DownloadLinks downloadLinks, LinkAccess linkAccess, IFileService fileService)
         {
             _downloadLinks = downloadLinks;
-            _shelfService = shelfService;
+            _linkAccess = linkAccess;
             _fileService = fileService;
         }
 
-        /// <summary>Streams the file the link names, as <see cref="FileContentResponse"/> describes; 404 once it has run out, 409 while the file is encrypted.</summary>
+        /// <summary>
+        /// Streams the file the link names, as <see cref="FileContentResponse"/> describes, while its maker
+        /// may still read the shelf. 404 once it has run out or been revoked, while its file is in the
+        /// trash, or when its maker is gone or no longer has access; 409 while the file is encrypted.
+        /// </summary>
         [HttpGet("{token}")]
         [HttpHead("{token}")]
         [ProducesResponseType(typeof(FileStreamResult), 200)]
         [ProducesResponseType(206)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 409)]
         public async Task<IActionResult> Get(string token, [FromQuery] bool download = false)
         {
-            if (!_downloadLinks.TryRead(token, out Guid shelfId, out Guid fileId))
-            {
-                throw new NotFoundException("This download link is not valid, or has run out.");
-            }
-
-            Shelf shelf = await _shelfService.GetByIdAsync(shelfId);
-            FileContent content = await _fileService.GetContentAsync(shelf, EntryReference.ForId(fileId));
+            FoundLink<DownloadLinkTarget> found = await _downloadLinks.FindAsync(token) ?? throw new NotFoundException(NotValid);
+            ShelfAccess access = await _linkAccess.ResolveAsync(found.Link, NotValid);
+            FileContent content = await _fileService.GetContentAsync(access.Shelf, EntryReference.ForId(found.Target.FileId));
 
             // The link names the file by id, which an in-place encryption keeps: refused while it is encrypted.
             if (content.File.Encrypted)

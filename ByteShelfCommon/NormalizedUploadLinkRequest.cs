@@ -1,6 +1,3 @@
-using System.Globalization;
-using System.Text;
-
 namespace ByteShelfCommon
 {
     /// <summary>
@@ -9,12 +6,6 @@ namespace ByteShelfCommon
     /// </summary>
     public sealed record NormalizedUploadLinkRequest
     {
-        /// <summary>
-        /// How many bytes of UTF-8 the path and the description may take together. A link carries both
-        /// in its URL, and this keeps the whole URL under the 8 KiB request line common proxies accept.
-        /// </summary>
-        public const int MaxCarriedBytes = 4096;
-
         private NormalizedUploadLinkRequest(string path, bool overwrite, string? description, TimeSpan lifetime)
         {
             Path = path;
@@ -36,10 +27,7 @@ namespace ByteShelfCommon
         public TimeSpan Lifetime { get; }
 
         /// <summary>The request with its path and description normalized and its lifetime within <see cref="UploadLink.Lifetime"/>.</summary>
-        /// <exception cref="ArgumentException">
-        /// The path, description or lifetime is one the rules refuse, the path is the root, or the path
-        /// and description take more than <see cref="MaxCarriedBytes"/> together.
-        /// </exception>
+        /// <exception cref="ArgumentException">The path, description or lifetime is one the rules refuse, or the path is the root.</exception>
         public static NormalizedUploadLinkRequest Create(string path, bool overwrite, string? description, TimeSpan? lifetime)
         {
             string normalizedPath = ShelfPath.Normalize(path);
@@ -50,14 +38,6 @@ namespace ByteShelfCommon
 
             string? normalizedDescription = FileDescription.Normalize(description);
             TimeSpan normalizedLifetime = UploadLink.Lifetime.Normalize(lifetime);
-
-            int carried = Encoding.UTF8.GetByteCount(normalizedPath) + (normalizedDescription == null ? 0 : Encoding.UTF8.GetByteCount(normalizedDescription));
-            if (carried > MaxCarriedBytes)
-            {
-                throw new ArgumentException(
-                    string.Create(CultureInfo.InvariantCulture, $"An upload link carries its path and description in its URL, so together they take at most {MaxCarriedBytes} bytes of UTF-8; these take {carried}. Give a shorter description, or describe the file once it has arrived."),
-                    nameof(description));
-            }
 
             return new NormalizedUploadLinkRequest(normalizedPath, overwrite, normalizedDescription, normalizedLifetime);
         }

@@ -27,8 +27,9 @@ namespace ByteShelfClient.InMemory
             TimeProvider? timeProvider = null,
             TimeSpan? restoreWindow = null)
         {
-            _store = new InMemoryStore(timeProvider ?? TimeProvider.System, restoreWindow ?? DefaultRestoreWindow);
-            CurrentUser = AddUser(new CreateUserRequest { Email = email, DisplayName = "Admin", Password = password, Roles = new[] { UserRoles.Admin } });
+            Guid currentUserId = Guid.NewGuid();
+            _store = new InMemoryStore(timeProvider ?? TimeProvider.System, restoreWindow ?? DefaultRestoreWindow, currentUserId);
+            CurrentUser = AddUser(new CreateUserRequest { Email = email, DisplayName = "Admin", Password = password, Roles = new[] { UserRoles.Admin } }, currentUserId);
         }
 
         /// <summary>The admin the client acts as.</summary>
@@ -109,7 +110,7 @@ namespace ByteShelfClient.InMemory
         public Task<UserInfo> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(request);
-            return _store.WriteAsync(() => AddUser(request), cancellationToken);
+            return _store.WriteAsync(() => AddUser(request, Guid.NewGuid()), cancellationToken);
         }
 
         /// <inheritdoc />
@@ -198,7 +199,7 @@ namespace ByteShelfClient.InMemory
             return !_store.Users.Any(other => other != user && other.Roles.Contains(UserRoles.Admin));
         }
 
-        private UserInfo AddUser(CreateUserRequest request)
+        private UserInfo AddUser(CreateUserRequest request, Guid id)
         {
             InMemoryErrors.Checked(() => UserFields.ValidateEmail(request.Email));
             string displayName = InMemoryErrors.Checked(() => UserFields.NormalizeDisplayName(request.DisplayName));
@@ -212,7 +213,7 @@ namespace ByteShelfClient.InMemory
 
             InMemoryStore.UserRow added = new InMemoryStore.UserRow
             {
-                Id = Guid.NewGuid(),
+                Id = id,
                 Email = request.Email,
                 DisplayName = displayName,
                 Roles = roles,

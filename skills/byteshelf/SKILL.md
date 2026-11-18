@@ -43,6 +43,7 @@ spaces.
 | Save a file | `byteshelf get docs:/2026/report.pdf ./report.pdf` (or `-` for stdout) |
 | Back up or restore a folder | `byteshelf put ./site docs:/backups/` and `byteshelf get docs:/backups/site ./site-copy` |
 | Give someone a link | `byteshelf share docs:/2026/report.pdf --expires 2d` |
+| See or end links | `byteshelf link list docs`, then `byteshelf link revoke docs <id>` |
 | Say what a file is | `byteshelf describe docs:/2026/report.pdf "Signed by both parties"` |
 | Make a directory | `byteshelf mkdir docs:/2026/q2` (missing parents too) |
 | Move or rename | `byteshelf mv docs:/2026/draft.pdf /2026/final.pdf` (the new path may repeat the shelf, `docs:/2026/final.pdf`; a name holding a colon starts with `/`, as in `/notes:2026.txt`) |
@@ -59,9 +60,10 @@ spaces.
 - `get` checks every file against its SHA-256; saving to a local file, a mismatch leaves nothing
   behind. `get … -` writes to stdout as the bytes arrive, so a mismatch fails the command (exit code
   1) only after they have gone out: check the exit code before using what was piped.
-- `share` prints the link alone on its first line. Anyone who has it can open the file until it runs
-  out (24 hours by default, at most 7 days), and nothing takes it back sooner, so share only what may
-  be seen. It refuses a file encrypted with a password `(conflict)`.
+- `share` prints the link alone on its first line, then the link's id. Anyone who has it can open the
+  file until it runs out (24 hours by default, at most 7 days) or is revoked, so share only what may
+  be seen. To read a file once yourself, share it with `--expires 5m` and run `byteshelf link revoke`
+  with its id after. It refuses a file encrypted with a password `(conflict)`.
 - A file or folder can be encrypted with a password (`ls` and `stat` mark it; `byteshelf encrypt` and
   `decrypt` change it). Without the password, `get` saves such a file as the age file it is stored
   as: to `./report.pdf` or `-` those are age bytes, not a PDF, and into a folder it is named

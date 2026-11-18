@@ -213,11 +213,8 @@ namespace ByteShelfClient.InMemory
                     throw InMemoryErrors.Conflict($"'{shelf.ToShelfFile(linked).Path}' is encrypted with a password, so it is opened in a client that has the password, never by a link.");
                 }
 
-                return new DownloadLink
-                {
-                    Url = $"https://byteshelf.invalid/api/downloads/{linked.Id:N}{Guid.NewGuid():N}",
-                    ExpiresAt = _store.Now + normalized,
-                };
+                LinkRow link = AddLink(shelf, ShelfLinkKind.Download, normalized, fileId: linked.Id);
+                return new DownloadLink { Id = link.Id, Url = $"https://byteshelf.invalid/api/downloads/{link.Id:N}", ExpiresAt = link.ExpiresAt };
             });
         }
 
@@ -227,13 +224,36 @@ namespace ByteShelfClient.InMemory
             return Write(cancellationToken, shelf =>
             {
                 shelf.RequireLinkTarget(request.Path);
+                LinkRow link = AddLink(shelf, ShelfLinkKind.Upload, request.Lifetime, path: request.Path, overwrite: request.Overwrite, description: request.Description);
                 return new UploadLink
                 {
-                    Url = $"https://byteshelf.invalid/api/upload-links/{Guid.NewGuid():N}",
-                    ExpiresAt = _store.Now + request.Lifetime,
+                    Id = link.Id,
+                    Url = $"https://byteshelf.invalid/api/upload-links/{link.Id:N}",
+                    ExpiresAt = link.ExpiresAt,
                     Path = request.Path,
                     Overwrite = request.Overwrite,
                 };
+            });
+        }
+
+        /// <summary>The links that have not run out, newest first: every one, as this client acts as an admin.</summary>
+        public Task<IReadOnlyList<ShelfLink>> GetLinksAsync(CancellationToken cancellationToken = default)
+        {
+            return Run<IReadOnlyList<ShelfLink>>(cancellationToken, shelf => LiveLinks(shelf)
+                .OrderByDescending(link => link.CreatedAt)
+                .Select(link => ToShelfLink(shelf, link))
+                .ToList());
+        }
+
+        /// <summary>Revokes a link; on a replica too, as a replica revokes its own.</summary>
+        public Task RevokeLinkAsync(Guid linkId, CancellationToken cancellationToken = default)
+        {
+            return Run(cancellationToken, shelf =>
+            {
+                LinkRow link = LiveLinks(shelf).FirstOrDefault(each => each.Id == linkId)
+                    ?? throw InMemoryErrors.NotFound($"There is no link {linkId:D} on the shelf '{shelf.Name}' that you may revoke.");
+                shelf.Links.Remove(link);
+                return true;
             });
         }
 
@@ -595,6 +615,59 @@ namespace ByteShelfClient.InMemory
                     throw InMemoryErrors.NotFound($"The shelf '{shelf.Name}' has no key {keyId}.");
                 }
             });
+        }
+
+        private LinkRow AddLink(InMemoryShelf shelf, ShelfLinkKind kind, TimeSpan lifetime, Guid? fileId = null, string? path = null, bool overwrite = false, string? description = null)
+        {
+            LinkRow link = new LinkRow
+            {
+                Id = Guid.NewGuid(),
+                Kind = kind,
+                FileId = fileId,
+                Path = path,
+                Overwrite = overwrite,
+                Description = description,
+                MakerId = _store.CurrentUserId,
+                CreatedAt = _store.Now,
+                ExpiresAt = _store.Now + lifetime,
+            };
+
+            shelf.Links.Add(link);
+            return link;
+        }
+
+        /// <summary>
+        /// The links that work: not run out, and with their maker and file still there, which the server
+        /// removes a link with.
+        /// </summary>
+        private IEnumerable<LinkRow> LiveLinks(InMemoryShelf shelf)
+        {
+            return shelf.Links.Where(link => link.ExpiresAt > _store.Now
+                && _store.Users.Any(user => user.Id == link.MakerId)
+                && (link.FileId == null || shelf.Files.Any(file => file.Id == link.FileId)));
+        }
+
+        private ShelfLink ToShelfLink(InMemoryShelf shelf, LinkRow link)
+        {
+            FileNode? file = link.FileId == null ? null : shelf.Files.Single(each => each.Id == link.FileId);
+            return new ShelfLink
+            {
+                Id = link.Id,
+                Kind = link.Kind,
+                Path = file == null ? link.Path : file.IsLive ? shelf.ToShelfFile(file).Path : null,
+                FileId = link.FileId,
+                Overwrite = link.Overwrite,
+                Description = link.Description,
+                CreatedBy = new LinkMaker
+                {
+                    Kind = LinkMakerKind.User,
+                    Id = link.MakerId,
+                    Name = _store.Users.Single(user => user.Id == link.MakerId).DisplayName,
+                    IsCaller = link.MakerId == _store.CurrentUserId,
+                },
+                CreatedAt = link.CreatedAt,
+                ExpiresAt = link.ExpiresAt,
+            };
         }
 
         /// <summary>Runs <paramref name="action"/> on this shelf as <see cref="InMemoryStore.RunAsync{T}"/> does.</summary>

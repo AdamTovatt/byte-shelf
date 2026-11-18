@@ -21,6 +21,8 @@ namespace ByteShelf.Server.Tests.Access
             ["EntriesController.SwapContent"] = ShelfOperation.Write,
             ["EntriesController.CreateDownloadLink"] = ShelfOperation.Read,
             ["EntriesController.CreateUploadLink"] = ShelfOperation.Add,
+            ["LinksController.List"] = ShelfOperation.Read,
+            ["LinksController.Revoke"] = ShelfOperation.Read,
             ["EntriesController.DeleteFile"] = ShelfOperation.Write,
             ["EntriesController.MoveFile"] = ShelfOperation.Write,
             ["EntriesController.SetDescription"] = ShelfOperation.Write,

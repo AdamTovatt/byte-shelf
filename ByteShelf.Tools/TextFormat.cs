@@ -168,10 +168,10 @@ namespace ByteShelf.Tools
             return Lines(tree.NextCursor == null ? lines : lines.Append(more(tree.NextCursor)));
         }
 
-        /// <summary>The link alone on its first line, for a script to take, then when it stops working.</summary>
+        /// <summary>The link alone on its first line, for a script to take, then when it stops working and the id that revokes it.</summary>
         public static string Link(DownloadLink link)
         {
-            return Lines(new[] { link.Url, $"Works for anyone who has it until {Time(link.ExpiresAt)}." });
+            return Lines(new[] { link.Url, $"Works for anyone who has it until {Time(link.ExpiresAt)}, unless revoked sooner: {RevokeHint(link.Id)}." });
         }
 
         public static string Link(UploadLink link)
@@ -180,10 +180,34 @@ namespace ByteShelf.Tools
             return Lines(new[]
             {
                 link.Url,
-                $"Stores one file at {link.Path} for anyone who has it until {Time(link.ExpiresAt)}. {taken}",
+                $"Stores one file at {link.Path} for anyone who has it until {Time(link.ExpiresAt)}, unless revoked sooner: {RevokeHint(link.Id)}. {taken}",
                 "Send a file with (curl -T sends its Content-Length, which the link needs):",
                 $"curl -fsS -T <local file> '{link.Url}'",
             });
+        }
+
+        /// <summary>One line per link: its id, kind, file or place, who made it and when it runs out.</summary>
+        public static string Links(IReadOnlyList<ShelfLink> links)
+        {
+            return links.Count == 0
+                ? "No links."
+                : Lines(links.Select(link => $"{link.Id:D}  {LinkReach(link)}  by {link.CreatedBy.Name}{(link.CreatedBy.IsCaller ? " (you)" : string.Empty)}  until {Time(link.ExpiresAt)}"));
+        }
+
+        /// <summary>What revokes a link sooner, after "unless revoked sooner: ".</summary>
+        private static string RevokeHint(Guid linkId)
+        {
+            return $"its id is {linkId:D}";
+        }
+
+        private static string LinkReach(ShelfLink link)
+        {
+            return link.Kind switch
+            {
+                ShelfLinkKind.Download => $"reads {link.Path ?? "a file in the trash"}",
+                ShelfLinkKind.Upload => $"stores {link.Path}{(link.Overwrite ? ", replacing a file there" : string.Empty)}",
+                _ => throw new ArgumentOutOfRangeException(nameof(link), link.Kind, "Not a link kind."),
+            };
         }
 
         /// <summary>One line per file found, then <paramref name="more"/> of the cursor when a page follows.</summary>

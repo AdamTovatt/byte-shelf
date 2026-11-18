@@ -33,7 +33,7 @@ asks the same resolver which tools to offer a key ([Mcp](../Mcp/Mcp.md)).
 
 | Operation | Endpoints | Who may |
 |---|---|---|
-| `Read` | list, list a tree, search, file records, content, a download link, the shelf's info, the trash list, what a path is encrypted under | every caller with access |
+| `Read` | list, list a tree, search, file records, content, a download link, the shelf's info, the trash list, what a path is encrypted under, listing and revoking links (its own; every link with `Write`) | every caller with access |
 | `Add` | store a new file (with a description), create directories, every upload endpoint but starting a swap, an upload link | `addOnly` and `readWrite` keys, `readWrite` users |
 | `Write` | overwrite, swap a file's contents (encrypting or decrypting it in place, as one `PUT` or an upload), move, describe a stored file, delete, restore, empty the trash, encrypt a directory or stop encrypting it | `readWrite` keys and users |
 | `Administer` | rename, quota and delete the shelf; its grants and keys | admins |
@@ -45,15 +45,19 @@ upload. `GET /api/shelves` lists the shelves the caller can see; creating a shel
 
 The one route that serves file contents without a caller is `GET /api/downloads/{token}`: the token
 is a signed link from `download-link`, which needs `Read`, so every key may make one, add-only
-included. It names one file for the lifetime its maker picked, at most 7 days. Whoever holds the
-link may read that file until it runs out, even if the access it was made with is taken away
-meanwhile ([Storage](../Storage/Storage.md#download-links-downloadlinks)).
+included. It names one file for the lifetime its maker picked, at most 7 days, or until it is
+revoked. It reads as its maker: the key or user that made it is looked up and asked
+`ShelfAccessResolver` again each time it is used, so it stops working while its maker has no access
+to the shelf, and for good once its key or user is deleted
+([Storage](../Storage/Storage.md#download-links-downloadlinks)).
 
 The one route that stores without a caller is `PUT /api/upload-links/{token}`, a signed link from
-`upload-link`, which needs `Add` (`Write` for one that overwrites). It acts as its maker: the key or
-user it names is looked up and asked `ShelfAccessResolver` again when it is used, so a link stops
-working once its key is deleted or its maker may no longer store there, unlike a download link
+`upload-link`, which needs `Add` (`Write` for one that overwrites). It acts as its maker, checked the
+same way, so a link stops working once its key is deleted or its maker may no longer store there
 ([Storage](../Storage/Storage.md#upload-links-uploadlinks)).
+
+Every caller sees and revokes the links it made (`GET` and `DELETE links`); one with `Write` sees and
+revokes every link on the shelf ([Storage](../Storage/Storage.md#links-shelf_link-linkservice)).
 
 ## Endpoints
 
@@ -72,7 +76,8 @@ A key's name is trimmed and must then be 1 to 100 characters (`ShelfKeys.MaxName
 control characters, the rule user display names follow too. A bad name, or a permission that is
 not one of the listed values, answers 400.
 
-Deleting a shelf removes its grants and keys; deleting a user removes their grants.
+Deleting a shelf removes its grants and keys; deleting a user removes their grants. Deleting a key or
+a user removes the links it made, and deleting a shelf every link on it.
 
 ## Change log
 

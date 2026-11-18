@@ -18,8 +18,10 @@ namespace ByteShelf.Server.Tests.Replication
     {
         private static readonly string[] AllowedOnReplica =
         {
-            // Actions marked [AllowedOnReplica]: they change nothing a replica holds, or only a replica does them.
+            // Actions marked [AllowedOnReplica]: they change nothing a replica holds, or only a replica does
+            // them. A replica's links are its own, which replication never carries.
             "POST api/shelves/{shelf}/download-link",
+            "DELETE api/shelves/{shelf}/links/{linkId:guid}",
             "POST api/replication/promote",
 
             // Signing in, renewing and signing out work on a replica as anywhere.

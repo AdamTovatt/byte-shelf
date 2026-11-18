@@ -65,7 +65,9 @@ namespace ByteShelf.Cli.Commands
                 new Command(Section.Files, "encrypt", "<shelf>:<path> [--password-file <file>]", "encrypt a file, or a folder and every file under it, with a password that never leaves this machine; the unencrypted contents are deleted at once, and a lost password cannot be recovered", EncryptAsync),
                 new Command(Section.Files, "decrypt", "<shelf>:<path> [--password-file <file>]", "remove a file's or a folder's encryption", DecryptAsync),
                 new Command(Section.Files, "describe", "<shelf>:<path> <text> | --clear", "set a file's description, which find matches too", DescribeAsync),
-                new Command(Section.Files, "share", "<shelf>:<path> [--expires <30m|12h|7d>]", string.Create(CultureInfo.InvariantCulture, $"a link to a file that works without signing in; {DownloadLink.Lifetime.Default.TotalHours} hours by default, at most {DownloadLink.Lifetime.Max.TotalDays} days"), ShareAsync),
+                new Command(Section.Files, "share", "<shelf>:<path> [--expires <30m|12h|7d>]", string.Create(CultureInfo.InvariantCulture, $"a link to a file that works without signing in; {DownloadLink.Lifetime.Default.TotalHours} hours by default, at most {DownloadLink.Lifetime.Max.TotalDays} days, or until revoked"), ShareAsync),
+                new Command(Section.Files, "link list", "<shelf>", "the shelf's share and upload links that still work: yours, or every one if you may write there", ListLinksAsync),
+                new Command(Section.Files, "link revoke", "<shelf> <link-id>", "end a link, so nothing more is served through it: yours, or any if you may write there", RevokeLinkAsync),
                 new Command(
                     Section.Files,
                     "find",
@@ -533,6 +535,22 @@ namespace ByteShelf.Cli.Commands
 
             DownloadLink link = await (await ShelfAsync(location.Shelf, cancellationToken)).CreateDownloadLinkAsync(location.Path, lifetime, cancellationToken);
             Print(link, ByteShelfJsonContext.Default.DownloadLink, TextFormat.Link);
+        }
+
+        private async Task ListLinksAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            string shelf = arguments.Required(0, "shelf");
+            arguments.EnsureAllUsed();
+            Print(await (await ShelfAsync(shelf, cancellationToken)).GetLinksAsync(cancellationToken), ByteShelfJsonContext.Default.IReadOnlyListShelfLink, TextFormat.Links);
+        }
+
+        private async Task RevokeLinkAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            string shelf = arguments.Required(0, "shelf");
+            Guid linkId = Id(arguments.Required(1, "link-id"), $"a link id; 'byteshelf link list {shelf}' lists them");
+            arguments.EnsureAllUsed();
+            await (await ShelfAsync(shelf, cancellationToken)).RevokeLinkAsync(linkId, cancellationToken);
+            Done("Revoked the link.");
         }
 
         private async Task FindAsync(ArgumentList arguments, CancellationToken cancellationToken)

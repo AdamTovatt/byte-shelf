@@ -15,8 +15,7 @@ namespace ByteShelf.Server.Tests.Client
             // A scheme, not just absolute: on Unix a path such as /api/x parses as an absolute file URI.
             Assert.Matches("^https?://", link.Url);
             Assert.Equal(("/in/a.txt", false), (link.Path, link.Overwrite));
-            // The server cuts the expiry to the whole second its token keeps.
-            Assert.InRange(link.ExpiresAt, before + UploadLink.Lifetime.Default - TimeSpan.FromSeconds(1), DateTimeOffset.UtcNow + UploadLink.Lifetime.Default);
+            Assert.InRange(link.ExpiresAt, before + UploadLink.Lifetime.Default, DateTimeOffset.UtcNow + UploadLink.Lifetime.Default);
         }
 
         [Fact]
@@ -27,7 +26,7 @@ namespace ByteShelf.Server.Tests.Client
             UploadLink link = await Shelf.CreateUploadLinkAsync("/a.txt", new UploadLinkOptions { Lifetime = TimeSpan.FromHours(24), Overwrite = true });
 
             Assert.True(link.Overwrite);
-            Assert.InRange(link.ExpiresAt, before.AddHours(24).AddSeconds(-1), DateTimeOffset.UtcNow.AddHours(24));
+            Assert.InRange(link.ExpiresAt, before.AddHours(24), DateTimeOffset.UtcNow.AddHours(24));
         }
 
         [Theory]

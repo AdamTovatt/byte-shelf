@@ -89,7 +89,7 @@ they do not match the file's SHA-256, so a file read whole is the file that was 
 ## Links
 
 `CreateDownloadLinkAsync` makes a link to one file that anyone holding it can open without signing
-in, for a day unless a lifetime in whole minutes up to 7 days is given. Making one is a read, so any
+in, for a day unless a lifetime in whole minutes up to 7 days is given, or until it is revoked. Making one is a read, so any
 key may. A server with a public URL configured answers the link on it, and the HTTP client keeps it
 as it is. Otherwise the server answers a path from its root, which the HTTP client makes absolute
 against the `HttpClient`'s base address, or against `ByteShelfHttpClientOptions.LinkBaseAddress` for
@@ -102,6 +102,13 @@ give a lifetime up to 24 hours, with an optional description and `Overwrite`. Ma
 so a read key cannot, and one with `Overwrite` needs write access, so an add-only key cannot either.
 The link acts with the client's access, checked again when it is used. Its
 URL is made absolute as a download link's is.
+
+Both kinds of link read or store with the access of whoever made them, checked again on every use,
+and each answers its `Id`. `GetLinksAsync` lists the shelf's links that have not run out, without
+their URLs: those this client made, or every one when it may write on the shelf. `RevokeLinkAsync`
+ends one by its id, under the same rule, so no request made with it from then on is served; a replica keeps and revokes its own links. A link
+meant to be read once is one with a short lifetime, revoked after it was read. The in-memory client
+keeps its links per shelf and lists every one, as it acts as an admin.
 
 ## Encryption
 

@@ -26,8 +26,11 @@ would find that have exactly the same contents, in groups, most repeated bytes f
 under the directory count, encrypted and empty files are left out, and `--limit` counts groups.
 `describe` sets a file's description and `describe --clear` removes
 it; `put --description` stores one with the file. `share` prints a link that opens a file without
-signing in, for 24 hours or the `--expires` given (`30m`, `12h`, up to `7d`); nothing takes it back
-before then.
+signing in, for 24 hours or the `--expires` given (`30m`, `12h`, up to `7d`), and the link's id.
+`link list` shows a shelf's share and upload links that still work, with their ids: yours, or every
+one on the shelf if you may write there. `link revoke` ends one by its id, under the same rule. A link
+also stops working while whoever made it may no longer read the shelf (store there, for an upload
+link).
 
 `tree` lists everything under a directory by path, directories ending in `/`, at any depth or down
 to `--depth` levels, a page at a time as `find` does. `put` given a local folder stores it and

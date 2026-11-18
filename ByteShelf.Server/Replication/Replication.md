@@ -114,8 +114,12 @@ copy was read is applied after it as well.
 ## Read-only
 
 On a replica `ReplicaReadOnlyFilter`, applied to every controller, refuses every action but GET and HEAD
-with 409 `read_only_replica`, unless it carries `[AllowedOnReplica]`: asking for a download link and
-promoting. Signing in, renewing and signing out are not controller actions and work as anywhere, and so
+with 409 `read_only_replica`, unless it carries `[AllowedOnReplica]`: asking for a download link,
+revoking a link, and promoting. A replica's links are its own `shelf_link` rows, which the change log
+leaves out, so replication never carries them either way and a whole copy leaves them be. They go with
+the shelf, key or user they name when replication removes it. A file the primary deletes only goes to
+the replica's trash, where its links answer 404, and they go when the replica purges it
+([Storage](../Storage/Storage.md#links-shelf_link-linkservice)). Signing in, renewing and signing out are not controller actions and work as anywhere, and so
 does `/mcp`, whose tools write through the filtered API. `ReplicaWriteCoverageTests` goes through every
 endpoint the server maps, minimal APIs included, and lists each one that takes a write on a replica, so a
 new one is refused there, or fails that test, until somebody decides otherwise.

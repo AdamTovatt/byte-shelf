@@ -40,6 +40,9 @@ namespace ByteShelfClient.InMemory
 
         public List<ShelfKeyInfo> Keys { get; } = new List<ShelfKeyInfo>();
 
+        /// <summary>The links made on the shelf and not revoked, run out or not.</summary>
+        public List<LinkRow> Links { get; } = new List<LinkRow>();
+
         /// <summary>Every byte stored, the trash included, which is what the quota counts.</summary>
         public long UsedBytes => Files.Sum(file => file.Content.LongLength);
 
@@ -423,6 +426,23 @@ namespace ByteShelfClient.InMemory
             public DateTimeOffset? DeletedAt { get; set; }
             public Guid? DeletionId { get; set; }
             public bool IsLive => DeletedAt == null;
+        }
+
+        /// <summary>
+        /// A link, as the server's row holds it: a download link's file, or an upload link's place, and
+        /// who made it. The server drops it with its file or maker; listing here leaves those out instead.
+        /// </summary>
+        internal sealed class LinkRow
+        {
+            public required Guid Id { get; init; }
+            public required ShelfLinkKind Kind { get; init; }
+            public Guid? FileId { get; init; }
+            public string? Path { get; init; }
+            public bool Overwrite { get; init; }
+            public string? Description { get; init; }
+            public required Guid MakerId { get; init; }
+            public required DateTimeOffset CreatedAt { get; init; }
+            public required DateTimeOffset ExpiresAt { get; init; }
         }
     }
 }
