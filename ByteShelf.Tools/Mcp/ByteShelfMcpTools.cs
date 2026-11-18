@@ -54,6 +54,7 @@ namespace ByteShelf.Tools.Mcp
         private const string UpdatedFromDescription = "Last changed at or after this ISO 8601 time.";
         private const string UpdatedBeforeDescription = "Last changed before this ISO 8601 time.";
         private const string Sha256Description = "The contents' SHA-256 in hex, to find copies of a file.";
+        private const string HasDescriptionDescription = "true for only files that have a description, false for only those that have none (the files left to describe); leave it out for either.";
         private const string TakenFromDescription = "A photo or video taken at or after this ISO 8601 time, as its contents say.";
         private const string TakenBeforeDescription = "A photo or video taken before this ISO 8601 time.";
         private const string HasGpsDescription = "Only files whose contents carry a GPS position.";
@@ -258,6 +259,7 @@ namespace ByteShelf.Tools.Mcp
             [Description(UpdatedFromDescription)] DateTimeOffset? updatedFrom = null,
             [Description(UpdatedBeforeDescription)] DateTimeOffset? updatedBefore = null,
             [Description(Sha256Description)] string? sha256 = null,
+            [Description(HasDescriptionDescription)] bool? hasDescription = null,
             [Description(TakenFromDescription)] DateTimeOffset? takenFrom = null,
             [Description(TakenBeforeDescription)] DateTimeOffset? takenBefore = null,
             [Description(HasGpsDescription)] bool hasGps = false,
@@ -281,6 +283,7 @@ namespace ByteShelf.Tools.Mcp
                 updatedFrom: updatedFrom,
                 updatedBefore: updatedBefore,
                 sha256: sha256,
+                hasDescription: hasDescription,
                 takenFrom: takenFrom,
                 takenBefore: takenBefore,
                 hasGps: hasGps,
@@ -308,6 +311,7 @@ namespace ByteShelf.Tools.Mcp
             [Description(UpdatedFromDescription)] DateTimeOffset? updatedFrom = null,
             [Description(UpdatedBeforeDescription)] DateTimeOffset? updatedBefore = null,
             [Description(Sha256Description)] string? sha256 = null,
+            [Description(HasDescriptionDescription)] bool? hasDescription = null,
             [Description(TakenFromDescription)] DateTimeOffset? takenFrom = null,
             [Description(TakenBeforeDescription)] DateTimeOffset? takenBefore = null,
             [Description(HasGpsDescription)] bool hasGps = false,
@@ -331,6 +335,7 @@ namespace ByteShelf.Tools.Mcp
                 updatedFrom: updatedFrom,
                 updatedBefore: updatedBefore,
                 sha256: sha256,
+                hasDescription: hasDescription,
                 takenFrom: takenFrom,
                 takenBefore: takenBefore,
                 hasGps: hasGps,
@@ -356,6 +361,7 @@ namespace ByteShelf.Tools.Mcp
             DateTimeOffset? updatedFrom,
             DateTimeOffset? updatedBefore,
             string? sha256,
+            bool? hasDescription,
             DateTimeOffset? takenFrom,
             DateTimeOffset? takenBefore,
             bool hasGps,
@@ -376,6 +382,7 @@ namespace ByteShelf.Tools.Mcp
                 UpdatedFrom = updatedFrom,
                 UpdatedBefore = updatedBefore,
                 Sha256 = sha256,
+                HasDescription = hasDescription,
                 TakenFrom = takenFrom,
                 TakenBefore = takenBefore,
                 HasGps = hasGps,

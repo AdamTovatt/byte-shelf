@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../lib/queryKeys';
+import type { SearchCriteria } from '../lib/searchFilters';
 import {
   createDirectory,
   createShelf,
@@ -64,31 +65,44 @@ export function usePrefetchListing(shelf: string) {
   return useCallback((path: string) => void queryClient.prefetchQuery(listingQuery(shelf, path)), [queryClient, shelf]);
 }
 
-/** The files under `under` whose name or description holds `text`; idle while `text` is blank or `enabled` is false. */
-export function useFileSearch(shelf: string, under: string, text: string, enabled: boolean) {
-  const trimmed = text.trim();
-  return useQuery({
-    queryKey: queryKeys.shelfContents.search(shelf, under, trimmed),
-    queryFn: () => searchFiles(shelf, under, trimmed),
-    enabled: enabled && trimmed !== '',
-    placeholderData: keepPreviousData,
-  });
-}
-
 /**
- * The groups of files under `under` with the same contents, narrowed by `text`, a page at a time:
- * `fetchNextPage` adds the next page's groups. Idle while `enabled` is false.
+ * A search's pages, fetched one at a time: `fetchNextPage` adds the page after the last one's
+ * `nextCursor`. The previous search's pages stay shown while a new one loads. Idle while `enabled` is false.
  */
-export function useDuplicateSearch(shelf: string, under: string, text: string, enabled: boolean) {
-  const trimmed = text.trim();
+function usePagedSearch<Page extends { nextCursor?: string | null }>(
+  queryKey: readonly unknown[],
+  fetchPage: (after: string | undefined) => Promise<Page>,
+  enabled: boolean,
+) {
   return useInfiniteQuery({
-    queryKey: queryKeys.shelfContents.duplicates(shelf, under, trimmed),
-    queryFn: ({ pageParam }) => findDuplicates(shelf, under, trimmed, pageParam),
+    queryKey,
+    queryFn: ({ pageParam }) => fetchPage(pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     enabled,
     placeholderData: keepPreviousData,
   });
+}
+
+/** The files under `under` that meet `criteria`, a page at a time. Idle while `enabled` is false. */
+export function useFileSearch(shelf: string, under: string, criteria: SearchCriteria, enabled: boolean) {
+  return usePagedSearch(
+    queryKeys.shelfContents.search(shelf, under, criteria),
+    (after) => searchFiles(shelf, under, criteria, after),
+    enabled,
+  );
+}
+
+/**
+ * The groups of files under `under` with the same contents, among those that meet `criteria`, a page
+ * of groups at a time. Idle while `enabled` is false.
+ */
+export function useDuplicateSearch(shelf: string, under: string, criteria: SearchCriteria, enabled: boolean) {
+  return usePagedSearch(
+    queryKeys.shelfContents.duplicates(shelf, under, criteria),
+    (after) => findDuplicates(shelf, under, criteria, after),
+    enabled,
+  );
 }
 
 /**

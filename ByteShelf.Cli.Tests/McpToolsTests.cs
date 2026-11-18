@@ -586,6 +586,21 @@ namespace ByteShelf.Cli.Tests
             Assert.DoesNotContain("0043", found, StringComparison.Ordinal);
         }
 
+        // find_duplicates has no test of its own for this: it builds its criteria with the same
+        // Criteria(...) as search_files, whose parameters have no defaults, so leaving hasDescription
+        // out does not compile.
+        [Fact]
+        public async Task SearchFiles_HasDescriptionFalse_FindsTheFilesLeftToDescribe()
+        {
+            await _tools.UploadFileAsync("/scans/0042.pdf", text: "a", description: "Receipt for the new bike", shelf: "docs");
+            await _tools.UploadFileAsync("/scans/0043.pdf", text: "b", shelf: "docs");
+
+            string found = await _tools.SearchFilesAsync(hasDescription: false, shelf: "docs");
+
+            Assert.StartsWith("/scans/0043.pdf  1 B", found, StringComparison.Ordinal);
+            Assert.DoesNotContain("0042", found, StringComparison.Ordinal);
+        }
+
         [Fact]
         public async Task SearchFiles_MorePagesFollow_SaysWhatToPassAsAfter()
         {

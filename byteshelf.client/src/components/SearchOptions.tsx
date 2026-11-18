@@ -27,6 +27,7 @@ export function SearchOptions({ filters, onChange }: SearchOptionsProps) {
     >
       <div role="group" aria-label="Search options" className="min-w-52 p-1">
         <SearchToggle label="Duplicates only" on={filters.duplicates} onToggle={() => onChange({ ...filters, duplicates: !filters.duplicates })} />
+        <SearchToggle label="No description" on={filters.undescribed} onToggle={() => onChange({ ...filters, undescribed: !filters.undescribed })} />
       </div>
     </Popover>
   );

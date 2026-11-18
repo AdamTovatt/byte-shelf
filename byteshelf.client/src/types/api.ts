@@ -1053,6 +1053,7 @@ export interface paths {
                     updatedFrom?: string;
                     updatedBefore?: string;
                     sha256?: string;
+                    hasDescription?: boolean;
                     takenFrom?: string;
                     takenBefore?: string;
                     hasGps?: boolean;
@@ -1134,6 +1135,7 @@ export interface paths {
                     updatedFrom?: string;
                     updatedBefore?: string;
                     sha256?: string;
+                    hasDescription?: boolean;
                     takenFrom?: string;
                     takenBefore?: string;
                     hasGps?: boolean;

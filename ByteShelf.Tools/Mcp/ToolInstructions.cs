@@ -13,13 +13,13 @@ namespace ByteShelf.Tools.Mcp
             Looking around: list_directory shows one directory, list_tree everything under one (down to
             a depth if you give one), search_files finds files under a directory by text in the name,
             description, or a title or camera the contents carry, media type (image/* for a family),
-            size, times, SHA-256, or what the contents say: when a photo or video was taken, whether it
-            has a GPS position, how long it plays, a PDF's pages. find_duplicates groups the files
-            among them that have exactly the same contents, most repeated bytes first, to tidy away
-            copies (encrypted and empty files never match). get_info answers one file's or
-            directory's record, a file's with what the server read from its contents (when and where
-            a photo or video was taken, the camera, a video's length, a PDF's title and pages). A long
-            answer comes a page at a time and ends with
+            size, times, SHA-256, whether it has a description, or what the contents say: when a photo
+            or video was taken, whether it has a GPS position, how long it plays, a PDF's pages.
+            find_duplicates groups the files among them that have exactly the same contents, most
+            repeated bytes first, to tidy away copies (encrypted and empty files never match). get_info
+            answers one file's or directory's record, a file's with what the server read from its
+            contents (when and where a photo or video was taken, the camera, a video's length, a PDF's
+            title and pages). A long answer comes a page at a time and ends with
             "More follow: call again with after = <cursor>"; pass that cursor as after for the next
             page.
 
@@ -37,12 +37,18 @@ namespace ByteShelf.Tools.Mcp
 
             Storing: upload_file stores text, or a binary file's contents as base64, each up to 256 KiB,
             creating missing directories. It never replaces a file unless overwrite is true, and then
-            the old one goes to the trash. create_directory makes an empty directory. Describe files
-            with set_description (or upload_file's description) so they can be found later.
+            the old one goes to the trash. create_directory makes an empty directory.
             create_upload_link makes a link that stores one file at a path when anyone who has it PUTs
             the contents to it, for 15 minutes or the time asked for (at most 24 hours), with the curl
             command that does it: use it for a file too large to pass here, or one a person or another
             program will send.
+
+            Describing: describe files with set_description (or upload_file's description) so they can
+            be found later. search_files with hasDescription false finds the files that have no
+            description yet. A good description says what the file is, who or what it is about, where
+            and when, and the words someone would search for that its name lacks. Read a file before
+            describing it; describe one you cannot read (encrypted, too large) from its name, its path
+            and what get_info says about it, and say no more than those tell.
 
             Changing: move renames or moves files and directories and never overwrites. move and
             set_description take a list, so one call tidies many entries (a list of one for a single

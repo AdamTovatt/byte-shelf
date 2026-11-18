@@ -664,6 +664,33 @@ namespace ByteShelf.Cli.Tests
             Assert.DoesNotContain("copies of", withGps.Output, StringComparison.Ordinal);
         }
 
+        // Both options in one test rather than a theory: they share the files, and a failed assertion's
+        // line already says which option broke.
+        [Fact]
+        public async Task Find_DescriptionOptions_FindOnlyUndescribedOrOnlyDescribedFiles()
+        {
+            await UploadAsync("/described.txt", "a");
+            await Docs.SetDescriptionAsync("/described.txt", "The March invoice");
+            await UploadAsync("/bare.txt", "b");
+
+            CliRun undescribed = await RunAsync("find", "docs", "--no-description");
+            CliRun described = await RunAsync("find", "docs", "--has-description");
+
+            Assert.StartsWith("/bare.txt", undescribed.Output, StringComparison.Ordinal);
+            Assert.DoesNotContain("described.txt", undescribed.Output, StringComparison.Ordinal);
+            Assert.StartsWith("/described.txt", described.Output, StringComparison.Ordinal);
+            Assert.DoesNotContain("bare.txt", described.Output, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Find_BothDescriptionOptions_FailsAsMisuse()
+        {
+            CliRun run = await RunAsync("find", "docs", "--has-description", "--no-description");
+
+            Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.Equal("--has-description and --no-description cannot both be given.", run.Error.Trim());
+        }
+
         [Fact]
         public async Task Find_DurationThatIsNotSeconds_FailsAsMisuse()
         {

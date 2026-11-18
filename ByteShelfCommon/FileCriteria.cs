@@ -32,6 +32,7 @@ namespace ByteShelfCommon
             UpdatedFrom = criteria.UpdatedFrom;
             UpdatedBefore = criteria.UpdatedBefore;
             Sha256 = criteria.Sha256;
+            HasDescription = criteria.HasDescription;
             TakenFrom = criteria.TakenFrom;
             TakenBefore = criteria.TakenBefore;
             HasGps = criteria.HasGps;
@@ -76,6 +77,12 @@ namespace ByteShelfCommon
 
         /// <summary>The contents' SHA-256, in hex.</summary>
         public string? Sha256 { get; init; }
+
+        /// <summary>
+        /// True for only the files that have a description, false for only those that have none (to find
+        /// the files left to describe); null leaves it unchecked.
+        /// </summary>
+        public bool? HasDescription { get; init; }
 
         /// <summary>
         /// Taken at or after this, by the time a photo's or video's contents carry (<see cref="FileMetadata.TakenAt"/>).
@@ -153,6 +160,7 @@ namespace ByteShelfCommon
                 UpdatedFrom = UpdatedFrom,
                 UpdatedBefore = UpdatedBefore,
                 Sha256 = NormalizeSha256(Sha256),
+                HasDescription = HasDescription,
                 TakenFrom = TakenFrom,
                 TakenBefore = TakenBefore,
                 HasGps = HasGps,
@@ -220,6 +228,7 @@ namespace ByteShelfCommon
             AddQueryPart(parts, "updatedFrom", UpdatedFrom?.ToString("O", CultureInfo.InvariantCulture));
             AddQueryPart(parts, "updatedBefore", UpdatedBefore?.ToString("O", CultureInfo.InvariantCulture));
             AddQueryPart(parts, "sha256", Sha256);
+            AddQueryPart(parts, "hasDescription", HasDescription switch { true => "true", false => "false", null => null });
             AddQueryPart(parts, "takenFrom", TakenFrom?.ToString("O", CultureInfo.InvariantCulture));
             AddQueryPart(parts, "takenBefore", TakenBefore?.ToString("O", CultureInfo.InvariantCulture));
             AddQueryPart(parts, "hasGps", HasGps ? "true" : null);
