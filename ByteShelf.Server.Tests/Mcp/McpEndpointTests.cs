@@ -20,7 +20,7 @@ namespace ByteShelf.Server.Tests.Mcp
     {
         private static readonly string[] ReadTools =
         {
-            "download_deleted", "download_file", "find_duplicates", "get_info", "list_directory", "list_shelves", "list_trash", "list_tree", "search_files", "share_file", "shelf_info",
+            "download_deleted", "download_file", "find_duplicates", "get_info", "list_directory", "list_links", "list_shelves", "list_trash", "list_tree", "revoke_link", "search_files", "share_file", "shelf_info",
         };
 
         private static readonly string[] AddTools = { "create_directory", "create_upload_link", "upload_file" };
@@ -302,6 +302,25 @@ namespace ByteShelf.Server.Tests.Mcp
             Assert.Equal(publicAddress.GetLeftPart(UriPartial.Authority), link.GetLeftPart(UriPartial.Authority));
             Assert.StartsWith("/api/downloads/", link.AbsolutePath, StringComparison.Ordinal);
             Assert.Equal("shared", await _host.AnonymousClient.GetStringAsync(link.PathAndQuery));
+        }
+
+        [Fact]
+        public async Task CallTool_ReadKeySharesListsAndRevokesALink_LinkServesTheFileThenNoLonger()
+        {
+            (await _host.AdminClient.PutAsync("/api/shelves/docs/content?path=/a.txt", new StringContent("once"))).EnsureSuccessStatusCode();
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+
+            CallToolResult shared = await client.CallToolAsync("share_file", new Dictionary<string, object?> { ["path"] = "/a.txt", ["expiresIn"] = "5m" });
+            string url = new Uri(TextOf(shared).Split(Environment.NewLine)[0]).PathAndQuery;
+            string linkId = Regex.Match(TextOf(shared), "its id is ([0-9a-f-]{36})").Groups[1].Value;
+            string read = await _host.AnonymousClient.GetStringAsync(url);
+            string listed = TextOf(await client.CallToolAsync("list_links", new Dictionary<string, object?>()));
+            CallToolResult revoked = await client.CallToolAsync("revoke_link", new Dictionary<string, object?> { ["linkId"] = linkId });
+
+            Assert.Equal("once", read);
+            Assert.StartsWith($"{linkId}  reads /a.txt  by ", listed, StringComparison.Ordinal);
+            AssertSucceeded(revoked);
+            Assert.Equal(HttpStatusCode.NotFound, (await _host.AnonymousClient.GetAsync(url)).StatusCode);
         }
 
         [Fact]

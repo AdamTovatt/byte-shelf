@@ -68,4 +68,16 @@ describe('the shelf header\'s trail', () => {
     expect(crumbs()).toEqual([['Shelves', null], ['trash', null], ['Trash', null]]);
     expect(reactErrors).toEqual([]);
   });
+
+  it('offers someone not an admin the shelf\'s settings too, where their links are', async () => {
+    stubServer(async (request) => new URL(request.url).pathname === '/api/users/me'
+      ? json({ id: 'm', email: 'ada@example.com', displayName: 'Ada', roles: [] })
+      : json({ message: 'Not here.' }, 404));
+    await render('docs', 'files');
+
+    await act(async () => (container.querySelector('[aria-label="Pages of docs"]') as HTMLButtonElement).click());
+
+    const pages = [...document.body.querySelectorAll('button')].map((button) => button.textContent).filter((text) => text !== '');
+    expect(pages).toEqual(['Files', 'Trash', 'Settings']);
+  });
 });

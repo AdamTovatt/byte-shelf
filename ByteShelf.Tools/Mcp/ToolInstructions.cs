@@ -26,7 +26,10 @@ namespace ByteShelf.Tools.Mcp
             it whole; one it cannot preview (HEIC, say) comes only with why and where to get it.
             Through the byteshelf CLI's MCP, save a larger image with localPath and look at it there.
             share_file makes a link anyone can open without signing in, for 24 hours or the time asked
-            for (at most 7 days); use it to hand a person a file, or to fetch anything else.
+            for (at most 7 days); use it to hand a person a file, or to fetch anything else. A link
+            answers with its id: list_links shows the links that still work, and revoke_link ends one
+            sooner. To read a file once, make its link for a few minutes and revoke it once read. A share
+            link stops working while whoever made it can no longer read the shelf.
 
             Storing: upload_file stores text, or a binary file's contents as base64, each up to 256 KiB,
             creating missing directories. It never replaces a file unless overwrite is true, and then

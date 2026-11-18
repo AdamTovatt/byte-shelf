@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Breadcrumbs, Dropdown, DropdownItem, IconButton, iconMap, type BreadcrumbItem } from '../ui';
 import { useShelf } from '../hooks/useShelfQueries';
-import { useIsAdmin } from '../hooks/useUserQueries';
 import { describeUsage } from '../lib/format';
 import { pathSegments, ROOT_PATH, shelfRoute, shelfViewRoute, type ShelfView } from '../lib/shelfPaths';
 
@@ -28,15 +27,15 @@ function folderOfCrumbKey(key: string): string | null {
 }
 
 /**
- * Where in the shelf the page is, a menu to its files, trash and (for admins) settings with the
- * current one ticked, and under them how much the shelf holds.
+ * Where in the shelf the page is, a menu to its files, trash and settings (all of them for an admin,
+ * the shelf's links for anyone else) with the current one ticked, and under them how much the shelf
+ * holds.
  */
 export function ShelfHeader({ shelf, view, path = ROOT_PATH, wrapFolderCrumb }: ShelfHeaderProps) {
   const navigate = useNavigate();
-  const isAdmin = useIsAdmin();
   const { data: info } = useShelf(shelf);
 
-  const views: ShelfView[] = isAdmin ? ['files', 'trash', 'settings'] : ['files', 'trash'];
+  const views: ShelfView[] = ['files', 'trash', 'settings'];
   // Each crumb's key says what kind of crumb it is, so a shelf or folder named like another crumb
   // (a shelf called "shelves" or "trash") never shares its key.
   const crumbs: BreadcrumbItem[] = [

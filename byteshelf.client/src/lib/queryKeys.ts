@@ -24,6 +24,12 @@ export const queryKeys = {
     grants: (shelf: string) => ['shelfAccess', shelf, 'grants'] as const,
     keys: (shelf: string) => ['shelfAccess', shelf, 'keys'] as const,
   },
+  // Not an invalidation resource: links are each server's own and not in the change log, so this
+  // app's own changes refresh them.
+  links: {
+    root: ['links'] as const,
+    list: (shelf: string) => ['links', shelf] as const,
+  },
   // Not an invalidation resource: replication state is not in the change log, so it is polled.
   replication: {
     status: ['replication', 'status'] as const,

@@ -193,6 +193,32 @@ namespace ByteShelf.Tools.Mcp
             });
         }
 
+        [McpServerTool(Name = "list_links", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Read)]
+        [Description("The shelf's share and upload links that still work, newest first: each one's id, what it reads or stores, who made it and when it runs out. You see the links you made, or every one on the shelf if you may write there. Never their URLs.")]
+        public Task<string> ListLinksAsync(
+            [Description(ShelfDescription)] string? shelf = null,
+            CancellationToken cancellationToken = default)
+        {
+            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.Links(await shelfClient.GetLinksAsync(cancellationToken)));
+        }
+
+        // Read is all it needs: anyone may revoke the links they made. The server says whether this one is theirs.
+        [McpServerTool(Name = "revoke_link", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Read)]
+        [Description("Ends a share or upload link by its id, as share_file, create_upload_link and list_links give it: nothing more is served through it. One you made, or any on the shelf if you may write there. To read a file once through a link, make it with share_file for a few minutes and revoke it after.")]
+        public Task<string> RevokeLinkAsync(
+            [Description("The link's id.")] Guid linkId,
+            [Description(ShelfDescription)] string? shelf = null,
+            CancellationToken cancellationToken = default)
+        {
+            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) =>
+            {
+                await shelfClient.RevokeLinkAsync(linkId, cancellationToken);
+                return TextFormat.Revoked;
+            });
+        }
+
         [McpServerTool(Name = "set_description", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
         [ToolNeeds(ToolNeed.Write)]
         [Description("Sets what a file is, in up to 2000 characters of free text, shown with the file and matched by search_files. Omit description to remove it.")]

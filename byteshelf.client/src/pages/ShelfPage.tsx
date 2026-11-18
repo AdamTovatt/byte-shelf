@@ -25,6 +25,7 @@ import { MoveDialog } from '../components/MoveDialog';
 import { ShelfHeader } from '../components/ShelfHeader';
 import { PREFETCHED_SUBFOLDERS, useCreateDirectory, useDeleteEntry, useDuplicateSearch, useFileSearch, useListing, useMoveEntry, usePrefetchListing, useRestoreDeletion, useSetDescription } from '../hooks/useShelfQueries';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { useCreateDownloadLink } from '../hooks/useLinkQueries';
 import { useSelection, type SelectionClickModifiers } from '../hooks/useSelection';
 import { useFilePicker } from '../hooks/useFilePicker';
 import { MobileTopBarActions, MobileTopBarOverlay } from '../components/layout/MobileTopBar';
@@ -43,7 +44,7 @@ import { joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../
 import { copyWhenReady } from '../lib/clipboard';
 import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
-import { createDownloadLink, directoryEntry, entrySizeBytes, nameOrCount, type DuplicateGroup, type Entry, type FileSearchResults, type ShelfFile } from '../services/shelfService';
+import { directoryEntry, entrySizeBytes, nameOrCount, type DuplicateGroup, type Entry, type FileSearchResults, type ShelfFile } from '../services/shelfService';
 import { SearchOptions } from '../components/SearchOptions';
 import { NO_SEARCH_FILTERS, anySearchFilter } from '../lib/searchFilters';
 
@@ -61,6 +62,7 @@ export function ShelfPage() {
   const opening = fileOpening(liveContent(shelf), encryption.contents);
   const deleteEntry = useDeleteEntry(shelf);
   const restore = useRestoreDeletion(shelf);
+  const createDownloadLink = useCreateDownloadLink(shelf);
   const [creatingDirectory, setCreatingDirectory] = useState(false);
   const [renaming, setRenaming] = useState<Entry | null>(null);
   const [moving, setMoving] = useState<Entry[] | null>(null);
@@ -104,15 +106,16 @@ export function ShelfPage() {
 
   /**
    * Copies a link that lets anyone open the file without signing in, for the server's default of a
-   * day. Where it cannot be copied at once (plain HTTP), the toast holds it in a field to copy from.
+   * day, until it is revoked in the shelf's settings (Links). Where it cannot be copied at once (plain
+   * HTTP), the toast holds it in a field to copy from.
    */
   async function copyLink(file: ShelfFile): Promise<void> {
-    const link = createDownloadLink(shelf, file.id).then((created) => ({ ...created, url: new URL(created.url, window.location.origin).href }));
+    const link = createDownloadLink.mutateAsync(file.id).then((created) => ({ ...created, url: new URL(created.url, window.location.origin).href }));
     const copied = copyWhenReady(link.then((created) => created.url));
 
     await runOrToast(async () => {
       const { url, expiresAt } = await link;
-      const until = <span>Anyone with it can open it until {formatTime(expiresAt)}.</span>;
+      const until = <span>Anyone with it can open it until {formatTime(expiresAt)}, unless it is revoked in the shelf's settings, under Links.</span>;
       if (await copied) {
         toast.success(<NameAndReason before="Copied a link to" name={file.name} after="." reason={until} />);
       } else {

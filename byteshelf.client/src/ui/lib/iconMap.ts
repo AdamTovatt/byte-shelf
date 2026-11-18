@@ -42,6 +42,7 @@ import {
   Settings01Icon,
   ShelvingUnitIcon,
   LibraryBigIcon,
+  LinkIcon,
   Shield01Icon,
   SquareLock01Icon,
   SquareUnlock01Icon,
@@ -95,6 +96,7 @@ export const iconMap = {
   download: Download01Icon,
   restore: RestoreIcon,
   key: KeyIcon,
+  link: LinkIcon,
   lock: SquareLock01Icon,
   unlock: SquareUnlock01Icon,
 

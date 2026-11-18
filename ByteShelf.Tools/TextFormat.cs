@@ -278,6 +278,8 @@ namespace ByteShelf.Tools
 
         public static string Restored => "Restored.";
 
+        public static string Revoked => "Revoked the link.";
+
         public static string EmptiedTrash => "Emptied the trash.";
 
         public static string Trash(IReadOnlyList<TrashEntry> entries)

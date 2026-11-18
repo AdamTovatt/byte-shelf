@@ -550,7 +550,7 @@ namespace ByteShelf.Cli.Commands
             Guid linkId = Id(arguments.Required(1, "link-id"), $"a link id; 'byteshelf link list {shelf}' lists them");
             arguments.EnsureAllUsed();
             await (await ShelfAsync(shelf, cancellationToken)).RevokeLinkAsync(linkId, cancellationToken);
-            Done("Revoked the link.");
+            Done(TextFormat.Revoked);
         }
 
         private async Task FindAsync(ArgumentList arguments, CancellationToken cancellationToken)

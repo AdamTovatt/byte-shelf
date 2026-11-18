@@ -42,8 +42,11 @@ export const SHELF_ROUTE_PATTERNS = {
   settings: '/shelves/:shelf/settings/:tab?',
 } as const;
 
-/** The tabs of a shelf's settings, each its own route below the settings page; the first is its default. */
-export const SHELF_SETTINGS_TABS = ['general', 'access', 'keys'] as const;
+/**
+ * The tabs of a shelf's settings, each its own route below the settings page; the first one a user
+ * sees is its default. Only Links is for everyone; the rest are an admin's.
+ */
+export const SHELF_SETTINGS_TABS = ['general', 'access', 'keys', 'links'] as const;
 export type ShelfSettingsTab = (typeof SHELF_SETTINGS_TABS)[number];
 
 function shelfBase(shelf: string): string {
