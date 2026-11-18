@@ -51,6 +51,15 @@ namespace ByteShelf.Server.Storage.Repositories
         Task<IReadOnlyList<(FileRecord File, string Path)>> SearchAsync(Guid directoryId, string directoryPath, FileSearch search, int maxRows, IDbSession? session = null);
 
         /// <summary>
+        /// Every file, each with its full path, of the first <paramref name="maxGroups"/> groups of
+        /// duplicates after <paramref name="search"/>'s cursor that <see cref="DuplicateSearch"/>
+        /// describes (normalized; its limit aside): the live plain, non-empty files under the directory
+        /// that meet its criteria and share a SHA-256, in the order <see cref="DuplicateSearchResults"/>
+        /// pages groups.
+        /// </summary>
+        Task<IReadOnlyList<(FileRecord File, string Path)>> FindDuplicatesAsync(Guid directoryId, string directoryPath, DuplicateSearch search, int maxGroups, IDbSession? session = null);
+
+        /// <summary>
         /// The live files under <paramref name="directoryId"/>, down to <paramref name="maxDepth"/> levels
         /// when set (1: only those directly in it), whose full path comes after <paramref name="after"/>;
         /// by full path, each with that path, at most <paramref name="maxRows"/> of them.

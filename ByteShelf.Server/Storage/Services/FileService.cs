@@ -142,5 +142,17 @@ namespace ByteShelf.Server.Storage.Services
                 NextCursor = found.Count > limit ? files[^1].Path : null,
             };
         }
+
+        /// <inheritdoc />
+        public async Task<DuplicateSearchResults> FindDuplicatesAsync(Shelf shelf, DuplicateSearch search)
+        {
+            DuplicateSearch normalized = search.Normalize();
+            DirectoryRecord directory = await _shelfTree.GetDirectoryAsync(shelf.Id, EntryReference.ForPath(normalized.Under!));
+
+            // One group more than a page, to tell whether another page follows without a count.
+            int limit = normalized.Limit!.Value;
+            IReadOnlyList<(FileRecord File, string Path)> found = await _fileRepository.FindDuplicatesAsync(directory.Id, normalized.Under!, normalized, limit + 1);
+            return DuplicateSearchResults.Page(found.Select(row => StorageContracts.ToShelfFile(row.File, ShelfPath.GetParent(row.Path))), normalized.After, limit);
+        }
     }
 }

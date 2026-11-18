@@ -198,6 +198,23 @@ namespace ByteShelf.Tools
             return Lines(results.NextCursor == null ? lines : lines.Append(more(results.NextCursor)));
         }
 
+        /// <summary>
+        /// Each group of duplicates as a line saying how many copies hold how much, then its files'
+        /// paths indented, and <paramref name="more"/> of the cursor when a page follows.
+        /// </summary>
+        public static string Duplicates(DuplicateSearchResults results, Func<string, string> more)
+        {
+            if (results.Groups.Count == 0)
+            {
+                return "No duplicates found.";
+            }
+
+            IEnumerable<string> lines = results.Groups.SelectMany(group => group.Files
+                .Select(file => $"  {file.Path}")
+                .Prepend($"{group.Files.Count} copies of {Size(group.SizeBytes)}, {Size(group.RepeatedBytes)} repeated  sha256 {group.Sha256}"));
+            return Lines(results.NextCursor is DuplicateCursor next ? lines.Append(more(next.ToString())) : lines);
+        }
+
         public static string Directory(ShelfDirectory directory)
         {
             string path = directory.Path == ShelfPath.Root ? ShelfPath.Root : directory.Path + ShelfPath.Separator;

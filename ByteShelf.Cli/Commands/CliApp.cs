@@ -24,6 +24,9 @@ namespace ByteShelf.Cli.Commands
         /// <summary>Where else a password to encrypt or decrypt with comes from.</summary>
         private const string OrPasswordFile = " or in a file with --password-file";
 
+        /// <summary>The usage of find and find-duplicates: the criteria <see cref="Criteria"/> reads, then the paging.</summary>
+        private const string CriteriaUsage = "<shelf>[:<path>] [<text>] [--type <content-type>|'<type>/*'] [--min-size <bytes>] [--max-size <bytes>] [--created-from <time>] [--created-before <time>] [--updated-from <time>] [--updated-before <time>] [--sha256 <hex>] [--limit <n>] [--after <cursor>]";
+
         private readonly IClientSource _clients;
         private readonly Terminal _terminal;
         private readonly int _encryptionWorkFactor;
@@ -66,9 +69,15 @@ namespace ByteShelf.Cli.Commands
                 new Command(
                     Section.Files,
                     "find",
-                    "<shelf>[:<path>] [<text>] [--type <content-type>|'<type>/*'] [--min-size <bytes>] [--max-size <bytes>] [--created-from <time>] [--created-before <time>] [--updated-from <time>] [--updated-before <time>] [--sha256 <hex>] [--limit <n>] [--after <cursor>]",
+                    CriteriaUsage,
                     "files under a directory whose name or description holds <text>, ignoring case, and that meet every option; times are ISO 8601, local without an offset",
                     FindAsync),
+                new Command(
+                    Section.Files,
+                    "find-duplicates",
+                    CriteriaUsage,
+                    "files with exactly the same contents, in groups, most repeated bytes first, among the files find would find; encrypted and empty files are left out",
+                    FindDuplicatesAsync),
                 new Command(Section.Files, "mkdir", "<shelf>:<path>", "create a directory with any missing parents", MakeDirectoryAsync),
                 new Command(Section.Files, "mv", "<shelf>:<path> [<shelf>:]<new-path>", "move or rename a file or a directory within its shelf", MoveAsync),
                 new Command(Section.Files, "rm", "<shelf>:<path>", "move a file, or a directory with everything in it, to the trash", RemoveAsync),
@@ -529,7 +538,36 @@ namespace ByteShelf.Cli.Commands
         private async Task FindAsync(ArgumentList arguments, CancellationToken cancellationToken)
         {
             ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
-            FileSearch search = new FileSearch
+            FileSearch search = new FileSearch(Criteria(location, arguments))
+            {
+                Limit = arguments.Count("--limit"),
+                After = arguments.Value("--after"),
+            };
+            arguments.EnsureAllUsed();
+
+            FileSearchResults found = await (await ShelfAsync(location.Shelf, cancellationToken)).SearchAsync(search, cancellationToken);
+            Print(found, ByteShelfJsonContext.Default.FileSearchResults, results => TextFormat.SearchResults(results, MoreAfter));
+        }
+
+        private async Task FindDuplicatesAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            ShelfLocation location = ShelfLocation.Parse(arguments.Required(0, "shelf:path"));
+            string? after = arguments.Value("--after");
+            DuplicateSearch search = new DuplicateSearch(Criteria(location, arguments))
+            {
+                Limit = arguments.Count("--limit"),
+                After = after == null ? null : DuplicateCursor.Parse(after),
+            };
+            arguments.EnsureAllUsed();
+
+            DuplicateSearchResults found = await (await ShelfAsync(location.Shelf, cancellationToken)).FindDuplicatesAsync(search, cancellationToken);
+            Print(found, ByteShelfJsonContext.Default.DuplicateSearchResults, results => TextFormat.Duplicates(results, MoreAfter));
+        }
+
+        /// <summary>The criteria find and find-duplicates read, as <see cref="CriteriaUsage"/> lists them: under <paramref name="location"/>.</summary>
+        private static FileCriteria Criteria(ShelfLocation location, ArgumentList arguments)
+        {
+            return new FileCriteria
             {
                 Under = location.Path,
                 Text = arguments.Optional(1),
@@ -541,13 +579,7 @@ namespace ByteShelf.Cli.Commands
                 UpdatedFrom = arguments.Time("--updated-from"),
                 UpdatedBefore = arguments.Time("--updated-before"),
                 Sha256 = arguments.Value("--sha256"),
-                Limit = arguments.Count("--limit"),
-                After = arguments.Value("--after"),
             };
-            arguments.EnsureAllUsed();
-
-            FileSearchResults found = await (await ShelfAsync(location.Shelf, cancellationToken)).SearchAsync(search, cancellationToken);
-            Print(found, ByteShelfJsonContext.Default.FileSearchResults, results => TextFormat.SearchResults(results, MoreAfter));
         }
 
         private async Task TreeAsync(ArgumentList arguments, CancellationToken cancellationToken)

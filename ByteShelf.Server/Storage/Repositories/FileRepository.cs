@@ -27,6 +27,17 @@ namespace ByteShelf.Server.Storage.Repositories
             deleted_at AS {nameof(FileEntity.DeletedAt)},
             deletion_id AS {nameof(FileEntity.DeletionId)}";
 
+        /// <summary>
+        /// The live files under <see cref="SubtreeWalk.Sql"/>'s directory that meet <see cref="SearchCriteria.Sql"/>,
+        /// each with its full path, ending in its WHERE clause so a query can add conditions: what a
+        /// search finds. <see cref="FoundParameters"/> gives its parameters.
+        /// </summary>
+        private const string FoundSql = $@"
+            SELECT {SelectColumns}, tree.node_path || '/' || file.name AS {nameof(FileSearchEntity.FullPath)}
+            FROM file JOIN tree ON file.directory_id = tree.node_id
+            WHERE file.deleted_at IS NULL
+              AND {SearchCriteria.Sql}";
+
         private const string InsertSql = @"
             INSERT INTO file (id, shelf_id, directory_id, name, content_type, size_bytes, sha256, created_at, updated_at, description, encrypted, deleted_at, deletion_id, name_fold, description_fold, media_type)
             VALUES (@Id, @ShelfId, @DirectoryId, @Name, @ContentType, @SizeBytes, @Sha256, @CreatedAt, @UpdatedAt, @Description, @Encrypted, @DeletedAt, @DeletionId, @NameFold, @DescriptionFold, @MediaType)";
@@ -250,59 +261,89 @@ namespace ByteShelf.Server.Storage.Repositories
 
                 parameters.Add(nameof(after), after);
                 parameters.Add(nameof(maxRows), maxRows);
-                IEnumerable<FileSearchEntity> entities = await dbSession.Connection.QueryAsync<FileSearchEntity>(query, parameters, transaction: dbSession.Transaction);
-
-                return (IReadOnlyList<(FileRecord, string)>)entities.Select(entity => (entity.ToDomain(), entity.FullPath)).ToList();
+                return WithPaths(await dbSession.Connection.QueryAsync<FileSearchEntity>(query, parameters, transaction: dbSession.Transaction));
             }, session);
         }
 
         /// <inheritdoc />
         public async Task<IReadOnlyList<(FileRecord File, string Path)>> SearchAsync(Guid directoryId, string directoryPath, FileSearch search, int maxRows, IDbSession? session = null)
         {
-            SubtreeWalk walk = SubtreeWalk.ForFiles(directoryId, directoryPath, depth: null);
-            string? text = search.Text;
-            string? mediaType = search.ExactMediaType();
-            string? mediaPrefix = search.MediaTypePrefix();
-            long? minSize = search.MinSizeBytes;
-            long? maxSize = search.MaxSizeBytes;
-            DateTimeOffset? createdFrom = search.CreatedFrom;
-            DateTimeOffset? createdBefore = search.CreatedBefore;
-            DateTimeOffset? updatedFrom = search.UpdatedFrom;
-            DateTimeOffset? updatedBefore = search.UpdatedBefore;
-            string? sha256 = search.Sha256;
             string? after = search.After;
+            DynamicParameters parameters = FoundParameters(directoryId, directoryPath, search);
+            parameters.Add(nameof(after), after);
+            parameters.Add(nameof(maxRows), maxRows);
 
             return await UseSessionAsync(async (dbSession) =>
             {
                 string query = $@"
                     {SubtreeWalk.Sql}
-                    SELECT {SelectColumns}, tree.node_path || '/' || file.name AS {nameof(FileSearchEntity.FullPath)}
-                    FROM file JOIN tree ON file.directory_id = tree.node_id
-                    WHERE file.deleted_at IS NULL
-                      AND (@{nameof(text)} IS NULL
-                           OR instr(file.name_fold, @{nameof(text)}) > 0
-                           OR instr(coalesce(file.description_fold, ''), @{nameof(text)}) > 0)
-                      AND (@{nameof(mediaType)} IS NULL OR file.media_type = @{nameof(mediaType)})
-                      AND (@{nameof(mediaPrefix)} IS NULL
-                           OR substr(file.media_type, 1, length(@{nameof(mediaPrefix)})) = @{nameof(mediaPrefix)})
-                      AND (@{nameof(minSize)} IS NULL OR file.size_bytes >= @{nameof(minSize)})
-                      AND (@{nameof(maxSize)} IS NULL OR file.size_bytes <= @{nameof(maxSize)})
-                      AND (@{nameof(createdFrom)} IS NULL OR file.created_at >= @{nameof(createdFrom)})
-                      AND (@{nameof(createdBefore)} IS NULL OR file.created_at < @{nameof(createdBefore)})
-                      AND (@{nameof(updatedFrom)} IS NULL OR file.updated_at >= @{nameof(updatedFrom)})
-                      AND (@{nameof(updatedBefore)} IS NULL OR file.updated_at < @{nameof(updatedBefore)})
-                      AND (@{nameof(sha256)} IS NULL OR file.sha256 = @{nameof(sha256)})
+                    {FoundSql}
                       AND (@{nameof(after)} IS NULL OR {nameof(FileSearchEntity.FullPath)} > @{nameof(after)})
                     ORDER BY {nameof(FileSearchEntity.FullPath)}
                     LIMIT @{nameof(maxRows)}";
 
-                IEnumerable<FileSearchEntity> entities = await dbSession.Connection.QueryAsync<FileSearchEntity>(
-                    query,
-                    new { walk.DirectoryId, walk.BasePath, walk.MaxLevel, text, mediaType, mediaPrefix, minSize, maxSize, createdFrom, createdBefore, updatedFrom, updatedBefore, sha256, after, maxRows },
-                    transaction: dbSession.Transaction);
-
-                return (IReadOnlyList<(FileRecord, string)>)entities.Select(entity => (entity.ToDomain(), entity.FullPath)).ToList();
+                return WithPaths(await dbSession.Connection.QueryAsync<FileSearchEntity>(query, parameters, transaction: dbSession.Transaction));
             }, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<IReadOnlyList<(FileRecord File, string Path)>> FindDuplicatesAsync(Guid directoryId, string directoryPath, DuplicateSearch search, int maxGroups, IDbSession? session = null)
+        {
+            long? afterBytes = search.After?.RepeatedBytes;
+            string? afterSha256 = search.After?.Sha256;
+            DynamicParameters parameters = FoundParameters(directoryId, directoryPath, search);
+            parameters.Add(nameof(afterBytes), afterBytes);
+            parameters.Add(nameof(afterSha256), afterSha256);
+            parameters.Add(nameof(maxGroups), maxGroups);
+
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                // Grouped and paged here, so a page reads only its own groups' files; the order is the one
+                // DuplicateSearchResults.Page puts the groups in. A group's files all have its size.
+                string query = $@"
+                    {SubtreeWalk.Sql},
+                    found AS (
+                        {FoundSql}
+                          AND file.encrypted = 0 AND file.size_bytes > 0
+                    ),
+                    duplicated AS (
+                        SELECT sha256 AS group_sha256, (count(*) - 1) * max({nameof(FileEntity.SizeBytes)}) AS repeated_bytes
+                        FROM found
+                        GROUP BY sha256
+                        HAVING count(*) > 1
+                    ),
+                    page AS (
+                        SELECT group_sha256, repeated_bytes
+                        FROM duplicated
+                        WHERE @{nameof(afterBytes)} IS NULL
+                           OR repeated_bytes < @{nameof(afterBytes)}
+                           OR (repeated_bytes = @{nameof(afterBytes)} AND group_sha256 > @{nameof(afterSha256)})
+                        ORDER BY repeated_bytes DESC, group_sha256
+                        LIMIT @{nameof(maxGroups)}
+                    )
+                    SELECT found.*
+                    FROM found JOIN page ON found.sha256 = page.group_sha256
+                    ORDER BY page.repeated_bytes DESC, page.group_sha256, found.{nameof(FileSearchEntity.FullPath)}";
+
+                return WithPaths(await dbSession.Connection.QueryAsync<FileSearchEntity>(query, parameters, transaction: dbSession.Transaction));
+            }, session);
+        }
+
+        /// <summary>
+        /// The parameters <see cref="FoundSql"/> reads: the walk from the directory searched, and the
+        /// criteria (normalized).
+        /// </summary>
+        private static DynamicParameters FoundParameters(Guid directoryId, string directoryPath, FileCriteria criteria)
+        {
+            DynamicParameters parameters = SubtreeWalk.ForFiles(directoryId, directoryPath, depth: null).Parameters();
+            SearchCriteria.Of(criteria).AddTo(parameters);
+            return parameters;
+        }
+
+        /// <summary>The rows a query of files with their full paths answered, as records with those paths.</summary>
+        private static IReadOnlyList<(FileRecord File, string Path)> WithPaths(IEnumerable<FileSearchEntity> entities)
+        {
+            return entities.Select(entity => (entity.ToDomain(), entity.FullPath)).ToList();
         }
 
         /// <inheritdoc />
@@ -480,12 +521,12 @@ namespace ByteShelf.Server.Storage.Repositories
         // each always holds what Common's rules make of the row's own name, description and type.
         private static string NameFold(string name)
         {
-            return FileSearch.Fold(name);
+            return FileCriteria.Fold(name);
         }
 
         private static string? DescriptionFold(string? description)
         {
-            return description == null ? null : FileSearch.Fold(description);
+            return description == null ? null : FileCriteria.Fold(description);
         }
 
         internal sealed class FileSearchEntity : FileEntity

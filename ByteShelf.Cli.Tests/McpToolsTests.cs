@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using ByteShelf.Cli.Config;
@@ -83,6 +84,7 @@ namespace ByteShelf.Cli.Tests
             { "create_upload_link", "expiresIn", $"{UploadLink.Lifetime.Default.TotalMinutes}m by default, at most {UploadLink.Lifetime.Max.TotalHours}h" },
             { "create_upload_link", "description", $"up to {FileDescription.MaxLength} characters" },
             { "search_files", "limit", $"1 to {FileSearch.MaxLimit}; {FileSearch.DefaultLimit} by default" },
+            { "find_duplicates", "limit", $"1 to {DuplicateSearch.MaxLimit}; {DuplicateSearch.DefaultLimit} by default" },
             { "list_tree", "limit", $"1 to {TreeQuery.MaxLimit}; {TreeQuery.DefaultLimit} by default" },
         };
 
@@ -567,6 +569,52 @@ namespace ByteShelf.Cli.Tests
             Assert.EndsWith($"{Environment.NewLine}More follow: call again with after = /a.txt", first, StringComparison.Ordinal);
             Assert.StartsWith("/b.txt", second, StringComparison.Ordinal);
             Assert.DoesNotContain("More", second, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task FindDuplicates_CopiesUnderTheDirectory_ListsEachGroupWithItsPaths()
+        {
+            await _tools.UploadFileAsync("/photos/a.jpg", text: "same", shelf: "docs");
+            await _tools.UploadFileAsync("/photos/old/a.jpg", text: "same", shelf: "docs");
+            await _tools.UploadFileAsync("/a.jpg", text: "same", shelf: "docs");
+            await _tools.UploadFileAsync("/photos/b.jpg", text: "other", shelf: "docs");
+
+            string found = await _tools.FindDuplicatesAsync(under: "/photos", shelf: "docs");
+
+            Assert.Equal(
+                string.Join(
+                    Environment.NewLine,
+                    $"2 copies of 4 B, 4 B repeated  sha256 {Convert.ToHexStringLower(SHA256.HashData("same"u8))}",
+                    "  /photos/a.jpg",
+                    "  /photos/old/a.jpg"),
+                found);
+        }
+
+        [Fact]
+        public async Task FindDuplicates_MorePagesFollow_SaysWhatToPassAsAfter()
+        {
+            await _tools.UploadFileAsync("/a1.txt", text: "aa", shelf: "docs");
+            await _tools.UploadFileAsync("/a2.txt", text: "aa", shelf: "docs");
+            await _tools.UploadFileAsync("/b1.txt", text: "b", shelf: "docs");
+            await _tools.UploadFileAsync("/b2.txt", text: "b", shelf: "docs");
+
+            string first = await _tools.FindDuplicatesAsync(limit: 1, shelf: "docs");
+            string cursor = first[(first.LastIndexOf("after = ", StringComparison.Ordinal) + "after = ".Length)..];
+            string second = await _tools.FindDuplicatesAsync(limit: 1, after: cursor, shelf: "docs");
+
+            // The a pair comes first: its copy repeats 2 bytes, the b pair's 1.
+            Assert.Contains("  /a1.txt", first, StringComparison.Ordinal);
+            Assert.Contains("  /b1.txt", second, StringComparison.Ordinal);
+            Assert.DoesNotContain("More", second, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task FindDuplicates_NoCopies_SaysNoneWereFound()
+        {
+            await _tools.UploadFileAsync("/a.txt", text: "a", shelf: "docs");
+            await _tools.UploadFileAsync("/b.txt", text: "b", shelf: "docs");
+
+            Assert.Equal("No duplicates found.", await _tools.FindDuplicatesAsync(shelf: "docs"));
         }
 
         [Fact]

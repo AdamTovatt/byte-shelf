@@ -43,6 +43,19 @@ namespace ByteShelf.Tools.Mcp
 
         private const string ShelfDescription = "The shelf's name; leave it out when you reach only one shelf, as a shelf key does.";
 
+        // The criteria search_files and find_duplicates share (FileCriteria), described once for both.
+        private const string UnderDescription = "The directory to search under; / (the default) for the whole shelf.";
+        private const string TextDescription = "Text the file's name or description contains, ignoring case.";
+        private const string ContentTypeDescription = "A media type such as application/pdf, or a family such as image/*.";
+        private const string MinSizeDescription = "The fewest bytes.";
+        private const string MaxSizeDescription = "The most bytes.";
+        private const string CreatedFromDescription = "Stored at or after this ISO 8601 time.";
+        private const string CreatedBeforeDescription = "Stored before this ISO 8601 time.";
+        private const string UpdatedFromDescription = "Last changed at or after this ISO 8601 time.";
+        private const string UpdatedBeforeDescription = "Last changed before this ISO 8601 time.";
+        private const string Sha256Description = "The contents' SHA-256 in hex, to find copies of a file.";
+        private const string AfterDescription = "The cursor a previous page ended with, for the next page.";
+
         /// <summary>Why a tool never reads an encrypted file's contents, after the file's path.</summary>
         internal const string EncryptedReason = "it is encrypted with a password, and passwords never go through tool calls; a person can open it in the web UI, or get it with 'byteshelf get <shelf>:<path> --decrypt'.";
 
@@ -196,22 +209,68 @@ namespace ByteShelf.Tools.Mcp
         [ToolNeeds(ToolNeed.Read)]
         [Description("Finds files on a shelf, under a directory at any depth, that meet every criterion given; none given lists every file. Answers a page of paths by path order, with a cursor when more follow.")]
         public Task<string> SearchFilesAsync(
-            [Description("The directory to search under; / (the default) for the whole shelf.")] string under = ShelfPath.Root,
-            [Description("Text the file's name or description contains, ignoring case.")] string? text = null,
-            [Description("A media type such as application/pdf, or a family such as image/*.")] string? contentType = null,
-            [Description("The fewest bytes.")] long? minSizeBytes = null,
-            [Description("The most bytes.")] long? maxSizeBytes = null,
-            [Description("Stored at or after this ISO 8601 time.")] DateTimeOffset? createdFrom = null,
-            [Description("Stored before this ISO 8601 time.")] DateTimeOffset? createdBefore = null,
-            [Description("Last changed at or after this ISO 8601 time.")] DateTimeOffset? updatedFrom = null,
-            [Description("Last changed before this ISO 8601 time.")] DateTimeOffset? updatedBefore = null,
-            [Description("The contents' SHA-256 in hex, to find copies of a file.")] string? sha256 = null,
+            [Description(UnderDescription)] string under = ShelfPath.Root,
+            [Description(TextDescription)] string? text = null,
+            [Description(ContentTypeDescription)] string? contentType = null,
+            [Description(MinSizeDescription)] long? minSizeBytes = null,
+            [Description(MaxSizeDescription)] long? maxSizeBytes = null,
+            [Description(CreatedFromDescription)] DateTimeOffset? createdFrom = null,
+            [Description(CreatedBeforeDescription)] DateTimeOffset? createdBefore = null,
+            [Description(UpdatedFromDescription)] DateTimeOffset? updatedFrom = null,
+            [Description(UpdatedBeforeDescription)] DateTimeOffset? updatedBefore = null,
+            [Description(Sha256Description)] string? sha256 = null,
             [Description("Files per page, 1 to 1000; 100 by default.")] int? limit = null,
-            [Description("The cursor a previous page ended with, for the next page.")] string? after = null,
+            [Description(AfterDescription)] string? after = null,
             [Description(ShelfDescription)] string? shelf = null,
             CancellationToken cancellationToken = default)
         {
-            FileSearch search = new FileSearch
+            FileCriteria criteria = Criteria(under, text, contentType, minSizeBytes, maxSizeBytes, createdFrom, createdBefore, updatedFrom, updatedBefore, sha256);
+
+            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.SearchResults(
+                await shelfClient.SearchAsync(new FileSearch(criteria) { Limit = limit, After = after }, cancellationToken),
+                MoreAfter));
+        }
+
+        [McpServerTool(Name = "find_duplicates", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Read)]
+        [Description("Finds files with exactly the same contents on a shelf, among the files under a directory at any depth that meet every criterion given; only files under it count. Answers groups of two or more, most repeated bytes first, each with its files' paths, a page at a time with a cursor when more follow. Encrypted and empty files are left out.")]
+        public Task<string> FindDuplicatesAsync(
+            [Description(UnderDescription)] string under = ShelfPath.Root,
+            [Description(TextDescription)] string? text = null,
+            [Description(ContentTypeDescription)] string? contentType = null,
+            [Description(MinSizeDescription)] long? minSizeBytes = null,
+            [Description(MaxSizeDescription)] long? maxSizeBytes = null,
+            [Description(CreatedFromDescription)] DateTimeOffset? createdFrom = null,
+            [Description(CreatedBeforeDescription)] DateTimeOffset? createdBefore = null,
+            [Description(UpdatedFromDescription)] DateTimeOffset? updatedFrom = null,
+            [Description(UpdatedBeforeDescription)] DateTimeOffset? updatedBefore = null,
+            [Description(Sha256Description)] string? sha256 = null,
+            [Description("Groups per page, 1 to 1000; 100 by default.")] int? limit = null,
+            [Description(AfterDescription)] string? after = null,
+            [Description(ShelfDescription)] string? shelf = null,
+            CancellationToken cancellationToken = default)
+        {
+            FileCriteria criteria = Criteria(under, text, contentType, minSizeBytes, maxSizeBytes, createdFrom, createdBefore, updatedFrom, updatedBefore, sha256);
+
+            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.Duplicates(
+                await shelfClient.FindDuplicatesAsync(new DuplicateSearch(criteria) { Limit = limit, After = after == null ? null : DuplicateCursor.Parse(after) }, cancellationToken),
+                MoreAfter));
+        }
+
+        /// <summary>The criteria search_files and find_duplicates both take, from their parameters.</summary>
+        private static FileCriteria Criteria(
+            string under,
+            string? text,
+            string? contentType,
+            long? minSizeBytes,
+            long? maxSizeBytes,
+            DateTimeOffset? createdFrom,
+            DateTimeOffset? createdBefore,
+            DateTimeOffset? updatedFrom,
+            DateTimeOffset? updatedBefore,
+            string? sha256)
+        {
+            return new FileCriteria
             {
                 Under = under,
                 Text = text,
@@ -223,13 +282,7 @@ namespace ByteShelf.Tools.Mcp
                 UpdatedFrom = updatedFrom,
                 UpdatedBefore = updatedBefore,
                 Sha256 = sha256,
-                Limit = limit,
-                After = after,
             };
-
-            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.SearchResults(
-                await shelfClient.SearchAsync(search, cancellationToken),
-                MoreAfter));
         }
 
         [McpServerTool(Name = "download_file", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]

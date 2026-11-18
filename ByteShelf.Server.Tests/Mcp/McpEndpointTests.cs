@@ -20,7 +20,7 @@ namespace ByteShelf.Server.Tests.Mcp
     {
         private static readonly string[] ReadTools =
         {
-            "download_deleted", "download_file", "get_info", "list_directory", "list_shelves", "list_trash", "list_tree", "search_files", "share_file", "shelf_info",
+            "download_deleted", "download_file", "find_duplicates", "get_info", "list_directory", "list_shelves", "list_trash", "list_tree", "search_files", "share_file", "shelf_info",
         };
 
         private static readonly string[] AddTools = { "create_directory", "create_upload_link", "upload_file" };

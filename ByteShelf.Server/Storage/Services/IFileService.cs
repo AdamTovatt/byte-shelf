@@ -29,7 +29,12 @@ namespace ByteShelf.Server.Storage.Services
 
         /// <summary>One page of the live files that match <paramref name="search"/>, by path.</summary>
         /// <exception cref="ArgumentException">A criterion is not allowed.</exception>
-        /// <exception cref="Shared.Errors.NotFoundException">There is no directory at <see cref="FileSearch.Under"/>.</exception>
+        /// <exception cref="Shared.Errors.NotFoundException">There is no directory at <see cref="FileCriteria.Under"/>.</exception>
         Task<FileSearchResults> SearchAsync(Shelf shelf, FileSearch search);
+
+        /// <summary>One page of the groups of duplicates <paramref name="search"/> describes.</summary>
+        /// <exception cref="ArgumentException">A criterion or the limit is not allowed.</exception>
+        /// <exception cref="Shared.Errors.NotFoundException">There is no directory at <see cref="FileCriteria.Under"/>.</exception>
+        Task<DuplicateSearchResults> FindDuplicatesAsync(Shelf shelf, DuplicateSearch search);
     }
 }

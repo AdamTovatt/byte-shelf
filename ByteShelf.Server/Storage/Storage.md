@@ -33,6 +33,7 @@ path that is not allowed is a 400.
 | `POST files/move?path=` | Moves or renames a file to the body's `toPath`; missing directories above it are created. 400 for `/`, 409 when the path is taken. |
 | `PUT files/description?path=` | Sets the body's `description`, or removes it when null or blank; 400 over `FileDescription.MaxLength` characters. |
 | `GET search?under=&text=&…` | One page of the live files under `under` (the root by default) that match every criterion given: `text`, `contentType`, `minSizeBytes`, `maxSizeBytes`, `createdFrom`, `createdBefore`, `updatedFrom`, `updatedBefore`, `sha256`, `limit` (1 to 1000, 100 by default) and `after` (the previous page's `nextCursor`). Sizes are inclusive; a time range includes its start and excludes its end. 400 for a criterion `FileSearch.Normalize` refuses, 404 when `under` is missing or names a file. See "Descriptions and search" below. |
+| `GET duplicates?under=&text=&…` | One page of the duplicates among the live plain, non-empty files `search` would find with the same criteria: `groups` of two or more files with the same SHA-256, each with its `sha256`, `sizeBytes`, `repeatedBytes` (the size times the copies after the first) and `files` by path, most `repeatedBytes` first, then by SHA-256. `limit` (1 to 1000, 100 by default) counts groups; `after` takes the previous page's `nextCursor`, written `bytes:sha256`. 400 for a criterion or limit `DuplicateSearch.Normalize` refuses or an `after` that is not such a cursor, 404 as for `search`. See "Duplicates" below. |
 | `POST directories` | Creates the directory at the body's `path` and any missing one above it; an existing one is answered as it is. |
 | `POST directories/move?path=` | Moves or renames a directory with everything in it to the body's `toPath`. 400 for the root, a destination of `/` or inside itself, or one that would make a path under it longer than `ShelfPath.MaxPathLength`; 409 when the path is taken. |
 | `DELETE directories?path=` | Moves a directory and everything live under it to the trash as one deletion; 400 for the root. |
@@ -167,15 +168,29 @@ setting the text it already has changes and logs nothing. A file stored over ano
 other's description unless its upload brings one: a new version of a file is still that file.
 
 Search runs in one query: a recursive walk from the `under` directory builds each live file's full
-path, and the criteria of `ByteShelfCommon.FileSearch` filter the files. `text` matches the name or
-the description; both sides are folded by `FileSearch.Fold` (normalization form C, invariant
+path, and the criteria of `ByteShelfCommon.FileCriteria` filter the files. `text` matches the name or
+the description; both sides are folded by `FileCriteria.Fold` (normalization form C, invariant
 lowercase). SQLite's own `lower()` folds ASCII only, so the file row keeps folded copies
 (`name_fold`, `description_fold`) that `FileRepository` writes from the name and description on
 every write. `contentType` compares the type without its parameters, kept the same way in
 `media_type` by `ContentTypes.MediaTypeOf`, and `type/*` matches the whole family.
 Results come by full path; a page asks for one row more than it returns, to know whether another
 follows, and its `nextCursor` is its last path, which the next page starts after. The in-memory
-client applies the same rules, and the client contract tests run both.
+client applies the same rules, and the client contract tests run both. The criteria's condition
+lives in `SearchCriteria`, and the files it takes in `FileRepository`'s `FoundSql`, both shared by
+search and the search for duplicates.
+
+## Duplicates (`FileService.FindDuplicatesAsync`)
+
+The search for duplicates walks and filters as search does, then groups the plain files found by
+SHA-256 and keeps the groups of two or more, all in one query. Only files the search finds count:
+under a directory, a group holds only the files under it. Encrypted files are left out, since two
+encryptions of the same file never share a hash, and so are empty files, which all share one hash
+and whose copies tidy nothing away. A page asks for one group more than it returns and
+reads only its own groups' files; `DuplicateSearchResults.Page` in Common builds the groups and the
+cursor, the last group's repeated bytes and SHA-256 (`DuplicateCursor`), for the in-memory client
+too. Identical contents are stored once in the object store, so duplicates cost no disk; the search
+is for tidying.
 
 ## Trees (`DirectoryService.ListTreeAsync`)
 

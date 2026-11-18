@@ -12,7 +12,9 @@ AOT-compatible.
 | `CreateShelfRequest`, `UpdateShelfRequest` | Creates a shelf, and replaces its name and quota. |
 | `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps, description, and whether its contents are encrypted (`Encrypted`). |
 | `SetDescriptionRequest`, `FileDescription` | Setting a file's description, and its rules. |
-| `FileSearch`, `FileSearchResults` | What to look for among a shelf's files, and one page of what was found. |
+| `FileCriteria` | Which of a shelf's files a search looks at: the directory, text, type, sizes, times and SHA-256, checked by `NormalizeCriteria`. Both searches below take their criteria from it. |
+| `FileSearch`, `FileSearchResults` | The files that meet the criteria, a page at a time by path, and one page of them. |
+| `DuplicateSearch`, `DuplicateSearchResults`, `DuplicateGroup`, `DuplicateCursor` | The groups of plain, non-empty files with the same contents among those that meet the criteria, a page of groups at a time, most repeated bytes first, and where a page ended. `DuplicateSearchResults.Page` groups, orders and pages them, for the server and the in-memory client alike. |
 | `DownloadLink` | A link to a file's contents that works without a token until it runs out, and the bounds of its lifetime (`Lifetime`: a day by default, at most 7 days). |
 | `UploadLink`, `CreateUploadLinkRequest`, `NormalizedUploadLinkRequest` | A link that stores one file sent to it without a token, and asking for one (`Lifetime`: 15 minutes by default, at most 24 hours). |
 | `LinkLifetime` | One kind of link's lifetime rule: its default, its bounds and `Normalize`. |
@@ -45,10 +47,12 @@ AOT-compatible.
   with a letter or digit. `ShelfSettings` adds that a quota cannot be negative.
 - `FileDescription` trims a description and puts it in normalization form C; blank is none, and it
   holds at most 2,000 characters, counted as code points.
-- `FileSearch.Normalize` checks a search: a page of 1 to 1,000 files (100 by default), sizes not
-  negative and ranges not empty (a range includes its start and excludes its end), a content type
-  that is one media type or a family such as `image/*`, and a SHA-256 of 64 hex digits. `Fold` is
-  how search compares text, both sides: normalization form C, then invariant lowercase.
+- `FileCriteria.NormalizeCriteria` checks the criteria: sizes not negative and ranges not empty (a
+  range includes its start and excludes its end), a content type that is one media type or a family
+  such as `image/*`, and a SHA-256 of 64 hex digits. `FileSearch.Normalize` adds a page of 1 to 1,000
+  files (100 by default), and `DuplicateSearch.Normalize` a page of 1 to 1,000 groups (100 by
+  default). `Fold` is how search compares text, both sides: normalization form C, then invariant
+  lowercase.
 - `ContentTypes` checks the media type stored with a file, and `ForUpload` picks it when an upload
   gives none: the one its path's extension names, else `application/octet-stream`.
 - `NormalizedUploadLinkRequest.Create` checks an upload link's request: a file's path (never the
@@ -58,7 +62,7 @@ AOT-compatible.
   `UserFields` an email and display name, `DisplayText` short names such as a key's, and
   `UserRoles` a user's roles.
 - The server applies every rule, and so does the in-memory client in ByteShelfClient. The HTTP
-  client applies `ShelfPath`, `ContentTypes`, `FileDescription`, `FileSearch`, the link lifetimes
+  client applies `ShelfPath`, `ContentTypes`, `FileDescription`, `FileSearch`, `DuplicateSearch`, the link lifetimes
   and `NormalizedUploadLinkRequest` before sending,
   since they shape the request, and leaves the rest to the server.
 

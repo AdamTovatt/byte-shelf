@@ -33,6 +33,18 @@ function listing(path: string) {
     : { directory: directory(path), directories: [], files: [] };
 }
 
+/** A group of `name` in the root and a copy of it in /reports. */
+function duplicateGroup(name: string, sha256: string) {
+  return { sha256, sizeBytes: 1, repeatedBytes: 1, files: [file(name), { ...file(name), id: `file:copy-${name}`, path: `/reports/${name}` }] };
+}
+
+/** What the search for duplicates answers: a page with a.txt's group, then, after its cursor, one with b.txt's. */
+function duplicates(after: string | null) {
+  return after === null
+    ? { groups: [duplicateGroup('a.txt', 'a'.repeat(64))], nextCursor: `1:${'a'.repeat(64)}` }
+    : { groups: [duplicateGroup('b.txt', 'b'.repeat(64))], nextCursor: null };
+}
+
 describe('the shelf page\'s rows', () => {
   let root: Root;
   let container: HTMLDivElement;
@@ -52,6 +64,7 @@ describe('the shelf page\'s rows', () => {
     rootFiles = [file('a.txt'), file('b.txt')];
     sent = stubServer(async (request) => {
       const url = new URL(request.url);
+      if (url.pathname === '/api/shelves/docs/duplicates') return json(duplicates(url.searchParams.get('after')));
       return url.pathname === '/api/shelves/docs/entries' ? json(listing(url.searchParams.get('path')!)) : json({ message: 'Not here.' }, 404);
     });
     container = document.body.appendChild(document.createElement('div'));
@@ -148,6 +161,90 @@ describe('the shelf page\'s rows', () => {
     click(container.querySelector('.min-h-full')!);
 
     expect(selected()).toEqual([]);
+  });
+
+  function searchField(): HTMLInputElement {
+    return container.querySelector<HTMLInputElement>('input[aria-label="Search files in this folder and below"]')!;
+  }
+
+  /** Types into a field as a person does, which React hears as an input event. */
+  function type(input: HTMLInputElement, text: string): void {
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, text);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
+  /** Opens the search options and flips Duplicates only; answers its row. */
+  async function toggleDuplicates(): Promise<HTMLButtonElement> {
+    click(container.querySelector('button[aria-label="Search options"]')!);
+    const toggle = await vi.waitFor(() => {
+      const found = Array.from(document.querySelectorAll<HTMLButtonElement>('[aria-label="Search options"] button')).find((button) => button.textContent === 'Duplicates only');
+      expect(found).toBeDefined();
+      return found!;
+    });
+    click(toggle);
+    return toggle;
+  }
+
+  function requests(prefix: string): string[] {
+    return sent.filter((line) => line.startsWith(prefix));
+  }
+
+  it('shows the groups of files with the same contents once Duplicates only is on, with no text', async () => {
+    const toggle = await toggleDuplicates();
+
+    await vi.waitFor(() => expect(container.textContent).toContain('2 copies of 1 B, 1 B repeated'));
+    expect(container.textContent).toContain('reports/a.txt');
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(requests('GET /api/shelves/docs/duplicates?under=%2F ')).toHaveLength(1);
+  });
+
+  it('adds the next page of groups on Show more', async () => {
+    await toggleDuplicates();
+    const showMore = await vi.waitFor(() => {
+      const found = Array.from(container.querySelectorAll('button')).find((button) => button.textContent === 'Show more');
+      expect(found).toBeDefined();
+      return found!;
+    });
+
+    click(showMore);
+
+    await vi.waitFor(() => expect(container.textContent).toContain('reports/b.txt'));
+    expect(container.textContent).toContain('reports/a.txt');
+    expect(requests(`GET /api/shelves/docs/duplicates?under=%2F&after=1%3A${'a'.repeat(64)} `)).toHaveLength(1);
+    expect(Array.from(container.querySelectorAll('button')).some((button) => button.textContent === 'Show more')).toBe(false);
+  });
+
+  it('sends text typed while Duplicates only is on to the search for duplicates, not to search', async () => {
+    await toggleDuplicates();
+
+    type(searchField(), 'notes');
+
+    await vi.waitFor(() => expect(requests('GET /api/shelves/docs/duplicates?under=%2F&text=notes ')).toHaveLength(1));
+    expect(requests('GET /api/shelves/docs/search')).toEqual([]);
+  });
+
+  it('keeps Duplicates only on when the text is cleared', async () => {
+    const toggle = await toggleDuplicates();
+    type(searchField(), 'notes');
+    await vi.waitFor(() => expect(container.querySelector('button[aria-label="Clear the search"]')).not.toBeNull());
+
+    click(container.querySelector('button[aria-label="Clear the search"]')!);
+
+    expect(searchField().value).toBe('');
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    await vi.waitFor(() => expect(container.textContent).toContain('2 copies of 1 B, 1 B repeated'));
+  });
+
+  it('brings the folder back when Duplicates only is turned off', async () => {
+    const toggle = await toggleDuplicates();
+    await vi.waitFor(() => expect(row('a.txt')).toBeNull());
+
+    click(toggle);
+
+    await vi.waitFor(() => expect(row('a.txt')).not.toBeNull());
+    expect(container.textContent).not.toContain('copies of');
   });
 
   it('fetches the first subfolders ahead as a folder opens, and not again as its listing is refetched', async () => {

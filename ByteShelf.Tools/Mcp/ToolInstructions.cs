@@ -12,7 +12,9 @@ namespace ByteShelf.Tools.Mcp
 
             Looking around: list_directory shows one directory, list_tree everything under one (down to
             a depth if you give one), search_files finds files under a directory by text in the name or
-            description, media type (image/* for a family), size, times or SHA-256. get_info answers
+            description, media type (image/* for a family), size, times or SHA-256, and
+            find_duplicates groups the files among them that have exactly the same contents, most
+            repeated bytes first, to tidy away copies (encrypted and empty files never match). get_info answers
             one file's or directory's record. A long answer comes a page at a time and ends with
             "More follow: call again with after = <cursor>"; pass that cursor as after for the next
             page.
