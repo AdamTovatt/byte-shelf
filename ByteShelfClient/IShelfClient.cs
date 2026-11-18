@@ -148,6 +148,24 @@ namespace ByteShelfClient
         Task<ShelfFile> SetDescriptionAsync(EntryReference file, string? description, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Moves or renames files and directories, each whichever its path names, as
+        /// <paramref name="request"/> lists them: each on its own, in order, so a later one may use a path
+        /// an earlier one made (<see cref="EntryBatch"/>). Answers one result per move, in order, each done
+        /// or refused with its code; a refused move undoes nothing. A request
+        /// <see cref="MoveEntriesRequest.Normalize"/> refuses throws <see cref="ArgumentException"/> before
+        /// anything is sent. Needs write access.
+        /// </summary>
+        Task<IReadOnlyList<EntryMoveResult>> MoveAsync(MoveEntriesRequest request, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Sets or removes files' descriptions as <paramref name="request"/> lists them, each on its own,
+        /// in order (<see cref="EntryBatch"/>). Answers one result per file, in order, each done or refused
+        /// with its code. A request <see cref="SetDescriptionsRequest.Normalize"/> refuses throws
+        /// <see cref="ArgumentException"/> before anything is sent. Needs write access.
+        /// </summary>
+        Task<IReadOnlyList<DescriptionResult>> SetDescriptionsAsync(SetDescriptionsRequest request, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// One page of the live files that match <paramref name="search"/>, by path. A criterion
         /// <see cref="FileSearch.Normalize"/> refuses throws <see cref="ArgumentException"/> before anything is sent.
         /// </summary>

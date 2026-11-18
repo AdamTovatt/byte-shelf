@@ -32,8 +32,16 @@ namespace ByteShelf.Server.Storage.Controllers
         private readonly DownloadLinks _downloadLinks;
         private readonly UploadLinks _uploadLinks;
         private readonly ShelfEncryption _encryption;
+        private readonly EntryBatches _entryBatches;
 
-        public EntriesController(IDirectoryService directoryService, IFileService fileService, IUploadService uploadService, DownloadLinks downloadLinks, UploadLinks uploadLinks, ShelfEncryption encryption)
+        public EntriesController(
+            IDirectoryService directoryService,
+            IFileService fileService,
+            IUploadService uploadService,
+            DownloadLinks downloadLinks,
+            UploadLinks uploadLinks,
+            ShelfEncryption encryption,
+            EntryBatches entryBatches)
         {
             _directoryService = directoryService;
             _fileService = fileService;
@@ -41,6 +49,7 @@ namespace ByteShelf.Server.Storage.Controllers
             _downloadLinks = downloadLinks;
             _uploadLinks = uploadLinks;
             _encryption = encryption;
+            _entryBatches = entryBatches;
         }
 
         /// <summary>Lists a directory: the root when neither path nor id is given.</summary>
@@ -121,6 +130,36 @@ namespace ByteShelf.Server.Storage.Controllers
         public async Task<IActionResult> SetDescription([FromQuery] string? path, [FromQuery] Guid? id, [FromBody] SetDescriptionRequest request)
         {
             return Ok(await _fileService.SetDescriptionAsync(Shelf, EntryReference.From(path, id), request.Description));
+        }
+
+        /// <summary>
+        /// Moves or renames files and directories, as the body (<see cref="MoveEntriesRequest"/>) lists
+        /// them: each on its own, in order, so a later one may use a path an earlier one made. Answers one
+        /// result per move, in order, each done or refused with its code; nothing is undone. 400 for a
+        /// request <see cref="MoveEntriesRequest.Normalize"/> refuses, before anything moves.
+        /// </summary>
+        [HttpPost("entries/move")]
+        [ShelfAccess(ShelfOperation.Write)]
+        [ProducesResponseType(typeof(IReadOnlyList<EntryMoveResult>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        public async Task<IActionResult> MoveEntries([FromBody] MoveEntriesRequest request, CancellationToken cancellationToken)
+        {
+            return Ok(await _entryBatches.MoveAsync(Shelf, request, cancellationToken));
+        }
+
+        /// <summary>
+        /// Sets or removes files' descriptions, as the body (<see cref="SetDescriptionsRequest"/>) lists
+        /// them, each on its own in order. Answers one result per file, in order, each done or refused
+        /// with its code; nothing is undone. 400 for a request <see cref="SetDescriptionsRequest.Normalize"/>
+        /// refuses, before anything changes.
+        /// </summary>
+        [HttpPut("files/descriptions")]
+        [ShelfAccess(ShelfOperation.Write)]
+        [ProducesResponseType(typeof(IReadOnlyList<DescriptionResult>), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        public async Task<IActionResult> SetDescriptions([FromBody] SetDescriptionsRequest request, CancellationToken cancellationToken)
+        {
+            return Ok(await _entryBatches.SetDescriptionsAsync(Shelf, request, cancellationToken));
         }
 
         /// <summary>

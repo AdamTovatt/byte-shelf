@@ -1,6 +1,5 @@
 using System.Net;
 using System.Text.Json;
-using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Shared.Json;
 using ByteShelfCommon;
@@ -8,9 +7,9 @@ using ByteShelfCommon;
 namespace ByteShelf.Server.Shared.Middleware
 {
     /// <summary>
-    /// The single place where domain exceptions map to HTTP status codes and an
-    /// <see cref="ErrorResponse"/> body. Domains throw; controllers stay free of try/catch. Anything
-    /// not listed here is a fault: 500, logged, and its message kept out of the response.
+    /// Answers an exception with the status and <see cref="ErrorResponse"/> body
+    /// <see cref="Refusals"/> maps it to. Domains throw; controllers stay free of try/catch. A fault
+    /// (500) is logged, and its message kept out of the response.
     /// </summary>
     public class ExceptionHandlingMiddleware
     {
@@ -52,7 +51,7 @@ namespace ByteShelf.Server.Shared.Middleware
                 return;
             }
 
-            (HttpStatusCode statusCode, string message, string? code) = Classify(exception);
+            (HttpStatusCode statusCode, string message, string? code) = Refusals.Classify(exception);
 
             if (statusCode == HttpStatusCode.InternalServerError)
             {
@@ -68,54 +67,6 @@ namespace ByteShelf.Server.Shared.Middleware
 
             ErrorResponse body = new ErrorResponse { Message = message, Code = code };
             await context.Response.WriteAsync(JsonSerializer.Serialize(body, JsonDefaults.CamelCase));
-        }
-
-        /// <summary>
-        /// What the caller is told of <paramref name="exception"/> when it is a refusal it can act on, as
-        /// the API answers it; null for a fault, which the API answers with 500. For the server's commands
-        /// too, so they tell the same as the API.
-        /// </summary>
-        internal static string? RefusalMessage(Exception exception)
-        {
-            (HttpStatusCode statusCode, string message, _) = Classify(exception);
-            return statusCode == HttpStatusCode.InternalServerError ? null : message;
-        }
-
-        private static (HttpStatusCode StatusCode, string Message, string? Code) Classify(Exception exception)
-        {
-            return exception switch
-            {
-                AuthenticatedUserException => (HttpStatusCode.Unauthorized, exception.Message, ErrorCodes.Unauthenticated),
-                NotFoundException => (HttpStatusCode.NotFound, exception.Message, ErrorCodes.NotFound),
-                PermissionDeniedException => (HttpStatusCode.Forbidden, exception.Message, ErrorCodes.PermissionDenied),
-                ConflictException => (HttpStatusCode.Conflict, exception.Message, ErrorCodes.Conflict),
-                ReadOnlyReplicaException => (HttpStatusCode.Conflict, exception.Message, ErrorCodes.ReadOnlyReplica),
-                PrimaryFailedException => (HttpStatusCode.BadGateway, exception.Message, ErrorCodes.PrimaryFailed),
-                QuotaExceededException => (HttpStatusCode.InsufficientStorage, exception.Message, ErrorCodes.QuotaExceeded),
-                LengthRequiredException => (HttpStatusCode.LengthRequired, exception.Message, ErrorCodes.InvalidRequest),
-
-                // Kestrel's refusal of a malformed request or a body over the endpoint's limit. It
-                // derives from IOException, so it has to be recognised before it reaches the 500 arm.
-                BadHttpRequestException badRequest => (
-                    (HttpStatusCode)badRequest.StatusCode,
-                    badRequest.StatusCode == StatusCodes.Status413PayloadTooLarge ? "The request body is larger than this endpoint accepts." : "The request is malformed.",
-                    badRequest.StatusCode == StatusCodes.Status413PayloadTooLarge ? ErrorCodes.TooLarge : ErrorCodes.InvalidRequest),
-
-                ArgumentException argumentException => (HttpStatusCode.BadRequest, MessageWithoutParameterName(argumentException), ErrorCodes.InvalidRequest),
-                _ => (HttpStatusCode.InternalServerError, "An error occurred while processing your request.", null),
-            };
-        }
-
-        /// <summary>
-        /// The message a caller sees for invalid input: <see cref="ArgumentException.Message"/> appends
-        /// "(Parameter 'x')" when a parameter name is set, which names server internals.
-        /// </summary>
-        private static string MessageWithoutParameterName(ArgumentException exception)
-        {
-            string suffix = $" (Parameter '{exception.ParamName}')";
-            return exception.ParamName != null && exception.Message.EndsWith(suffix, StringComparison.Ordinal)
-                ? exception.Message[..^suffix.Length]
-                : exception.Message;
         }
     }
 }

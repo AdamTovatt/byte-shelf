@@ -29,8 +29,9 @@ a type family, as in `--type 'image/*'`, or the shell expands it. A time without
 would find that have exactly the same contents, in groups, most repeated bytes first; only files
 under the directory count, encrypted and empty files are left out, and `--limit` counts groups.
 `stat` shows what was read with a file's record (`stat --json` prints the record alone, as the
-server answers it). `describe` sets a file's description and `describe --clear` removes
-it; `put --description` stores one with the file. `share` prints a link that opens a file without
+server answers it). `describe` sets one description on the files named before it (`describe
+docs:/a.pdf /b.pdf "Signed"`) and `describe --clear` removes theirs; `put --description` stores one
+with the file. `share` prints a link that opens a file without
 signing in, for 24 hours or the `--expires` given (`30m`, `12h`, up to `7d`), and the link's id.
 `link list` shows a shelf's share and upload links that have not run out, with their ids: yours, or every
 one on the shelf if you may write there. `link revoke` ends one by its id, under the same rule. A link
@@ -75,7 +76,10 @@ directory as a folder with the paths it had, an encrypted file decrypted with `-
 password checked against the folder it was stored in); `--path` saves only the file or directory it
 took at that path. It works on a replica, which keeps a file purged on its primary for its own
 restore window. `mv` moves or renames within the shelf: its new path is written as a path, or as
-`shelf:path` naming the same shelf, and another shelf is refused. A colon before any `/` is read as
+`shelf:path` naming the same shelf, and another shelf is refused. Given several paths, as in
+`mv docs:/a.pdf /b.pdf /archive`, or a new path ending in `/`, it moves each into that directory,
+keeping its name. `mv` and `describe` act on each path on its own, in order, print a line per path,
+and fail when any was refused, after doing the rest. A colon before any `/` is read as
 following a shelf name, so a name holding a colon is written starting with `/`: `/a:b`, as `a:b`
 names the shelf `a`. `shelves` lists the shelves you can reach and `whoami` says who commands act as.
 

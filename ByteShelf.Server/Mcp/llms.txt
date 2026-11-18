@@ -54,6 +54,12 @@ permissions: read, add-only (read, and store new files, never replace or remove)
   revokes one. A link also stops working while whoever made it lacks the access it needs: a share
   link while they cannot read the shelf, an upload link while they cannot store there (or replace a
   file, for one that overwrites).
+- `POST /api/shelves/<shelf>/entries/move` with `{ "moves": [{ "path": "/a.pdf", "toPath": "/2026/a.pdf" }] }`
+  or `{ "paths": ["/a.pdf", "/b.pdf"], "intoDirectory": "/2026" }`, and `PUT /api/shelves/<shelf>/files/descriptions`
+  with `{ "descriptions": [{ "path": "/a.pdf", "description": "Signed" }] }` or `{ "paths": [...], "description": "Signed" }`,
+  move up to 1000 files and directories, or describe up to 1000 files, in one request, each on its
+  own and in order, answering each one's result: the entry as it is now, or its `error`. The MCP tools move and set_description and the
+  CLI's `mv` and `describe` take several entries the same way.
 - [Storage endpoints](https://github.com/AdamTovatt/byte-shelf/blob/master/ByteShelf.Server/Storage/Storage.md)
 - [Who may do what](https://github.com/AdamTovatt/byte-shelf/blob/master/ByteShelf.Server/Access/Access.md)
 - [ByteShelfClient, the .NET client](https://github.com/AdamTovatt/byte-shelf/blob/master/ByteShelfClient/README.md)

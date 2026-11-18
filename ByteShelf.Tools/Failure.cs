@@ -28,7 +28,7 @@ namespace ByteShelf.Tools
             {
                 UsageException or ArgumentException => new Failure(exception.Message, isMisuse: true),
                 ByteShelfException refused => new Failure(
-                    $"{refused.Message} ({refused.Code ?? "error"})" + (refused.Code == ErrorCodes.Unauthenticated ? " Sign in again with 'byteshelf login'." : string.Empty),
+                    TextFormat.Refusal(refused.Message, refused.Code) + (refused.Code == ErrorCodes.Unauthenticated ? " Sign in again with 'byteshelf login'." : string.Empty),
                     isMisuse: false),
                 HttpRequestException unreachable => new Failure($"Could not reach the server: {unreachable.Message}", isMisuse: false),
                 OperationCanceledException => new Failure("The server did not answer in time.", isMisuse: false),

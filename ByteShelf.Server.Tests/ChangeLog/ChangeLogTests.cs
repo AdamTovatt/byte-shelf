@@ -2,6 +2,7 @@ using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
+using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Repositories;
@@ -126,6 +127,26 @@ namespace ByteShelf.Server.Tests.ChangeLog
             Assert.Equal((ChangeEntityType.Directory, ChangeAction.Moved, moved.Id), (entry.EntityType, entry.Action, entry.EntityId));
             DirectoryRecord logged = ChangePayload.Deserialize<DirectoryRecord>(entry.Payload!);
             Assert.Equal(("old", archive.Id), (logged.Name, logged.ParentId));
+        }
+
+        [Fact]
+        public async Task EntryBatches_LogEachItemDoneInOrderAndNothingForOneRefused()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile a = await StoreTextAsync(shelf, "/a.txt", "a");
+            ShelfFile b = await StoreTextAsync(shelf, "/b.txt", "b");
+            EntryBatches batches = new EntryBatches(FileService, DirectoryService);
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            await batches.MoveAsync(
+                shelf,
+                new MoveEntriesRequest { Moves = new[] { new EntryMove { Path = "/b.txt", ToPath = "/c.txt" }, new EntryMove { Path = "/missing", ToPath = "/d" }, new EntryMove { Path = "/a.txt", ToPath = "/b.txt" } } },
+                CancellationToken.None);
+            await batches.SetDescriptionsAsync(shelf, new SetDescriptionsRequest { Paths = new[] { "/b.txt", "/c.txt" }, Description = "Signed" }, CancellationToken.None);
+
+            Assert.Equal(
+                new[] { (b.Id, ChangeAction.Moved), (a.Id, ChangeAction.Moved), (a.Id, ChangeAction.Updated), (b.Id, ChangeAction.Updated) },
+                (await ChangeLog.GetAfterAsync(before, 100)).Select(entry => (entry.EntityId, entry.Action)));
         }
 
         [Fact]

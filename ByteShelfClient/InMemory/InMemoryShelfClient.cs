@@ -149,17 +149,58 @@ namespace ByteShelfClient.InMemory
         {
             ArgumentNullException.ThrowIfNull(file);
             string? normalized = FileDescription.Normalize(description);
+            return Write(cancellationToken, shelf => Describe(shelf, file, normalized));
+        }
 
-            return Write(cancellationToken, shelf =>
+        public Task<IReadOnlyList<DescriptionResult>> SetDescriptionsAsync(SetDescriptionsRequest request, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            return WriteBatch(
+                request.Normalize(),
+                (shelf, change) => DescriptionResult.Described(Describe(shelf, EntryReference.ForPath(change.Path), change.Description)),
+                DescriptionResult.Refused,
+                cancellationToken);
+        }
+
+        private ShelfFile Describe(InMemoryShelf shelf, EntryReference file, string? normalizedDescription)
+        {
+            FileNode described = shelf.GetFile(file);
+            if (described.Description != normalizedDescription)
             {
-                FileNode described = shelf.GetFile(file);
-                if (described.Description != normalized)
+                described.Description = normalizedDescription;
+                described.UpdatedAt = _store.Now;
+            }
+
+            return shelf.ToShelfFile(described);
+        }
+
+        /// <summary>
+        /// Applies each item of a batch in order, as the server's EntryBatches does: each as
+        /// <see cref="Refusable{T}"/> applies a change, its refusal its result. The batch as a whole is
+        /// refused before any item: on a replica, or for a shelf that is not there.
+        /// </summary>
+        private Task<IReadOnlyList<TResult>> WriteBatch<TItem, TResult>(
+            IReadOnlyList<TItem> items,
+            Func<InMemoryShelf, TItem, TResult> apply,
+            Func<TItem, ErrorResponse, TResult> refused,
+            CancellationToken cancellationToken)
+        {
+            return Write<IReadOnlyList<TResult>>(cancellationToken, shelf =>
+            {
+                List<TResult> results = new List<TResult>(items.Count);
+                foreach (TItem item in items)
                 {
-                    described.Description = normalized;
-                    described.UpdatedAt = _store.Now;
+                    try
+                    {
+                        results.Add(Refusable(shelf, _ => apply(shelf, item)));
+                    }
+                    catch (ByteShelfException refusal)
+                    {
+                        results.Add(refused(item, new ErrorResponse { Message = refusal.Message, Code = refusal.Code }));
+                    }
                 }
 
-                return shelf.ToShelfFile(described);
+                return results;
             });
         }
 
@@ -334,56 +375,90 @@ namespace ByteShelfClient.InMemory
         {
             ArgumentNullException.ThrowIfNull(file);
             string normalizedPath = ShelfPath.Normalize(toPath);
-
-            return Write(cancellationToken, shelf =>
-            {
-                FileNode moved = shelf.GetFile(file);
-                if (shelf.ToShelfFile(moved).Path == normalizedPath)
-                {
-                    return shelf.ToShelfFile(moved);
-                }
-
-                DateTimeOffset now = _store.Now;
-                (DirectoryNode parent, string name) = shelf.PrepareDestination(normalizedPath, now);
-                shelf.RequireMove(movedDirectoryId: null, moved.DirectoryId, parent.Id, shelf.ToShelfFile(moved).Path);
-                moved.DirectoryId = parent.Id;
-                moved.Name = name;
-                moved.UpdatedAt = now;
-                return shelf.ToShelfFile(moved);
-            });
+            return Write(cancellationToken, shelf => MoveFile(shelf, file, normalizedPath));
         }
 
         public Task<ShelfDirectory> MoveDirectoryAsync(EntryReference directory, string toPath, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(directory);
             string normalizedPath = ShelfPath.Normalize(toPath);
+            return Write(cancellationToken, shelf => MoveDirectory(shelf, directory, normalizedPath));
+        }
 
-            return Write(cancellationToken, shelf =>
+        public Task<IReadOnlyList<EntryMoveResult>> MoveAsync(MoveEntriesRequest request, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            return WriteBatch(request.Normalize(), MoveEntry, EntryMoveResult.Refused, cancellationToken);
+        }
+
+        /// <summary>One move of a batch, a file's or a directory's, whichever its path names, as the server's EntryBatches makes it.</summary>
+        private EntryMoveResult MoveEntry(InMemoryShelf shelf, EntryMove move)
+        {
+            // Normalized again, as the server does: a path joined for a move into a directory may be too
+            // long, which is that move's refusal.
+            string normalizedPath = InMemoryErrors.Checked(() => ShelfPath.Normalize(move.ToPath));
+            EntryReference entry = EntryReference.ForPath(move.Path);
+            try
             {
-                DirectoryNode moved = shelf.GetDirectory(directory);
-                if (moved == shelf.Root)
-                {
-                    throw InMemoryErrors.Invalid("The root directory cannot be moved.");
-                }
+                return EntryMoveResult.Moved(move, MoveFile(shelf, entry, normalizedPath));
+            }
+            catch (ByteShelfException notAFile) when (notAFile.Code == ErrorCodes.NotFound)
+            {
+                // A directory, or nothing: a file move finds nothing only at its own path.
+            }
 
-                string currentPath = shelf.PathOf(moved);
-                if (currentPath == normalizedPath)
-                {
-                    return shelf.ToShelfDirectory(moved);
-                }
+            try
+            {
+                return EntryMoveResult.Moved(move, MoveDirectory(shelf, entry, normalizedPath));
+            }
+            catch (ByteShelfException notADirectory) when (notADirectory.Code == ErrorCodes.NotFound)
+            {
+                throw InMemoryErrors.NotFound($"Neither a file nor a directory is at '{move.Path}' on this shelf.");
+            }
+        }
 
-                if (normalizedPath.StartsWith(currentPath + ShelfPath.Separator, StringComparison.Ordinal))
-                {
-                    throw InMemoryErrors.Invalid($"'{currentPath}' cannot be moved into itself.");
-                }
+        private ShelfFile MoveFile(InMemoryShelf shelf, EntryReference file, string normalizedPath)
+        {
+            FileNode moved = shelf.GetFile(file);
+            if (shelf.ToShelfFile(moved).Path == normalizedPath)
+            {
+                return shelf.ToShelfFile(moved);
+            }
 
-                EnsurePathsFit(shelf, moved, normalizedPath);
-                (DirectoryNode parent, string name) = shelf.PrepareDestination(normalizedPath, _store.Now);
-                shelf.RequireMove(moved.Id, moved.ParentId!.Value, parent.Id, currentPath);
-                moved.ParentId = parent.Id;
-                moved.Name = name;
+            DateTimeOffset now = _store.Now;
+            (DirectoryNode parent, string name) = shelf.PrepareDestination(normalizedPath, now);
+            shelf.RequireMove(movedDirectoryId: null, moved.DirectoryId, parent.Id, shelf.ToShelfFile(moved).Path);
+            moved.DirectoryId = parent.Id;
+            moved.Name = name;
+            moved.UpdatedAt = now;
+            return shelf.ToShelfFile(moved);
+        }
+
+        private ShelfDirectory MoveDirectory(InMemoryShelf shelf, EntryReference directory, string normalizedPath)
+        {
+            DirectoryNode moved = shelf.GetDirectory(directory);
+            if (moved == shelf.Root)
+            {
+                throw InMemoryErrors.Invalid("The root directory cannot be moved.");
+            }
+
+            string currentPath = shelf.PathOf(moved);
+            if (currentPath == normalizedPath)
+            {
                 return shelf.ToShelfDirectory(moved);
-            });
+            }
+
+            if (normalizedPath.StartsWith(currentPath + ShelfPath.Separator, StringComparison.Ordinal))
+            {
+                throw InMemoryErrors.Invalid($"'{currentPath}' cannot be moved into itself.");
+            }
+
+            EnsurePathsFit(shelf, moved, normalizedPath);
+            (DirectoryNode parent, string name) = shelf.PrepareDestination(normalizedPath, _store.Now);
+            shelf.RequireMove(moved.Id, moved.ParentId!.Value, parent.Id, currentPath);
+            moved.ParentId = parent.Id;
+            moved.Name = name;
+            return shelf.ToShelfDirectory(moved);
         }
 
         public Task<TrashEntry> DeleteFileAsync(EntryReference file, CancellationToken cancellationToken = default)

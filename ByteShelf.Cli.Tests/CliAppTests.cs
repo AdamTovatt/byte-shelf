@@ -438,49 +438,63 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
-        public async Task Describe_Text_SetsItAndPrintsTheRecord()
+        public async Task Describe_Text_SetsIt()
         {
             await UploadAsync("/a.txt", "a");
 
             CliRun described = await RunAsync("describe", "docs:/a.txt", "Signed copy\nby both");
 
-            Assert.EndsWith(
-                $"description  Signed copy{Environment.NewLine}             by both",
-                described.Output.TrimEnd(),
-                StringComparison.Ordinal);
+            Assert.Equal((CliApp.Succeeded, "Described /a.txt"), (described.ExitCode, described.Output));
             Assert.Equal("Signed copy\nby both", (await Docs.GetFileAsync("/a.txt")).Description);
+        }
+
+        [Fact]
+        public async Task Describe_SeveralFiles_SetsTheTextOnEach()
+        {
+            await UploadAsync("/a.txt", "a");
+            await UploadAsync("/b/c.txt", "c");
+
+            CliRun described = await RunAsync("describe", "docs:/a.txt", "docs:/b/c.txt", "/missing.txt", "Signed copy");
+
+            Assert.Equal((CliApp.Failed, "1 of 3 refused."), (described.ExitCode, described.Error));
+            Assert.Equal(
+                new[] { "Described /a.txt", "Described /b/c.txt", "Did not describe /missing.txt: There is no file '/missing.txt' on this shelf. (not_found)" },
+                described.Output.Split(Environment.NewLine));
+            Assert.Equal(("Signed copy", "Signed copy"), ((await Docs.GetFileAsync("/a.txt")).Description, (await Docs.GetFileAsync("/b/c.txt")).Description));
         }
 
         [Fact]
         public async Task Describe_Clear_RemovesIt()
         {
-            await Docs.UploadAsync("/a.txt", new MemoryStream(Encoding.UTF8.GetBytes("a")), new UploadOptions { Description = "Signed copy" });
+            await UploadAsync("/a.txt", "a", description: "Signed copy");
 
             await RunAsync("describe", "docs:/a.txt", "--clear");
 
             Assert.Null((await Docs.GetFileAsync("/a.txt")).Description);
         }
 
-        [Theory]
-        [InlineData(null, false)]
-        [InlineData("Signed copy", true)]
-        public async Task Describe_NotExactlyOneOfTextAndClear_FailsAsMisuseAndChangesNothing(string? text, bool clear)
+        [Fact]
+        public async Task Describe_ClearSeveral_RemovesEachOne()
         {
-            await Docs.UploadAsync("/a.txt", new MemoryStream(Encoding.UTF8.GetBytes("a")), new UploadOptions { Description = "Kept" });
-            List<string> args = new List<string> { "describe", "docs:/a.txt" };
-            if (text != null)
-            {
-                args.Add(text);
-            }
+            await UploadAsync("/a.txt", "a", description: "Signed copy");
+            await UploadAsync("/b.txt", "b", description: "Signed copy");
 
-            if (clear)
-            {
-                args.Add("--clear");
-            }
+            CliRun run = await RunAsync("describe", "docs:/a.txt", "/b.txt", "--clear");
 
-            CliRun run = await RunAsync(args.ToArray());
+            Assert.Equal((CliApp.Succeeded, $"Removed the description of /a.txt{Environment.NewLine}Removed the description of /b.txt"), (run.ExitCode, run.Output));
+            Assert.Equal(((string?)null, (string?)null), ((await Docs.GetFileAsync("/a.txt")).Description, (await Docs.GetFileAsync("/b.txt")).Description));
+        }
 
-            Assert.Equal((CliApp.Misused, "Give the description's <text>, or --clear to remove it, one of them."), (run.ExitCode, run.Error));
+        [Theory]
+        [InlineData("docs:/a.txt")]
+        [InlineData("--clear")]
+        public async Task Describe_NoTextOrNoFile_FailsAsMisuseAndChangesNothing(string word)
+        {
+            await UploadAsync("/a.txt", "a", description: "Kept");
+
+            CliRun run = await RunAsync("describe", word);
+
+            Assert.Equal((CliApp.Misused, "Give the files' <shelf>:<path> and the description's <text>, or --clear to remove theirs."), (run.ExitCode, run.Error));
             Assert.Equal("Kept", (await Docs.GetFileAsync("/a.txt")).Description);
         }
 
@@ -697,7 +711,7 @@ namespace ByteShelf.Cli.Tests
 
             CliRun run = await RunAsync("mv", "docs:/a.txt", "/archive/b.txt");
 
-            Assert.Equal((CliApp.Succeeded, "Moved to /archive/b.txt"), (run.ExitCode, run.Output));
+            Assert.Equal((CliApp.Succeeded, "Moved /a.txt to /archive/b.txt"), (run.ExitCode, run.Output));
             Assert.Equal("a", await ReadAsync("/archive/b.txt"));
         }
 
@@ -719,7 +733,7 @@ namespace ByteShelf.Cli.Tests
 
             CliRun run = await RunAsync("mv", "docs:/a.txt", "docs:/archive/b.txt");
 
-            Assert.Equal((CliApp.Succeeded, "Moved to /archive/b.txt"), (run.ExitCode, run.Output));
+            Assert.Equal((CliApp.Succeeded, "Moved /a.txt to /archive/b.txt"), (run.ExitCode, run.Output));
             Assert.Equal("a", await ReadAsync("/archive/b.txt"));
         }
 
@@ -741,8 +755,59 @@ namespace ByteShelf.Cli.Tests
 
             CliRun run = await RunAsync("mv", "docs:/a.txt", "/notes:2026.txt");
 
-            Assert.Equal((CliApp.Succeeded, "Moved to /notes:2026.txt"), (run.ExitCode, run.Output));
+            Assert.Equal((CliApp.Succeeded, "Moved /a.txt to /notes:2026.txt"), (run.ExitCode, run.Output));
             Assert.Equal("a", await ReadAsync("/notes:2026.txt"));
+        }
+
+        [Fact]
+        public async Task Mv_SeveralSources_MovesEachIntoTheLastInOrder()
+        {
+            await UploadAsync("/a.txt", "a");
+            await UploadAsync("/photos/b.jpg", "b");
+
+            CliRun run = await RunAsync("mv", "docs:/a.txt", "/photos", "docs:/archive");
+
+            Assert.Equal(
+                (CliApp.Succeeded, $"Moved /a.txt to /archive/a.txt{Environment.NewLine}Moved /photos to /archive/photos"),
+                (run.ExitCode, run.Output));
+            Assert.Equal(("a", "b"), (await ReadAsync("/archive/a.txt"), await ReadAsync("/archive/photos/b.jpg")));
+        }
+
+        [Fact]
+        public async Task Mv_OneSourceToAPathEndingInASlash_MovesItIntoThatDirectory()
+        {
+            await UploadAsync("/a.txt", "a");
+
+            CliRun run = await RunAsync("mv", "docs:/a.txt", "/archive/");
+
+            Assert.Equal((CliApp.Succeeded, "Moved /a.txt to /archive/a.txt"), (run.ExitCode, run.Output));
+            Assert.Equal("a", await ReadAsync("/archive/a.txt"));
+        }
+
+        [Fact]
+        public async Task Mv_NoNewPath_FailsAsMisuseAndMovesNothing()
+        {
+            await UploadAsync("/a.txt", "a");
+
+            CliRun run = await RunAsync("mv", "docs:/a.txt");
+
+            Assert.Equal((CliApp.Misused, "Missing <new-path>."), (run.ExitCode, run.Error));
+            Assert.Equal("a", await ReadAsync("/a.txt"));
+        }
+
+        [Fact]
+        public async Task Mv_ASourceRefused_MovesTheRestAndFailsCountingIt()
+        {
+            await UploadAsync("/a.txt", "a");
+            await UploadAsync("/b.txt", "b");
+            await UploadAsync("/archive/b.txt", "taken");
+
+            CliRun run = await RunAsync("mv", "docs:/a.txt", "/b.txt", "/archive", "--json");
+
+            IReadOnlyList<EntryMoveResult> results = JsonSerializer.Deserialize(run.Output, ByteShelfJsonContext.Default.IReadOnlyListEntryMoveResult)!;
+            Assert.Equal((CliApp.Failed, "1 of 2 refused."), (run.ExitCode, run.Error));
+            Assert.Equal(("/archive/a.txt", ErrorCodes.Conflict), (results[0].File!.Path, results[1].Error!.Code));
+            Assert.Equal("b", await ReadAsync("/b.txt"));
         }
 
         [Fact]
@@ -1110,9 +1175,9 @@ namespace ByteShelf.Cli.Tests
             return RunAsync(new[] { "user", "create", "ada@example.com", "--name", "Ada" }, input: AdaPassword + Environment.NewLine);
         }
 
-        private Task<ShelfFile> UploadAsync(string path, string text)
+        private Task<ShelfFile> UploadAsync(string path, string text, string? description = null)
         {
-            return Docs.UploadAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(text)));
+            return Docs.UploadAsync(path, new MemoryStream(Encoding.UTF8.GetBytes(text)), new UploadOptions { Description = description });
         }
 
         private async Task<string> ReadAsync(string path)
