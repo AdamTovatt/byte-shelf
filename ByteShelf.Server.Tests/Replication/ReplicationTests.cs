@@ -426,18 +426,31 @@ namespace ByteShelf.Server.Tests.Replication
         [Fact]
         public async Task Sync_PrimaryThatGoesQuietPartWay_IsGivenUpAfterTheIdleTimeout()
         {
+            // The replica's clock moves only once the file's bytes have stalled, so it gives up on them and
+            // on no call before them, however slowly a loaded machine gets there.
+            // Far longer than the test waits, so a timer on real time instead of this clock never fires.
+            TimeSpan idleTimeout = TimeSpan.FromHours(1);
+            FakeTimeProvider clock = new FakeTimeProvider();
             StallingHandler? stalling = null;
             await using ReplicationPair quiet = await ReplicationPair.StartAsync(
                 primary => stalling = new StallingHandler(primary),
-                idleTimeout: TimeSpan.FromMilliseconds(200));
+                idleTimeout: idleTimeout,
+                primaryClock: clock);
             await quiet.CreateShelfAsync("docs");
             await quiet.PutOnPrimaryAsync("docs", "/a.txt", "never arrives");
             await quiet.PairAsync();
 
-            PrimaryFailedException failed = await Assert.ThrowsAsync<PrimaryFailedException>(() => quiet.SyncAsync().WaitAsync(TimeSpan.FromSeconds(30)));
+            Task sync = quiet.SyncAsync();
+            if (await Task.WhenAny(sync, stalling!.Stalled).WaitAsync(TimeSpan.FromSeconds(30)) == sync)
+            {
+                // Ended before the file's bytes stalled: show why it did.
+                await sync;
+                Assert.Fail("The sync caught up without the file's bytes stalling.");
+            }
 
-            // Given up on the file's bytes that stalled, not on anything before them.
-            Assert.True(stalling!.Stalled.IsCompleted);
+            clock.Advance(idleTimeout);
+
+            PrimaryFailedException failed = await Assert.ThrowsAsync<PrimaryFailedException>(() => sync.WaitAsync(TimeSpan.FromSeconds(30)));
             Assert.Contains("sent nothing for", failed.Message, StringComparison.Ordinal);
         }
 
