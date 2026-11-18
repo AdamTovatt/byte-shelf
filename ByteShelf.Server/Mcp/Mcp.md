@@ -17,7 +17,9 @@ For each request `McpCallerSetup` builds what the caller is offered:
   whether it works only on the agent's own files. The need maps to a `ShelfOperation`, and the key's
   `ShelfAccess` from `ShelfAccessResolver` decides, as it does for the API: a read key gets the
   reading tools, an add-only key those and the adding ones, a read-write key all three kinds, and no
-  key the admin ones (creating shelves). A replica offers only reading tools. Local-file tools
+  key the admin ones (creating shelves). A replica offers only the tools that need read access:
+  `share_file` and `revoke_link` among them, which write only the replica's own links, never
+  replicated (see [Replication](../Replication/Replication.md)). Local-file tools
   (`upload_folder`, `download_directory`) are offered only where `ToolHost` reaches the agent's
   files, which this server does not. A tool without the mark is offered to no one, and a test checks
   every tool has one.

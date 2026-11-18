@@ -504,8 +504,57 @@ namespace ByteShelf.Cli.Tests
             CliRun run = await RunAsync("share", "docs:/a.txt");
 
             string[] lines = run.Output.TrimEnd().Split(Environment.NewLine);
+            Guid linkId = Assert.Single(await Docs.GetLinksAsync()).Id;
             Assert.Matches("^https?://[^ ]+$", lines[0]);
             Assert.StartsWith("Works for anyone who has it until ", lines[1], StringComparison.Ordinal);
+            Assert.EndsWith($", unless revoked sooner: its id is {linkId:D}.", lines[1], StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task LinkList_AsText_PrintsEachLinkWithItsIdReachMakerAndExpiry()
+        {
+            await UploadAsync("/a.txt", "a");
+            DownloadLink download = await Docs.CreateDownloadLinkAsync("/a.txt");
+            UploadLink upload = await Docs.CreateUploadLinkAsync("/in/b.txt", new UploadLinkOptions { Overwrite = true });
+            await Docs.DeleteFileAsync("/a.txt");
+
+            CliRun run = await RunAsync("link", "list", "docs");
+
+            Assert.Equal(
+                new[]
+                {
+                    $"{upload.Id:D}  stores /in/b.txt, replacing a file there  by Admin (you)  until {TextFormat.Time(upload.ExpiresAt)}",
+                    $"{download.Id:D}  reads a file in the trash  by Admin (you)  until {TextFormat.Time(download.ExpiresAt)}",
+                },
+                run.Output.TrimEnd().Split(Environment.NewLine));
+        }
+
+        [Fact]
+        public async Task LinkList_NoLinks_SaysSo()
+        {
+            CliRun run = await RunAsync("link", "list", "docs");
+
+            Assert.Equal("No links.", run.Output.TrimEnd());
+        }
+
+        [Fact]
+        public async Task LinkRevoke_ItsId_EndsTheLink()
+        {
+            UploadLink link = await Docs.CreateUploadLinkAsync("/a.txt");
+
+            CliRun run = await RunAsync("link", "revoke", "docs", link.Id.ToString("D"));
+
+            Assert.Equal((CliApp.Succeeded, "Revoked the link."), (run.ExitCode, run.Output.TrimEnd()));
+            Assert.Empty(await Docs.GetLinksAsync());
+        }
+
+        [Fact]
+        public async Task LinkRevoke_NotAnId_FailsAsMisuseSayingWhereIdsAre()
+        {
+            CliRun run = await RunAsync("link", "revoke", "docs", "first");
+
+            Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.Contains("'byteshelf link list docs' lists them", run.Error, StringComparison.Ordinal);
         }
 
         [Fact]

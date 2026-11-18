@@ -8,7 +8,6 @@ export type ShelfDirectory = components['schemas']['ShelfDirectory'];
 export type ListedDirectory = components['schemas']['ListedDirectory'];
 export type TrashEntry = components['schemas']['TrashEntry'];
 export type DeletionTree = components['schemas']['DeletionTree'];
-export type DownloadLink = components['schemas']['DownloadLink'];
 export type FileSearchResults = components['schemas']['FileSearchResults'];
 export type DuplicateSearchResults = components['schemas']['DuplicateSearchResults'];
 export type DuplicateGroup = components['schemas']['DuplicateGroup'];
@@ -123,12 +122,4 @@ export function restoreDeletion(shelf: string, deletionId: string): Promise<void
 
 export function emptyTrash(shelf: string): Promise<void> {
   return unwrapNoContentResponse(apiClient.DELETE('/api/shelves/{shelf}/trash', { params: shelfPath(shelf) }));
-}
-
-/**
- * A link to a file that works without signing in, for `expiresInMinutes` (the server's 24 hours when
- * left out). `url` is relative to the server's address.
- */
-export function createDownloadLink(shelf: string, id: string, expiresInMinutes?: number): Promise<DownloadLink> {
-  return unwrapResponse(apiClient.POST('/api/shelves/{shelf}/download-link', { params: { ...shelfPath(shelf), query: { id, expiresInMinutes } } }));
 }

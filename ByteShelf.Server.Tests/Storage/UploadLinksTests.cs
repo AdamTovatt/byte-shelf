@@ -1,25 +1,16 @@
-using System.Buffers.Text;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
-using ByteShelf.Server.Access.Models;
-using ByteShelf.Server.Shared;
-using ByteShelf.Server.Shared.Auth;
-using ByteShelf.Server.Shared.Root;
-using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfClient.Encryption;
 using ByteShelfCommon;
-using Microsoft.Extensions.Time.Testing;
 
 namespace ByteShelf.Server.Tests.Storage
 {
     /// <summary>Links that let anyone holding one store one file without a token, acting as whoever made the link.</summary>
     public sealed class UploadLinksTests : IAsyncLifetime
     {
-        private static readonly PublicAddress Unconfigured = new PublicAddress(null);
-
         private ServerTestHost _host = null!;
 
         public async Task InitializeAsync()
@@ -65,8 +56,7 @@ namespace ByteShelf.Server.Tests.Storage
             UploadLink link = await CreateLinkAsync(_host.AdminClient, new CreateUploadLinkRequest { Path = "/a.txt" });
 
             Assert.StartsWith("/api/upload-links/", link.Url, StringComparison.Ordinal);
-            // The expiry is cut to the whole second the token keeps.
-            Assert.InRange(link.ExpiresAt, before + UploadLink.Lifetime.Default - TimeSpan.FromSeconds(1), DateTimeOffset.UtcNow + UploadLink.Lifetime.Default);
+            Assert.InRange(link.ExpiresAt, before + UploadLink.Lifetime.Default, DateTimeOffset.UtcNow + UploadLink.Lifetime.Default);
             Assert.Equal(("/a.txt", false), (link.Path, link.Overwrite));
         }
 
@@ -92,16 +82,16 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
-        public async Task CreateLink_DescriptionTooLongToCarry_Returns400NamingTheLimit()
+        public async Task Link_DescriptionOfTheLongestKind_StoresItWhole()
         {
-            // 1,500 characters is within a description's limit, but three bytes each is past what a link carries.
-            string description = new string('€', 1500);
+            // The longest description, three bytes of UTF-8 a character: more than a URL could carry, which the link's row need not.
+            string description = new string('€', FileDescription.MaxLength);
+            UploadLink link = await CreateLinkAsync(_host.AdminClient, new CreateUploadLinkRequest { Path = "/a.txt", Description = description });
 
-            HttpResponseMessage response = await _host.AdminClient.PostAsJsonAsync(
-                "/api/shelves/docs/upload-link", new CreateUploadLinkRequest { Path = "/a.txt", Description = description });
+            (await PutAsync(link, "a")).EnsureSuccessStatusCode();
 
-            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-            Assert.Contains($"{NormalizedUploadLinkRequest.MaxCarriedBytes} bytes", (await response.Content.ReadFromJsonAsync<ErrorResponse>())!.Message, StringComparison.Ordinal);
+            ShelfFile file = (await _host.AdminClient.GetFromJsonAsync<ShelfFile>("/api/shelves/docs/files?path=/a.txt"))!;
+            Assert.Equal(description, file.Description);
         }
 
         [Fact]
@@ -243,87 +233,31 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
-        public async Task Link_PathInItChanged_Returns404AndStoresNothing()
+        public async Task Link_Revoked_Returns404AndStoresNothing()
         {
             UploadLink link = await CreateLinkAsync(_host.AdminClient, new CreateUploadLinkRequest { Path = "/a.txt" });
-            byte[] token = Base64Url.DecodeFromChars(TokenOf(link));
-            // The expiry's 8 bytes, then the payload, whose path starts at byte 36: "/a.txt" becomes "/b.txt".
-            Assert.Equal((byte)'a', token[8 + 36 + 1]);
-            token[8 + 36 + 1] = (byte)'b';
+            (await _host.AdminClient.DeleteAsync($"/api/shelves/docs/links/{link.Id}")).EnsureSuccessStatusCode();
 
-            HttpResponseMessage response = await _host.AnonymousClient.PutAsync(
-                $"/{UploadLinks.Route}/{Base64Url.EncodeToString(token)}", new ByteArrayContent(Encoding.UTF8.GetBytes("a")));
+            HttpResponseMessage response = await PutAsync(link, "a");
 
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-            Assert.Equal(HttpStatusCode.NotFound, (await _host.AdminClient.GetAsync("/api/shelves/docs/files?path=/b.txt")).StatusCode);
+            await AssertNothingAtAsync("docs", "/a.txt");
         }
 
         [Fact]
-        public async Task TryRead_UntilItRunsOut_AnswersWhatTheLinkGrants()
+        public async Task Link_RevokedWhileItsBodyArrives_StillStoresTheFile()
         {
-            await using TestRoot root = TestRoot.Create();
-            FakeTimeProvider clock = new FakeTimeProvider(new DateTimeOffset(2026, 11, 2, 12, 0, 0, TimeSpan.Zero));
-            UploadLinks links = new UploadLinks(new LinkTokens(root.Root, clock), Unconfigured);
-            Guid shelfId = Guid.NewGuid();
-            ShelfCallerReference caller = new ShelfCallerReference(ShelfCallerKind.Key, Guid.NewGuid());
-            UploadLink link = links.Create(shelfId, caller, new CreateUploadLinkRequest { Path = "/räksmörgås/a.txt", Overwrite = true, Description = "  en beskrivning  ", ExpiresInMinutes = 60 }.Normalize());
+            UploadLink link = await CreateLinkAsync(_host.AdminClient, new CreateUploadLinkRequest { Path = "/a.bin" });
+            PausedContent content = new PausedContent(new byte[1024 * 1024], new byte[] { 1, 2, 3 });
 
-            clock.Advance(TimeSpan.FromMinutes(60) - TimeSpan.FromSeconds(1));
-            bool readBefore = links.TryRead(TokenOf(link), out UploadLinkGrant? grant);
-            clock.Advance(TimeSpan.FromSeconds(1));
-            bool readAfter = links.TryRead(TokenOf(link), out _);
+            Task<HttpResponseMessage> sending = _host.AnonymousClient.PutAsync(link.Url, content);
+            await content.FirstPartTaken.WaitAsync(TimeSpan.FromSeconds(30));
+            (await _host.AdminClient.DeleteAsync($"/api/shelves/docs/links/{link.Id}")).EnsureSuccessStatusCode();
+            content.Resume.SetResult();
+            HttpResponseMessage response = await sending.WaitAsync(TimeSpan.FromSeconds(30));
 
-            Assert.Equal((true, false), (readBefore, readAfter));
-            Assert.Equal(new UploadLinkGrant(shelfId, caller, "/räksmörgås/a.txt", true, "en beskrivning"), grant);
-        }
-
-        [Fact]
-        public async Task LinkTokens_TokenOfAnotherKind_IsRefused()
-        {
-            await using TestRoot root = TestRoot.Create();
-            LinkTokens tokens = new LinkTokens(root.Root, TimeProvider.System);
-            (string token, _) = tokens.Create("download", new byte[64], TimeSpan.FromMinutes(5));
-
-            bool readAsItsOwnKind = tokens.TryRead("download", token, out _);
-            bool readAsAnother = tokens.TryRead("upload", token, out _);
-
-            Assert.Equal((true, false), (readAsItsOwnKind, readAsAnother));
-        }
-
-        [Fact]
-        public async Task LinkTokens_OverTheLongestTokenAnyLinkHas_IsRefusedThoughSigned()
-        {
-            await using TestRoot root = TestRoot.Create();
-            LinkTokens tokens = new LinkTokens(root.Root, TimeProvider.System);
-            // A token is the 8-byte expiry, the payload and a 32-byte signature, at most 8 KiB in all.
-            (string longest, _) = tokens.Create("upload", new byte[8192 - 40], TimeSpan.FromMinutes(5));
-            (string tooLong, _) = tokens.Create("upload", new byte[8192 - 39], TimeSpan.FromMinutes(5));
-
-            Assert.Equal((true, false), (tokens.TryRead("upload", longest, out _), tokens.TryRead("upload", tooLong, out _)));
-        }
-
-        [Theory]
-        [InlineData(35, 0)]
-        [InlineData(36, 1)]
-        public async Task TryRead_SignedPayloadShorterThanItsPath_IsRefused(int payloadBytes, int pathLength)
-        {
-            await using TestRoot root = TestRoot.Create();
-            LinkTokens tokens = new LinkTokens(root.Root, TimeProvider.System);
-            byte[] payload = new byte[payloadBytes];
-            if (payloadBytes >= 36)
-            {
-                // The path's length is the two bytes before it, at 34.
-                payload[35] = (byte)pathLength;
-            }
-
-            (string token, _) = tokens.Create("upload", payload, TimeSpan.FromMinutes(5));
-
-            Assert.False(new UploadLinks(tokens, Unconfigured).TryRead(token, out _));
-        }
-
-        private static string TokenOf(UploadLink link)
-        {
-            return link.Url[$"/{UploadLinks.Route}/".Length..];
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            Assert.Equal((1024L * 1024) + 3, (await response.Content.ReadFromJsonAsync<ShelfFile>())!.SizeBytes);
         }
 
         private async Task AssertNothingAtAsync(string shelf, string path)
@@ -341,6 +275,43 @@ namespace ByteShelf.Server.Tests.Storage
         private Task<HttpResponseMessage> PutAsync(UploadLink link, string text)
         {
             return _host.AnonymousClient.PutAsync(link.Url, new ByteArrayContent(Encoding.UTF8.GetBytes(text)));
+        }
+
+        /// <summary>
+        /// A body sent in two parts, pausing between them until <see cref="Resume"/>. The first part is far
+        /// past what the test server's request pipe holds unread, so it is taken only while the server
+        /// reads the body: <see cref="FirstPartTaken"/> means the request is past the link's check.
+        /// </summary>
+        private sealed class PausedContent : HttpContent
+        {
+            private readonly byte[] _first;
+            private readonly byte[] _rest;
+            private readonly TaskCompletionSource _firstPartTaken = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public PausedContent(byte[] first, byte[] rest)
+            {
+                _first = first;
+                _rest = rest;
+            }
+
+            public Task FirstPartTaken => _firstPartTaken.Task;
+
+            public TaskCompletionSource Resume { get; } = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+            {
+                await stream.WriteAsync(_first);
+                await stream.FlushAsync();
+                _firstPartTaken.SetResult();
+                await Resume.Task;
+                await stream.WriteAsync(_rest);
+            }
+
+            protected override bool TryComputeLength(out long length)
+            {
+                length = _first.Length + _rest.Length;
+                return true;
+            }
         }
     }
 }

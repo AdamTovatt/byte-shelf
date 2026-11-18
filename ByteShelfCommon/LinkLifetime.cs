@@ -20,7 +20,7 @@ namespace ByteShelfCommon
         /// <summary>The shortest lifetime a link may be made with, the same for every kind.</summary>
         public TimeSpan Min { get; } = TimeSpan.FromMinutes(1);
 
-        /// <summary>The longest lifetime a link may be made with. Nothing takes a link back before it runs out.</summary>
+        /// <summary>The longest lifetime a link may be made with; revoking one ends it sooner.</summary>
         public TimeSpan Max { get; }
 
         /// <summary>The bounds as a sentence ends them: "from 1 minute to 7 days".</summary>

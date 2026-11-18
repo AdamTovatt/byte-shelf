@@ -48,7 +48,11 @@ the same words:
   (the CLI), only a file stored as one of those four kinds is read past 256 KiB, and an agent saves
   a larger image with `localPath` and looks at it there.
   Anything else moves as a local file, through the API, or by a link: `share_file` to fetch one,
-  `create_upload_link` to have one sent in, answered with the `curl` command that sends it.
+  `create_upload_link` to have one sent in, answered with the `curl` command that sends it. Both
+  answer the link's id; `list_links` shows the links that have not run out and `revoke_link` ends
+  one.
+  `list_links` and `revoke_link` need only `Read`, as anyone may revoke their own links, so a
+  replica offers them too.
 - The tools never take a password: `download_file` refuses an encrypted file, and a directory
   download leaves encrypted files out (`EncryptedFiles.LeftOut`) and lists them.
 - Every tool working on one shelf takes `shelf` last and optional: left out, it is the only shelf

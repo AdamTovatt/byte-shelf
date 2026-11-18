@@ -143,6 +143,16 @@ namespace ByteShelfClient.Http
             return link with { Url = Absolute(link.Url) };
         }
 
+        public Task<IReadOnlyList<ShelfLink>> GetLinksAsync(CancellationToken cancellationToken = default)
+        {
+            return _connection.SendAsync(HttpMethod.Get, $"{_base}/links", ByteShelfJsonContext.Default.IReadOnlyListShelfLink, cancellationToken);
+        }
+
+        public Task RevokeLinkAsync(Guid linkId, CancellationToken cancellationToken = default)
+        {
+            return _connection.SendAsync(HttpMethod.Delete, $"{_base}/links/{linkId:D}", cancellationToken);
+        }
+
         /// <summary>
         /// A link as the server answered it, made absolute: the server answers a link on its public URL
         /// when it has one, which is kept as it is, or else a path from its own root; relative to the base

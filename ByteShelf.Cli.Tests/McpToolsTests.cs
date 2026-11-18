@@ -736,9 +736,14 @@ namespace ByteShelf.Cli.Tests
             string shared = await tools.ShareFileAsync("/a.txt", "30m", shelf: "docs");
             string upload = await tools.CreateUploadLinkAsync("/in/q3.pdf", overwrite: true, expiresIn: "2h", shelf: "docs");
 
-            Assert.Equal($"Works for anyone who has it until {TextFormat.Time(clock.GetUtcNow().AddMinutes(30))}.", shared.Split(Environment.NewLine)[1]);
+            IReadOnlyList<ShelfLink> links = await clients.Client.Shelf("docs").GetLinksAsync();
+            Guid shareId = links.Single(link => link.Kind == ShelfLinkKind.Download).Id;
+            Guid uploadId = links.Single(link => link.Kind == ShelfLinkKind.Upload).Id;
             Assert.Equal(
-                $"Stores one file at /in/q3.pdf for anyone who has it until {TextFormat.Time(clock.GetUtcNow().AddHours(2))}. A file already there is replaced.",
+                $"Works for anyone who has it until {TextFormat.Time(clock.GetUtcNow().AddMinutes(30))}, unless revoked sooner: its id is {shareId:D}.",
+                shared.Split(Environment.NewLine)[1]);
+            Assert.Equal(
+                $"Stores one file at /in/q3.pdf for anyone who has it until {TextFormat.Time(clock.GetUtcNow().AddHours(2))}, unless revoked sooner: its id is {uploadId:D}. A file already there is replaced.",
                 upload.Split(Environment.NewLine)[1]);
         }
 

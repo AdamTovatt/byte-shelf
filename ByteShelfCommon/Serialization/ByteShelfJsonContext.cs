@@ -17,6 +17,8 @@ namespace ByteShelfCommon.Serialization
     [JsonSerializable(typeof(SetFolderEncryptionRequest))]
     [JsonSerializable(typeof(UploadLink))]
     [JsonSerializable(typeof(CreateUploadLinkRequest))]
+    [JsonSerializable(typeof(ShelfLink))]
+    [JsonSerializable(typeof(IReadOnlyList<ShelfLink>))]
     [JsonSerializable(typeof(ShelfDirectory))]
     [JsonSerializable(typeof(DirectoryListing))]
     [JsonSerializable(typeof(DirectoryTree))]

@@ -5,6 +5,9 @@ grants and shelf keys, written for replicas to follow. Each row holds the entity
 descriptive action, and the entity's whole state afterwards as JSON (`null` once the entity is
 gone). Applying a row is an upsert or a delete by id, so applying it twice is harmless.
 
+Download and upload links (`shelf_link`) are not logged: each server keeps the links it signed
+itself, and the database removes one with what it names ([Storage](../Storage/Storage.md#links-shelf_link-linkservice)).
+
 The repositories' own write methods append the row, inside the transaction that made the change
 (`IChangeLogRepository.AppendAsync` takes the session and never opens its own). A write and its row
 therefore commit or roll back together, and no service can make a change without logging it. A

@@ -543,6 +543,17 @@ export interface paths {
                         "text/json": components["schemas"]["ErrorResponse"];
                     };
                 };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
             };
         };
         put?: never;
@@ -582,6 +593,17 @@ export interface paths {
                 };
                 /** @description Not Found */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -1689,6 +1711,103 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shelves/{shelf}/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ShelfLink"][];
+                        "application/json": components["schemas"]["ShelfLink"][];
+                        "text/json": components["schemas"]["ShelfLink"][];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shelves/{shelf}/links/{linkId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    linkId: string;
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -3943,6 +4062,8 @@ export interface components {
             nextCursor?: string | null;
         };
         DownloadLink: {
+            /** Format: uuid */
+            id: string;
             url: string;
             /** Format: date-time */
             expiresAt: string;
@@ -3984,6 +4105,15 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        LinkMaker: {
+            kind: components["schemas"]["LinkMakerKind"];
+            /** Format: uuid */
+            id: string;
+            name: string;
+            isCaller: boolean;
+        };
+        /** @enum {string} */
+        LinkMakerKind: "user" | "key";
         ListedDirectory: {
             directory: components["schemas"]["ShelfDirectory"];
             /** Format: int64 */
@@ -4140,6 +4270,23 @@ export interface components {
         };
         /** @enum {string} */
         ShelfKeyPermission: "read" | "addOnly" | "readWrite";
+        ShelfLink: {
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["ShelfLinkKind"];
+            path?: string | null;
+            /** Format: uuid */
+            fileId?: string | null;
+            overwrite: boolean;
+            description?: string | null;
+            createdBy: components["schemas"]["LinkMaker"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        /** @enum {string} */
+        ShelfLinkKind: "download" | "upload";
         StartContentSwapRequest: {
             /** Format: uuid */
             fileId: string;
@@ -4188,6 +4335,8 @@ export interface components {
             quotaBytes?: number | null;
         };
         UploadLink: {
+            /** Format: uuid */
+            id: string;
             url: string;
             /** Format: date-time */
             expiresAt: string;

@@ -55,7 +55,9 @@ npm run codegen    # in a second terminal
 - **Files:** uploads up to 8 MiB go in one request, larger ones as a resumable upload in 8 MiB chunks
   (`services/uploadService.ts`); a file whose name is taken is replaced only when asked. "Copy link"
   in a file's menu copies one that works for a day, for someone without access; where the browser
-  offers no clipboard (plain HTTP), the toast shows it to copy by hand.
+  offers no clipboard (plain HTTP), the toast shows it to copy by hand. A shelf's settings show
+  everyone a Links tab listing the share and upload links that have not run out (their own, or every one
+  for someone who may change the shelf's files) and revoking them; only admins see the other tabs.
   A folder's rows select as in Finder (`hooks/useSelection.ts`): a click selects one, Cmd or Ctrl
   adds or takes one away, Shift selects a range, Space toggles the focused row, Cmd or Ctrl+A selects
   them all, and Escape or a click in empty space clears it; a double-click or Enter opens a row. While
@@ -96,7 +98,9 @@ npm run codegen    # in a second terminal
   leaves out the files of an encrypted folder below it, which has its own.
 - **Pages and layout:** a shelf's settings are tabs that are routes, `/shelves/:shelf/settings/:tab`
   (`SHELF_SETTINGS_TABS` in `lib/shelfPaths.ts` lists them; the page picks the tab from the route and
-  sends any other to General). Below the `md` width the sidebar becomes a drawer behind a top bar, and
+  sends any other to the first tab the user sees: General for an admin, Links for anyone else).
+  `components/KnownRole.tsx` holds back a page that differs for admins until the signed-in user is
+  known, and says why when that fails, rather than treating them as no admin. Below the `md` width the sidebar becomes a drawer behind a top bar, and
   a page puts its own controls in that bar through `MobileTopBarActions`, or covers it with
   `MobileTopBarOverlay` (`components/layout/MobileTopBar.tsx`).
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and

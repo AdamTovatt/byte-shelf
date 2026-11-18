@@ -41,9 +41,9 @@ path that is not allowed is a 400.
 | `PUT directories/encryption?path=` | Encrypts a directory with the body's `check` (base64 of an age file of at most `FileEncryption.MaxCheckBytes`); 400 for a check that is not one, 409 when it is encrypted already or inside or above an encrypted directory. |
 | `DELETE directories/encryption?path=` | Stops encrypting a directory; 409 when it is not encrypted itself. |
 | `GET content?path=` (and `HEAD`) | Streams the contents (`HEAD`: only the headers); `Range`, `If-None-Match` and `If-Range` work, the ETag is the SHA-256. Served with `X-Content-Type-Options: nosniff`, `Cache-Control: private` and, except for a PDF (Chrome's viewer does not run sandboxed), a sandboxing `Content-Security-Policy`. `download=true` adds a file name. Also served at `/api/open/{shelf}/content`, where a signed-in browser's token may come in a cookie (see "Opening in a browser" below). |
-| `POST download-link?path=&expiresInMinutes=` | A link to the contents that works without a token for `expiresInMinutes` (1 to 10080, 1440 by default), to share the file (see below). Making one is a read; 400 for a lifetime outside those bounds, 409 for an encrypted file. |
+| `POST download-link?path=&expiresInMinutes=` | A link to the contents that works without a token for `expiresInMinutes` (1 to 10080, 1440 by default), to share the file, with its `id` to revoke it by (see below). Making one is a read; 400 for a lifetime outside those bounds, 409 for an encrypted file. |
 | `PUT content?path=&overwrite=&encrypted=` | Stores the body in one request. Needs `Content-Length` (411 without); the `Content-Type` is stored, or without one the type the path's extension names (`ContentTypes.ForUpload`), so `curl -T` stores a PDF as one. `encrypted=true` marks the body as an age file (400 when it does not start as one). 409 when the path is taken and `overwrite` is not set, or for a plain file under an encrypted directory; 507 over quota. |
-| `POST upload-link` | A link that stores one file sent to it without a token, from the body's `path`, `overwrite`, `description` and `expiresInMinutes` (1 to 1440, 15 by default); see "Upload links" below. Needs `Add`, or `Write` with `overwrite`; 400 for the root or a request `CreateUploadLinkRequest.Normalize` refuses, 409 for a path under an encrypted directory or over an encrypted file. |
+| `POST upload-link` | A link that stores one file sent to it without a token, from the body's `path`, `overwrite`, `description` and `expiresInMinutes` (1 to 1440, 15 by default), with its `id` to revoke it by; see "Upload links" below. Needs `Add`, or `Write` with `overwrite`; 400 for the root or a request `CreateUploadLinkRequest.Normalize` refuses, 409 for a path under an encrypted directory or over an encrypted file. |
 | `POST uploads` | Starts a resumable upload from the body's `path`, `sizeBytes`, `contentType` (optional, typed as `PUT content` is), `overwrite` (false by default), `encrypted` (as on `PUT content`, checked when it completes) and the file's `description` if it has one (a single `PUT` has no body to carry one); reserves the size against the quota. |
 | `PUT content/swap?id=&sha256=&encrypted=` | Swaps the contents of the file `id` in place for the body, in one request (`Content-Length` needed): encrypting a plain file (`encrypted=true`, an age file) or decrypting an encrypted one. Needs write access. 400 when sent as encrypted but not an age file; 404 for no such live file; 409 when its contents are no longer `sha256`, when the swap would not flip its encryption, or for a plain file under an encrypted directory; 411 without `Content-Length`; 507 when what it adds to the file's size does not fit the quota. See "Encryption" below. |
 | `POST uploads/swap` | Starts a resumable upload that swaps a file's contents when it completes, from the body's `fileId`, `sha256`, `sizeBytes` and `encrypted`, refused as `PUT content/swap` is. Its chunks, progress, completion and abort are an upload's. |
@@ -75,17 +75,17 @@ localhost; elsewhere the web UI reads the contents with the header instead (see 
 
 A link shares a file with someone who has no access, for the caller's pick of lifetime: a day by
 default, at most 7 days (`DownloadLink.Lifetime.Normalize`). `GET` or `HEAD /api/downloads/{token}` serves the contents as `GET content`
-does, `download=true` included, to anyone holding the token until it runs out. The token names the
-shelf and the file by id and when it runs out, signed by `LinkTokens` (below);
-an altered or expired one, or one whose file is in the trash, answers 404; a restored file keeps its
-id, so its unexpired links work again. A file stored over the linked one is a new file, so the link no
-longer reaches it; one encrypted or decrypted in place keeps its id, so the link serves its contents
-as they are then, and answers 409 while it is encrypted. Creating or serving a link is recorded nowhere. A link keeps working until it
-runs out even if the access it was made with is taken away meanwhile; nothing takes one link back,
-but removing the secret file and restarting ends them all. `DownloadLinks` makes the link with
-`PublicAddress.LinkTo`: absolute on `APP_BASE_URL` when that is set, which clients keep as it is;
-otherwise (Development only) a path from the server's root, which each client makes absolute against
-the address it reaches the server by.
+does, `download=true` included, to anyone holding the token until it runs out or is revoked (see
+"Links" below). The link's row names the file by id; an altered, expired or revoked token, or one
+whose file is in the trash, answers 404; a restored file keeps its id, so its unexpired links work
+again. A file stored over the linked one is a new file, so the link no longer reaches it; one
+encrypted or decrypted in place keeps its id, so the link serves its contents as they are then, and
+answers 409 while it is encrypted. Serving a link is recorded nowhere. A link reads with its maker's
+access, checked again on every use as an upload link's is (below): while the key or user that made
+it may no longer read the shelf, it answers 404, and it works again if that access comes back before
+it runs out. `DownloadLinks` makes the link with `PublicAddress.LinkTo`: absolute on `APP_BASE_URL`
+when that is set, which clients keep as it is; otherwise (Development only) a path from the server's
+root, which each client makes absolute against the address it reaches the server by.
 
 ## Upload links (`UploadLinks`)
 
@@ -93,30 +93,52 @@ A link that lets someone without access, or a program without the key, store one
 hands it on, or uses it to move a file too large for its own context. `PUT /api/upload-links/{token}`
 (`UploadLinksController`) stores the body as a single `PUT content` by the link's maker would, with
 `Content-Length` reserved against the quota first, typed the same way, and with the description the
-link carries. The token carries what the link grants (`UploadLinkGrant`): the shelf by id, who made it
-(a key or a user, by id), the path, whether it may overwrite and the description, so nothing is
-stored when one is made. The token is signed, not encrypted: whoever holds the link can read the path
-and description in it. Since the URL carries the path and the description, together they may take
-at most 4096 bytes of UTF-8 (`NormalizedUploadLinkRequest.MaxCarriedBytes`), which keeps a link under the
-8 KiB request line common proxies accept.
+link was made with. The link's row holds what it grants (`UploadLinkTarget`): the path, whether it
+may overwrite and the description; the URL carries only the token.
 
-Unlike a download link, the maker's access is checked again on every use: the key or user is looked
-up (`ShelfCallers`) and asked `ShelfAccessResolver` as for any request, so a deleted key or a user
-whose grant was taken away or lowered stops its links at once (404 when the maker is gone or has no
-access, 403 when it may no longer store there). A link that may not overwrite is refused (409) once
+The maker's access is checked again on every use (`LinkAccess`, as for a download link): the key or
+user is looked up (`ShelfCallers`) and asked `ShelfAccessResolver` as for any request, so a user whose
+grant was taken away or lowered stops their links at once (404 when the maker has no access, 403
+when it may no longer store there), and a deleted key or user takes its links with it (below). A link that may not overwrite is refused (409) once
 its path is taken, so it stores at most one file; one that may overwrite replaces the file on every
 use until it runs out, 15 minutes by default and at most 24 hours (`UploadLink.Lifetime.Normalize`).
 A replica refuses the `PUT`, as it refuses every write. A link sends a plain file, so it is refused
 (409) under an encrypted directory or over an encrypted file, when it is made and again when it is
 used, so a directory encrypted after the link was made stops it too.
 
+## Links (`shelf_link`, `LinkService`)
+
+Every download and upload link is a `shelf_link` row: its kind, its file or place, who made it (a key
+or a user), and when it was made and runs out. Revoking a link deletes its row, so no request made
+with it from then on is served; one already being served, such as an upload whose body is still
+arriving, finishes. A link's row also goes with its shelf, its file (once purged) and the key or user that made it:
+those references cascade, as nothing logs a link's removal. Maintenance deletes the rows that have
+run out (below); until then a row past its expiry is never answered.
+
+Each server keeps its own links: the rows are not in the change log, so replication never carries
+them, as each server signs its links with its own secret. A replica makes download links of its own,
+lists them and revokes them (`DELETE links/{id}` is allowed there); the primary never sees them, nor a
+replica the primary's.
+
+Under `/api/shelves/{shelf}`, with `Read`:
+
+| Method and route | What it does |
+|---|---|
+| `GET links` | The links not run out, newest first (`ShelfLink`): each one's id, kind, its file's path as it is now (null while the file is in the trash) or the place it stores at, whether it overwrites, its description, who made it (`createdBy`: kind, id, name, and whether it is the caller) and when it was made and runs out. Never a link's URL. |
+| `DELETE links/{id}` | Revokes a link; 204, or 404 when there is no such link the caller may see. |
+
+A caller sees and revokes the links it made; one with `Write` on the shelf, every link on it
+(`LinkService.VisibleMaker`, the one place the rule lives). No use is counted: a link meant to be
+read once is made with a lifetime of minutes and revoked after, since range requests make one use
+ill-defined.
+
 ## Link tokens (`Shared/Auth/LinkTokens`)
 
-Download and upload links are both a token after their route: the time the link runs out, what it
-grants, and an HMAC-SHA256 over both. One secret, `keys/link-secret`, signs them all, through a key
-derived from it for each kind of link (`HMAC(secret, kind)`), so a download link's token never reads
-as an upload link's. An altered or expired token answers 404. Removing the secret and restarting ends
-every link at once.
+Download and upload links are both a token after their route: the link's id and an HMAC-SHA256 over
+it. What a link grants and when it runs out are in its row. One secret, `keys/link-secret`, signs them
+all, through a key derived from it for each kind of link (`HMAC(secret, kind)`), so a download link's
+token never reads as an upload link's; changing a kind's purpose ends every link of that kind. An
+altered token answers 404. Removing the secret and restarting ends every link at once.
 
 ## Uploads (`UploadService`)
 
@@ -257,11 +279,11 @@ whole step instead, which keeps maintenance, and so every removal, away until th
 
 At startup and then hourly, as the job `storage.maintenance` ([Jobs](../Jobs/Jobs.md)): removes uploads idle for
 24 hours, single-`PUT` uploads started before the process (their request did not survive the
-restart), staging entries with no upload, the trash past its window, and objects no row points at.
-A pass holds `MaintenanceGate` throughout, so on a replica it waits for a sync step (a whole copy
+restart), staging entries with no upload, the trash past its window, objects no row points at, and
+links that have run out. A pass holds `MaintenanceGate` throughout, so on a replica it waits for a sync step (a whole copy
 included) to finish, and the next step waits for it.
 
 ## Change log
 
 Every change to a shelf, directory or file appends a `change_log` row in the same transaction; see
-[ChangeLog.md](../ChangeLog/ChangeLog.md).
+[ChangeLog.md](../ChangeLog/ChangeLog.md). Links are each server's own and are not logged (see "Links" above).

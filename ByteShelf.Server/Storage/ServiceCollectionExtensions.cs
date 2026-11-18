@@ -16,9 +16,10 @@ namespace ByteShelf.Server.Storage
             services.AddSingleton<StagingArea>();
             services.AddSingleton<UploadLocks>();
             services.AddSingleton<LinkTokens>();
-            services.AddSingleton<DownloadLinks>();
-            services.AddSingleton<UploadLinks>();
-            services.AddScoped<UploadLinkAccess>();
+            services.AddScoped<DownloadLinks>();
+            services.AddScoped<UploadLinks>();
+            services.AddScoped<LinkAccess>();
+            services.AddScoped<ILinkService, LinkService>();
             services.AddSingleton<MaintenanceGate>();
 
             services.AddScoped<IShelfRepository, ShelfRepository>();
@@ -26,6 +27,7 @@ namespace ByteShelf.Server.Storage
             services.AddScoped<IFileRepository, FileRepository>();
             services.AddScoped<IUploadRepository, UploadRepository>();
             services.AddScoped<ITrashRepository, TrashRepository>();
+            services.AddScoped<ILinkRepository, LinkRepository>();
 
             services.AddScoped<ShelfTree>();
             services.AddScoped<ShelfEncryption>();

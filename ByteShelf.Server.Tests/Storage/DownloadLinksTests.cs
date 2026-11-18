@@ -1,25 +1,18 @@
-using System.Buffers.Text;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using ByteShelf.Server.Shared;
-using ByteShelf.Server.Shared.Auth;
-using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Time.Testing;
 
 namespace ByteShelf.Server.Tests.Storage
 {
-    /// <summary>Links that let anyone holding one open or save one file without a token, until they run out.</summary>
+    /// <summary>Links that let anyone holding one open or save one file without a token, until they run out or are revoked.</summary>
     public sealed class DownloadLinksTests : IAsyncLifetime
     {
-        /// <summary>No public URL, so links are paths from the server's root.</summary>
-        private static readonly PublicAddress Unconfigured = new PublicAddress(null);
-
         private ServerTestHost _host = null!;
 
         public async Task InitializeAsync()
@@ -189,22 +182,6 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
-        public async Task Create_PartWayThroughASecond_AnswersTheSecondTheLinkStopsWorkingAt()
-        {
-            await using TestRoot root = TestRoot.Create();
-            FakeTimeProvider clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 31, 12, 0, 0, 700, TimeSpan.Zero));
-            DownloadLinks links = LinksOn(root.Root, clock);
-
-            DownloadLink link = links.Create(Guid.NewGuid(), Guid.NewGuid(), TimeSpan.FromMinutes(10));
-            clock.SetUtcNow(link.ExpiresAt - TimeSpan.FromMilliseconds(1));
-            bool readBefore = links.TryRead(TokenOf(link), out _, out _);
-            clock.SetUtcNow(link.ExpiresAt);
-            bool readAt = links.TryRead(TokenOf(link), out _, out _);
-
-            Assert.Equal((new DateTimeOffset(2026, 10, 31, 12, 10, 0, TimeSpan.Zero), true, false), (link.ExpiresAt, readBefore, readAt));
-        }
-
-        [Fact]
         public async Task CreateLink_NoLifetime_RunsOutAfterADay()
         {
             await PutAsync("/a.txt", "a");
@@ -212,8 +189,68 @@ namespace ByteShelf.Server.Tests.Storage
 
             DownloadLink link = await CreateLinkAsync("/a.txt");
 
-            // The expiry is cut to the whole second the token keeps.
-            Assert.InRange(link.ExpiresAt, before.AddHours(24).AddSeconds(-1), DateTimeOffset.UtcNow.AddHours(24));
+            Assert.InRange(link.ExpiresAt, before.AddHours(24), DateTimeOffset.UtcNow.AddHours(24));
+        }
+
+        [Fact]
+        public async Task Link_Revoked_IsNotFound()
+        {
+            await PutAsync("/a.txt", "a");
+            DownloadLink link = await CreateLinkAsync("/a.txt");
+
+            HttpResponseMessage revoked = await _host.AdminClient.DeleteAsync($"/api/shelves/docs/links/{link.Id}");
+            HttpResponseMessage response = await _host.AnonymousClient.GetAsync(link.Url);
+
+            Assert.Equal((HttpStatusCode.NoContent, HttpStatusCode.NotFound), (revoked.StatusCode, response.StatusCode));
+        }
+
+        [Fact]
+        public async Task Links_ListedForAReadKey_AreItsOwnWithKindMakerAndExpiry()
+        {
+            await PutAsync("/a.txt", "a");
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.Read);
+            HttpResponseMessage made = await key.PostAsync("/api/shelves/docs/download-link?path=/a.txt&expiresInMinutes=5", null);
+            DownloadLink own = (await made.Content.ReadFromJsonAsync<DownloadLink>())!;
+            await CreateLinkAsync("/a.txt");
+
+            ShelfLink listed = Assert.Single((await key.GetFromJsonAsync<IReadOnlyList<ShelfLink>>("/api/shelves/docs/links"))!);
+
+            Assert.Equal((own.Id, ShelfLinkKind.Download, "/a.txt", LinkMakerKind.Key, true, own.ExpiresAt), (listed.Id, listed.Kind, listed.Path, listed.CreatedBy.Kind, listed.CreatedBy.IsCaller, listed.ExpiresAt));
+        }
+
+        [Fact]
+        public async Task Links_Listed_NameTheirKindsInLowercase()
+        {
+            await PutAsync("/a.txt", "a");
+            await CreateLinkAsync("/a.txt");
+
+            string json = await _host.AdminClient.GetStringAsync("/api/shelves/docs/links");
+
+            Assert.Contains("\"kind\":\"download\"", json, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Links_Listed_NeverCarryTheirToken()
+        {
+            await PutAsync("/a.txt", "a");
+            DownloadLink link = await CreateLinkAsync("/a.txt");
+
+            string json = await _host.AdminClient.GetStringAsync("/api/shelves/docs/links");
+
+            Assert.Contains(link.Id.ToString("D"), json, StringComparison.Ordinal);
+            Assert.DoesNotContain(link.Url[$"/{DownloadLinks.Route}/".Length..], json, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Link_ItsUploadLinkToken_IsNotFound()
+        {
+            HttpResponseMessage made = await _host.AdminClient.PostAsJsonAsync("/api/shelves/docs/upload-link", new CreateUploadLinkRequest { Path = "/a.txt" });
+            UploadLink uploadLink = (await made.Content.ReadFromJsonAsync<UploadLink>())!;
+            string token = uploadLink.Url[$"/{UploadLinks.Route}/".Length..];
+
+            HttpResponseMessage response = await _host.AnonymousClient.GetAsync($"/{DownloadLinks.Route}/{token}");
+
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         }
 
         [Fact]
@@ -226,8 +263,7 @@ namespace ByteShelf.Server.Tests.Storage
             response.EnsureSuccessStatusCode();
             DownloadLink link = (await response.Content.ReadFromJsonAsync<DownloadLink>())!;
 
-            // The expiry is cut to the whole second the token keeps.
-            Assert.InRange(link.ExpiresAt, before.AddDays(7).AddSeconds(-1), DateTimeOffset.UtcNow.AddDays(7));
+            Assert.InRange(link.ExpiresAt, before.AddDays(7), DateTimeOffset.UtcNow.AddDays(7));
         }
 
         [Theory]
@@ -245,15 +281,6 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
-        public async Task Create_LifetimeOutOfBounds_ThrowsArgumentException()
-        {
-            await using TestRoot root = TestRoot.Create();
-            DownloadLinks links = LinksOn(root.Root, TimeProvider.System);
-
-            Assert.Throws<ArgumentException>(() => links.Create(Guid.NewGuid(), Guid.NewGuid(), TimeSpan.FromDays(8)));
-        }
-
-        [Fact]
         public async Task CreateLink_NoAccessToTheShelf_IsNotFound()
         {
             await PutAsync("/a.txt", "a");
@@ -261,78 +288,6 @@ namespace ByteShelf.Server.Tests.Storage
             HttpResponseMessage response = await _host.MemberClient.PostAsync("/api/shelves/docs/download-link?path=/a.txt", null);
 
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        }
-
-        [Fact]
-        public async Task TryRead_UntilItRunsOut_AnswersTheShelfAndFile()
-        {
-            await using TestRoot root = TestRoot.Create();
-            FakeTimeProvider clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 31, 12, 0, 0, TimeSpan.Zero));
-            DownloadLinks links = LinksOn(root.Root, clock);
-            Guid shelfId = Guid.NewGuid();
-            Guid fileId = Guid.NewGuid();
-            string token = TokenOf(links.Create(shelfId, fileId, TimeSpan.FromDays(7)));
-
-            clock.Advance(TimeSpan.FromDays(7) - TimeSpan.FromSeconds(1));
-            bool readBefore = links.TryRead(token, out Guid readShelfId, out Guid readFileId);
-            clock.Advance(TimeSpan.FromSeconds(1));
-            bool readAfter = links.TryRead(token, out _, out _);
-
-            Assert.Equal((true, shelfId, fileId, false), (readBefore, readShelfId, readFileId, readAfter));
-        }
-
-        [Fact]
-        public async Task TryRead_LinkFromAnotherRoot_IsRefused()
-        {
-            await using TestRoot first = TestRoot.Create();
-            await using TestRoot second = TestRoot.Create();
-            string token = TokenOf(LinksOn(first.Root, TimeProvider.System).Create(Guid.NewGuid(), Guid.NewGuid(), DownloadLink.Lifetime.Default));
-
-            Assert.False(LinksOn(second.Root, TimeProvider.System).TryRead(token, out _, out _));
-        }
-
-        [Fact]
-        public async Task TryRead_AfterARestartOnTheSameRoot_ReadsEarlierLinks()
-        {
-            await using TestRoot root = TestRoot.Create();
-            Guid fileId = Guid.NewGuid();
-            string token = TokenOf(LinksOn(root.Root, TimeProvider.System).Create(Guid.NewGuid(), fileId, DownloadLink.Lifetime.Default));
-
-            bool read = LinksOn(root.Root, TimeProvider.System).TryRead(token, out _, out Guid readFileId);
-
-            Assert.Equal((true, fileId), (read, readFileId));
-        }
-
-        [Theory]
-        [InlineData("")]
-        [InlineData("not-a-token")]
-        [InlineData("AAAA")]
-        public async Task TryRead_NotALink_IsRefused(string token)
-        {
-            await using TestRoot root = TestRoot.Create();
-
-            Assert.False(LinksOn(root.Root, TimeProvider.System).TryRead(token, out _, out _));
-        }
-
-        [Fact]
-        public async Task TryRead_SignedPartChanged_IsRefused()
-        {
-            await using TestRoot root = TestRoot.Create();
-            DownloadLinks links = LinksOn(root.Root, TimeProvider.System);
-            byte[] bytes = Base64Url.DecodeFromChars(TokenOf(links.Create(Guid.NewGuid(), Guid.NewGuid(), DownloadLink.Lifetime.Default)));
-            bytes[20] ^= 1;
-
-            Assert.False(links.TryRead(Base64Url.EncodeToString(bytes), out _, out _));
-        }
-
-        private static DownloadLinks LinksOn(RootFolder root, TimeProvider clock)
-        {
-            return new DownloadLinks(new LinkTokens(root, clock), Unconfigured);
-        }
-
-        private static string TokenOf(DownloadLink link)
-        {
-            return link.Url[$"/{DownloadLinks.Route}/".Length..];
         }
 
         /// <summary><paramref name="url"/> with the character at <paramref name="index"/> replaced by one that differs from it.</summary>

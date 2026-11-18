@@ -36,7 +36,7 @@ namespace ByteShelfClient.Tests
         [Fact]
         public async Task CreateDownloadLinkAsync_ServerBehindAPathPrefix_AnswersTheLinkUnderThePrefix()
         {
-            using ScriptedServer server = new ScriptedServer(_ => ScriptedServer.Json("{\"url\":\"/api/downloads/abc\",\"expiresAt\":\"2026-11-02T12:00:00+00:00\"}"));
+            using ScriptedServer server = new ScriptedServer(_ => ScriptedServer.Json(DownloadLinkJson("/api/downloads/abc")));
             using HttpClient http = server.CreateClient();
             http.BaseAddress = new Uri("http://shelf.test/files/");
 
@@ -463,7 +463,7 @@ namespace ByteShelfClient.Tests
         [Fact]
         public async Task CreateDownloadLinkAsync_WithALinkBaseAddress_AnswersTheLinkOnIt()
         {
-            using ScriptedServer server = new ScriptedServer(_ => ScriptedServer.Json("{\"url\":\"/api/downloads/abc\",\"expiresAt\":\"2026-11-02T12:00:00+00:00\"}"));
+            using ScriptedServer server = new ScriptedServer(_ => ScriptedServer.Json(DownloadLinkJson("/api/downloads/abc")));
             using HttpClient http = server.CreateClient();
             ByteShelfHttpClientOptions options = new ByteShelfHttpClientOptions { LinkBaseAddress = new Uri("https://files.example.com/shelf/") };
 
@@ -475,7 +475,7 @@ namespace ByteShelfClient.Tests
         [Fact]
         public async Task CreateDownloadLinkAsync_ServerAnswersOnItsPublicUrl_KeepsThatLink()
         {
-            using ScriptedServer server = new ScriptedServer(_ => ScriptedServer.Json("{\"url\":\"https://public.example.com/api/downloads/abc\",\"expiresAt\":\"2026-11-02T12:00:00+00:00\"}"));
+            using ScriptedServer server = new ScriptedServer(_ => ScriptedServer.Json(DownloadLinkJson("https://public.example.com/api/downloads/abc")));
             using HttpClient http = server.CreateClient();
             ByteShelfHttpClientOptions options = new ByteShelfHttpClientOptions { LinkBaseAddress = new Uri("https://files.example.com/shelf/") };
 
@@ -488,6 +488,12 @@ namespace ByteShelfClient.Tests
         {
             cancel.Cancel();
             return answer;
+        }
+
+        /// <summary>A download link as the server answers it, at <paramref name="url"/>.</summary>
+        private static string DownloadLinkJson(string url)
+        {
+            return $"{{\"id\":\"{Guid.Empty:D}\",\"url\":\"{url}\",\"expiresAt\":\"2026-11-02T12:00:00+00:00\"}}";
         }
 
         private static SessionTokens Tokens(string token, string refreshToken, DateTimeOffset expiresAt)

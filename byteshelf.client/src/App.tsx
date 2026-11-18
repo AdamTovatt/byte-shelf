@@ -16,7 +16,7 @@ import { AppShell } from './components/layout/AppShell';
 import { useInvalidationStream } from './hooks/useInvalidationStream';
 import { SHELF_ROUTE_PATTERNS } from './lib/shelfPaths';
 import { ROUTES } from './lib/routes';
-import { useCurrentUser, useIsAdmin } from './hooks/useUserQueries';
+import { KnownRole } from './components/KnownRole';
 
 function ProtectedRoute() {
   const { isAuthenticated } = useAuth();
@@ -38,10 +38,7 @@ function ProtectedRoute() {
 
 /** Pages only admins see; anyone else is sent home rather than shown a page the server refuses. */
 function AdminRoute() {
-  const { isLoading } = useCurrentUser();
-  const isAdmin = useIsAdmin();
-  if (isLoading) return null;
-  return isAdmin ? <Outlet /> : <Navigate to={ROUTES.HOME} replace />;
+  return <KnownRole>{(isAdmin) => (isAdmin ? <Outlet /> : <Navigate to={ROUTES.HOME} replace />)}</KnownRole>;
 }
 
 function AppRoutes() {
@@ -57,9 +54,10 @@ function AppRoutes() {
         <Route path={SHELF_ROUTE_PATTERNS.shelf} element={<ShelfPage />} />
         <Route path={SHELF_ROUTE_PATTERNS.files} element={<ShelfPage />} />
         <Route path={SHELF_ROUTE_PATTERNS.trash} element={<TrashPage />} />
+        {/* Everyone's: it shows an admin's tabs only to admins. */}
+        <Route path={SHELF_ROUTE_PATTERNS.settings} element={<ShelfSettingsPage />} />
         <Route path={ROUTES.SETTINGS} element={<SettingsPage />} />
         <Route element={<AdminRoute />}>
-          <Route path={SHELF_ROUTE_PATTERNS.settings} element={<ShelfSettingsPage />} />
           <Route path={ROUTES.USERS} element={<UsersPage />} />
           <Route path={ROUTES.REPLICATION} element={<ReplicationPage />} />
         </Route>

@@ -483,6 +483,53 @@ namespace ByteShelf.Server.Tests.Replication
         }
 
         [Fact]
+        public async Task Replica_KeepsItsOwnLinksAndRevokesThemWhileThePrimaryNeverHasThem()
+        {
+            await _pair.PutOnPrimaryAsync("docs", "/a.txt", "a");
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            HttpResponseMessage made = await replica.PostAsync("/api/shelves/docs/download-link?path=/a.txt", null);
+            DownloadLink link = (await made.Content.ReadFromJsonAsync<DownloadLink>())!;
+            string url = new Uri(link.Url).PathAndQuery;
+            await _pair.PutOnPrimaryAsync("docs", "/b.txt", "b");
+            await _pair.SyncAsync();
+
+            IReadOnlyList<ShelfLink>? onPrimary = await _pair.Primary.AdminClient.GetFromJsonAsync<IReadOnlyList<ShelfLink>>("/api/shelves/docs/links");
+            ShelfLink? listedOnReplica = (await replica.GetFromJsonAsync<IReadOnlyList<ShelfLink>>("/api/shelves/docs/links"))?.SingleOrDefault();
+            string served = await _pair.Replica.AnonymousClient.GetStringAsync(url);
+            HttpResponseMessage revoked = await replica.DeleteAsync($"/api/shelves/docs/links/{link.Id}");
+
+            Assert.Empty(onPrimary!);
+            Assert.Equal(link.Id, listedOnReplica?.Id);
+            Assert.Equal("a", served);
+            Assert.Equal(HttpStatusCode.NoContent, revoked.StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await _pair.Replica.AnonymousClient.GetAsync(url)).StatusCode);
+        }
+
+        [Fact]
+        public async Task Replica_MakerRemovedByReplication_TakesTheirLinksOnTheReplicaWithThem()
+        {
+            await _pair.PutOnPrimaryAsync("docs", "/a.txt", "a");
+            await _pair.Primary.GrantMemberAsync("docs", ShelfAccessPermission.Read);
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+            using HttpClient member = await _pair.Replica.CreateSignedInClientAsync(ServerTestHost.MemberEmail);
+            HttpResponseMessage made = await member.PostAsync("/api/shelves/docs/download-link?path=/a.txt", null);
+            string url = new Uri((await made.Content.ReadFromJsonAsync<DownloadLink>())!.Url).PathAndQuery;
+            string served = await _pair.Replica.AnonymousClient.GetStringAsync(url);
+
+            (await _pair.Primary.AdminClient.DeleteAsync($"/api/users/{_pair.Primary.MemberId}")).EnsureSuccessStatusCode();
+            await _pair.SyncAsync();
+
+            // Listing leaves out only links that ran out, so an empty list is the row gone, not just refused.
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            Assert.Equal("a", served);
+            Assert.Empty((await replica.GetFromJsonAsync<IReadOnlyList<ShelfLink>>("/api/shelves/docs/links"))!);
+            Assert.Equal(HttpStatusCode.NotFound, (await _pair.Replica.AnonymousClient.GetAsync(url)).StatusCode);
+        }
+
+        [Fact]
         public async Task Primary_ListsTheReplicaWithHowFarBehindItIs()
         {
             await _pair.PairAsync();

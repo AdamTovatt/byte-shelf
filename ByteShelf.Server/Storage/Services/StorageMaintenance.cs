@@ -7,6 +7,7 @@ namespace ByteShelf.Server.Storage.Services
     public class StorageMaintenance : IStorageMaintenance
     {
         private readonly IUploadRepository _uploadRepository;
+        private readonly ILinkRepository _linkRepository;
         private readonly ITrashService _trashService;
         private readonly ObjectCollector _objectCollector;
         private readonly StagingArea _stagingArea;
@@ -18,6 +19,7 @@ namespace ByteShelf.Server.Storage.Services
 
         public StorageMaintenance(
             IUploadRepository uploadRepository,
+            ILinkRepository linkRepository,
             ITrashService trashService,
             ObjectCollector objectCollector,
             StagingArea stagingArea,
@@ -28,6 +30,7 @@ namespace ByteShelf.Server.Storage.Services
             TimeProvider timeProvider)
         {
             _uploadRepository = uploadRepository;
+            _linkRepository = linkRepository;
             _trashService = trashService;
             _objectCollector = objectCollector;
             _stagingArea = stagingArea;
@@ -47,8 +50,9 @@ namespace ByteShelf.Server.Storage.Services
             int strayStagingEntries = await RemoveStrayStagingEntriesAsync();
             int purgedFiles = await _trashService.PurgeExpiredAsync(cancellationToken);
             int removedObjects = await RemoveUnreferencedObjectsAsync(cancellationToken);
+            int expiredLinks = await _linkRepository.DeleteExpiredAsync(_timeProvider.GetUtcNow());
 
-            return new StorageMaintenanceSummary(abandonedUploads, strayStagingEntries, purgedFiles, removedObjects);
+            return new StorageMaintenanceSummary(abandonedUploads, strayStagingEntries, purgedFiles, removedObjects, expiredLinks);
         }
 
         private async Task<int> RemoveAbandonedUploadsAsync(DateTimeOffset processStartedAt, CancellationToken cancellationToken)

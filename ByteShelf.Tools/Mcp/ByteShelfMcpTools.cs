@@ -164,7 +164,7 @@ namespace ByteShelf.Tools.Mcp
         // it, so a host that runs read-only tools unasked should still ask before this one.
         [McpServerTool(Name = "share_file", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
         [ToolNeeds(ToolNeed.Read)]
-        [Description("Makes a link to one file that anyone who has it can open without signing in, until it runs out. Nothing takes a link back sooner. A file stored over the linked one is a new file the link does not reach; a file in the trash is not found by it until restored.")]
+        [Description("Makes a link to one file that anyone who has it can open without signing in, until it runs out or is revoked; the answer gives the link's id, which revokes it. It works only while you may still read the shelf. A file stored over the linked one is a new file the link does not reach; a file in the trash is not found by it until restored.")]
         public Task<string> ShareFileAsync(
             [Description("The file's path.")] string path,
             [Description("How long the link works, in " + LinkLifetimes.Examples + "; 24h by default, at most 7d.")] string? expiresIn = null,
@@ -177,7 +177,7 @@ namespace ByteShelf.Tools.Mcp
 
         [McpServerTool(Name = "create_upload_link", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
         [ToolNeeds(ToolNeed.Add)]
-        [Description("Makes a link that stores one file at a path when anyone who has it PUTs the contents to it, without signing in, until it runs out: for a file too large to pass through this conversation, or one a person or another program will send. Answers the link and a curl command that uses it. The link acts with your access, checked again when it is used. A path that is taken is refused unless overwrite is true (which needs write access), and then the old file goes to the trash.")]
+        [Description("Makes a link that stores one file at a path when anyone who has it PUTs the contents to it, without signing in, until it runs out or is revoked: for a file too large to pass through this conversation, or one a person or another program will send. Answers the link, its id, which revokes it, and a curl command that uses it. The link acts with your access, checked again each time it is used. A path that is taken is refused unless overwrite is true (which needs write access), and then the old file goes to the trash.")]
         public Task<string> CreateUploadLinkAsync(
             [Description("Where to store the file, its name included. Missing directories are created.")] string path,
             [Description("Replace a file already at the path.")] bool overwrite = false,
@@ -190,6 +190,32 @@ namespace ByteShelf.Tools.Mcp
             {
                 UploadLinkOptions options = new UploadLinkOptions { Overwrite = overwrite, Description = description, Lifetime = LinkLifetimes.ForUpload(expiresIn) };
                 return TextFormat.Link(await shelfClient.CreateUploadLinkAsync(path, options, cancellationToken));
+            });
+        }
+
+        [McpServerTool(Name = "list_links", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Read)]
+        [Description("The shelf's share and upload links that have not run out, newest first: each one's id, what it reads or stores, who made it and when it runs out. You see the links you made, or every one on the shelf if you may write there. Never their URLs.")]
+        public Task<string> ListLinksAsync(
+            [Description(ShelfDescription)] string? shelf = null,
+            CancellationToken cancellationToken = default)
+        {
+            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.Links(await shelfClient.GetLinksAsync(cancellationToken)));
+        }
+
+        // Read is all it needs: anyone may revoke the links they made. The server says whether this one is theirs.
+        [McpServerTool(Name = "revoke_link", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+        [ToolNeeds(ToolNeed.Read)]
+        [Description("Ends a share or upload link by its id, as share_file, create_upload_link and list_links give it: nothing more is served through it. One you made, or any on the shelf if you may write there. To read a file once through a link, make it with share_file for a few minutes and revoke it after.")]
+        public Task<string> RevokeLinkAsync(
+            [Description("The link's id.")] Guid linkId,
+            [Description(ShelfDescription)] string? shelf = null,
+            CancellationToken cancellationToken = default)
+        {
+            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) =>
+            {
+                await shelfClient.RevokeLinkAsync(linkId, cancellationToken);
+                return TextFormat.Revoked;
             });
         }
 

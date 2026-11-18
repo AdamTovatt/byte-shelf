@@ -12,6 +12,9 @@ import { ShelfHeader } from '../components/ShelfHeader';
 import { useCreateKey, useDeleteKey, useGrants, useKeys, useRemoveGrant, useSetGrant } from '../hooks/useAccessQueries';
 import { useDeleteShelf, useShelf, useUpdateShelf } from '../hooks/useShelfQueries';
 import { useUsers } from '../hooks/useUserQueries';
+import { KnownRole } from '../components/KnownRole';
+import { useLinks, useRevokeLink } from '../hooks/useLinkQueries';
+import type { ShelfLink } from '../services/linkService';
 import { formatQuota, formatTime, parseQuota, tryParseQuota, type QuotaUnit } from '../lib/format';
 import { ACCESS_OPTIONS, KEY_OPTIONS, keyPermissionLabel } from '../lib/access';
 import { SHELF_SETTINGS_TABS, shelfSettingsRoute, type ShelfSettingsTab } from '../lib/shelfPaths';
@@ -21,24 +24,34 @@ import { useSubmit } from '../hooks/useSubmit';
 import type { CreatedShelfKey, ShelfAccessGrant, ShelfAccessPermission, ShelfKeyInfo, ShelfKeyPermission } from '../services/accessService';
 import type { ShelfInfo } from '../services/shelfService';
 
-/** Each tab: its name, its icon, and what it shows. Typed by the tab list, so none can be left out. */
-const TABS: Record<ShelfSettingsTab, { label: string; icon: IconComponent; Content: (props: { shelf: string }) => ReactNode }> = {
-  general: { label: 'General', icon: iconMap.settings, Content: GeneralTab },
-  access: { label: 'Access', icon: iconMap.users, Content: GrantsSection },
-  keys: { label: 'Keys', icon: iconMap.key, Content: KeysSection },
+/**
+ * Each tab: its name, its icon, what it shows, and whether only an admin sees it. Typed by the tab
+ * list, so none can be left out.
+ */
+const TABS: Record<ShelfSettingsTab, { label: string; icon: IconComponent; adminOnly: boolean; Content: (props: { shelf: string }) => ReactNode }> = {
+  general: { label: 'General', icon: iconMap.settings, adminOnly: true, Content: GeneralTab },
+  access: { label: 'Access', icon: iconMap.users, adminOnly: true, Content: GrantsSection },
+  keys: { label: 'Keys', icon: iconMap.key, adminOnly: true, Content: KeysSection },
+  links: { label: 'Links', icon: iconMap.link, adminOnly: false, Content: LinksSection },
 };
 
 /**
- * An admin's settings for one shelf, as tabs that are routes, so each can be linked to and the back
- * button steps between them: General (name, quota and deleting it), Access (who may use it) and Keys
- * (which programs may). The tab comes from the route (`SHELF_ROUTE_PATTERNS.settings`); none, or one
- * not in the list, goes to General.
+ * One shelf's settings, as tabs that are routes, so each can be linked to and the back button steps
+ * between them: for an admin General (name, quota and deleting it), Access (who may use it) and Keys
+ * (which programs may); for everyone Links (the share and upload links that have not run out). The tab
+ * comes from the route (`SHELF_ROUTE_PATTERNS.settings`); none, or one not shown to this user, goes to
+ * the first one shown.
  */
 export function ShelfSettingsPage() {
+  return <KnownRole>{(isAdmin) => <SettingsTabs isAdmin={isAdmin} />}</KnownRole>;
+}
+
+function SettingsTabs({ isAdmin }: { isAdmin: boolean }) {
   const params = useParams();
   const shelf = params.shelf!;
-  const tab = SHELF_SETTINGS_TABS.find((each) => each === params.tab);
-  if (!tab) return <Navigate to={shelfSettingsRoute(shelf, SHELF_SETTINGS_TABS[0])} replace />;
+  const shown = SHELF_SETTINGS_TABS.filter((each) => isAdmin || !TABS[each].adminOnly);
+  const tab = shown.find((each) => each === params.tab);
+  if (!tab) return <Navigate to={shelfSettingsRoute(shelf, shown[0])} replace />;
   const { Content } = TABS[tab];
 
   return (
@@ -50,8 +63,8 @@ export function ShelfSettingsPage() {
         <div className="shrink-0 border-b border-border bg-panel px-6 pt-6 md:px-8 md:pt-8">
           <div className={cn(PAGE_CONTENT_WIDTH, 'mx-auto space-y-4')}>
             <ShelfHeader shelf={shelf} view="settings" />
-            <TabGroup>
-              {SHELF_SETTINGS_TABS.map((each) => (
+            <TabGroup role="group" aria-label="Settings tabs">
+              {shown.map((each) => (
                 <RouteTab key={each} label={TABS[each].label} icon={TABS[each].icon} href={shelfSettingsRoute(shelf, each)} />
               ))}
             </TabGroup>
@@ -295,6 +308,67 @@ function CreateKeyDialog({ shelf, onClose }: { shelf: string; onClose: () => voi
         <ButtonGroup options={KEY_OPTIONS} value={permission} onChange={setPermission} ariaLabel="What the key may do" className="w-full" />
         <p className="text-body-sm text-muted">Add only stores new files and never replaces or deletes one.</p>
       </div>
+    </FormDialog>
+  );
+}
+
+function LinksSection({ shelf }: { shelf: string }) {
+  const { data: links, error } = useLinks(shelf);
+  const [revoking, setRevoking] = useState<ShelfLink | null>(null);
+
+  return (
+    <section className="space-y-4">
+      <SectionTitle description="Share links open a file and upload links store one, without signing in, until they run out. You see the links you made, or every one here if you may change the shelf's files.">
+        Links
+      </SectionTitle>
+      <LoadError error={error} failure="Could not load the links" />
+      {links?.length === 0 && <p className="text-body-sm text-muted">No links on this shelf.</p>}
+      {links && links.length > 0 && (
+        <CardList>
+          {links.map((link) => (
+            <div key={link.id} className="flex items-center gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-body-md text-fg">{linkPlace(link)}</div>
+                <div className="text-body-sm text-muted">{linkDetails(link)}</div>
+              </div>
+              <IconButton variant="ghost" size="sm" icon={iconMap.delete} aria-label={`Revoke the link to ${linkPlace(link)}`} onClick={() => setRevoking(link)} />
+            </div>
+          ))}
+        </CardList>
+      )}
+      {revoking && <RevokeLinkDialog shelf={shelf} link={revoking} onClose={() => setRevoking(null)} />}
+    </section>
+  );
+}
+
+/** What a link reaches: a share link's file as it is now, or the place an upload link stores at. */
+function linkPlace(link: ShelfLink): string {
+  return link.path ?? 'A file in the trash';
+}
+
+/** What a link is, who made it and when it runs out. */
+function linkDetails(link: ShelfLink): string {
+  const kind = link.kind === 'download' ? 'Share link' : link.overwrite ? 'Upload link, replaces a file there' : 'Upload link';
+  const maker = link.createdBy.isCaller ? `${link.createdBy.name} (you)` : link.createdBy.name;
+  return `${kind} · by ${maker} · until ${formatTime(link.expiresAt)}`;
+}
+
+function RevokeLinkDialog({ shelf, link, onClose }: { shelf: string; link: ShelfLink; onClose: () => void }) {
+  const revokeLink = useRevokeLink(shelf);
+  const { error, submit } = useSubmit('Could not revoke the link');
+
+  return (
+    <FormDialog
+      open
+      title="Revoke this link?"
+      onClose={onClose}
+      onSubmit={() => void submit(() => revokeLink.mutateAsync(link.id), onClose)}
+      submitLabel="Revoke"
+      submitVariant="danger"
+      submitting={revokeLink.isPending}
+      error={error}
+    >
+      <p className="text-body-md text-fg">Whoever holds the link to {linkPlace(link)} can no longer use it. It cannot be undone.</p>
     </FormDialog>
   );
 }

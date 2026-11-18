@@ -42,7 +42,7 @@ namespace ByteShelfClient.InMemory
         {
             ArgumentNullException.ThrowIfNull(name);
             ShelfName.Validate(name);
-            return new InMemoryShelfClient(_store, name);
+            return new InMemoryShelfClient(_store, name, CurrentUser.Id);
         }
 
         /// <inheritdoc />

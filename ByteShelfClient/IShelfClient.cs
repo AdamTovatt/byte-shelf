@@ -75,9 +75,10 @@ namespace ByteShelfClient
         /// <summary>
         /// A link to a file's contents that works without signing in for <paramref name="lifetime"/>
         /// (<c>DownloadLink.Lifetime.Default</c> when null, whole minutes up to
-        /// <c>DownloadLink.Lifetime.Max</c>), to share the file with someone who has no access.
-        /// Making one is a read. A lifetime outside those bounds throws <see cref="ArgumentException"/>
-        /// before anything is sent.
+        /// <c>DownloadLink.Lifetime.Max</c>), to share the file with someone who has no access, until
+        /// <see cref="RevokeLinkAsync"/> ends it sooner. It reads with this client's access, checked again
+        /// each time it is used. Making one is a read. A lifetime outside those bounds throws
+        /// <see cref="ArgumentException"/> before anything is sent.
         /// </summary>
         Task<DownloadLink> CreateDownloadLinkAsync(EntryReference file, TimeSpan? lifetime = null, CancellationToken cancellationToken = default);
 
@@ -89,6 +90,20 @@ namespace ByteShelfClient
         /// is sent.
         /// </summary>
         Task<UploadLink> CreateUploadLinkAsync(string path, UploadLinkOptions? options = null, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// The shelf's download and upload links that have not run out or been revoked, newest first:
+        /// those this client made, or every one when it may write on the shelf. Never their URLs.
+        /// </summary>
+        Task<IReadOnlyList<ShelfLink>> GetLinksAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Ends a link by its id (<see cref="DownloadLink.Id"/>, <see cref="UploadLink.Id"/>,
+        /// <see cref="ShelfLink.Id"/>), so no request made with it from then on is served; one already
+        /// being served finishes. One this client made, or any when it may write on the shelf. Not found
+        /// when there is no such link it may see. A replica revokes its own links.
+        /// </summary>
+        Task RevokeLinkAsync(Guid linkId, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// The encrypted directory a file stored at <paramref name="path"/> (existing or not) would be
