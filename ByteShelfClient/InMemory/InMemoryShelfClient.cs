@@ -154,13 +154,9 @@ namespace ByteShelfClient.InMemory
 
             return Run(cancellationToken, shelf =>
             {
-                DirectoryNode under = shelf.GetDirectory(normalized.Under!);
-                HashSet<Guid> directories = shelf.LiveSubtree(under).Select(directory => directory.Id).ToHashSet();
-
                 // The one-more-than-a-page paging here is also in DirectoryTree.Page and the server's
                 // FileService; left as is, since sharing it would reshape working code for a few lines.
-                List<ShelfFile> found = shelf.Files
-                    .Where(file => file.IsLive && directories.Contains(file.DirectoryId) && Matches(normalized, file))
+                List<ShelfFile> found = Found(shelf, normalized)
                     .Select(shelf.ToShelfFile)
                     .Where(file => IsAfter(file.Path, normalized.After))
                     .OrderBy(file => file.Path, StoredOrder.Instance)
@@ -170,6 +166,29 @@ namespace ByteShelfClient.InMemory
                 List<ShelfFile> page = found.Take(normalized.Limit.Value).ToList();
                 return new FileSearchResults { Files = page, NextCursor = found.Count > page.Count ? page[^1].Path : null };
             });
+        }
+
+        public Task<DuplicateSearchResults> FindDuplicatesAsync(DuplicateSearch search, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(search);
+            DuplicateSearch normalized = search.Normalize();
+
+            return Run(cancellationToken, shelf =>
+            {
+                IEnumerable<ShelfFile> plain = Found(shelf, normalized)
+                    .Where(file => !file.Encrypted && file.Content.Length > 0)
+                    .Select(shelf.ToShelfFile);
+
+                return DuplicateSearchResults.Page(plain, normalized.After, normalized.Limit!.Value);
+            });
+        }
+
+        /// <summary>The live files under the criteria's directory, at any depth, that meet them all: what a search finds.</summary>
+        private static IEnumerable<FileNode> Found(InMemoryShelf shelf, FileCriteria normalized)
+        {
+            DirectoryNode under = shelf.GetDirectory(normalized.Under!);
+            HashSet<Guid> directories = shelf.LiveSubtree(under).Select(directory => directory.Id).ToHashSet();
+            return shelf.Files.Where(file => file.IsLive && directories.Contains(file.DirectoryId) && Matches(normalized, file));
         }
 
         public Task<Stream> OpenReadAsync(EntryReference file, CancellationToken cancellationToken = default)
@@ -685,11 +704,11 @@ namespace ByteShelfClient.InMemory
         }
 
         /// <summary>Whether a file meets every criterion of a normalized search but where it is, as the server's query decides.</summary>
-        private static bool Matches(FileSearch search, FileNode file)
+        private static bool Matches(FileCriteria search, FileNode file)
         {
             return (search.Text == null
-                    || FileSearch.Fold(file.Name).Contains(search.Text, StringComparison.Ordinal)
-                    || (file.Description != null && FileSearch.Fold(file.Description).Contains(search.Text, StringComparison.Ordinal)))
+                    || FileCriteria.Fold(file.Name).Contains(search.Text, StringComparison.Ordinal)
+                    || (file.Description != null && FileCriteria.Fold(file.Description).Contains(search.Text, StringComparison.Ordinal)))
                 && search.MatchesContentType(file.ContentType)
                 && (search.MinSizeBytes == null || file.Content.LongLength >= search.MinSizeBytes)
                 && (search.MaxSizeBytes == null || file.Content.LongLength <= search.MaxSizeBytes)

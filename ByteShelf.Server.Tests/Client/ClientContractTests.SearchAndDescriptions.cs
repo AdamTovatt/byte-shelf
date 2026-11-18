@@ -235,23 +235,30 @@ namespace ByteShelf.Server.Tests.Client
             Assert.Null(page.NextCursor);
         }
 
-        public static TheoryData<FileSearch> SearchesNotAllowed => new TheoryData<FileSearch>
+        /// <summary>Criteria every search refuses, search and the search for duplicates alike.</summary>
+        public static TheoryData<FileCriteria> CriteriaNotAllowed => new TheoryData<FileCriteria>
         {
-            new FileSearch { ContentType = "image/png/*" },
-            new FileSearch { Sha256 = "abc" },
-            new FileSearch { Limit = FileSearch.MaxLimit + 1 },
-            new FileSearch { Limit = 0 },
-            new FileSearch { MinSizeBytes = -1 },
-            new FileSearch { MinSizeBytes = 5, MaxSizeBytes = 4 },
-            new FileSearch { CreatedFrom = DateTimeOffset.UnixEpoch, CreatedBefore = DateTimeOffset.UnixEpoch },
-            new FileSearch { UpdatedFrom = DateTimeOffset.UnixEpoch, UpdatedBefore = DateTimeOffset.UnixEpoch },
+            new FileCriteria { ContentType = "image/png/*" },
+            new FileCriteria { Sha256 = "abc" },
+            new FileCriteria { MinSizeBytes = -1 },
+            new FileCriteria { MinSizeBytes = 5, MaxSizeBytes = 4 },
+            new FileCriteria { CreatedFrom = DateTimeOffset.UnixEpoch, CreatedBefore = DateTimeOffset.UnixEpoch },
+            new FileCriteria { UpdatedFrom = DateTimeOffset.UnixEpoch, UpdatedBefore = DateTimeOffset.UnixEpoch },
         };
 
         [Theory]
-        [MemberData(nameof(SearchesNotAllowed))]
-        public async Task SearchAsync_CriterionNotAllowed_ThrowsArgumentException(FileSearch search)
+        [MemberData(nameof(CriteriaNotAllowed))]
+        public async Task SearchAsync_CriterionNotAllowed_ThrowsArgumentException(FileCriteria criteria)
         {
-            await Assert.ThrowsAsync<ArgumentException>(() => Shelf.SearchAsync(search));
+            await Assert.ThrowsAsync<ArgumentException>(() => Shelf.SearchAsync(new FileSearch(criteria)));
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(FileSearch.MaxLimit + 1)]
+        public async Task SearchAsync_LimitOutOfRange_ThrowsArgumentException(int limit)
+        {
+            await Assert.ThrowsAsync<ArgumentException>(() => Shelf.SearchAsync(new FileSearch { Limit = limit }));
         }
 
         private async Task<string[]> SearchPathsAsync(FileSearch search)

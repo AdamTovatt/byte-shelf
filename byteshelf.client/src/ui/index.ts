@@ -10,6 +10,7 @@ export { Card, type CardProps } from './components/ui/Card';
 export { CopyField, type CopyFieldProps } from './components/ui/CopyField';
 export { Divider, type DividerProps } from './components/ui/Divider';
 export { Dropdown, DropdownItem, type DropdownProps, type DropdownItemProps } from './components/ui/Dropdown';
+export { DropdownOptionRow, type DropdownOptionRowProps } from './components/ui/DropdownOptionRow';
 export { EmptyState, type EmptyStateProps } from './components/ui/EmptyState';
 export { ErrorText, type ErrorTextProps } from './components/ui/ErrorText';
 export { FieldLabel, type FieldLabelProps } from './components/ui/FieldLabel';

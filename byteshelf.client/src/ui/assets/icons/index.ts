@@ -19,6 +19,7 @@ export { default as FileChartColumnIcon } from './file-chart-column-stroke-round
 export { default as FileImageIcon } from './file-image-stroke-rounded.svg?react';
 export { default as FileQuestionMarkIcon } from './file-question-mark-stroke-rounded.svg?react';
 export { default as FileZipIcon } from './file-zip-stroke-rounded.svg?react';
+export { default as FilterHorizontalIcon } from './filter-horizontal-stroke-rounded.svg?react';
 export { default as Folder01Icon } from './folder-01-stroke-rounded.svg?react';
 export { default as Folder02Icon } from './folder-02-stroke-rounded.svg?react';
 export { default as Home11Icon } from './home-11-stroke-rounded.svg?react';

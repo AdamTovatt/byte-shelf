@@ -545,6 +545,24 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
+        public async Task FindDuplicates_TypeAndLimit_PrintsAGroupAndHowToGetTheNextPage()
+        {
+            await UploadAsync("/scans/a.pdf", "same");
+            await UploadAsync("/scans/b.pdf", "same");
+            await UploadAsync("/scans/c.pdf", "copy");
+            await UploadAsync("/scans/d.pdf", "copy");
+            await UploadAsync("/scans/a.txt", "same");
+
+            CliRun run = await RunAsync("find-duplicates", "docs:/scans", "--type", "application/pdf", "--limit", "1");
+
+            Assert.Equal(CliApp.Succeeded, run.ExitCode);
+            string[] lines = run.Output.TrimEnd().Split(Environment.NewLine);
+            Assert.Equal(4, lines.Length);
+            Assert.StartsWith("2 copies of 4 B, 4 B repeated  sha256 ", lines[0], StringComparison.Ordinal);
+            Assert.StartsWith("More: add --after '4:", lines[3], StringComparison.Ordinal);
+        }
+
+        [Fact]
         public async Task Find_TimeThatIsNotOne_FailsAsMisuse()
         {
             CliRun run = await RunAsync("find", "docs", "--created-from", "yesterday");

@@ -21,7 +21,10 @@ one (such as `restore`). `--` ends the options, for a path that starts with `--`
 `--updated-before`, and `--sha256`; a file must meet every one given. It answers a page at a time
 (`--limit`, 100 by default) and ends a page that has more after it with the `--after` to pass. Quote
 a type family, as in `--type 'image/*'`, or the shell expands it. A time without an offset, such as
-`2026-03-01`, is local time. `describe` sets a file's description and `describe --clear` removes
+`2026-03-01`, is local time. `find-duplicates` takes the same options and lists the files `find`
+would find that have exactly the same contents, in groups, most repeated bytes first; only files
+under the directory count, encrypted and empty files are left out, and `--limit` counts groups.
+`describe` sets a file's description and `describe --clear` removes
 it; `put --description` stores one with the file. `share` prints a link that opens a file without
 signing in, for 24 hours or the `--expires` given (`30m`, `12h`, up to `7d`); nothing takes it back
 before then.
@@ -111,7 +114,7 @@ server runs them on the agent's own machine, so they can also move local files a
 send instructions saying what ByteShelf is and how the tools fit together.
 
 It signs in as the CLI does, and its tools cover shelves, files, directories and the trash: listing a
-directory or its whole tree, searching, uploading a local file, text or base64 (up to 256 KiB) given
+directory or its whole tree, searching, finding duplicates, uploading a local file, text or base64 (up to 256 KiB) given
 in the call, or a whole local folder, describing a file, sharing one by a link (not marked
 read-only, so a host asks first: the link hands the file on), making a link someone can send one
 file to with `curl`, downloading a file to a local file, as

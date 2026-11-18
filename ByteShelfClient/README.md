@@ -32,7 +32,7 @@ await session.SignOutAsync();   // ends it on the server; disposing alone leaves
 (for admins) the other users; a shelf key cannot reach users. Admins also drive replication through
 it: `GetReplicationAsync` (the replicas and how far behind each is, or the primary followed),
 `CreatePairingCodeAsync`, `FollowPrimaryAsync`, `RemoveReplicaAsync` and `PromoteAsync`. `IShelfClient` works on one shelf:
-list a directory or its whole tree, search, upload, open, describe, share by a link, make an upload
+list a directory or its whole tree, search, find duplicates (`FindDuplicatesAsync`), upload, open, describe, share by a link, make an upload
 link, encrypt directories and swap a file's contents in place (`SwapContentAsync`), create
 directories, move, delete, the trash (`ListDeletionAsync` and `OpenDeletedReadAsync` read what a
 deletion took without restoring it, on a replica too; the listing also says what the deletion took

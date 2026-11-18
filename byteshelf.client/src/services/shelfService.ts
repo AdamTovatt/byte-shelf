@@ -10,6 +10,8 @@ export type TrashEntry = components['schemas']['TrashEntry'];
 export type DeletionTree = components['schemas']['DeletionTree'];
 export type DownloadLink = components['schemas']['DownloadLink'];
 export type FileSearchResults = components['schemas']['FileSearchResults'];
+export type DuplicateSearchResults = components['schemas']['DuplicateSearchResults'];
+export type DuplicateGroup = components['schemas']['DuplicateGroup'];
 
 /**
  * A directory or a file in a listing, as the shelf page and its dialogs act on it. A directory
@@ -84,6 +86,15 @@ export function setDescription(shelf: string, id: string, description: string | 
 /** The first page of the live files under `under` whose name or description holds `text`, by path. */
 export function searchFiles(shelf: string, under: string, text: string): Promise<FileSearchResults> {
   return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/search', { params: { ...shelfPath(shelf), query: { under, text } } }));
+}
+
+/**
+ * A page of the groups of plain files under `under` with the same contents, most repeated bytes
+ * first: the first, or the one after the cursor `after`. With `text`, only files whose name or
+ * description holds it count.
+ */
+export function findDuplicates(shelf: string, under: string, text: string, after?: string): Promise<DuplicateSearchResults> {
+  return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/duplicates', { params: { ...shelfPath(shelf), query: { under, text: text || undefined, after } } }));
 }
 
 export function deleteFile(shelf: string, id: string): Promise<TrashEntry> {

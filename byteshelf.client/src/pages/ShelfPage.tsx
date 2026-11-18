@@ -23,7 +23,7 @@ import { LoadError } from '../components/LoadError';
 import { CardList } from '../components/CardList';
 import { MoveDialog } from '../components/MoveDialog';
 import { ShelfHeader } from '../components/ShelfHeader';
-import { PREFETCHED_SUBFOLDERS, useCreateDirectory, useDeleteEntry, useFileSearch, useListing, useMoveEntry, usePrefetchListing, useRestoreDeletion, useSetDescription } from '../hooks/useShelfQueries';
+import { PREFETCHED_SUBFOLDERS, useCreateDirectory, useDeleteEntry, useDuplicateSearch, useFileSearch, useListing, useMoveEntry, usePrefetchListing, useRestoreDeletion, useSetDescription } from '../hooks/useShelfQueries';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useSelection, type SelectionClickModifiers } from '../hooks/useSelection';
 import { useFilePicker } from '../hooks/useFilePicker';
@@ -43,7 +43,9 @@ import { joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../
 import { copyWhenReady } from '../lib/clipboard';
 import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
-import { createDownloadLink, directoryEntry, entrySizeBytes, nameOrCount, type Entry, type FileSearchResults, type ShelfFile } from '../services/shelfService';
+import { createDownloadLink, directoryEntry, entrySizeBytes, nameOrCount, type DuplicateGroup, type Entry, type FileSearchResults, type ShelfFile } from '../services/shelfService';
+import { SearchOptions } from '../components/SearchOptions';
+import { NO_SEARCH_FILTERS, anySearchFilter } from '../lib/searchFilters';
 
 // Its toasts and dialogs stay here with the page rather than in modules of their own: each is small
 // and serves this page alone, so apart they would only be moved, not made simpler or shared.
@@ -64,12 +66,16 @@ export function ShelfPage() {
   const [moving, setMoving] = useState<Entry[] | null>(null);
   const [describing, setDescribing] = useState<ShelfFile | null>(null);
   const [dragging, setDragging] = useState(false);
-  // Kept with the shelf and folder it was typed in, so opening another starts with no search: the
-  // route, and so this component, stays the same from one shelf to the next.
-  const [typed, setTyped] = useState({ shelf, path, text: '' });
-  const searchText = typed.shelf === shelf && typed.path === path ? typed.text : '';
-  const searching = searchText.trim() !== '';
-  const found = useFileSearch(shelf, path, useDebouncedValue(searchText, SEARCH_DELAY_MS));
+  // Kept with the shelf and folder it was typed in, so opening another starts with no search and no
+  // filter: the route, and so this component, stays the same from one shelf to the next.
+  const [typed, setTyped] = useState({ shelf, path, text: '', filters: NO_SEARCH_FILTERS });
+  const typedHere = typed.shelf === shelf && typed.path === path;
+  const searchText = typedHere ? typed.text : '';
+  const filters = typedHere ? typed.filters : NO_SEARCH_FILTERS;
+  const searching = searchText.trim() !== '' || anySearchFilter(filters);
+  const settledText = useDebouncedValue(searchText, SEARCH_DELAY_MS);
+  const found = useFileSearch(shelf, path, settledText, !filters.duplicates);
+  const duplicates = useDuplicateSearch(shelf, path, settledText, filters.duplicates);
 
   /** Uploads into this folder; in an encrypted one, encrypted with its password, asked for if this tab has not unlocked it. */
   async function upload(files: File[]): Promise<void> {
@@ -231,23 +237,35 @@ export function ShelfPage() {
       : shown;
   }
 
-  function clearSearch(): void {
-    setTyped({ shelf, path, text: '' });
+  /** A file a search found, named by its path from this folder. */
+  function foundRow(file: ShelfFile) {
+    return row({ kind: 'file', value: file }, { label: relativeTo(path, file.path) });
   }
 
-  /** The search field, in its row from md up or in the phone's top bar; both show the one search. Escape clears it. */
+  /** Clears the text; the filters stay on until they are turned off where they were turned on. */
+  function clearSearch(): void {
+    setTyped({ shelf, path, text: '', filters });
+  }
+
+  /**
+   * The search field, in its row from md up or in the phone's top bar; both show the one search.
+   * Escape clears its text, and the options at its end hold the filters.
+   */
   function searchField() {
     return (
       <Input
         variant="quiet"
         value={searchText}
-        onChange={(event) => setTyped({ shelf, path, text: event.target.value })}
+        onChange={(event) => setTyped({ shelf, path, text: event.target.value, filters })}
         onKeyDown={(event) => event.key === 'Escape' && clearSearch()}
         placeholder="Search"
         aria-label="Search files in this folder and below"
         icon={<Icon icon={iconMap.search} size={16} />}
-        endElement={searchText && (
-          <IconButton variant="ghost" size="sm" icon={iconMap.close} aria-label="Clear the search" onClick={clearSearch} />
+        endElement={(
+          <div className="flex items-center">
+            {searchText && <IconButton variant="ghost" size="sm" icon={iconMap.close} aria-label="Clear the search" onClick={clearSearch} />}
+            <SearchOptions filters={filters} onChange={(changed) => setTyped({ shelf, path, text: searchText, filters: changed })} />
+          </div>
         )}
         autoComplete="off"
       />
@@ -321,7 +339,19 @@ export function ShelfPage() {
         {picker.input}
 
         {searching ? (
-          <SearchResults results={found.data} isLoading={found.isLoading} error={found.error} text={searchText.trim()} row={(file) => row({ kind: 'file', value: file }, { label: relativeTo(path, file.path) })} />
+          filters.duplicates
+            ? (
+              <DuplicateResults
+                groups={duplicates.data?.pages.flatMap((page) => page.groups)}
+                isLoading={duplicates.isLoading}
+                error={duplicates.error}
+                text={searchText.trim()}
+                row={foundRow}
+                onShowMore={duplicates.hasNextPage ? () => void duplicates.fetchNextPage() : undefined}
+                loadingMore={duplicates.isFetchingNextPage}
+              />
+            )
+            : <SearchResults results={found.data} isLoading={found.isLoading} error={found.error} text={searchText.trim()} row={foundRow} />
         ) : (
           <>
             {isLoading && <Spinner />}
@@ -374,6 +404,44 @@ function SearchResults({ results, isLoading, error, text, row }: SearchResultsPr
         {results.files.map(row)}
       </CardList>
       {results.nextCursor && <p className="text-body-sm text-muted">Showing the first {results.files.length} matches. Type more to narrow them.</p>}
+    </div>
+  );
+}
+
+interface DuplicateResultsProps {
+  /** Every group of the pages fetched so far. */
+  groups: DuplicateGroup[] | undefined;
+  isLoading: boolean;
+  error: Error | null;
+  /** The search's text, blank for every file here and below. */
+  text: string;
+  row: (file: ShelfFile) => ReactNode;
+  /** Fetches the next page of groups; absent when there is none. */
+  onShowMore?: () => void;
+  loadingMore: boolean;
+}
+
+/** The files here and below with the same contents, a list per group, most repeated bytes first. */
+function DuplicateResults({ groups, isLoading, error, text, row, onShowMore, loadingMore }: DuplicateResultsProps) {
+  if (error) return <LoadError error={error} failure="Could not look for duplicates" />;
+  if (isLoading || !groups) return <Spinner />;
+  if (groups.length === 0) {
+    return <EmptyState message={text ? `No files here or below with “${text}” in their name or description have the same contents.` : 'No two files here or below have the same contents.'} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      {groups.map((group) => (
+        <section key={group.sha256} className="space-y-1.5">
+          <h2 className="text-body-sm text-muted">
+            {group.files.length} copies of {formatBytes(group.sizeBytes)}, {formatBytes(group.repeatedBytes)} repeated
+          </h2>
+          <CardList className="overflow-hidden">
+            {group.files.map(row)}
+          </CardList>
+        </section>
+      ))}
+      {onShowMore && <Button variant="secondary" onClick={onShowMore} loading={loadingMore}>Show more</Button>}
     </div>
   );
 }

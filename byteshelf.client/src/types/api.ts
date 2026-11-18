@@ -966,6 +966,8 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
+                    limit?: number;
+                    after?: string;
                     under?: string;
                     text?: string;
                     contentType?: string;
@@ -976,8 +978,6 @@ export interface paths {
                     updatedFrom?: string;
                     updatedBefore?: string;
                     sha256?: string;
-                    limit?: number;
-                    after?: string;
                 };
                 header?: never;
                 path: {
@@ -996,6 +996,80 @@ export interface paths {
                         "text/plain": components["schemas"]["FileSearchResults"];
                         "application/json": components["schemas"]["FileSearchResults"];
                         "text/json": components["schemas"]["FileSearchResults"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shelves/{shelf}/duplicates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    after?: string;
+                    under?: string;
+                    text?: string;
+                    contentType?: string;
+                    minSizeBytes?: number;
+                    maxSizeBytes?: number;
+                    createdFrom?: string;
+                    createdBefore?: string;
+                    updatedFrom?: string;
+                    updatedBefore?: string;
+                    sha256?: string;
+                };
+                header?: never;
+                path: {
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["DuplicateSearchResults"];
+                        "application/json": components["schemas"]["DuplicateSearchResults"];
+                        "text/json": components["schemas"]["DuplicateSearchResults"];
                     };
                 };
                 /** @description Bad Request */
@@ -3872,6 +3946,18 @@ export interface components {
             url: string;
             /** Format: date-time */
             expiresAt: string;
+        };
+        DuplicateGroup: {
+            sha256: string;
+            /** Format: int64 */
+            sizeBytes: number;
+            files: components["schemas"]["ShelfFile"][];
+            /** Format: int64 */
+            readonly repeatedBytes: number;
+        };
+        DuplicateSearchResults: {
+            groups: components["schemas"]["DuplicateGroup"][];
+            nextCursor?: string | null;
         };
         EncryptedFolder: {
             directory: components["schemas"]["ShelfDirectory"];

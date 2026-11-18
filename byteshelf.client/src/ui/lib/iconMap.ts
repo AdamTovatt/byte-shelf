@@ -22,6 +22,7 @@ import {
   FileImageIcon,
   FileQuestionMarkIcon,
   FileZipIcon,
+  FilterHorizontalIcon,
   Folder01Icon,
   Folder02Icon,
   Home11Icon,
@@ -101,6 +102,8 @@ export const iconMap = {
   add: PlusSignIcon,
   edit: Edit04Icon,
   search: Search01Icon,
+  // Opens the search's options: sliders, for narrowing what is found.
+  filter: FilterHorizontalIcon,
   rename: TextSquareIcon,
   move: MoveRightIcon,
   delete: Delete01Icon,

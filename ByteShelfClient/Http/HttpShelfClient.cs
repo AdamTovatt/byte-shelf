@@ -111,6 +111,12 @@ namespace ByteShelfClient.Http
             return _connection.SendAsync(HttpMethod.Get, $"{_base}/search?{search.Normalize().ToQuery()}", ByteShelfJsonContext.Default.FileSearchResults, cancellationToken);
         }
 
+        public Task<DuplicateSearchResults> FindDuplicatesAsync(DuplicateSearch search, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(search);
+            return _connection.SendAsync(HttpMethod.Get, $"{_base}/duplicates?{search.Normalize().ToQuery()}", ByteShelfJsonContext.Default.DuplicateSearchResults, cancellationToken);
+        }
+
         public async Task<DownloadLink> CreateDownloadLinkAsync(EntryReference file, TimeSpan? lifetime = null, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(file);

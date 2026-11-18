@@ -36,6 +36,7 @@ spaces.
 | See which shelves you reach | `byteshelf shelves`, and `byteshelf whoami` for who you act as |
 | See what is there | `byteshelf ls docs:/2026` or, everything below, `byteshelf tree docs:/2026 --depth 2` |
 | Find files | `byteshelf find docs invoice --type application/pdf --created-from 2026-03-01` |
+| Find copies to tidy away | `byteshelf find-duplicates docs:/photos --type 'image/*'` (the most repeated bytes first) |
 | Read a file's record | `byteshelf stat docs:/2026/report.pdf` |
 | Store a file | `byteshelf put report.pdf docs:/2026/ --description "Q1 report, final"` |
 | Store text from a program | `some-command \| byteshelf put - docs:/logs/run.txt` |
@@ -51,7 +52,7 @@ spaces.
 
 - `find` matches text in a file's name or its description, ignoring case, so describe what you store.
   Quote a type family: `--type 'image/*'`.
-- `tree` and `find` answer a page at a time. A page that has more ends with
+- `tree`, `find` and `find-duplicates` answer a page at a time. A page that has more ends with
   `More: add --after '<cursor>'`; run the same command with that option for the next page.
 - `put` refuses a path that is taken; add `--overwrite` to replace the file (it goes to the trash, so
   it can come back). `get` refuses to replace a local file without `--overwrite` too.

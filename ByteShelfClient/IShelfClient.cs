@@ -130,6 +130,13 @@ namespace ByteShelfClient
         /// </summary>
         Task<FileSearchResults> SearchAsync(FileSearch search, CancellationToken cancellationToken = default);
 
+        /// <summary>
+        /// One page of the groups of duplicates <paramref name="search"/> describes, most repeated bytes
+        /// first. A criterion or limit <see cref="DuplicateSearch.Normalize"/> refuses throws
+        /// <see cref="ArgumentException"/> before anything is sent.
+        /// </summary>
+        Task<DuplicateSearchResults> FindDuplicatesAsync(DuplicateSearch search, CancellationToken cancellationToken = default);
+
         /// <summary>Moves or renames a directory, with everything in it, to <paramref name="toPath"/>.</summary>
         Task<ShelfDirectory> MoveDirectoryAsync(EntryReference directory, string toPath, CancellationToken cancellationToken = default);
 

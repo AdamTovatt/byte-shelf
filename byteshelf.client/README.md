@@ -2,7 +2,8 @@
 
 The ByteShelf web UI: React, TypeScript, Vite, Tailwind and TanStack Query, built on the house
 template. Everyone browses the shelves they reach, searches a folder and everything below it by
-name or description, uploads (dropping files on a directory works too), opens and downloads files,
+name or description (the options at the search field's end narrow it, as "Duplicates only" does to
+the files with the same contents), uploads (dropping files on a directory works too), opens and downloads files,
 describes, shares by a link, moves, renames and deletes them, encrypts files and folders with a
 password, and restores them from the trash or downloads a deleted file from it without restoring
 it (a replica's trash too). Admins

@@ -129,6 +129,22 @@ namespace ByteShelf.Server.Storage.Controllers
         }
 
         /// <summary>
+        /// Finds groups of files with the same contents among the live files under a directory that meet
+        /// every criterion given, as <see cref="DuplicateSearch"/> describes, most repeated bytes first,
+        /// a page of <c>limit</c> groups at a time. Pass a page's <c>nextCursor</c> as <c>after</c> for
+        /// the next.
+        /// </summary>
+        [HttpGet("duplicates")]
+        [ShelfAccess(ShelfOperation.Read)]
+        [ProducesResponseType(typeof(DuplicateSearchResults), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        public async Task<IActionResult> FindDuplicates([FromQuery] DuplicateSearch search)
+        {
+            return Ok(await _fileService.FindDuplicatesAsync(Shelf, search));
+        }
+
+        /// <summary>
         /// Streams a file's contents, as <see cref="FileContentResponse"/> describes. Also served under
         /// <see cref="AuthSetup.CookieTokenPath"/>, where a signed-in browser's token may come in a
         /// cookie, so the web UI opens or saves a file by navigating to it, with no public link.

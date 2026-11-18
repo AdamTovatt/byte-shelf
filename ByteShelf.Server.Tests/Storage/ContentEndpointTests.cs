@@ -51,6 +51,35 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
+        public async Task Duplicates_CriteriaAndCursorInTheQueryString_BindByTheirCamelCaseNames()
+        {
+            await PutAsync("/reports/a.txt", "abc", "text/plain");
+            await PutAsync("/reports/b.txt", "abc", "text/plain");
+            await PutAsync("/reports/c.txt", "de", "text/plain");
+            await PutAsync("/reports/d.txt", "de", "text/plain");
+            await PutAsync("/reports/a.png", "abc", "image/png");
+
+            DuplicateSearchResults? first = await _host.AdminClient.GetFromJsonAsync<DuplicateSearchResults>(
+                "/api/shelves/docs/duplicates?under=%2Freports&contentType=text%2Fplain&limit=1");
+            DuplicateSearchResults? second = await _host.AdminClient.GetFromJsonAsync<DuplicateSearchResults>(
+                $"/api/shelves/docs/duplicates?under=%2Freports&contentType=text%2Fplain&limit=1&after={Uri.EscapeDataString(first!.NextCursor.ToString()!)}");
+
+            Assert.Equal(new[] { "/reports/a.txt", "/reports/b.txt" }, Assert.Single(first.Groups).Files.Select(file => file.Path));
+            Assert.Equal(new[] { "/reports/c.txt", "/reports/d.txt" }, Assert.Single(second!.Groups).Files.Select(file => file.Path));
+            Assert.Null(second.NextCursor);
+        }
+
+        [Theory]
+        [InlineData("after=5%3Aabc")]
+        [InlineData("limit=0")]
+        public async Task Duplicates_QueryNotAllowed_Returns400(string query)
+        {
+            HttpResponseMessage response = await _host.AdminClient.GetAsync($"/api/shelves/docs/duplicates?{query}");
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+
+        [Fact]
         public async Task Tree_QueryInTheQueryString_BindsByCamelCaseNames()
         {
             await PutAsync("/reports/2026/q3.txt", "abc", "text/plain");

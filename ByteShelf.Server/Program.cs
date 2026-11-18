@@ -25,6 +25,7 @@ using ByteShelfCommon;
 using EasyReasy.Auth;
 using EasyReasy.EnvironmentVariables;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.OpenApi.Models;
 
 namespace ByteShelf.Server
 {
@@ -278,6 +279,10 @@ namespace ByteShelf.Server
                 // A query bound to an object (the search's FileSearch) is described by its property
                 // names; camelCase, as the JSON bodies are. Binding ignores case, so both work.
                 options.DescribeAllParametersInCamelCase();
+
+                // A cursor travels as the text it writes (bytes:sha256), in a query and in JSON alike,
+                // not as the record it is in C#.
+                options.MapType<DuplicateCursor>(() => new OpenApiSchema { Type = "string" });
             });
         }
 
