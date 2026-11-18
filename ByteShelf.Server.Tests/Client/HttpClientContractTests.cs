@@ -63,6 +63,49 @@ namespace ByteShelf.Server.Tests.Client
             Assert.Equal(("received", "sent in"), (await ReadTextAsync("/in/a.txt"), stored.Description));
         }
 
+        // Metadata is read only by the server, so these run against it alone; the contract both clients
+        // share for it is in ClientContractTests.Metadata.cs.
+        [Fact]
+        public async Task GetFileMetadataAsync_PdfOnceRead_HasItsTitleAndPages()
+        {
+            await Shelf.UploadAsync("/q3.pdf", new MemoryStream(TestMedia.Pdf(pages: 2, title: "Q3 report")), new UploadOptions { ContentType = "application/pdf" });
+
+            await _host.Services.ReadMetadataAsync();
+
+            FileMetadata metadata = await Shelf.GetFileMetadataAsync("/q3.pdf");
+            Assert.True(metadata.Readable);
+            Assert.NotNull(metadata.ReadAt);
+            Assert.Equal(("Q3 report", 2), (metadata.Title, metadata.PageCount));
+        }
+
+        [Fact]
+        public async Task GetFileMetadataAsync_PhotoOnceRead_HasItsTimePlaceAndCamera()
+        {
+            byte[] photo = TestMedia.Photo("2024:06:01 14:30:00", "+02:00", (59.3293, 18.0686), "Apple", "iPhone 15");
+            await Shelf.UploadAsync("/photo.jpg", new MemoryStream(photo), new UploadOptions { ContentType = "image/jpeg" });
+
+            await _host.Services.ReadMetadataAsync();
+
+            FileMetadata metadata = await Shelf.GetFileMetadataAsync("/photo.jpg");
+            Assert.Equal(new DateTimeOffset(2024, 6, 1, 12, 30, 0, TimeSpan.Zero), metadata.TakenAt);
+            Assert.Equal((59.3293, 18.0686, "Apple iPhone 15"), (Math.Round(metadata.Latitude!.Value, 5), Math.Round(metadata.Longitude!.Value, 5), metadata.Camera));
+        }
+
+        [Fact]
+        public async Task SearchAsync_MetadataCriteria_SentAndMatchedByTheServer()
+        {
+            byte[] photo = TestMedia.Photo("2024:06:01 14:30:00", "+02:00", (59.3293, 18.0686), "Apple", "iPhone 15");
+            await Shelf.UploadAsync("/photo.jpg", new MemoryStream(photo), new UploadOptions { ContentType = "image/jpeg" });
+            await Shelf.UploadAsync("/q3.pdf", new MemoryStream(TestMedia.Pdf(pages: 2, title: "Q3 report")), new UploadOptions { ContentType = "application/pdf" });
+            await _host.Services.ReadMetadataAsync();
+
+            FileSearchResults taken = await Shelf.SearchAsync(new FileSearch { TakenFrom = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero), HasGps = true });
+            FileSearchResults pages = await Shelf.SearchAsync(new FileSearch { Text = "q3 REPORT", MinPageCount = 2, MaxPageCount = 2 });
+
+            Assert.Equal("/photo.jpg", Assert.Single(taken.Files).Path);
+            Assert.Equal("/q3.pdf", Assert.Single(pages.Files).Path);
+        }
+
         protected override async Task<IByteShelfClient> CreateAdminClientAsync()
         {
             _http = _host.CreateClient();

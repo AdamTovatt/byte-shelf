@@ -43,6 +43,14 @@ namespace ByteShelfClient
         Task<ShelfFile> GetFileAsync(EntryReference file, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// What the file's contents say about it, as the server read them after the file was stored. Its
+        /// <see cref="FileMetadata.ReadAt"/> is null before then, and for good for an encrypted file or a
+        /// type the server does not read (<see cref="FileMetadata.Readable"/> false); always
+        /// <see cref="FileMetadata.None"/> from the in-memory client, which reads no contents.
+        /// </summary>
+        Task<FileMetadata> GetFileMetadataAsync(EntryReference file, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Stores <paramref name="content"/>, read from its current position to its end, as the file at
         /// <paramref name="path"/>, creating any missing directory above it. Large content is sent in
         /// chunks; content of unknown length is first buffered to a temporary file. A file already at

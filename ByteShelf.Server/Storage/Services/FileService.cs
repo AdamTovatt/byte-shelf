@@ -1,3 +1,5 @@
+using ByteShelf.Server.Metadata.Models;
+using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
@@ -14,6 +16,7 @@ namespace ByteShelf.Server.Storage.Services
 
         private readonly IDbSessionFactory _sessionFactory;
         private readonly IFileRepository _fileRepository;
+        private readonly IObjectMetadataRepository _metadataRepository;
         private readonly ShelfTree _shelfTree;
         private readonly ShelfEncryption _encryption;
         private readonly ObjectStore _objectStore;
@@ -23,6 +26,7 @@ namespace ByteShelf.Server.Storage.Services
         public FileService(
             IDbSessionFactory sessionFactory,
             IFileRepository fileRepository,
+            IObjectMetadataRepository metadataRepository,
             ShelfTree shelfTree,
             ShelfEncryption encryption,
             ObjectStore objectStore,
@@ -31,6 +35,7 @@ namespace ByteShelf.Server.Storage.Services
         {
             _sessionFactory = sessionFactory;
             _fileRepository = fileRepository;
+            _metadataRepository = metadataRepository;
             _shelfTree = shelfTree;
             _encryption = encryption;
             _objectStore = objectStore;
@@ -43,6 +48,18 @@ namespace ByteShelf.Server.Storage.Services
         {
             FileRecord file = await _shelfTree.GetFileAsync(shelf.Id, reference);
             return await _shelfTree.ToShelfFileAsync(file);
+        }
+
+        /// <inheritdoc />
+        public async Task<FileMetadata> GetMetadataAsync(Shelf shelf, EntryReference reference)
+        {
+            FileRecord file = await _shelfTree.GetFileAsync(shelf.Id, reference);
+
+            // The row is the contents', which an encrypted file's are not to be read for, even when a
+            // plain file holds the same bytes.
+            bool readable = !file.Encrypted && ReadMediaTypes.Include(ContentTypes.MediaTypeOf(file.ContentType));
+            ObjectMetadata? read = readable ? await _metadataRepository.GetBySha256Async(file.Sha256) : null;
+            return StorageContracts.ToFileMetadata(readable, read);
         }
 
         /// <inheritdoc />

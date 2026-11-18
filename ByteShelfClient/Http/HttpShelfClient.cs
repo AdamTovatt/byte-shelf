@@ -69,6 +69,12 @@ namespace ByteShelfClient.Http
             return _connection.SendAsync(HttpMethod.Get, $"{_base}/files?{file.ToQuery()}", ByteShelfJsonContext.Default.ShelfFile, cancellationToken);
         }
 
+        public Task<FileMetadata> GetFileMetadataAsync(EntryReference file, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(file);
+            return _connection.SendAsync(HttpMethod.Get, $"{_base}/files/metadata?{file.ToQuery()}", ByteShelfJsonContext.Default.FileMetadata, cancellationToken);
+        }
+
         public async Task<ShelfFile> UploadAsync(string path, Stream content, UploadOptions? options = null, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(content);

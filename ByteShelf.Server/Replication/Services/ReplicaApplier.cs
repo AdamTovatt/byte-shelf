@@ -1,6 +1,8 @@
 using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Access.Repositories;
 using ByteShelf.Server.ChangeLog.Models;
+using ByteShelf.Server.Metadata.Models;
+using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Replication.Repositories;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Storage.Models;
@@ -39,6 +41,7 @@ namespace ByteShelf.Server.Replication.Services
             IShelfRepository shelfRepository,
             IDirectoryRepository directoryRepository,
             IFileRepository fileRepository,
+            IObjectMetadataRepository metadataRepository,
             IShelfGrantRepository grantRepository,
             IShelfKeyRepository keyRepository,
             IReplicationCopyRepository copyRepository,
@@ -68,6 +71,11 @@ namespace ByteShelf.Server.Replication.Services
                     "user_login",
                     (entry, at, session, _) => loginRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<UserLogin>(entry.Payload!), entry.Action, at, session),
                     loginRepository.DeleteByIdAsync),
+                new EntityHandler(
+                    ChangeEntityType.ObjectMetadata,
+                    "object_metadata",
+                    (entry, at, session, _) => metadataRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<ObjectMetadata>(entry.Payload!), entry.Action, at, session),
+                    metadataRepository.DeleteByIdAsync),
                 new EntityHandler(
                     ChangeEntityType.File,
                     "file",

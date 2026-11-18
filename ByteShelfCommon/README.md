@@ -12,12 +12,13 @@ AOT-compatible.
 | `CreateShelfRequest`, `UpdateShelfRequest` | Creates a shelf, and replaces its name and quota. |
 | `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps, description, and whether its contents are encrypted (`Encrypted`). |
 | `SetDescriptionRequest`, `FileDescription` | Setting a file's description, and its rules. |
-| `FileCriteria` | Which of a shelf's files a search looks at: the directory, text, type, sizes, times and SHA-256, checked by `NormalizeCriteria`. Both searches below take their criteria from it. |
+| `FileCriteria` | Which of a shelf's files a search looks at: the directory, text, type, sizes, times, SHA-256 and what the server read from the contents (taken times, a GPS position, durations, page counts), checked by `NormalizeCriteria`. Both searches below take their criteria from it. |
 | `FileSearch`, `FileSearchResults` | The files that meet the criteria, a page at a time by path, and one page of them. |
 | `DuplicateSearch`, `DuplicateSearchResults`, `DuplicateGroup`, `DuplicateCursor` | The groups of plain, non-empty files with the same contents among those that meet the criteria, a page of groups at a time, most repeated bytes first, and where a page ended. `DuplicateSearchResults.Page` groups, orders and pages them, for the server and the in-memory client alike. |
 | `DownloadLink` | A link to a file's contents that works without a token until it runs out or is revoked, with its id, and the bounds of its lifetime (`Lifetime`: a day by default, at most 7 days). |
 | `UploadLink`, `CreateUploadLinkRequest`, `NormalizedUploadLinkRequest` | A link that stores one file sent to it without a token, with its id, and asking for one (`Lifetime`: 15 minutes by default, at most 24 hours). |
 | `ShelfLink`, `ShelfLinkKind`, `LinkMaker`, `LinkMakerKind` | A download or upload link as listed, to revoke by its id: what it reaches, who made it, and when it runs out. |
+| `FileMetadata` | What the server read from a file's contents (when and where a photo was taken, the camera, a video's length, a PDF's title and pages), and whether it reads that file at all (`Readable`). |
 | `LinkLifetime` | One kind of link's lifetime rule: its default, its bounds and `Normalize`. |
 | `FileEncryption`, `EncryptedFolder`, `PathEncryption`, `SetFolderEncryptionRequest` | Password encryption: how an age file starts, an encrypted directory's check text, an encrypted directory with its check, what a path is encrypted under, and encrypting a directory. |
 | `ShelfDirectory`, `DirectoryListing`, `ListedDirectory` | A directory and whether it is encrypted (`Encrypted`), what one holds, and a directory in a listing with the size and count of the files under it, and how many are encrypted. |
@@ -48,12 +49,13 @@ AOT-compatible.
   with a letter or digit. `ShelfSettings` adds that a quota cannot be negative.
 - `FileDescription` trims a description and puts it in normalization form C; blank is none, and it
   holds at most 2,000 characters, counted as code points.
-- `FileCriteria.NormalizeCriteria` checks the criteria: sizes not negative and ranges not empty (a
-  range includes its start and excludes its end), a content type that is one media type or a family
-  such as `image/*`, and a SHA-256 of 64 hex digits. `FileSearch.Normalize` adds a page of 1 to 1,000
-  files (100 by default), and `DuplicateSearch.Normalize` a page of 1 to 1,000 groups (100 by
-  default). `Fold` is how search compares text, both sides: normalization form C, then invariant
-  lowercase.
+- `FileCriteria.NormalizeCriteria` checks the criteria: sizes, durations and page counts not
+  negative, a duration a finite number of seconds, ranges not empty (a time range includes its
+  start and excludes its end; sizes, durations and page counts are inclusive), a content type that
+  is one media type or a family such as `image/*`, and a SHA-256 of 64 hex digits.
+  `FileSearch.Normalize` adds a page of 1 to 1,000 files (100 by default), and
+  `DuplicateSearch.Normalize` a page of 1 to 1,000 groups (100 by default). `Fold` is how search
+  compares text, both sides: normalization form C, then invariant lowercase.
 - `ContentTypes` checks the media type stored with a file, and `ForUpload` picks it when an upload
   gives none: the one its path's extension names, else `application/octet-stream`.
 - `NormalizedUploadLinkRequest.Create` checks an upload link's request: a file's path (never the

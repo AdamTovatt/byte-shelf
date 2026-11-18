@@ -1,4 +1,5 @@
 using ByteShelf.Server.Jobs.Services;
+using ByteShelf.Server.Shared.Concurrency;
 using ByteShelf.Server.Tests.TestUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -40,6 +41,21 @@ namespace ByteShelf.Server.Tests.Jobs
             Assert.True(starts[1] >= starts[0] + CountingWorker.TestInterval);
         }
 
+        [Fact]
+        public async Task ExecuteAsync_Woken_RunsAgainBeforeTheInterval()
+        {
+            using WakeSignal wake = new WakeSignal();
+            CountingWorker worker = new CountingWorker(Services.GetRequiredService<IServiceScopeFactory>(), Clock) { WakeSignal = wake };
+
+            await worker.StartAsync(CancellationToken.None);
+            await worker.WaitForPassAsync(1);
+            wake.Wake();
+            await worker.WaitForPassAsync(2);
+            await worker.StopAsync(CancellationToken.None);
+
+            Assert.Equal([TestInstants.Now, TestInstants.Now], worker.PassStarts.Take(2));
+        }
+
         private sealed class CountingWorker : PeriodicJobWorker<int>
         {
             public static readonly TimeSpan TestInterval = TimeSpan.FromMinutes(5);
@@ -56,6 +72,10 @@ namespace ByteShelf.Server.Tests.Jobs
             }
 
             public bool FailFirstPass { get; init; }
+
+            public WakeSignal? WakeSignal { get; init; }
+
+            protected override WakeSignal? Wake => WakeSignal;
 
             /// <summary>When each pass began, first first.</summary>
             public IReadOnlyList<DateTimeOffset> PassStarts

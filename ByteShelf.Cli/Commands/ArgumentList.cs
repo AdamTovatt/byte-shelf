@@ -21,6 +21,7 @@ namespace ByteShelf.Cli.Commands
             "--email", "--name", "--quota", "--type", "--description",
             "--min-size", "--max-size", "--created-from", "--created-before", "--updated-from", "--updated-before",
             "--sha256", "--limit", "--after", "--expires", "--depth", "--password-file", "--path",
+            "--taken-from", "--taken-before", "--min-duration", "--max-duration", "--min-pages", "--max-pages",
         };
 
         private readonly List<string> _positionals = new List<string>();
@@ -120,6 +121,20 @@ namespace ByteShelf.Cli.Commands
             return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int count)
                 ? count
                 : throw new UsageException($"{name} takes a whole number, not '{value}'.");
+        }
+
+        /// <exception cref="UsageException">The value is not a number of seconds, such as 90 or 1.5.</exception>
+        public double? Seconds(string name)
+        {
+            string? value = Value(name);
+            if (value == null)
+            {
+                return null;
+            }
+
+            return double.TryParse(value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out double seconds)
+                ? seconds
+                : throw new UsageException($"{name} takes a number of seconds, such as 90 or 1.5, not '{value}'.");
         }
 
         /// <summary>An ISO 8601 date or time; one without an offset is local time, as a person at a terminal means it.</summary>

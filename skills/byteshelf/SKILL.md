@@ -53,6 +53,11 @@ spaces.
 
 - `find` matches text in a file's name or its description, ignoring case, so describe what you store.
   Quote a type family: `--type 'image/*'`.
+- The server reads what photos, videos and PDFs carry: `find` also matches a PDF's title or a
+  camera, and takes `--taken-from`/`--taken-before`, `--has-gps`, `--min-duration`/`--max-duration`
+  (seconds) and `--min-pages`/`--max-pages`, as in `byteshelf find photos --taken-from 2024-06-01
+  --has-gps`; `find-duplicates` takes the same options. `stat` shows what was read. Encrypted files
+  carry none.
 - `tree`, `find` and `find-duplicates` answer a page at a time. A page that has more ends with
   `More: add --after '<cursor>'`; run the same command with that option for the next page.
 - `put` refuses a path that is taken; add `--overwrite` to replace the file (it goes to the trash, so

@@ -827,6 +827,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shelves/{shelf}/files/metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    path?: string;
+                    id?: string;
+                };
+                header?: never;
+                path: {
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["FileMetadata"];
+                        "application/json": components["schemas"]["FileMetadata"];
+                        "text/json": components["schemas"]["FileMetadata"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/shelves/{shelf}/files/move": {
         parameters: {
             query?: never;
@@ -1000,6 +1053,13 @@ export interface paths {
                     updatedFrom?: string;
                     updatedBefore?: string;
                     sha256?: string;
+                    takenFrom?: string;
+                    takenBefore?: string;
+                    hasGps?: boolean;
+                    minDurationSeconds?: number;
+                    maxDurationSeconds?: number;
+                    minPageCount?: number;
+                    maxPageCount?: number;
                 };
                 header?: never;
                 path: {
@@ -1074,6 +1134,13 @@ export interface paths {
                     updatedFrom?: string;
                     updatedBefore?: string;
                     sha256?: string;
+                    takenFrom?: string;
+                    takenBefore?: string;
+                    hasGps?: boolean;
+                    minDurationSeconds?: number;
+                    maxDurationSeconds?: number;
+                    minPageCount?: number;
+                    maxPageCount?: number;
                 };
                 header?: never;
                 path: {
@@ -4087,6 +4154,23 @@ export interface components {
         ErrorResponse: {
             message: string;
             code?: string | null;
+        };
+        FileMetadata: {
+            readable?: boolean;
+            /** Format: date-time */
+            readAt?: string | null;
+            /** Format: date-time */
+            takenAt?: string | null;
+            /** Format: double */
+            latitude?: number | null;
+            /** Format: double */
+            longitude?: number | null;
+            /** Format: double */
+            durationSeconds?: number | null;
+            /** Format: int32 */
+            pageCount?: number | null;
+            title?: string | null;
+            camera?: string | null;
         };
         FileSearchResults: {
             files: components["schemas"]["ShelfFile"][];

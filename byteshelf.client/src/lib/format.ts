@@ -28,6 +28,15 @@ export function formatTime(instant: string): string {
   return `${formatDate(instant)} ${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}`;
 }
 
+/** How long something plays, rounded to the second: 3:07, or 1:05:09 from an hour up. */
+export function formatDuration(seconds: number): string {
+  const whole = Math.round(seconds);
+  const hours = Math.floor(whole / 3600);
+  const minutes = Math.floor((whole % 3600) / 60);
+  const rest = twoDigits(whole % 60);
+  return hours > 0 ? `${hours}:${twoDigits(minutes)}:${rest}` : `${minutes}:${rest}`;
+}
+
 const MEBIBYTE = 1024 * 1024;
 
 /** Whether a shelf has a quota: the server leaves it out or sends null when it has none. */

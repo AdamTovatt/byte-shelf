@@ -94,7 +94,7 @@ dotnet run --project ByteShelf.Cli -- shelves
   [Jobs](ByteShelf.Server/Jobs/Jobs.md), [Email](ByteShelf.Server/Email/Email.md),
   [Invalidation](ByteShelf.Server/Invalidation/Invalidation.md), [Version](ByteShelf.Server/Version/Version.md),
   [Replication](ByteShelf.Server/Replication/Replication.md), [Backup](ByteShelf.Server/Backup/Backup.md),
-  [Mcp](ByteShelf.Server/Mcp/Mcp.md).
+  [Mcp](ByteShelf.Server/Mcp/Mcp.md), [Metadata](ByteShelf.Server/Metadata/Metadata.md).
 - [ByteShelfCommon](ByteShelfCommon/README.md), [ByteShelfClient](ByteShelfClient/README.md),
   [the CLI and MCP server](ByteShelf.Cli/README.md), [the shared operations and MCP tools](ByteShelf.Tools/README.md),
   [the web UI](byteshelf.client/README.md).

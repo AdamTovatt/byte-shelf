@@ -108,5 +108,70 @@ namespace ByteShelfCommon.Tests
                 "under=%2Fq%26a%20%231&text=a%2Bb&minSizeBytes=10&createdFrom=2026-03-01T14%3A05%3A00.0000000%2B01%3A00",
                 search.ToQuery());
         }
+
+        [Fact]
+        public void ToQuery_MetadataCriteria_CarriesEachAndHasGpsOnlyWhenAsked()
+        {
+            FileSearch search = new FileSearch
+            {
+                TakenBefore = new DateTimeOffset(2024, 7, 1, 0, 0, 0, TimeSpan.Zero),
+                HasGps = true,
+                MinDurationSeconds = 1.5,
+                MaxPageCount = 10,
+            };
+
+            Assert.Equal("takenBefore=2024-07-01T00%3A00%3A00.0000000%2B00%3A00&hasGps=true&minDurationSeconds=1.5&maxPageCount=10", search.ToQuery());
+            Assert.Equal(string.Empty, new FileSearch { HasGps = false }.ToQuery());
+        }
+
+        [Fact]
+        public void Normalize_MetadataCriteria_KeepsThem()
+        {
+            FileSearch search = new FileSearch
+            {
+                TakenFrom = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero),
+                TakenBefore = new DateTimeOffset(2024, 7, 1, 0, 0, 0, TimeSpan.Zero),
+                HasGps = true,
+                MinDurationSeconds = 10,
+                MaxDurationSeconds = 60,
+                MinPageCount = 2,
+                MaxPageCount = 5,
+            };
+
+            FileSearch normalized = search.Normalize();
+
+            Assert.Equal(
+                (search.TakenFrom, search.TakenBefore, true, 10.0, 60.0, 2, 5),
+                (normalized.TakenFrom, normalized.TakenBefore, normalized.HasGps, normalized.MinDurationSeconds, normalized.MaxDurationSeconds, normalized.MinPageCount, normalized.MaxPageCount));
+            Assert.True(normalized.AsksForMetadata());
+        }
+
+        [Fact]
+        public void AsksForMetadata_OnlyOtherCriteria_IsFalse()
+        {
+            Assert.False(new FileSearch { Text = "x", MinSizeBytes = 1, HasGps = false }.Normalize().AsksForMetadata());
+        }
+
+        [Theory]
+        [InlineData(-1.0, null, null, null)]
+        [InlineData(null, null, -1, null)]
+        [InlineData(60.0, 10.0, null, null)]
+        [InlineData(null, null, 5, 2)]
+        [InlineData(double.NaN, null, null, null)]
+        [InlineData(null, double.PositiveInfinity, null, null)]
+        public void Normalize_DurationOrPagesOutOfRange_Throws(double? minDuration, double? maxDuration, int? minPages, int? maxPages)
+        {
+            FileSearch search = new FileSearch { MinDurationSeconds = minDuration, MaxDurationSeconds = maxDuration, MinPageCount = minPages, MaxPageCount = maxPages };
+
+            Assert.Throws<ArgumentException>(() => search.Normalize());
+        }
+
+        [Fact]
+        public void Normalize_TakenRangeEndingBeforeItStarts_Throws()
+        {
+            DateTimeOffset at = new DateTimeOffset(2024, 6, 1, 0, 0, 0, TimeSpan.Zero);
+
+            Assert.Throws<ArgumentException>(() => new FileSearch { TakenFrom = at, TakenBefore = at }.Normalize());
+        }
     }
 }

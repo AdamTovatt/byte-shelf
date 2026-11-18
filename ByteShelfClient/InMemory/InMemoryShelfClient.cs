@@ -95,6 +95,18 @@ namespace ByteShelfClient.InMemory
             return Run(cancellationToken, shelf => shelf.ToShelfFile(shelf.GetFile(file)));
         }
 
+        public Task<FileMetadata> GetFileMetadataAsync(EntryReference file, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(file);
+
+            // Only the server reads contents, with libraries this package does not carry.
+            return Run(cancellationToken, shelf =>
+            {
+                shelf.GetFile(file);
+                return FileMetadata.None;
+            });
+        }
+
         public async Task<ShelfFile> UploadAsync(string path, Stream content, UploadOptions? options = null, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(content);
@@ -781,9 +793,14 @@ namespace ByteShelfClient.InMemory
         }
 
         /// <summary>Whether a file meets every criterion of a normalized search but where it is, as the server's query decides.</summary>
+        /// <remarks>
+        /// No file here has metadata, which only the server reads, so a criterion about it matches none,
+        /// and text matches no title or camera.
+        /// </remarks>
         private static bool Matches(FileCriteria search, FileNode file)
         {
-            return (search.Text == null
+            return !search.AsksForMetadata()
+                && (search.Text == null
                     || FileCriteria.Fold(file.Name).Contains(search.Text, StringComparison.Ordinal)
                     || (file.Description != null && FileCriteria.Fold(file.Description).Contains(search.Text, StringComparison.Ordinal)))
                 && search.MatchesContentType(file.ContentType)

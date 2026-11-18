@@ -18,13 +18,18 @@ one (such as `restore`). `--` ends the options, for a path that starts with `--`
 
 `find` searches under a directory by text in a file's name or description, and by `--type`,
 `--min-size` and `--max-size`, `--created-from` and `--created-before`, `--updated-from` and
-`--updated-before`, and `--sha256`; a file must meet every one given. It answers a page at a time
+`--updated-before`, and `--sha256`; a file must meet every one given. The text also matches the
+title or camera the server read from a file's contents, and `--taken-from` and `--taken-before`,
+`--has-gps`, `--min-duration` and `--max-duration` (seconds), and `--min-pages` and `--max-pages`
+ask what else it read: when a photo or video was taken, whether it carries a GPS position, how long
+it plays, and a PDF's pages. Encrypted files carry none. `find` answers a page at a time
 (`--limit`, 100 by default) and ends a page that has more after it with the `--after` to pass. Quote
 a type family, as in `--type 'image/*'`, or the shell expands it. A time without an offset, such as
 `2026-03-01`, is local time. `find-duplicates` takes the same options and lists the files `find`
 would find that have exactly the same contents, in groups, most repeated bytes first; only files
 under the directory count, encrypted and empty files are left out, and `--limit` counts groups.
-`describe` sets a file's description and `describe --clear` removes
+`stat` shows what was read with a file's record (`stat --json` prints the record alone, as the
+server answers it). `describe` sets a file's description and `describe --clear` removes
 it; `put --description` stores one with the file. `share` prints a link that opens a file without
 signing in, for 24 hours or the `--expires` given (`30m`, `12h`, up to `7d`), and the link's id.
 `link list` shows a shelf's share and upload links that have not run out, with their ids: yours, or every

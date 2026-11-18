@@ -42,6 +42,19 @@ namespace ByteShelf.Tools
     /// </summary>
     internal static class Entries
     {
+        /// <summary>
+        /// The file or the directory at <paramref name="path"/>, and for a file what its contents say,
+        /// which the server reads after storing it: what get_info and stat show.
+        /// </summary>
+        /// <exception cref="ByteShelfException">Neither is there (<see cref="ErrorCodes.NotFound"/>).</exception>
+        public static async Task<(Entry Entry, FileMetadata? Metadata)> GetWithMetadataAsync(IShelfClient shelf, string path, CancellationToken cancellationToken)
+        {
+            Entry entry = await GetAsync(shelf, path, cancellationToken);
+            return entry.File is ShelfFile file
+                ? (entry, await shelf.GetFileMetadataAsync(file.Id, cancellationToken))
+                : (entry, null);
+        }
+
         /// <summary>The file or the directory at <paramref name="path"/>.</summary>
         /// <exception cref="ByteShelfException">Neither is there (<see cref="ErrorCodes.NotFound"/>).</exception>
         public static async Task<Entry> GetAsync(IShelfClient shelf, string path, CancellationToken cancellationToken)

@@ -65,6 +65,7 @@ describe('the shelf page\'s rows', () => {
     sent = stubServer(async (request) => {
       const url = new URL(request.url);
       if (url.pathname === '/api/shelves/docs/duplicates') return json(duplicates(url.searchParams.get('after')));
+      if (url.pathname === '/api/shelves/docs/files/metadata') return json({ readable: false, readAt: null });
       return url.pathname === '/api/shelves/docs/entries' ? json(listing(url.searchParams.get('path')!)) : json({ message: 'Not here.' }, 404);
     });
     container = document.body.appendChild(document.createElement('div'));
@@ -245,6 +246,17 @@ describe('the shelf page\'s rows', () => {
 
     await vi.waitFor(() => expect(row('a.txt')).not.toBeNull());
     expect(container.textContent).not.toContain('copies of');
+  });
+
+  it('shows a file\'s details from its menu', async () => {
+    click(container.querySelector('button[aria-label="Actions for a.txt"]')!);
+    const details = Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Details')!;
+
+    click(details);
+
+    await vi.waitFor(() => expect(document.body.textContent).toContain('The server does not read files of this type.'));
+    expect(document.body.textContent).toContain('Details of a.txt');
+    expect(sent).toContain('GET /api/shelves/docs/files/metadata?id=file%3Aa.txt Bearer t');
   });
 
   it('fetches the first subfolders ahead as a folder opens, and not again as its listing is refetched', async () => {

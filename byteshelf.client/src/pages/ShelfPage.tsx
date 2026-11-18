@@ -18,6 +18,7 @@ import {
   getFileIcon,
   iconMap,
 } from '../ui';
+import { FileDetailsDialog } from '../components/FileDetailsDialog';
 import { FormDialog } from '../components/FormDialog';
 import { LoadError } from '../components/LoadError';
 import { CardList } from '../components/CardList';
@@ -67,6 +68,7 @@ export function ShelfPage() {
   const [renaming, setRenaming] = useState<Entry | null>(null);
   const [moving, setMoving] = useState<Entry[] | null>(null);
   const [describing, setDescribing] = useState<ShelfFile | null>(null);
+  const [detailing, setDetailing] = useState<ShelfFile | null>(null);
   const [dragging, setDragging] = useState(false);
   // Kept with the shelf and folder it was typed in, so opening another starts with no search and no
   // filter: the route, and so this component, stays the same from one shelf to the next.
@@ -187,7 +189,7 @@ export function ShelfPage() {
   const selected = entries.filter((entry) => selection.isSelected(entry.value.id));
   const selectedFiles = selected.flatMap((entry) => (entry.kind === 'file' ? [entry.value] : []));
   const drag = useEntryDragAndDrop({ shelf, entries, selected });
-  const dialogOpen = creatingDirectory || renaming !== null || moving !== null || describing !== null;
+  const dialogOpen = creatingDirectory || renaming !== null || moving !== null || describing !== null || detailing !== null;
 
   // ⌘A or Ctrl+A selects every row, unless a field has the keys; Escape clears the selection. A
   // dialog keeps both for itself.
@@ -226,6 +228,7 @@ export function ShelfPage() {
         onPrefetch={entry.kind === 'directory' ? () => prefetchListing(entry.value.path) : undefined}
         onDownload={entry.kind === 'file' ? () => void opening.save([entry.value]) : undefined}
         onDescribe={entry.kind === 'file' ? () => setDescribing(entry.value) : undefined}
+        onShowDetails={entry.kind === 'file' ? () => setDetailing(entry.value) : undefined}
         onCopyLink={entry.kind === 'file' && !encrypted ? () => void copyLink(entry.value) : undefined}
         onEncrypt={actions.encrypt ? () => void encryption.encrypt(entry) : undefined}
         onRemoveEncryption={actions.removeEncryption ? () => void encryption.removeEncryption(entry) : undefined}
@@ -380,6 +383,7 @@ export function ShelfPage() {
       {renaming && <RenameDialog shelf={shelf} entry={renaming} onClose={() => setRenaming(null)} />}
       {moving && <MoveDialog shelf={shelf} entries={moving} onClose={() => setMoving(null)} />}
       {describing && <DescriptionDialog shelf={shelf} file={describing} onClose={() => setDescribing(null)} />}
+      {detailing && <FileDetailsDialog shelf={shelf} file={detailing} onClose={() => setDetailing(null)} />}
       {encryption.dialog}
     </div>
   );
@@ -511,6 +515,8 @@ interface EntryRowProps {
   onPrefetch?: () => void;
   onDownload?: () => void;
   onDescribe?: () => void;
+  /** For a file: its record and what its contents say. */
+  onShowDetails?: () => void;
   onCopyLink?: () => void;
   onEncrypt?: () => void;
   onRemoveEncryption?: () => void;
@@ -519,7 +525,7 @@ interface EntryRowProps {
   onDelete: () => void;
 }
 
-function EntryRow({ entry, label, selection, onOpen, onPrefetch, onDownload, onDescribe, onCopyLink, onEncrypt, onRemoveEncryption, onRename, onMove, onDelete }: EntryRowProps) {
+function EntryRow({ entry, label, selection, onOpen, onPrefetch, onDownload, onDescribe, onShowDetails, onCopyLink, onEncrypt, onRemoveEncryption, onRename, onMove, onDelete }: EntryRowProps) {
   const isFile = entry.kind === 'file';
   const name = entry.value.name;
   const selected = selection?.selected ?? false;
@@ -567,6 +573,7 @@ function EntryRow({ entry, label, selection, onOpen, onPrefetch, onDownload, onD
       <Dropdown align="right" trigger={<IconButton variant="ghost" size="sm" icon={iconMap.more} aria-label={`Actions for ${name}`} />}>
         {onDownload && <DropdownItem icon={<Icon icon={iconMap.download} size={16} />} onClick={onDownload}>Download</DropdownItem>}
         {onCopyLink && <DropdownItem icon={<Icon icon={iconMap.copy} size={16} />} onClick={onCopyLink}>Copy link</DropdownItem>}
+        {onShowDetails && <DropdownItem icon={<Icon icon={iconMap.info} size={16} />} onClick={onShowDetails}>Details</DropdownItem>}
         {onDescribe && <DropdownItem icon={<Icon icon={iconMap.edit} size={16} />} onClick={onDescribe}>Description</DropdownItem>}
         {onEncrypt && <DropdownItem icon={<Icon icon={iconMap.lock} size={16} />} onClick={onEncrypt}>Encrypt</DropdownItem>}
         {onRemoveEncryption && <DropdownItem icon={<Icon icon={iconMap.unlock} size={16} />} onClick={onRemoveEncryption}>Remove encryption</DropdownItem>}

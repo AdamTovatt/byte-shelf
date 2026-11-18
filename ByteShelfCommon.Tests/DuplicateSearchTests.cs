@@ -39,5 +39,22 @@ namespace ByteShelfCommon.Tests
 
             Assert.Equal($"under=%2Fa%20b&limit=2&after=5%3A{Sha256}", search.ToQuery());
         }
+
+        [Fact]
+        public void Normalize_MetadataCriteria_AreCheckedAndKept()
+        {
+            DuplicateSearch normalized = new DuplicateSearch { HasGps = true, MinPageCount = 2 }.Normalize();
+
+            Assert.Equal((true, 2), (normalized.HasGps, normalized.MinPageCount));
+            Assert.Throws<ArgumentException>(() => new DuplicateSearch { MinPageCount = -1 }.Normalize());
+        }
+
+        [Fact]
+        public void ToQuery_MetadataCriteria_AreWritten()
+        {
+            DuplicateSearch search = new DuplicateSearch { HasGps = true, MaxDurationSeconds = 1.5 };
+
+            Assert.Equal("hasGps=true&maxDurationSeconds=1.5", search.ToQuery());
+        }
     }
 }

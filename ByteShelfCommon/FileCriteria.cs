@@ -32,12 +32,22 @@ namespace ByteShelfCommon
             UpdatedFrom = criteria.UpdatedFrom;
             UpdatedBefore = criteria.UpdatedBefore;
             Sha256 = criteria.Sha256;
+            TakenFrom = criteria.TakenFrom;
+            TakenBefore = criteria.TakenBefore;
+            HasGps = criteria.HasGps;
+            MinDurationSeconds = criteria.MinDurationSeconds;
+            MaxDurationSeconds = criteria.MaxDurationSeconds;
+            MinPageCount = criteria.MinPageCount;
+            MaxPageCount = criteria.MaxPageCount;
         }
 
         /// <summary>The directory to search, everything under it included; the shelf's root when null.</summary>
         public string? Under { get; init; }
 
-        /// <summary>Text the file's name or description contains, ignoring case.</summary>
+        /// <summary>
+        /// Text the file's name or description contains, ignoring case, or the title or camera its
+        /// contents carry (<see cref="FileMetadata"/>).
+        /// </summary>
         public string? Text { get; init; }
 
         /// <summary>
@@ -68,9 +78,35 @@ namespace ByteShelfCommon
         public string? Sha256 { get; init; }
 
         /// <summary>
+        /// Taken at or after this, by the time a photo's or video's contents carry (<see cref="FileMetadata.TakenAt"/>).
+        /// This and the other metadata criteria match only files the server has read, so never in the
+        /// in-memory client, which reads none.
+        /// </summary>
+        public DateTimeOffset? TakenFrom { get; init; }
+
+        /// <summary>Taken before this.</summary>
+        public DateTimeOffset? TakenBefore { get; init; }
+
+        /// <summary>Only files whose contents carry a GPS position; false leaves it unchecked.</summary>
+        public bool HasGps { get; init; }
+
+        /// <summary>The fewest seconds a video plays (<see cref="FileMetadata.DurationSeconds"/>).</summary>
+        public double? MinDurationSeconds { get; init; }
+
+        /// <summary>The most seconds a video plays (<see cref="FileMetadata.DurationSeconds"/>).</summary>
+        public double? MaxDurationSeconds { get; init; }
+
+        /// <summary>The fewest pages a PDF has.</summary>
+        public int? MinPageCount { get; init; }
+
+        /// <summary>The most pages a PDF has.</summary>
+        public int? MaxPageCount { get; init; }
+
+        /// <summary>
         /// These criteria checked and put the way they are compared: <see cref="Under"/> always set,
         /// <see cref="Text"/> folded, <see cref="ContentType"/> and <see cref="Sha256"/> lowercase, and
-        /// blank text as not set.
+        /// blank text as not set. Durations and page counts are inclusive ranges, and a duration a
+        /// finite number of seconds.
         /// </summary>
         /// <exception cref="ArgumentException">A criterion is not allowed, or a range is empty.</exception>
         public FileCriteria NormalizeCriteria()
@@ -85,9 +121,24 @@ namespace ByteShelfCommon
                 throw new ArgumentException("The smallest size is above the largest.");
             }
 
-            if (CreatedFrom >= CreatedBefore || UpdatedFrom >= UpdatedBefore)
+            if (CreatedFrom >= CreatedBefore || UpdatedFrom >= UpdatedBefore || TakenFrom >= TakenBefore)
             {
                 throw new ArgumentException("A time range ends before it starts.");
+            }
+
+            if (MinDurationSeconds < 0 || MaxDurationSeconds < 0 || MinPageCount < 0 || MaxPageCount < 0)
+            {
+                throw new ArgumentException("A duration or page count cannot be negative.");
+            }
+
+            if (!double.IsFinite(MinDurationSeconds ?? 0) || !double.IsFinite(MaxDurationSeconds ?? 0))
+            {
+                throw new ArgumentException("A duration is a number of seconds.");
+            }
+
+            if (MinDurationSeconds > MaxDurationSeconds || MinPageCount > MaxPageCount)
+            {
+                throw new ArgumentException("The smallest duration or page count is above the largest.");
             }
 
             return new FileCriteria
@@ -102,7 +153,25 @@ namespace ByteShelfCommon
                 UpdatedFrom = UpdatedFrom,
                 UpdatedBefore = UpdatedBefore,
                 Sha256 = NormalizeSha256(Sha256),
+                TakenFrom = TakenFrom,
+                TakenBefore = TakenBefore,
+                HasGps = HasGps,
+                MinDurationSeconds = MinDurationSeconds,
+                MaxDurationSeconds = MaxDurationSeconds,
+                MinPageCount = MinPageCount,
+                MaxPageCount = MaxPageCount,
             };
+        }
+
+        /// <summary>
+        /// Whether any criterion asks about what a file's contents carry (<see cref="FileMetadata"/>),
+        /// which only files the server has read can meet.
+        /// </summary>
+        public bool AsksForMetadata()
+        {
+            return TakenFrom != null || TakenBefore != null || HasGps
+                || MinDurationSeconds != null || MaxDurationSeconds != null
+                || MinPageCount != null || MaxPageCount != null;
         }
 
         /// <summary>
@@ -151,6 +220,13 @@ namespace ByteShelfCommon
             AddQueryPart(parts, "updatedFrom", UpdatedFrom?.ToString("O", CultureInfo.InvariantCulture));
             AddQueryPart(parts, "updatedBefore", UpdatedBefore?.ToString("O", CultureInfo.InvariantCulture));
             AddQueryPart(parts, "sha256", Sha256);
+            AddQueryPart(parts, "takenFrom", TakenFrom?.ToString("O", CultureInfo.InvariantCulture));
+            AddQueryPart(parts, "takenBefore", TakenBefore?.ToString("O", CultureInfo.InvariantCulture));
+            AddQueryPart(parts, "hasGps", HasGps ? "true" : null);
+            AddQueryPart(parts, "minDurationSeconds", MinDurationSeconds?.ToString("R", CultureInfo.InvariantCulture));
+            AddQueryPart(parts, "maxDurationSeconds", MaxDurationSeconds?.ToString("R", CultureInfo.InvariantCulture));
+            AddQueryPart(parts, "minPageCount", MinPageCount?.ToString(CultureInfo.InvariantCulture));
+            AddQueryPart(parts, "maxPageCount", MaxPageCount?.ToString(CultureInfo.InvariantCulture));
             return parts;
         }
 

@@ -6,6 +6,7 @@ using ByteShelf.Server.Email;
 using ByteShelf.Server.Invalidation;
 using ByteShelf.Server.Jobs;
 using ByteShelf.Server.Mcp;
+using ByteShelf.Server.Metadata;
 using ByteShelf.Server.Replication;
 using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared;
@@ -156,6 +157,7 @@ namespace ByteShelf.Server
             services.AddJobServices();
             services.AddChangeLogServices();
             services.AddStorageServices();
+            services.AddMetadataServices();
             services.AddAccessServices();
         }
 

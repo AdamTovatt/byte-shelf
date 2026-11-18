@@ -82,6 +82,51 @@ namespace ByteShelf.Server.Tests.Replication
         }
 
         [Fact]
+        public async Task Sync_MetadataReadOnThePrimary_ReachesTheReplica()
+        {
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+
+            await PutPdfOnPrimaryAsync("/q3.pdf", "Q3 report");
+            await ReadMetadataOnPrimaryAsync();
+            await _pair.SyncAsync();
+
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            FileMetadata metadata = (await replica.GetFromJsonAsync<FileMetadata>("/api/shelves/docs/files/metadata?path=/q3.pdf"))!;
+            Assert.Equal(("Q3 report", 2), (metadata.Title, metadata.PageCount));
+        }
+
+        [Fact]
+        public async Task Pair_MetadataReadBeforePairing_ComesWithTheWholeCopy()
+        {
+            await PutPdfOnPrimaryAsync("/q3.pdf", "Q3 report");
+            await ReadMetadataOnPrimaryAsync();
+
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            Assert.Equal("Q3 report", (await replica.GetFromJsonAsync<FileMetadata>("/api/shelves/docs/files/metadata?path=/q3.pdf"))!.Title);
+        }
+
+        [Fact]
+        public async Task Sync_MetadataDroppedOnThePrimary_IsDroppedOnTheReplicaAndForgottenByBothLogs()
+        {
+            ShelfFile pdf = await PutPdfOnPrimaryAsync("/q3.pdf", "Q3 report");
+            await ReadMetadataOnPrimaryAsync();
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+
+            await _pair.PurgeOnPrimaryAsync("docs", "/q3.pdf");
+            await ReadMetadataOnPrimaryAsync();
+            await _pair.SyncAsync();
+
+            Assert.Equal(0, await QueryOnAsync<long>(_pair.Replica, $"SELECT COUNT(*) FROM object_metadata WHERE sha256 = '{pdf.Sha256}'"));
+            const string Remembered = "SELECT COUNT(*) FROM change_log WHERE entity_type = 'object_metadata' AND payload IS NOT NULL";
+            Assert.Equal((0L, 0L), (await QueryOnAsync<long>(_pair.Primary, Remembered), await QueryOnAsync<long>(_pair.Replica, Remembered)));
+        }
+
+        [Fact]
         public async Task Sync_DescriptionSetOnThePrimary_ReachesTheReplicaAndItsSearch()
         {
             await _pair.PutOnPrimaryAsync("docs", "/a.txt", "first");
@@ -943,6 +988,18 @@ namespace ByteShelf.Server.Tests.Replication
         {
             Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
             Assert.StartsWith(reason, (await response.Content.ReadFromJsonAsync<ErrorResponse>())!.Message, StringComparison.Ordinal);
+        }
+
+        /// <summary>Stores a PDF of two pages on the primary's shelf <c>docs</c>.</summary>
+        private Task<ShelfFile> PutPdfOnPrimaryAsync(string path, string title)
+        {
+            return _pair.Primary.PutAsAdminAsync("docs", path, TestMedia.Pdf(pages: 2, title), "application/pdf");
+        }
+
+        /// <summary>A pass of the primary's metadata.reading, run here rather than waiting for its worker.</summary>
+        private Task ReadMetadataOnPrimaryAsync()
+        {
+            return _pair.Primary.Services.ReadMetadataAsync();
         }
 
         private static async Task<List<Guid>> UserIdsAsync(HttpClient client)

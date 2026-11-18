@@ -16,6 +16,7 @@ namespace ByteShelf.Server.Tests.Access
         {
             ["EntriesController.List"] = ShelfOperation.Read,
             ["EntriesController.GetFile"] = ShelfOperation.Read,
+            ["EntriesController.GetFileMetadata"] = ShelfOperation.Read,
             ["EntriesController.GetContent"] = ShelfOperation.Read,
             ["EntriesController.PutContent"] = ShelfOperation.Add,
             ["EntriesController.SwapContent"] = ShelfOperation.Write,

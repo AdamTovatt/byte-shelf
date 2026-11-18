@@ -11,6 +11,7 @@ export type DeletionTree = components['schemas']['DeletionTree'];
 export type FileSearchResults = components['schemas']['FileSearchResults'];
 export type DuplicateSearchResults = components['schemas']['DuplicateSearchResults'];
 export type DuplicateGroup = components['schemas']['DuplicateGroup'];
+export type FileMetadata = components['schemas']['FileMetadata'];
 
 /**
  * A directory or a file in a listing, as the shelf page and its dialogs act on it. A directory
@@ -77,20 +78,28 @@ export function moveDirectory(shelf: string, id: string, toPath: string): Promis
   return unwrapResponse(apiClient.POST('/api/shelves/{shelf}/directories/move', { params: { ...shelfPath(shelf), query: { id } }, body: { toPath } }));
 }
 
+/** What the server read from a file's contents; `readAt` is null until it has, and for good when `readable` is false (an encrypted file, or a type it does not read). */
+export function fetchFileMetadata(shelf: string, id: string): Promise<FileMetadata> {
+  return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/files/metadata', { params: { ...shelfPath(shelf), query: { id } } }));
+}
+
 /** Sets a file's description; null or blank removes it. */
 export function setDescription(shelf: string, id: string, description: string | null): Promise<ShelfFile> {
   return unwrapResponse(apiClient.PUT('/api/shelves/{shelf}/files/description', { params: { ...shelfPath(shelf), query: { id } }, body: { description } }));
 }
 
-/** The first page of the live files under `under` whose name or description holds `text`, by path. */
+/**
+ * The first page of the live files under `under` whose name, description, or the title or camera
+ * read from its contents holds `text`, by path.
+ */
 export function searchFiles(shelf: string, under: string, text: string): Promise<FileSearchResults> {
   return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/search', { params: { ...shelfPath(shelf), query: { under, text } } }));
 }
 
 /**
  * A page of the groups of plain files under `under` with the same contents, most repeated bytes
- * first: the first, or the one after the cursor `after`. With `text`, only files whose name or
- * description holds it count.
+ * first: the first, or the one after the cursor `after`. With `text`, only files whose name,
+ * description, or the title or camera read from its contents holds it count.
  */
 export function findDuplicates(shelf: string, under: string, text: string, after?: string): Promise<DuplicateSearchResults> {
   return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/duplicates', { params: { ...shelfPath(shelf), query: { under, text: text || undefined, after } } }));

@@ -45,7 +45,7 @@ namespace ByteShelf.Tools.Mcp
 
         // The criteria search_files and find_duplicates share (FileCriteria), described once for both.
         private const string UnderDescription = "The directory to search under; / (the default) for the whole shelf.";
-        private const string TextDescription = "Text the file's name or description contains, ignoring case.";
+        private const string TextDescription = "Text the file's name or description contains, ignoring case, or the title or camera its contents carry.";
         private const string ContentTypeDescription = "A media type such as application/pdf, or a family such as image/*.";
         private const string MinSizeDescription = "The fewest bytes.";
         private const string MaxSizeDescription = "The most bytes.";
@@ -54,6 +54,13 @@ namespace ByteShelf.Tools.Mcp
         private const string UpdatedFromDescription = "Last changed at or after this ISO 8601 time.";
         private const string UpdatedBeforeDescription = "Last changed before this ISO 8601 time.";
         private const string Sha256Description = "The contents' SHA-256 in hex, to find copies of a file.";
+        private const string TakenFromDescription = "A photo or video taken at or after this ISO 8601 time, as its contents say.";
+        private const string TakenBeforeDescription = "A photo or video taken before this ISO 8601 time.";
+        private const string HasGpsDescription = "Only files whose contents carry a GPS position.";
+        private const string MinDurationDescription = "The fewest seconds a video plays (read from QuickTime and MP4 files).";
+        private const string MaxDurationDescription = "The most seconds a video plays (read from QuickTime and MP4 files).";
+        private const string MinPageCountDescription = "The fewest pages a PDF has.";
+        private const string MaxPageCountDescription = "The most pages a PDF has.";
         private const string AfterDescription = "The cursor a previous page ended with, for the next page.";
 
         /// <summary>Why a tool never reads an encrypted file's contents, after the file's path.</summary>
@@ -118,13 +125,17 @@ namespace ByteShelf.Tools.Mcp
 
         [McpServerTool(Name = "get_info", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
         [ToolNeeds(ToolNeed.Read)]
-        [Description("A file's record (id, size, content type, SHA-256, times), or a directory's id.")]
+        [Description("A file's record (id, size, content type, SHA-256, times) with what its contents say (when a photo or video was taken, where, with what camera, how long it plays, a PDF's title and pages), or a directory's id.")]
         public Task<string> GetInfoAsync(
             [Description("The file's or directory's path.")] string path,
             [Description(ShelfDescription)] string? shelf = null,
             CancellationToken cancellationToken = default)
         {
-            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.Entry(await Entries.GetAsync(shelfClient, path, cancellationToken)));
+            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) =>
+            {
+                (Entry entry, FileMetadata? metadata) = await Entries.GetWithMetadataAsync(shelfClient, path, cancellationToken);
+                return TextFormat.Info(entry, metadata);
+            });
         }
 
         [McpServerTool(Name = "upload_file", ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
@@ -233,7 +244,7 @@ namespace ByteShelf.Tools.Mcp
 
         [McpServerTool(Name = "search_files", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
         [ToolNeeds(ToolNeed.Read)]
-        [Description("Finds files on a shelf, under a directory at any depth, that meet every criterion given; none given lists every file. Answers a page of paths by path order, with a cursor when more follow.")]
+        [Description("Finds files on a shelf, under a directory at any depth, that meet every criterion given; none given lists every file. The taken, GPS, duration and page criteria ask what the server read from files' contents, which encrypted files never carry. Answers a page of paths by path order, with a cursor when more follow.")]
         public Task<string> SearchFilesAsync(
             [Description(UnderDescription)] string under = ShelfPath.Root,
             [Description(TextDescription)] string? text = null,
@@ -245,12 +256,36 @@ namespace ByteShelf.Tools.Mcp
             [Description(UpdatedFromDescription)] DateTimeOffset? updatedFrom = null,
             [Description(UpdatedBeforeDescription)] DateTimeOffset? updatedBefore = null,
             [Description(Sha256Description)] string? sha256 = null,
+            [Description(TakenFromDescription)] DateTimeOffset? takenFrom = null,
+            [Description(TakenBeforeDescription)] DateTimeOffset? takenBefore = null,
+            [Description(HasGpsDescription)] bool hasGps = false,
+            [Description(MinDurationDescription)] double? minDurationSeconds = null,
+            [Description(MaxDurationDescription)] double? maxDurationSeconds = null,
+            [Description(MinPageCountDescription)] int? minPageCount = null,
+            [Description(MaxPageCountDescription)] int? maxPageCount = null,
             [Description("Files per page, 1 to 1000; 100 by default.")] int? limit = null,
             [Description(AfterDescription)] string? after = null,
             [Description(ShelfDescription)] string? shelf = null,
             CancellationToken cancellationToken = default)
         {
-            FileCriteria criteria = Criteria(under, text, contentType, minSizeBytes, maxSizeBytes, createdFrom, createdBefore, updatedFrom, updatedBefore, sha256);
+            FileCriteria criteria = Criteria(
+                under: under,
+                text: text,
+                contentType: contentType,
+                minSizeBytes: minSizeBytes,
+                maxSizeBytes: maxSizeBytes,
+                createdFrom: createdFrom,
+                createdBefore: createdBefore,
+                updatedFrom: updatedFrom,
+                updatedBefore: updatedBefore,
+                sha256: sha256,
+                takenFrom: takenFrom,
+                takenBefore: takenBefore,
+                hasGps: hasGps,
+                minDurationSeconds: minDurationSeconds,
+                maxDurationSeconds: maxDurationSeconds,
+                minPageCount: minPageCount,
+                maxPageCount: maxPageCount);
 
             return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.SearchResults(
                 await shelfClient.SearchAsync(new FileSearch(criteria) { Limit = limit, After = after }, cancellationToken),
@@ -271,12 +306,36 @@ namespace ByteShelf.Tools.Mcp
             [Description(UpdatedFromDescription)] DateTimeOffset? updatedFrom = null,
             [Description(UpdatedBeforeDescription)] DateTimeOffset? updatedBefore = null,
             [Description(Sha256Description)] string? sha256 = null,
+            [Description(TakenFromDescription)] DateTimeOffset? takenFrom = null,
+            [Description(TakenBeforeDescription)] DateTimeOffset? takenBefore = null,
+            [Description(HasGpsDescription)] bool hasGps = false,
+            [Description(MinDurationDescription)] double? minDurationSeconds = null,
+            [Description(MaxDurationDescription)] double? maxDurationSeconds = null,
+            [Description(MinPageCountDescription)] int? minPageCount = null,
+            [Description(MaxPageCountDescription)] int? maxPageCount = null,
             [Description("Groups per page, 1 to 1000; 100 by default.")] int? limit = null,
             [Description(AfterDescription)] string? after = null,
             [Description(ShelfDescription)] string? shelf = null,
             CancellationToken cancellationToken = default)
         {
-            FileCriteria criteria = Criteria(under, text, contentType, minSizeBytes, maxSizeBytes, createdFrom, createdBefore, updatedFrom, updatedBefore, sha256);
+            FileCriteria criteria = Criteria(
+                under: under,
+                text: text,
+                contentType: contentType,
+                minSizeBytes: minSizeBytes,
+                maxSizeBytes: maxSizeBytes,
+                createdFrom: createdFrom,
+                createdBefore: createdBefore,
+                updatedFrom: updatedFrom,
+                updatedBefore: updatedBefore,
+                sha256: sha256,
+                takenFrom: takenFrom,
+                takenBefore: takenBefore,
+                hasGps: hasGps,
+                minDurationSeconds: minDurationSeconds,
+                maxDurationSeconds: maxDurationSeconds,
+                minPageCount: minPageCount,
+                maxPageCount: maxPageCount);
 
             return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.Duplicates(
                 await shelfClient.FindDuplicatesAsync(new DuplicateSearch(criteria) { Limit = limit, After = after == null ? null : DuplicateCursor.Parse(after) }, cancellationToken),
@@ -294,7 +353,14 @@ namespace ByteShelf.Tools.Mcp
             DateTimeOffset? createdBefore,
             DateTimeOffset? updatedFrom,
             DateTimeOffset? updatedBefore,
-            string? sha256)
+            string? sha256,
+            DateTimeOffset? takenFrom,
+            DateTimeOffset? takenBefore,
+            bool hasGps,
+            double? minDurationSeconds,
+            double? maxDurationSeconds,
+            int? minPageCount,
+            int? maxPageCount)
         {
             return new FileCriteria
             {
@@ -308,6 +374,13 @@ namespace ByteShelf.Tools.Mcp
                 UpdatedFrom = updatedFrom,
                 UpdatedBefore = updatedBefore,
                 Sha256 = sha256,
+                TakenFrom = takenFrom,
+                TakenBefore = takenBefore,
+                HasGps = hasGps,
+                MinDurationSeconds = minDurationSeconds,
+                MaxDurationSeconds = maxDurationSeconds,
+                MinPageCount = minPageCount,
+                MaxPageCount = maxPageCount,
             };
         }
 

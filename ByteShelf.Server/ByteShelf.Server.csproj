@@ -45,6 +45,13 @@
     -->
     <PackageReference Include="SkiaSharp" Version="4.153.2" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.153.2" />
+    <!--
+      Read what a file's contents say about it (Metadata/MetadataReader.cs), fully managed and offline:
+      MetadataExtractor (Apache-2.0, with XmpCore, BSD) for EXIF and QuickTime/MP4, PdfPig (Apache-2.0)
+      for a PDF's title and pages. Only the server reads metadata, so neither ships in ByteShelfClient.
+    -->
+    <PackageReference Include="MetadataExtractor" Version="2.9.3" />
+    <PackageReference Include="PdfPig" Version="0.1.16" />
   </ItemGroup>
 
   <ItemGroup>

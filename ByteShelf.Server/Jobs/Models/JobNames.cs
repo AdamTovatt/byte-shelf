@@ -14,5 +14,8 @@ namespace ByteShelf.Server.Jobs.Models
 
         /// <summary>Emails the admins when replication has gone wrong for long, and when it recovers.</summary>
         public const string ReplicationAlerts = "replication.alerts";
+
+        /// <summary>Reads what stored files' contents say about them, and drops what was read from contents no longer stored.</summary>
+        public const string MetadataReading = "metadata.reading";
     }
 }

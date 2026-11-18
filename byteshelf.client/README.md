@@ -2,11 +2,14 @@
 
 The ByteShelf web UI: React, TypeScript, Vite, Tailwind and TanStack Query, built on the house
 template. Everyone browses the shelves they reach, searches a folder and everything below it by
-name or description (the options at the search field's end narrow it, as "Duplicates only" does to
-the files with the same contents), uploads (dropping files on a directory works too), opens and downloads files,
-describes, shares by a link, moves, renames and deletes them, encrypts files and folders with a
-password, and restores them from the trash or downloads a deleted file from it without restoring
-it (a replica's trash too). Admins
+name, description, or the title or camera read from its contents (the options at the search
+field's end narrow it, as "Duplicates only" does to the files with the same contents), uploads
+(dropping files on a directory works too), opens and downloads files, shows a file's details
+with what the server read from its contents
+(`FileDetailsDialog`: when and where a photo was taken, the camera, a video's length, a PDF's
+title and pages), describes, shares by a link, moves, renames and deletes them, encrypts files and
+folders with a password, and restores them from the trash or downloads a deleted file from it
+without restoring it (a replica's trash too). Admins
 also create shelves and users, set quotas, give access from a shelf or from a user, make keys, and on
 the Replication page pair replicas, see how far behind each is, remove one, and promote a replica.
 

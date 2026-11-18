@@ -1,9 +1,11 @@
+using ByteShelf.Server.Shared.Concurrency;
+
 namespace ByteShelf.Server.Jobs.Services
 {
     /// <summary>
     /// A background job that runs once at startup and then <see cref="Interval"/> after each pass ends,
-    /// each pass in a scope of its own. A pass's summary is logged; a failed pass is logged and the next
-    /// one runs on schedule.
+    /// or sooner when its <see cref="Wake"/> is woken, each pass in a scope of its own. A pass's summary
+    /// is logged; a failed pass is logged and the next one runs on schedule.
     /// </summary>
     /// <typeparam name="TSummary">What one pass reports, logged when it ends.</typeparam>
     public abstract class PeriodicJobWorker<TSummary> : BackgroundService
@@ -24,6 +26,9 @@ namespace ByteShelf.Server.Jobs.Services
 
         /// <summary>The time from the end of one pass to the start of the next.</summary>
         protected abstract TimeSpan Interval { get; }
+
+        /// <summary>Starts the next pass before <see cref="Interval"/> has passed when woken; null for a job only the clock runs.</summary>
+        protected virtual WakeSignal? Wake => null;
 
         /// <summary>Does one pass with services from <paramref name="services"/>, a scope of its own.</summary>
         protected abstract Task<TSummary> RunOnceAsync(IServiceProvider services, CancellationToken cancellationToken);
@@ -49,7 +54,14 @@ namespace ByteShelf.Server.Jobs.Services
 
                 try
                 {
-                    await Task.Delay(Interval, _timeProvider, stoppingToken);
+                    if (Wake is WakeSignal wake)
+                    {
+                        await wake.WaitAsync(Interval, _timeProvider, stoppingToken);
+                    }
+                    else
+                    {
+                        await Task.Delay(Interval, _timeProvider, stoppingToken);
+                    }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {

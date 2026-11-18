@@ -35,6 +35,7 @@ namespace ByteShelf.Server.Storage.Repositories
         private const string FoundSql = $@"
             SELECT {SelectColumns}, tree.node_path || '/' || file.name AS {nameof(FileSearchEntity.FullPath)}
             FROM file JOIN tree ON file.directory_id = tree.node_id
+            {SearchCriteria.Join}
             WHERE file.deleted_at IS NULL
               AND {SearchCriteria.Sql}";
 

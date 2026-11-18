@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeUsage, formatBytes, formatDate, formatQuota, formatTime, parseQuota, splitForMiddle, tryParseQuota, usedShare } from './format';
+import { describeUsage, formatBytes, formatDate, formatDuration, formatQuota, formatTime, parseQuota, splitForMiddle, tryParseQuota, usedShare } from './format';
 
 describe('formatBytes', () => {
   it.each([
@@ -18,6 +18,14 @@ describe('formatDate and formatTime', () => {
     const instant = new Date(2026, 2, 1, 9, 5).toISOString();
     expect(formatDate(instant)).toBe('2026-03-01');
     expect(formatTime(instant)).toBe('2026-03-01 09:05');
+  });
+});
+
+describe('formatDuration', () => {
+  it('writes minutes and seconds, and hours from an hour up, rounded to the second', () => {
+    expect(formatDuration(5.4)).toBe('0:05');
+    expect(formatDuration(187.2)).toBe('3:07');
+    expect(formatDuration(3909.4)).toBe('1:05:09');
   });
 });
 
