@@ -63,8 +63,12 @@ each request; a program that sends large chunks over a slow line can raise it.
 A shelf name, path, content type, description, search, tree query or link lifetime the rules in
 ByteShelfCommon refuse throws `ArgumentException` before anything is sent. Anything the server refuses throws
 `ByteShelfException`, whose `Code` is one of `ErrorCodes`: `not_found`, `conflict`,
-`permission_denied`, `quota_exceeded` and so on. A request that
-never reached the server throws what `HttpClient` throws.
+`permission_denied`, `quota_exceeded` and so on. A successful answer whose body is not ByteShelf's
+throws it with `ByteShelfException.InvalidResponse` (`invalid_response`), a code only ByteShelfClient
+uses; a failed one takes its code from its status. `IsAccessRefused` (`unauthenticated`,
+`invalid_credentials` or `permission_denied`: the server refused who is asking, or a password or key
+they gave, and the same credentials get the same answer), `IsNotFound` and `IsInvalidResponse` sort
+the codes a program usually acts on. A request that never reached the server throws what `HttpClient` throws.
 
 ## Sessions
 
