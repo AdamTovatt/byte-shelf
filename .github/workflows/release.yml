@@ -73,7 +73,11 @@ jobs:
         sha256sum * > SHA256SUMS
         cat SHA256SUMS
 
+    # The notes are the csproj's <PackageReleaseNotes>, written with the version they belong to, and
+    # gh appends the pull requests merged since the last release below them.
     - name: Create GitHub release
       env:
         GH_TOKEN: ${{ github.token }}
-      run: gh release create "$GITHUB_REF_NAME" release/* --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+      run: |
+        dotnet msbuild ByteShelf.Server -getProperty:PackageReleaseNotes > release-notes.md
+        gh release create "$GITHUB_REF_NAME" release/* --title "$GITHUB_REF_NAME" --notes-file release-notes.md --generate-notes --verify-tag

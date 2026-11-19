@@ -19,6 +19,7 @@
     <Description>Client for ByteShelf, a self-hosted file store: an interface over shelves, files and directories, an HTTP implementation, and an in-memory one for tests.</Description>
     <Copyright>MIT</Copyright>
     <Version>2.1.0</Version>
+    <PackageReleaseNotes>Adds to IShelfClient, in the HTTP client and the in-memory one: FindDuplicatesAsync finds files with the same contents under a search's criteria; GetFileMetadataAsync answers what the server read from a photo, video or PDF (time taken, GPS position, camera, length, title, pages); GetLinksAsync and RevokeLinkAsync list and end a shelf's share and upload links; MoveAsync and SetDescriptionsAsync move and describe many entries in one request, each answered done or refused on its own. SearchAsync takes the new criteria of ByteShelfCommon 2.1.0, among them HasDescription for the files still to describe. The new calls need ByteShelf server 2.1.0. ByteShelfException now sorts a refusal by kind with IsAccessRefused, IsNotFound and IsInvalidResponse. One behaviour change: a successful answer whose body is not ByteShelf's (not JSON, the wrong shape, empty or null) now throws ByteShelfException with InvalidResponse instead of a JsonException. See https://github.com/AdamTovatt/byte-shelf/blob/client-v$(Version)/ByteShelfClient/README.md</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

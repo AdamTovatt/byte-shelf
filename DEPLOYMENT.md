@@ -18,8 +18,10 @@ Pushing a tag `server-v<version>`, such as `server-v2.0.0`, runs `.github/workfl
 The tag's version must equal `<Version>` in `ByteShelf.Server.csproj`, or nothing is released. The
 release holds `byteshelf-linux-arm64.zip` and `byteshelf-linux-x64.zip`, each a self-contained
 publish with `updaemon.json` at its root, and a `SHA256SUMS` that updaemon checks the download
-against. The `client-v` and `cli-v` tags publish to NuGet and make no GitHub release, so the latest
-release is always the server's, which is the one updaemon installs and updates to.
+against. Its notes are `<PackageReleaseNotes>` in the same csproj, above the pull requests GitHub
+lists since the last release. The `client-v` and `cli-v` tags publish to NuGet and make no GitHub
+release, so the latest release is always the server's, which is the one updaemon installs and
+updates to. Each package's `<PackageReleaseNotes>` is its release notes on nuget.org.
 
 ## Installing
 
