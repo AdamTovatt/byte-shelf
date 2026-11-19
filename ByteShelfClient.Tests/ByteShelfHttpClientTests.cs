@@ -442,6 +442,36 @@ namespace ByteShelfClient.Tests
         }
 
         [Fact]
+        public async Task SendAsync_SuccessWhoseBodyIsNotJson_ThrowsInvalidResponse()
+        {
+            using ScriptedServer server = new ScriptedServer(_ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("<html><body>Welcome to nginx!</body></html>", Encoding.UTF8, "text/html"),
+            });
+            using HttpClient http = server.CreateClient();
+
+            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(
+                () => new ByteShelfHttpClient(http, new ShelfKeyCredentials("bsk_secret")).Shelf("docs").GetInfoAsync());
+
+            Assert.Equal((ByteShelfException.InvalidResponse, HttpStatusCode.OK), (exception.Code, exception.StatusCode));
+        }
+
+        [Theory]
+        [InlineData("[1, 2, 3]")]
+        [InlineData("")]
+        [InlineData("null")]
+        public async Task SendAsync_SuccessWhoseJsonIsNotTheShapeAsked_ThrowsInvalidResponse(string body)
+        {
+            using ScriptedServer server = new ScriptedServer(_ => ScriptedServer.Json(body));
+            using HttpClient http = server.CreateClient();
+
+            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(
+                () => new ByteShelfHttpClient(http, new ShelfKeyCredentials("bsk_secret")).Shelf("docs").GetInfoAsync());
+
+            Assert.Equal(ByteShelfException.InvalidResponse, exception.Code);
+        }
+
+        [Fact]
         public void Constructor_BaseAddressWithoutTrailingSlash_Throws()
         {
             using HttpClient http = new HttpClient { BaseAddress = new Uri("http://shelf.test/byteshelf") };

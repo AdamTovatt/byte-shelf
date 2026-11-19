@@ -402,7 +402,7 @@ namespace ByteShelfClient.InMemory
             {
                 return EntryMoveResult.Moved(move, MoveFile(shelf, entry, normalizedPath));
             }
-            catch (ByteShelfException notAFile) when (notAFile.Code == ErrorCodes.NotFound)
+            catch (ByteShelfException notAFile) when (notAFile.IsNotFound)
             {
                 // A directory, or nothing: a file move finds nothing only at its own path.
             }
@@ -411,7 +411,7 @@ namespace ByteShelfClient.InMemory
             {
                 return EntryMoveResult.Moved(move, MoveDirectory(shelf, entry, normalizedPath));
             }
-            catch (ByteShelfException notADirectory) when (notADirectory.Code == ErrorCodes.NotFound)
+            catch (ByteShelfException notADirectory) when (notADirectory.IsNotFound)
             {
                 throw InMemoryErrors.NotFound($"Neither a file nor a directory is at '{move.Path}' on this shelf.");
             }

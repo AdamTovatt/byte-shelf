@@ -245,7 +245,7 @@ namespace ByteShelf.Tools
         {
             return exception switch
             {
-                ByteShelfException refused => refused.Code is not (ErrorCodes.Unauthenticated or ErrorCodes.PermissionDenied or ErrorCodes.QuotaExceeded or ErrorCodes.ReadOnlyReplica),
+                ByteShelfException refused => !(refused.IsAccessRefused || refused.Code is ErrorCodes.QuotaExceeded or ErrorCodes.ReadOnlyReplica),
                 UsageException or ArgumentException or IOException or UnauthorizedAccessException or AgeException => true,
                 _ => false,
             };

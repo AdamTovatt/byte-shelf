@@ -25,10 +25,8 @@ namespace ByteShelfClient.Http
             }
             catch (JsonException)
             {
-            }
-            catch (NotSupportedException)
-            {
-                // Not JSON at all, such as the empty 401 the authentication middleware answers.
+                // Not ByteShelf's error body, such as the empty 401 the authentication middleware answers or a
+                // reverse proxy's HTML page: the status says what it was.
             }
 
             string message = body?.Message ?? $"The server answered {(int)response.StatusCode} {response.ReasonPhrase}.";

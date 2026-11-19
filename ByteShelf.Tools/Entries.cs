@@ -65,7 +65,7 @@ namespace ByteShelf.Tools
                 {
                     return Entry.Of(await shelf.GetFileAsync(path, cancellationToken));
                 }
-                catch (ByteShelfException notAFile) when (notAFile.Code == ErrorCodes.NotFound)
+                catch (ByteShelfException notAFile) when (notAFile.IsNotFound)
                 {
                     // A directory, or nothing.
                 }
@@ -75,7 +75,7 @@ namespace ByteShelf.Tools
             {
                 return Entry.Of((await shelf.ListAsync(path, cancellationToken)).Directory);
             }
-            catch (ByteShelfException notADirectory) when (notADirectory.Code == ErrorCodes.NotFound)
+            catch (ByteShelfException notADirectory) when (notADirectory.IsNotFound)
             {
                 throw new ByteShelfException(
                     $"Neither a file nor a directory is at {shelf.Name}:{path}. {notADirectory.Message}",

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 
 namespace ByteShelfClient.Http
@@ -84,11 +85,31 @@ namespace ByteShelfClient.Http
         }
 
         /// <summary>Reads the JSON body of a successful <paramref name="response"/>.</summary>
-        /// <exception cref="ByteShelfException">It has none.</exception>
+        /// <exception cref="ByteShelfException">
+        /// It is not JSON of the shape asked for, or is empty or null (<see cref="ByteShelfException.InvalidResponse"/>).
+        /// </exception>
         public static async Task<T> ReadAsync<T>(HttpResponseMessage response, JsonTypeInfo<T> resultType, CancellationToken cancellationToken)
         {
-            return await response.Content.ReadFromJsonAsync(resultType, cancellationToken).ConfigureAwait(false)
-                ?? throw new ByteShelfException($"The server answered {(int)response.StatusCode} without a body.", code: null, response.StatusCode);
+            T? result;
+            try
+            {
+                result = await response.Content.ReadFromJsonAsync(resultType, cancellationToken).ConfigureAwait(false);
+            }
+            catch (JsonException exception)
+            {
+                throw NotByteShelfs(response, exception);
+            }
+
+            return result ?? throw NotByteShelfs(response, innerException: null);
+        }
+
+        private static ByteShelfException NotByteShelfs(HttpResponseMessage response, Exception? innerException)
+        {
+            return new ByteShelfException(
+                $"The server answered {(int)response.StatusCode} with a body that is not ByteShelf's.",
+                ByteShelfException.InvalidResponse,
+                response.StatusCode,
+                innerException);
         }
 
         private async Task<(HttpRequestMessage Request, HttpResponseMessage Response)> SendOnceAsync(
