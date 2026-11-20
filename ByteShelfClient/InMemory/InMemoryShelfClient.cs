@@ -710,16 +710,12 @@ namespace ByteShelfClient.InMemory
 
         public Task<CreatedShelfKey> CreateKeyAsync(string name, ShelfKeyPermission permission, CancellationToken cancellationToken = default)
         {
+            ShelfKeys.ValidatePermission(permission);
             return Write(cancellationToken, shelf =>
             {
                 string trimmedName = InMemoryErrors.Checked(() => DisplayText.Validate(name, ShelfKeys.MaxNameLength, "A key's name"));
-                if (!Enum.IsDefined(permission))
-                {
-                    throw InMemoryErrors.Invalid($"'{permission}' is not a shelf key permission.");
-                }
-
                 InMemoryStore.KeyRow key = new InMemoryStore.KeyRow { Id = Guid.NewGuid(), Name = trimmedName, CreatedAt = _store.Now };
-                key.Grants.Add(new InMemoryStore.KeyGrantRow { KeyId = key.Id, ShelfId = shelf.Id, Permission = permission, CreatedAt = key.CreatedAt, UpdatedAt = key.CreatedAt });
+                _store.SetKeyGrant(key, shelf, permission);
                 _store.Keys.Add(key);
 
                 string secret = ShelfKeys.SecretPrefix + Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
@@ -727,7 +723,13 @@ namespace ByteShelfClient.InMemory
             });
         }
 
-        public Task DeleteKeyAsync(Guid keyId, CancellationToken cancellationToken = default)
+        public Task<ShelfKeyGrantInfo> SetKeyGrantAsync(Guid keyId, ShelfKeyPermission permission, CancellationToken cancellationToken = default)
+        {
+            ShelfKeys.ValidatePermission(permission);
+            return Write(cancellationToken, shelf => _store.ToInfo(_store.SetKeyGrant(_store.GetKey(keyId), shelf, permission)));
+        }
+
+        public Task RemoveKeyGrantAsync(Guid keyId, CancellationToken cancellationToken = default)
         {
             return Write(cancellationToken, shelf => _store.RemoveKeyGrant(keyId, shelf));
         }

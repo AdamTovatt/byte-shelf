@@ -49,7 +49,7 @@ namespace ByteShelf.Server.Access.Services
         public async Task<CreatedShelfKey> CreateAsync(Shelf shelf, string name, ShelfKeyPermission permission)
         {
             string trimmedName = DisplayText.Validate(name, ShelfKeys.MaxNameLength, "A key's name");
-            RequireDefined(permission);
+            ShelfKeys.ValidatePermission(permission);
 
             string secret = RandomSecret.Generate(ShelfKeys.SecretPrefix);
             DateTimeOffset now = _timeProvider.GetUtcNow();
@@ -98,7 +98,7 @@ namespace ByteShelf.Server.Access.Services
         /// <inheritdoc />
         public async Task<ShelfKeyGrantInfo> SetGrantAsync(Shelf shelf, Guid keyId, ShelfKeyPermission permission)
         {
-            RequireDefined(permission);
+            ShelfKeys.ValidatePermission(permission);
 
             await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
             {
@@ -169,14 +169,6 @@ namespace ByteShelf.Server.Access.Services
         public async Task<ShelfKey?> FindBySecretAsync(string secret)
         {
             return await _keyRepository.GetBySecretSha256Async(SecretHash.Sha256Hex(secret));
-        }
-
-        private static void RequireDefined(ShelfKeyPermission permission)
-        {
-            if (!Enum.IsDefined(permission))
-            {
-                throw new ArgumentException($"'{permission}' is not a shelf key permission.");
-            }
         }
 
         private async Task<ShelfKey> GetKeyAsync(Guid keyId, IDbSession session)

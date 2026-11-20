@@ -39,17 +39,5 @@ namespace ByteShelf.Server.Access.Controllers
         {
             return Ok(await _keyService.CreateAsync(Shelf, request.Name, request.Permission));
         }
-
-        /// <summary>Takes the shelf from a key; the key is deleted when that was its last shelf.</summary>
-        [HttpDelete("{keyId:guid}")]
-        [ShelfAccess(ShelfOperation.Administer)]
-        [ProducesResponseType(204)]
-        [ProducesResponseType(typeof(ErrorResponse), 403)]
-        [ProducesResponseType(typeof(ErrorResponse), 404)]
-        public async Task<IActionResult> Delete(Guid keyId)
-        {
-            await _keyService.RemoveGrantAsync(Shelf, keyId);
-            return NoContent();
-        }
     }
 }

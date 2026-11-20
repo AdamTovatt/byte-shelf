@@ -132,6 +132,18 @@ namespace ByteShelfClient.InMemory
         }
 
         /// <inheritdoc />
+        public Task<IReadOnlyList<ShelfKeyGrantInfo>> GetKeyGrantsAsync(Guid keyId, CancellationToken cancellationToken = default)
+        {
+            return _store.RunAsync<IReadOnlyList<ShelfKeyGrantInfo>>(() => _store.GetKey(keyId).Grants.Select(_store.ToInfo).ToList(), cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public Task DeleteKeyAsync(Guid keyId, CancellationToken cancellationToken = default)
+        {
+            return _store.WriteAsync(() => _store.Keys.Remove(_store.GetKey(keyId)), cancellationToken);
+        }
+
+        /// <inheritdoc />
         public Task DeleteUserAsync(Guid userId, CancellationToken cancellationToken = default)
         {
             return _store.WriteAsync(

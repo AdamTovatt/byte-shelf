@@ -127,6 +127,26 @@ namespace ByteShelfClient.InMemory
                 ?? throw InMemoryErrors.NotFound($"There is no key {keyId}.");
         }
 
+        /// <summary>
+        /// Gives the key the shelf, or changes its permission there; the same permission changes nothing.
+        /// </summary>
+        public KeyGrantRow SetKeyGrant(KeyRow key, InMemoryShelf shelf, ShelfKeyPermission permission)
+        {
+            KeyGrantRow? grant = key.Grants.FirstOrDefault(candidate => candidate.ShelfId == shelf.Id);
+            if (grant == null)
+            {
+                grant = new KeyGrantRow { KeyId = key.Id, ShelfId = shelf.Id, Permission = permission, CreatedAt = Now, UpdatedAt = Now };
+                key.Grants.Add(grant);
+            }
+            else if (grant.Permission != permission)
+            {
+                grant.Permission = permission;
+                grant.UpdatedAt = Now;
+            }
+
+            return grant;
+        }
+
         /// <summary>Takes the shelf from the key, deleting the key with its last grant as the server does.</summary>
         /// <exception cref="ByteShelfException"><see cref="ErrorCodes.NotFound"/>: the key has no grant on the shelf.</exception>
         public void RemoveKeyGrant(Guid keyId, InMemoryShelf shelf)

@@ -9,7 +9,7 @@ Targets net8.0 and is AOT-compatible.
 ```csharp
 HttpClient http = new HttpClient { BaseAddress = new Uri("https://files.example.com/") };
 
-// A program uses one shelf with a key an admin created for it.
+// A program uses the shelves an admin gave its key.
 IByteShelfClient client = new ByteShelfHttpClient(http, new ShelfKeyCredentials(secret));
 IShelfClient receipts = client.Shelf("receipts");
 
@@ -41,7 +41,10 @@ directories, move (many entries in one request with `MoveAsync`; a batch applies
 own, in order, and answers each one's result), delete, the trash (`ListDeletionAsync` and `OpenDeletedReadAsync` read what a
 deletion took without restoring it, on a replica too; the listing also says what the deletion took
 and the encrypted folder its files were stored in), and for admins the shelf's settings, grants
-and keys.
+and keys. A key may work on several shelves: a shelf's `GetKeysAsync` lists each key with all its
+shelves (`ShelfKeyInfo.Grants`), `SetKeyGrantAsync` gives an existing key the shelf or changes its
+access there, and `RemoveKeyGrantAsync` takes the shelf from it, deleting a key with its last shelf.
+`IByteShelfClient.GetKeyGrantsAsync` lists a key's shelves and `DeleteKeyAsync` deletes it from all.
 `ByteShelfClient.Encryption` encrypts and decrypts with a password, on the client only. Files and
 directories are named by path or by id; both convert to an `EntryReference`.
 

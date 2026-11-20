@@ -88,8 +88,11 @@ names the shelf `a`. `shelves` lists the shelves you can reach and `whoami` says
 
 Admins also run these, as `byteshelf help` lists them: `shelf create`, `shelf update` and
 `shelf delete`; `users`, and `user create`, `user admin`, `user no-admin` and `user delete`; `grants`,
-`grant` and `revoke` for a user's access to a shelf; and `keys`, `key create` and `key delete` for a
-shelf's keys (a new key's secret is shown once). `passwd` changes your own password and is for
+`grant` and `revoke` for a user's access to a shelf; and for keys, `keys <shelf>` (the keys working
+on a shelf, each with all its shelves), `key create <shelf> <name> <access>` (its secret is shown
+once), `key grant <key-id> <shelf> <access>` (give a key another shelf, or change its access there),
+`key ungrant <key-id> <shelf>` (take a shelf from a key, which goes with its last shelf) and
+`key delete <key-id>` (delete a key from every shelf). `passwd` changes your own password and is for
 anyone signed in as a user.
 
 Replication is an admin's too: `replication` shows the replicas and how many changes each is behind,
@@ -135,7 +138,7 @@ text (UTF-8, up to 256 KiB) or as an image the agent sees (PNG, JPEG, GIF or Web
 a larger image is saved with localPath, since only the server's `/mcp` makes previews), or
 a whole directory to a local folder, moving, deleting, restoring and emptying the trash, and reading
 what a deletion took without restoring it (`download_deleted`). A tool's
-`shelf` can be left out when the login reaches only one shelf, as a key always does. Local paths
+`shelf` can be left out when the login reaches only one shelf, as a key given one shelf does. Local paths
 must be absolute, since the server's working folder is not the agent's. Signing in, users, grants
 and keys stay on the command line, since they carry passwords and secrets an agent's transcript
 should not hold.

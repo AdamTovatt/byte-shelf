@@ -121,6 +121,18 @@ namespace ByteShelfClient.Http
         }
 
         /// <inheritdoc />
+        public Task<IReadOnlyList<ShelfKeyGrantInfo>> GetKeyGrantsAsync(Guid keyId, CancellationToken cancellationToken = default)
+        {
+            return _connection.SendAsync(HttpMethod.Get, $"api/keys/{keyId:D}/grants", ByteShelfJsonContext.Default.IReadOnlyListShelfKeyGrantInfo, cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public Task DeleteKeyAsync(Guid keyId, CancellationToken cancellationToken = default)
+        {
+            return _connection.SendAsync(HttpMethod.Delete, $"api/keys/{keyId:D}", cancellationToken);
+        }
+
+        /// <inheritdoc />
         public Task<ReplicationStatus> GetReplicationAsync(CancellationToken cancellationToken = default)
         {
             return _connection.SendAsync(HttpMethod.Get, "api/replication", ByteShelfJsonContext.Default.ReplicationStatus, cancellationToken);

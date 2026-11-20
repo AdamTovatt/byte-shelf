@@ -2,11 +2,12 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { queryKeys } from '../lib/queryKeys';
 import {
   createKey,
-  deleteKey,
   fetchGrants,
   fetchKeys,
   removeGrant,
+  removeKeyGrant,
   setGrant,
+  setKeyGrant,
   type ShelfAccessPermission,
   type ShelfKeyPermission,
 } from '../services/accessService';
@@ -64,7 +65,17 @@ export function useCreateKey(shelf: string) {
   });
 }
 
-export function useDeleteKey(shelf: string) {
+/** Gives an existing key a shelf, or changes what it may do there. */
+export function useSetKeyGrant() {
   const invalidate = useInvalidateAccess();
-  return useMutation({ mutationFn: (keyId: string) => deleteKey(shelf, keyId), onSuccess: invalidate });
+  return useMutation({
+    mutationFn: ({ shelf, keyId, permission }: { shelf: string; keyId: string; permission: ShelfKeyPermission }) => setKeyGrant(shelf, keyId, permission),
+    onSuccess: invalidate,
+  });
+}
+
+/** Takes a shelf from a key, which the server deletes with its last shelf. */
+export function useRemoveKeyGrant() {
+  const invalidate = useInvalidateAccess();
+  return useMutation({ mutationFn: ({ shelf, keyId }: { shelf: string; keyId: string }) => removeKeyGrant(shelf, keyId), onSuccess: invalidate });
 }

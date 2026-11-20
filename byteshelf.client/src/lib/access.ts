@@ -6,7 +6,7 @@ export const ACCESS_OPTIONS: { value: ShelfAccessPermission; label: string }[] =
   { value: 'readWrite', label: 'Read and write' },
 ];
 
-/** What a key may do on its shelf, as the choices read. */
+/** What a key may do on one of its shelves, as the choices read. */
 export const KEY_OPTIONS: { value: ShelfKeyPermission; label: string }[] = [
   { value: 'read', label: 'Read' },
   { value: 'addOnly', label: 'Add only' },
@@ -16,3 +16,12 @@ export const KEY_OPTIONS: { value: ShelfKeyPermission; label: string }[] = [
 export function keyPermissionLabel(permission: ShelfKeyPermission): string {
   return KEY_OPTIONS.find((option) => option.value === permission)?.label ?? permission;
 }
+
+/** The choice that takes a shelf away, beside a permission in a list of every shelf. */
+export const NO_ACCESS = 'none';
+
+export type AccessChoice = ShelfAccessPermission | typeof NO_ACCESS;
+export type KeyAccessChoice = ShelfKeyPermission | typeof NO_ACCESS;
+
+export const ACCESS_CHOICES: { value: AccessChoice; label: string }[] = [{ value: NO_ACCESS, label: 'None' }, ...ACCESS_OPTIONS];
+export const KEY_CHOICES: { value: KeyAccessChoice; label: string }[] = [{ value: NO_ACCESS, label: 'None' }, ...KEY_OPTIONS];

@@ -158,7 +158,7 @@ namespace ByteShelf.Server.Tests.Storage
             CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite);
             using HttpClient key = _host.CreateKeyClient(created.Secret);
             UploadLink link = await CreateLinkAsync(key, new CreateUploadLinkRequest { Path = "/a.txt" });
-            (await _host.AdminClient.DeleteAsync($"/api/shelves/docs/keys/{created.Key.Id}")).EnsureSuccessStatusCode();
+            (await _host.AdminClient.DeleteAsync($"/api/keys/{created.Key.Id}/grants/docs")).EnsureSuccessStatusCode();
 
             HttpResponseMessage response = await PutAsync(link, "a");
 

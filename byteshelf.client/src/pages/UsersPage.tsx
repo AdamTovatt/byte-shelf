@@ -8,7 +8,7 @@ import { PasswordInput } from '../components/PasswordInput';
 import { useCreateUser, useCurrentUser, useDeleteUser, useSetRoles, useUsers } from '../hooks/useUserQueries';
 import { useGrantsByShelf, useRemoveGrant, useSetGrant } from '../hooks/useAccessQueries';
 import { useShelves } from '../hooks/useShelfQueries';
-import { ACCESS_OPTIONS } from '../lib/access';
+import { ACCESS_CHOICES, NO_ACCESS, type AccessChoice } from '../lib/access';
 import { validatePassword } from '../lib/passwordValidation';
 import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
@@ -111,10 +111,6 @@ function UserRow({ user, shelves, onEditAccess, onDelete }: { user: UserInfo; sh
     </div>
   );
 }
-
-const NO_ACCESS = 'none';
-type AccessChoice = ShelfAccessPermission | typeof NO_ACCESS;
-const ACCESS_CHOICES: { value: AccessChoice; label: string }[] = [{ value: NO_ACCESS, label: 'None' }, ...ACCESS_OPTIONS];
 
 /** One user's access on every shelf, each changed as it is picked, the same change a shelf's settings make. */
 function UserAccessDialog({ user, shelves, access, onClose }: { user: UserInfo; shelves: string[]; access: UserShelf[]; onClose: () => void }) {

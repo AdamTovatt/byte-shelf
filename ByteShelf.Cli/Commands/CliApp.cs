@@ -98,9 +98,11 @@ namespace ByteShelf.Cli.Commands
                 new Command(Section.Users, "grants", "<shelf>", "who has been given access to a shelf", ListGrantsAsync),
                 new Command(Section.Users, "grant", $"<shelf> <user> {PermissionNames.AccessWords}", "give a user access to a shelf", GrantAsync),
                 new Command(Section.Users, "revoke", "<shelf> <user>", "take a user's access to a shelf away", RevokeAsync),
-                new Command(Section.Users, "keys", "<shelf>", "a shelf's keys", ListKeysAsync),
-                new Command(Section.Users, "key create", $"<shelf> <name> {PermissionNames.KeyWords}", "create a key; its secret is shown once", CreateKeyAsync),
-                new Command(Section.Users, "key delete", "<shelf> <key-id>", "delete a key", DeleteKeyAsync),
+                new Command(Section.Users, "keys", "<shelf>", "the keys working on a shelf, each with all its shelves", ListKeysAsync),
+                new Command(Section.Users, "key create", $"<shelf> <name> {PermissionNames.KeyWords}", "create a key on a shelf; its secret is shown once", CreateKeyAsync),
+                new Command(Section.Users, "key grant", $"<key-id> <shelf> {PermissionNames.KeyWords}", "give a key another shelf, or change its access there", GrantKeyAsync),
+                new Command(Section.Users, "key ungrant", "<key-id> <shelf>", "take a shelf from a key; a key goes with its last shelf", UngrantKeyAsync),
+                new Command(Section.Users, "key delete", "<key-id>", "delete a key from every shelf", DeleteKeyAsync),
 
                 new Command(Section.Replication, "replication", string.Empty, "this server's replicas and how many changes each is behind, or the primary it follows", ReplicationStatusAsync),
                 new Command(Section.Replication, "replication code", string.Empty, string.Create(CultureInfo.InvariantCulture, $"a pairing code for one new replica, usable once within {PairingCodeResponse.Lifetime.TotalMinutes} minutes"), PairingCodeAsync),
@@ -845,13 +847,36 @@ namespace ByteShelf.Cli.Commands
             Print(await (await ShelfAsync(shelf, cancellationToken)).CreateKeyAsync(name, permission, cancellationToken), ByteShelfJsonContext.Default.CreatedShelfKey, TextFormat.CreatedKey);
         }
 
+        private async Task GrantKeyAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            Guid keyId = KeyId(arguments.Required(0, "key-id"));
+            string shelf = arguments.Required(1, "shelf");
+            ShelfKeyPermission permission = PermissionNames.ParseKey(arguments.Required(2, "access"));
+            arguments.EnsureAllUsed();
+            ShelfKeyGrantInfo granted = await (await ShelfAsync(shelf, cancellationToken)).SetKeyGrantAsync(keyId, permission, cancellationToken);
+            Print(granted, ByteShelfJsonContext.Default.ShelfKeyGrantInfo, TextFormat.KeyGrant);
+        }
+
+        private async Task UngrantKeyAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            Guid keyId = KeyId(arguments.Required(0, "key-id"));
+            string shelf = arguments.Required(1, "shelf");
+            arguments.EnsureAllUsed();
+            await (await ShelfAsync(shelf, cancellationToken)).RemoveKeyGrantAsync(keyId, cancellationToken);
+            Done($"The key no longer works on {shelf}; it was deleted if that was its last shelf.");
+        }
+
         private async Task DeleteKeyAsync(ArgumentList arguments, CancellationToken cancellationToken)
         {
-            string shelf = arguments.Required(0, "shelf");
-            Guid keyId = Id(arguments.Required(1, "key-id"), $"a key id; 'byteshelf keys {shelf}' lists them");
+            Guid keyId = KeyId(arguments.Required(0, "key-id"));
             arguments.EnsureAllUsed();
-            await (await ShelfAsync(shelf, cancellationToken)).DeleteKeyAsync(keyId, cancellationToken);
-            Done("Deleted the key.");
+            await (await _clients.OpenAsync(cancellationToken)).DeleteKeyAsync(keyId, cancellationToken);
+            Done("Deleted the key from every shelf.");
+        }
+
+        private static Guid KeyId(string text)
+        {
+            return Id(text, "a key id; 'byteshelf keys <shelf>' lists them");
         }
 
         private async Task ReplicationStatusAsync(ArgumentList arguments, CancellationToken cancellationToken)

@@ -1113,14 +1113,41 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
-        public async Task KeyDelete_RemovesTheKey()
+        public async Task KeyDelete_KeyOnTwoShelves_DeletesItFromBoth()
         {
-            CreatedShelfKey key = await Docs.CreateKeyAsync("job", ShelfKeyPermission.Read);
+            CreatedShelfKey key = await KeyOnDocsAndPhotosAsync();
 
-            CliRun run = await RunAsync("key", "delete", "docs", key.Key.Id.ToString());
+            CliRun run = await RunAsync("key", "delete", key.Key.Id.ToString());
 
             Assert.Equal(CliApp.Succeeded, run.ExitCode);
             Assert.Empty(await Docs.GetKeysAsync());
+            Assert.Empty(await _clients.Client.Shelf("photos").GetKeysAsync());
+        }
+
+        [Fact]
+        public async Task KeyGrant_AnotherShelf_ListsTheKeyWithBothShelves()
+        {
+            await _clients.Client.CreateShelfAsync("photos");
+            CreatedShelfKey key = await Docs.CreateKeyAsync("job", ShelfKeyPermission.Read);
+
+            CliRun granted = await RunAsync("key", "grant", key.Key.Id.ToString(), "photos", "add-only");
+            CliRun listed = await RunAsync("keys", "photos");
+
+            Assert.Equal(CliApp.Succeeded, granted.ExitCode);
+            Assert.Contains($"photos  add-only  (key {key.Key.Id:D})", granted.Output, StringComparison.Ordinal);
+            Assert.Contains("job  docs read, photos add-only", listed.Output, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task KeyUngrant_NotItsLastShelf_KeepsItOnTheOther()
+        {
+            CreatedShelfKey key = await KeyOnDocsAndPhotosAsync();
+
+            CliRun run = await RunAsync("key", "ungrant", key.Key.Id.ToString(), "docs");
+
+            Assert.Equal(CliApp.Succeeded, run.ExitCode);
+            Assert.Empty(await Docs.GetKeysAsync());
+            Assert.Equal("photos", Assert.Single(await _clients.Client.GetKeyGrantsAsync(key.Key.Id)).ShelfName);
         }
 
         [Fact]
@@ -1168,7 +1195,9 @@ namespace ByteShelf.Cli.Tests
         [InlineData("Sign in with --email <email> or with --key, one of them.", "login", "https://files.test", "--email", "a@b.test", "--key")]
         [InlineData("Sign in with --email <email> or with --key, one of them.", "login", "https://files.test")]
         [InlineData("'nope' is not a deletion id", "restore", "docs", "nope")]
-        [InlineData("'nope' is not a key id", "key", "delete", "docs", "nope")]
+        [InlineData("'nope' is not a key id", "key", "delete", "nope")]
+        [InlineData("'nope' is not a key id", "key", "grant", "nope", "docs", "read")]
+        [InlineData("'write' is not a key's access; give read|add-only|read-write.", "key", "grant", "00000000-0000-0000-0000-000000000001", "docs", "write")]
         [InlineData("'write' is not an access; give read|read-write.", "grant", "docs", "a@b.test", "write")]
         public async Task Misuse_FailsWithTheUsageCodeAndSaysWhy(string message, params string[] commandLine)
         {
@@ -1200,6 +1229,15 @@ namespace ByteShelf.Cli.Tests
         private Task<CliRun> CreateAdaAsync()
         {
             return RunAsync(new[] { "user", "create", "ada@example.com", "--name", "Ada" }, input: AdaPassword + Environment.NewLine);
+        }
+
+        /// <summary>A read key "job" on docs, given a new shelf "photos" to read too.</summary>
+        private async Task<CreatedShelfKey> KeyOnDocsAndPhotosAsync()
+        {
+            await _clients.Client.CreateShelfAsync("photos");
+            CreatedShelfKey key = await Docs.CreateKeyAsync("job", ShelfKeyPermission.Read);
+            await _clients.Client.Shelf("photos").SetKeyGrantAsync(key.Key.Id, ShelfKeyPermission.Read);
+            return key;
         }
 
         private Task<ShelfFile> UploadAsync(string path, string text, string? description = null)

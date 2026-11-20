@@ -226,7 +226,7 @@ namespace ByteShelf.Server.Tests.Access
             CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);
             using HttpClient key = _host.CreateKeyClient(created.Secret);
 
-            (await _host.AdminClient.DeleteAsync($"/api/shelves/docs/keys/{created.Key.Id}")).EnsureSuccessStatusCode();
+            (await _host.AdminClient.DeleteAsync($"/api/keys/{created.Key.Id}/grants/docs")).EnsureSuccessStatusCode();
             HttpResponseMessage response = await key.GetAsync("/api/shelves/docs/entries");
 
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -257,7 +257,7 @@ namespace ByteShelf.Server.Tests.Access
             using HttpClient key = _host.CreateKeyClient(created.Secret);
             (await _host.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = ShelfKeyPermission.Read })).EnsureSuccessStatusCode();
 
-            (await _host.AdminClient.DeleteAsync($"/api/shelves/docs/keys/{created.Key.Id}")).EnsureSuccessStatusCode();
+            (await _host.AdminClient.DeleteAsync($"/api/keys/{created.Key.Id}/grants/docs")).EnsureSuccessStatusCode();
 
             Assert.Equal(HttpStatusCode.NotFound, (await key.GetAsync("/api/shelves/docs/entries")).StatusCode);
             Assert.Equal(HttpStatusCode.OK, (await key.GetAsync("/api/shelves/other/entries")).StatusCode);
@@ -480,7 +480,7 @@ namespace ByteShelf.Server.Tests.Access
             using HttpClient key = _host.CreateKeyClient(created.Secret);
             DownloadLink link = await CreateLinkAsync(key, "/existing.txt");
 
-            (await _host.AdminClient.DeleteAsync($"/api/shelves/docs/keys/{created.Key.Id}")).EnsureSuccessStatusCode();
+            (await _host.AdminClient.DeleteAsync($"/api/keys/{created.Key.Id}/grants/docs")).EnsureSuccessStatusCode();
 
             Assert.Equal(HttpStatusCode.NotFound, (await _host.AnonymousClient.GetAsync(link.Url)).StatusCode);
         }

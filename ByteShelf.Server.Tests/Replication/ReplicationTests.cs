@@ -331,7 +331,7 @@ namespace ByteShelf.Server.Tests.Replication
             Guid keyId = (await created.Content.ReadFromJsonAsync<CreatedShelfKey>())!.Key.Id;
             await _pair.SyncAsync();
 
-            (await _pair.Primary.AdminClient.DeleteAsync($"/api/shelves/docs/keys/{keyId}")).EnsureSuccessStatusCode();
+            (await _pair.Primary.AdminClient.DeleteAsync($"/api/keys/{keyId}/grants/docs")).EnsureSuccessStatusCode();
             await CompactPrimaryAsync();
             await _pair.SyncAsync();
 

@@ -75,7 +75,6 @@ Admin only, under `/api/shelves/{shelf}`:
 | `DELETE access/{userId}` | Takes a user's grant away; 404 when they have none. |
 | `GET keys` | The keys with a grant on the shelf, each with all its shelves (`ShelfKeyInfo.Grants`), never their secrets. |
 | `POST keys` | Creates a key with a name and permission on this shelf; answers its secret, the one time it is shown. |
-| `DELETE keys/{keyId}` | Takes the shelf from the key; the key is deleted when this was its last shelf. 404 when the key has no grant here. |
 
 Admin only, a key by its id, under `/api/keys/{keyId}`. The routes naming a shelf ask
 `[ShelfAccess(Administer)]` there, the others the admin role; keys are refused (401, or 403 and 404 by
@@ -85,7 +84,7 @@ the shelf rule):
 |---|---|
 | `GET grants` | The shelves the key works on, oldest grant first, each with its permission. 404 for an unknown key. |
 | `PUT grants/{shelf}` | Gives the key the shelf, or changes its permission there. 404 for an unknown key. Setting the permission it already has changes and logs nothing. |
-| `DELETE grants/{shelf}` | Takes the shelf from the key, as `DELETE keys/{keyId}` on the shelf does. |
+| `DELETE grants/{shelf}` | Takes the shelf from the key; the key is deleted when this was its last shelf. 404 when the key has no grant there. |
 | `DELETE` | Deletes the key from every shelf. 404 for an unknown key. |
 
 A key's name is trimmed and must then be 1 to 100 characters (`ShelfKeys.MaxNameLength`) without

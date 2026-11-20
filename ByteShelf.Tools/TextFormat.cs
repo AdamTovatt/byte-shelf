@@ -424,6 +424,11 @@ namespace ByteShelf.Tools
             return string.Join(", ", grants.Select(grant => $"{grant.ShelfName} {PermissionNames.Of(grant.Permission)}"));
         }
 
+        public static string KeyGrant(ShelfKeyGrantInfo grant)
+        {
+            return $"{grant.ShelfName}  {PermissionNames.Of(grant.Permission)}  (key {grant.KeyId:D})";
+        }
+
         public static string CreatedKey(CreatedShelfKey created)
         {
             return Lines(new[]

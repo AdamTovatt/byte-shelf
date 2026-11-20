@@ -17,8 +17,8 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>Shared contract of ByteShelf, a self-hosted file store: the request and response types the server and ByteShelfClient exchange, path rules, and source-generated JSON.</Description>
     <Copyright>MIT</Copyright>
-    <Version>2.2.0</Version>
-    <PackageReleaseNotes>Adds ErrorCodes.RangeNotSatisfiable (range_not_satisfiable), for a ranged read starting at or past the end of a file, and ErrorCodes.ContentChanged (content_changed), for a read whose file no longer holds the contents it expected, both for ByteShelfClient 2.2.0's ranged reads. ContentHash checks a SHA-256 named in a request, the rule FileCriteria already applied. See https://github.com/AdamTovatt/byte-shelf/blob/client-v$(Version)/ByteShelfCommon/README.md</PackageReleaseNotes>
+    <Version>3.0.0</Version>
+    <PackageReleaseNotes>Breaking: a shelf key may work on several shelves. ShelfKeyInfo carries Grants, a list of ShelfKeyGrantInfo (the shelf's id and name and what the key may do there), in place of ShelfId and Permission, which are gone. SetShelfKeyGrantRequest gives a key a shelf or changes its permission there, and ShelfKeys.ValidatePermission refuses a value that is no ShelfKeyPermission. These are the types of a ByteShelf server whose keys hold grants (its migration v0014), which older clients cannot read. See https://github.com/AdamTovatt/byte-shelf/blob/client-v$(Version)/ByteShelfCommon/README.md</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

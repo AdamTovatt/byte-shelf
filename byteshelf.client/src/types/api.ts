@@ -1031,6 +1031,118 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shelves/{shelf}/entries/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["MoveEntriesRequest"];
+                    "text/json": components["schemas"]["MoveEntriesRequest"];
+                    "application/*+json": components["schemas"]["MoveEntriesRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["EntryMoveResult"][];
+                        "application/json": components["schemas"]["EntryMoveResult"][];
+                        "text/json": components["schemas"]["EntryMoveResult"][];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/shelves/{shelf}/files/descriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["SetDescriptionsRequest"];
+                    "text/json": components["schemas"]["SetDescriptionsRequest"];
+                    "application/*+json": components["schemas"]["SetDescriptionsRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["DescriptionResult"][];
+                        "application/json": components["schemas"]["DescriptionResult"][];
+                        "text/json": components["schemas"]["DescriptionResult"][];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/shelves/{shelf}/search": {
         parameters: {
             query?: never;
@@ -1780,6 +1892,223 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/keys/{keyId}/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    keyId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ShelfKeyGrantInfo"][];
+                        "application/json": components["schemas"]["ShelfKeyGrantInfo"][];
+                        "text/json": components["schemas"]["ShelfKeyGrantInfo"][];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/keys/{keyId}/grants/{shelf}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    keyId: string;
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["SetShelfKeyGrantRequest"];
+                    "text/json": components["schemas"]["SetShelfKeyGrantRequest"];
+                    "application/*+json": components["schemas"]["SetShelfKeyGrantRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ShelfKeyGrantInfo"];
+                        "application/json": components["schemas"]["ShelfKeyGrantInfo"];
+                        "text/json": components["schemas"]["ShelfKeyGrantInfo"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    keyId: string;
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/keys/{keyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    keyId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description No Content */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -2899,64 +3228,6 @@ export interface paths {
             };
         };
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/shelves/{shelf}/keys/{keyId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    keyId: string;
-                    shelf: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description No Content */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Forbidden */
-                403: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain": components["schemas"]["ErrorResponse"];
-                        "application/json": components["schemas"]["ErrorResponse"];
-                        "text/json": components["schemas"]["ErrorResponse"];
-                    };
-                };
-                /** @description Not Found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "text/plain": components["schemas"]["ErrorResponse"];
-                        "application/json": components["schemas"]["ErrorResponse"];
-                        "text/json": components["schemas"]["ErrorResponse"];
-                    };
-                };
-            };
-        };
         options?: never;
         head?: never;
         patch?: never;
@@ -4499,6 +4770,15 @@ export interface components {
             encryptedBy?: components["schemas"]["EncryptedFolder"];
             tree: components["schemas"]["DirectoryTree"];
         };
+        DescriptionChange: {
+            path: string;
+            description?: string | null;
+        };
+        DescriptionResult: {
+            path: string;
+            file?: components["schemas"]["ShelfFile"];
+            error?: components["schemas"]["ErrorResponse"];
+        };
         DirectoryListing: {
             directory: components["schemas"]["ShelfDirectory"];
             directories: components["schemas"]["ListedDirectory"][];
@@ -4533,6 +4813,17 @@ export interface components {
         EncryptedFolder: {
             directory: components["schemas"]["ShelfDirectory"];
             check: string;
+        };
+        EntryMove: {
+            path: string;
+            toPath: string;
+        };
+        EntryMoveResult: {
+            path: string;
+            toPath: string;
+            file?: components["schemas"]["ShelfFile"];
+            directory?: components["schemas"]["ShelfDirectory"];
+            error?: components["schemas"]["ErrorResponse"];
         };
         ErrorResponse: {
             message: string;
@@ -4596,6 +4887,11 @@ export interface components {
         };
         LogoutRequest: {
             refreshToken?: string;
+        };
+        MoveEntriesRequest: {
+            moves?: components["schemas"]["EntryMove"][] | null;
+            paths?: string[] | null;
+            intoDirectory?: string | null;
         };
         MoveRequest: {
             toPath: string;
@@ -4681,11 +4977,19 @@ export interface components {
         SetDescriptionRequest: {
             description?: string | null;
         };
+        SetDescriptionsRequest: {
+            descriptions?: components["schemas"]["DescriptionChange"][] | null;
+            paths?: string[] | null;
+            description?: string | null;
+        };
         SetFolderEncryptionRequest: {
             check: string;
         };
         SetShelfAccessRequest: {
             permission: components["schemas"]["ShelfAccessPermission"];
+        };
+        SetShelfKeyGrantRequest: {
+            permission: components["schemas"]["ShelfKeyPermission"];
         };
         ShelfAccessGrant: {
             /** Format: uuid */
@@ -4750,13 +5054,23 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
+        ShelfKeyGrantInfo: {
+            /** Format: uuid */
+            keyId: string;
+            /** Format: uuid */
+            shelfId: string;
+            shelfName: string;
+            permission: components["schemas"]["ShelfKeyPermission"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
         ShelfKeyInfo: {
             /** Format: uuid */
             id: string;
-            /** Format: uuid */
-            shelfId: string;
             name: string;
-            permission: components["schemas"]["ShelfKeyPermission"];
+            grants: components["schemas"]["ShelfKeyGrantInfo"][];
             /** Format: date-time */
             createdAt: string;
         };
