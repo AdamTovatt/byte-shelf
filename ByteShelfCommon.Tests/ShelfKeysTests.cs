@@ -14,7 +14,9 @@ namespace ByteShelfCommon.Tests
         [Fact]
         public void ValidatePermission_NoneOfTheValues_Throws()
         {
-            Assert.Throws<ArgumentException>(() => ShelfKeys.ValidatePermission((ShelfKeyPermission)42));
+            ArgumentException exception = Assert.Throws<ArgumentException>(() => ShelfKeys.ValidatePermission((ShelfKeyPermission)42));
+
+            Assert.Equal("permission", exception.ParamName);
         }
     }
 }

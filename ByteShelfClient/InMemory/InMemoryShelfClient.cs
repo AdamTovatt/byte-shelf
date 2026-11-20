@@ -650,13 +650,9 @@ namespace ByteShelfClient.InMemory
 
         public Task<ShelfAccessGrant> SetGrantAsync(Guid userId, ShelfAccessPermission permission, CancellationToken cancellationToken = default)
         {
+            ShelfGrants.ValidatePermission(permission);
             return Write(cancellationToken, shelf =>
             {
-                if (!Enum.IsDefined(permission))
-                {
-                    throw InMemoryErrors.Invalid($"'{permission}' is not a shelf access permission.");
-                }
-
                 InMemoryStore.UserRow user = _store.GetUser(userId);
                 ShelfAccessGrant? existing = shelf.Grants.FirstOrDefault(grant => grant.UserId == userId);
                 if (existing?.Permission == permission)

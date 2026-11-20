@@ -245,6 +245,7 @@ namespace ByteShelfClient
         Task<IReadOnlyList<ShelfAccessGrant>> GetGrantsAsync(CancellationToken cancellationToken = default);
 
         /// <summary>Grants a user access to the shelf, or changes the access they have; admins only.</summary>
+        /// <exception cref="ArgumentException"><paramref name="permission"/> is none of the values (<see cref="ShelfGrants.ValidatePermission"/>), thrown before anything is sent.</exception>
         Task<ShelfAccessGrant> SetGrantAsync(Guid userId, ShelfAccessPermission permission, CancellationToken cancellationToken = default);
 
         /// <summary>Takes a user's access to the shelf away; admins only.</summary>

@@ -18,8 +18,8 @@
     <PackageTags>storage, api, client, byteshelf, byte shelf, file storage</PackageTags>
     <Description>Client for ByteShelf, a self-hosted file store: an interface over shelves, files and directories, an HTTP implementation, and an in-memory one for tests.</Description>
     <Copyright>MIT</Copyright>
-    <Version>3.0.0</Version>
-    <PackageReleaseNotes>Breaking: a shelf key may work on several shelves, as ByteShelfCommon 3.0.0's ShelfKeyInfo.Grants lists. IShelfClient.DeleteKeyAsync is replaced by RemoveKeyGrantAsync, which takes the shelf from a key and deletes the key only when that was its last shelf; IShelfClient.SetKeyGrantAsync gives an existing key the shelf or changes its access there; IByteShelfClient.GetKeyGrantsAsync lists a key's shelves and IByteShelfClient.DeleteKeyAsync deletes a key from every shelf. All of these in the HTTP client and the in-memory one. CreateKeyAsync and SetKeyGrantAsync throw ArgumentException for a permission that is none of the values, before anything is sent. Needs a ByteShelf server whose keys hold grants (its migration v0014). IShelfClient and IByteShelfClient change members, so an implementation outside ByteShelfClient must follow. See https://github.com/AdamTovatt/byte-shelf/blob/client-v$(Version)/ByteShelfClient/README.md</PackageReleaseNotes>
+    <Version>3.0.1</Version>
+    <PackageReleaseNotes>IShelfClient.SetGrantAsync throws ArgumentException for a permission that is none of the ShelfAccessPermission values, before anything is sent, in the HTTP client and the in-memory one alike (ByteShelfCommon 3.0.1's ShelfGrants.ValidatePermission). The HTTP client failed with a JsonException and the in-memory one with a ByteShelfException. See https://github.com/AdamTovatt/byte-shelf/blob/client-v$(Version)/ByteShelfClient/README.md</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

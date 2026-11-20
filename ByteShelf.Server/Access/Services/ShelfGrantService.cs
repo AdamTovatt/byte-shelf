@@ -43,10 +43,7 @@ namespace ByteShelf.Server.Access.Services
         /// <inheritdoc />
         public async Task<ShelfAccessGrant> SetAsync(Shelf shelf, Guid userId, ShelfAccessPermission permission)
         {
-            if (!Enum.IsDefined(permission))
-            {
-                throw new ArgumentException($"'{permission}' is not a shelf access permission.");
-            }
+            ShelfGrants.ValidatePermission(permission);
 
             await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
             {

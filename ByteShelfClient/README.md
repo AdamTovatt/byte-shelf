@@ -64,8 +64,8 @@ each request; a program that sends large chunks over a slow line can raise it.
 
 ## Errors
 
-A shelf name, path, content type, description, search, tree query or link lifetime the rules in
-ByteShelfCommon refuse throws `ArgumentException` before anything is sent. Anything the server refuses throws
+A shelf name, path, content type, description, search, tree query, link lifetime, or a key's or
+user grant's permission the rules in ByteShelfCommon refuse throws `ArgumentException` before anything is sent. Anything the server refuses throws
 `ByteShelfException`, whose `Code` is one of `ErrorCodes`: `not_found`, `conflict`,
 `permission_denied`, `quota_exceeded`, `range_not_satisfiable` and so on. Two codes come from the
 client rather than the server: a ranged read refuses a file whose contents changed with
