@@ -15,6 +15,9 @@ namespace ByteShelf.Server.Tests.Invalidation
     public sealed class ChangeLogInvalidationPublisherTests : IDisposable
     {
         private readonly FakeChangeLog _changeLog = new FakeChangeLog();
+        /// <summary>What one user grant in the log publishes: its shelf's access, and the shelf list, which shows the shelves a user reaches.</summary>
+        private const int EventsPerGrant = 2;
+
         private readonly RecordingBroadcaster _broadcaster = new RecordingBroadcaster();
         private readonly FakeTimeProvider _clock = new FakeTimeProvider(TestInstants.Now);
         private readonly ServiceProvider _services;
@@ -38,13 +41,13 @@ namespace ByteShelf.Server.Tests.Invalidation
             List<Guid> shelves = Enumerable.Range(0, ChangeLogInvalidationPublisher.BatchSize + 2).Select(_ => Guid.NewGuid()).ToList();
             foreach (Guid shelf in shelves)
             {
-                _changeLog.AddKey(shelf);
+                _changeLog.AddGrant(shelf);
             }
 
             long published = await _publisher.PublishAfterAsync(0);
 
             Assert.Equal(shelves.Count, published);
-            Assert.Equal(shelves.Select(shelf => shelf.ToString("D")), _broadcaster.Published.Select(invalidation => invalidation.Metadata));
+            Assert.Equal(shelves.Select(shelf => shelf.ToString("D")), _broadcaster.ShelfAccessPublished.Select(invalidation => invalidation.Metadata));
             Assert.All(_changeLog.Limits, limit => Assert.Equal(ChangeLogInvalidationPublisher.BatchSize, limit));
         }
 
@@ -52,18 +55,18 @@ namespace ByteShelf.Server.Tests.Invalidation
         public async Task PublishAfterAsync_SameViewStaleTwice_PublishesItOnce()
         {
             Guid shelf = Guid.NewGuid();
-            _changeLog.AddKey(shelf);
-            _changeLog.AddKey(shelf);
+            _changeLog.AddGrant(shelf);
+            _changeLog.AddGrant(shelf);
 
             await _publisher.PublishAfterAsync(0);
 
-            Assert.Equal(new[] { new InvalidationEvent(InvalidationResources.ShelfAccess, shelf.ToString("D")) }, _broadcaster.Published);
+            Assert.Equal(new[] { new InvalidationEvent(InvalidationResources.ShelfAccess, shelf.ToString("D")) }, _broadcaster.ShelfAccessPublished);
         }
 
         [Fact]
         public async Task PublishAfterAsync_NothingNew_PublishesNothing()
         {
-            _changeLog.AddKey(Guid.NewGuid());
+            _changeLog.AddGrant(Guid.NewGuid());
 
             long published = await _publisher.PublishAfterAsync(1);
 
@@ -74,16 +77,16 @@ namespace ByteShelf.Server.Tests.Invalidation
         [Fact]
         public async Task ExecuteAsync_ChangesFromBeforeStart_AreNotPublished()
         {
-            _changeLog.AddKey(Guid.NewGuid());
+            _changeLog.AddGrant(Guid.NewGuid());
             Guid later = Guid.NewGuid();
 
             await _publisher.StartAsync(CancellationToken.None);
             await _changeLog.LatestRead;
-            _changeLog.AddKey(later);
-            await _clock.AdvanceUntilAsync(_broadcaster.WaitForAsync(1), ChangeLogInvalidationPublisher.PollInterval);
+            _changeLog.AddGrant(later);
+            await _clock.AdvanceUntilAsync(_broadcaster.WaitForAsync(EventsPerGrant), ChangeLogInvalidationPublisher.PollInterval);
             await _publisher.StopAsync(CancellationToken.None);
 
-            Assert.Equal(later.ToString("D"), _broadcaster.Published[0].Metadata);
+            Assert.Equal(later.ToString("D"), _broadcaster.ShelfAccessPublished[0].Metadata);
         }
 
         [Fact]
@@ -94,12 +97,12 @@ namespace ByteShelf.Server.Tests.Invalidation
 
             await _publisher.StartAsync(CancellationToken.None);
             await _changeLog.LatestRead;
-            _changeLog.AddKey(shelf);
-            await _clock.AdvanceUntilAsync(_broadcaster.WaitForAsync(1), ChangeLogInvalidationPublisher.PollInterval);
+            _changeLog.AddGrant(shelf);
+            await _clock.AdvanceUntilAsync(_broadcaster.WaitForAsync(EventsPerGrant), ChangeLogInvalidationPublisher.PollInterval);
             await _publisher.StopAsync(CancellationToken.None);
 
             Assert.False(_changeLog.FailNextRead);
-            Assert.Equal(shelf.ToString("D"), _broadcaster.Published[0].Metadata);
+            Assert.Equal(shelf.ToString("D"), _broadcaster.ShelfAccessPublished[0].Metadata);
         }
 
         [Fact]
@@ -110,12 +113,12 @@ namespace ByteShelf.Server.Tests.Invalidation
 
             await _publisher.StartAsync(CancellationToken.None);
             await _clock.AdvanceUntilAsync(_changeLog.LatestRead, ChangeLogInvalidationPublisher.PollInterval);
-            _changeLog.AddKey(shelf);
-            await _clock.AdvanceUntilAsync(_broadcaster.WaitForAsync(1), ChangeLogInvalidationPublisher.PollInterval);
+            _changeLog.AddGrant(shelf);
+            await _clock.AdvanceUntilAsync(_broadcaster.WaitForAsync(EventsPerGrant), ChangeLogInvalidationPublisher.PollInterval);
             await _publisher.StopAsync(CancellationToken.None);
 
             Assert.False(_changeLog.FailNextLatestRead);
-            Assert.Equal(shelf.ToString("D"), _broadcaster.Published[0].Metadata);
+            Assert.Equal(shelf.ToString("D"), _broadcaster.ShelfAccessPublished[0].Metadata);
         }
 
         public void Dispose()
@@ -151,17 +154,17 @@ namespace ByteShelf.Server.Tests.Invalidation
                 get { lock (_gate) { return _limits.ToList(); } }
             }
 
-            public void AddKey(Guid shelfId)
+            public void AddGrant(Guid shelfId)
             {
                 lock (_gate)
                 {
                     _entries.Add(new ChangeLogEntry
                     {
                         Sequence = _entries.Count + 1,
-                        EntityType = ChangeEntityType.ShelfKey,
+                        EntityType = ChangeEntityType.ShelfGrant,
                         EntityId = Guid.NewGuid(),
                         Action = ChangeAction.Added,
-                        Payload = ChangePayload.Serialize(ChangeStates.Key(shelfId)),
+                        Payload = ChangePayload.Serialize(ChangeStates.Grant(shelfId)),
                         CreatedAt = TestInstants.Now,
                     });
                 }
@@ -243,6 +246,9 @@ namespace ByteShelf.Server.Tests.Invalidation
             {
                 get { lock (_gate) { return _published.ToList(); } }
             }
+
+            /// <summary>The events naming a shelf's access, one per grant the fake log holds (each grant also makes the shelf list stale).</summary>
+            public IReadOnlyList<InvalidationEvent> ShelfAccessPublished => Published.Where(invalidation => invalidation.Resource == InvalidationResources.ShelfAccess).ToList();
 
             public void Publish(InvalidationEvent invalidationEvent)
             {

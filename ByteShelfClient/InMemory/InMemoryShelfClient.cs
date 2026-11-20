@@ -51,6 +51,7 @@ namespace ByteShelfClient.InMemory
                     throw InMemoryErrors.Conflict($"The shelf '{shelf.Name}' still holds files or directories, the trash included; delete them and empty the trash first.");
                 }
 
+                _store.RemoveKeyGrantsOn(shelf);
                 _store.Shelves.Remove(shelf);
             });
         }
@@ -702,36 +703,35 @@ namespace ByteShelfClient.InMemory
 
         public Task<IReadOnlyList<ShelfKeyInfo>> GetKeysAsync(CancellationToken cancellationToken = default)
         {
-            return Run<IReadOnlyList<ShelfKeyInfo>>(cancellationToken, shelf => shelf.Keys.ToList());
+            return Run<IReadOnlyList<ShelfKeyInfo>>(
+                cancellationToken,
+                shelf => _store.Keys.Where(key => key.Grants.Any(grant => grant.ShelfId == shelf.Id)).Select(_store.ToInfo).ToList());
         }
 
         public Task<CreatedShelfKey> CreateKeyAsync(string name, ShelfKeyPermission permission, CancellationToken cancellationToken = default)
         {
+            ShelfKeys.ValidatePermission(permission);
             return Write(cancellationToken, shelf =>
             {
                 string trimmedName = InMemoryErrors.Checked(() => DisplayText.Validate(name, ShelfKeys.MaxNameLength, "A key's name"));
-                if (!Enum.IsDefined(permission))
-                {
-                    throw InMemoryErrors.Invalid($"'{permission}' is not a shelf key permission.");
-                }
-
-                ShelfKeyInfo key = new ShelfKeyInfo { Id = Guid.NewGuid(), ShelfId = shelf.Id, Name = trimmedName, Permission = permission, CreatedAt = _store.Now };
-                shelf.Keys.Add(key);
+                InMemoryStore.KeyRow key = new InMemoryStore.KeyRow { Id = Guid.NewGuid(), Name = trimmedName, CreatedAt = _store.Now };
+                _store.SetKeyGrant(key, shelf, permission);
+                _store.Keys.Add(key);
 
                 string secret = ShelfKeys.SecretPrefix + Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
-                return new CreatedShelfKey { Key = key, Secret = secret };
+                return new CreatedShelfKey { Key = _store.ToInfo(key), Secret = secret };
             });
         }
 
-        public Task DeleteKeyAsync(Guid keyId, CancellationToken cancellationToken = default)
+        public Task<ShelfKeyGrantInfo> SetKeyGrantAsync(Guid keyId, ShelfKeyPermission permission, CancellationToken cancellationToken = default)
         {
-            return Write(cancellationToken, shelf =>
-            {
-                if (shelf.Keys.RemoveAll(key => key.Id == keyId) == 0)
-                {
-                    throw InMemoryErrors.NotFound($"The shelf '{shelf.Name}' has no key {keyId}.");
-                }
-            });
+            ShelfKeys.ValidatePermission(permission);
+            return Write(cancellationToken, shelf => _store.ToInfo(_store.SetKeyGrant(_store.GetKey(keyId), shelf, permission)));
+        }
+
+        public Task RemoveKeyGrantAsync(Guid keyId, CancellationToken cancellationToken = default)
+        {
+            return Write(cancellationToken, shelf => _store.RemoveKeyGrant(keyId, shelf));
         }
 
         private LinkRow AddLink(InMemoryShelf shelf, ShelfLinkKind kind, TimeSpan lifetime, Guid? fileId = null, string? path = null, bool overwrite = false, string? description = null)

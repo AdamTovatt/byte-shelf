@@ -16,7 +16,6 @@ namespace ByteShelf.Server.Tests.Invalidation
                 ChangeEntityType.File => File(shelfId),
                 ChangeEntityType.Directory => Directory(shelfId),
                 ChangeEntityType.ShelfGrant => Grant(shelfId),
-                ChangeEntityType.ShelfKey => Key(shelfId),
                 _ => throw new ArgumentOutOfRangeException(nameof(entityType), entityType, "Not a shelf-scoped entity."),
             };
         }
@@ -63,16 +62,27 @@ namespace ByteShelf.Server.Tests.Invalidation
             };
         }
 
-        public static ShelfKey Key(Guid shelfId)
+        public static ShelfKey Key()
         {
             return new ShelfKey
             {
                 Id = Guid.NewGuid(),
-                ShelfId = shelfId,
                 Name = "backup",
-                Permission = ShelfKeyPermission.Read,
                 SecretSha256 = new string('b', 64),
                 CreatedAt = TestInstants.Now,
+            };
+        }
+
+        public static ShelfKeyGrant KeyGrant(Guid shelfId)
+        {
+            return new ShelfKeyGrant
+            {
+                Id = Guid.NewGuid(),
+                KeyId = Guid.NewGuid(),
+                ShelfId = shelfId,
+                Permission = ShelfKeyPermission.Read,
+                CreatedAt = TestInstants.Now,
+                UpdatedAt = TestInstants.Now,
             };
         }
     }

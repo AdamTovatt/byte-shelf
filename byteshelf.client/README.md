@@ -9,9 +9,10 @@ downloads files, shows a file's details with what the server read from its conte
 (`FileDetailsDialog`: when and where a photo was taken, the camera, a video's length, a PDF's
 title and pages), describes, shares by a link, moves, renames and deletes them, encrypts files and
 folders with a password, and restores them from the trash or downloads a deleted file from it
-without restoring it (a replica's trash too). Admins
-also create shelves and users, set quotas, give access from a shelf or from a user, make keys, and on
-the Replication page pair replicas, see how far behind each is, remove one, and promote a replica.
+without restoring it (a replica's trash too). Admins also create shelves and users, set quotas,
+give access from a shelf or from a user, make keys and give a key other shelves (a key row's Shelves
+control in shelf settings), and on the Replication page pair replicas, see how far behind each is,
+remove one, and promote a replica.
 
 `src/ui` is the UI library: buttons, fields, cards, dialogs, menus, page layout and the sidebar, with
 the colour, type and icon systems and the Tailwind preset they need. It was copied from the house

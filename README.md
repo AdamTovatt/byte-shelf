@@ -37,8 +37,9 @@ SHA-256, so `sha256sum` verifies it, and identical contents are stored once.
 - A **shelf** holds files: one storage place with its own directories and quota, made per purpose.
 - A **user** signs in with email and password, or with a passkey they added, and is given read or read-write access to shelves.
   Admins create shelves and users and reach every shelf.
-- A **key** lets a program use one shelf: read, add-only (store new files, never overwrite or
-  delete) or read-write. It is sent in the `X-Api-Key` header or as a bearer token.
+- A **key** lets a program use the shelves an admin gives it, each with read, add-only (store new
+  files, never overwrite or delete) or read-write. It is sent in the `X-Api-Key` header or as a
+  bearer token.
 - Files live in real **directories** and are addressed by path (`/invoices/2026/march.pdf`) or id.
 - A delete moves things to the **trash**, restorable for 30 days by default, then purged; anyone
   with write access can empty a shelf's trash sooner.
@@ -76,7 +77,7 @@ dotnet run --project ByteShelf.Cli -- shelves
 ## For agents
 
 - **MCP on the server**: `https://<server>/mcp`, Streamable HTTP, with a shelf key as the bearer
-  token. It offers the key's shelf and only the tools its permission allows
+  token. It names the key's shelves and offers only the tools their permissions allow
   ([Mcp](ByteShelf.Server/Mcp/Mcp.md)). For example, `claude mcp add --transport http byteshelf
   https://files.example.com/mcp --header "Authorization: Bearer bsk_..."`.
 - **MCP on the agent's machine**: `byteshelf --mcp`, the same tools over stdio, plus local files and

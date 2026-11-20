@@ -41,7 +41,7 @@ namespace ByteShelf.Tools.Mcp
         /// <summary>The image kinds download_file answers as images, as the descriptions and messages name them; <see cref="ImageTypeOf"/> recognises them.</summary>
         internal const string InlineImageKinds = "PNG, JPEG, GIF or WebP";
 
-        private const string ShelfDescription = "The shelf's name; leave it out when you reach only one shelf, as a shelf key does.";
+        private const string ShelfDescription = "The shelf's name; leave it out only when you reach one shelf (list_shelves shows them).";
 
         // The criteria search_files and find_duplicates share (FileCriteria), described once for both.
         private const string UnderDescription = "The directory to search under; / (the default) for the whole shelf.";
@@ -814,7 +814,7 @@ namespace ByteShelf.Tools.Mcp
 
         /// <summary>
         /// The shelf a call works on: <paramref name="shelf"/> when given and not blank, else the one shelf the caller
-        /// reaches. A shelf key reaches exactly one, so an agent with a key never has to name it.
+        /// reaches, so an agent whose key reaches one never has to name it.
         /// </summary>
         /// <exception cref="UsageException">It is left out and the caller reaches no shelf, or several.</exception>
         private static async Task<string> ShelfNameAsync(IByteShelfClient client, string? shelf, CancellationToken cancellationToken)

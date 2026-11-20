@@ -1,10 +1,13 @@
+using System.Text.Json;
 using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Access.Repositories;
+using ByteShelf.Server.Access.Services;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Replication.Repositories;
 using ByteShelf.Server.Shared.Database;
+using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
 using ByteShelf.Server.Users.Models;
@@ -44,7 +47,7 @@ namespace ByteShelf.Server.Replication.Services
             IFileRepository fileRepository,
             IObjectMetadataRepository metadataRepository,
             IShelfGrantRepository grantRepository,
-            IShelfKeyRepository keyRepository,
+            ShelfKeyRemoval keyRemoval,
             IReplicationCopyRepository copyRepository,
             TimeProvider timeProvider)
         {
@@ -58,10 +61,17 @@ namespace ByteShelf.Server.Replication.Services
             _handlers = new[]
             {
                 new EntityHandler(
+                    ChangeEntityType.ShelfKeyGrant,
+                    "shelf_key_grant",
+                    (entry, at, session, _) => keyRemoval.UpsertReplicatedGrantAsync(ChangePayload.Deserialize<ShelfKeyGrant>(entry.Payload!), entry.Action, at, session),
+                    keyRemoval.RemoveReplicatedGrantAsync),
+                new EntityHandler(
                     ChangeEntityType.ShelfKey,
                     "shelf_key",
-                    (entry, at, session, _) => keyRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<ShelfKey>(entry.Payload!), entry.Action, at, session),
-                    keyRepository.DeleteByIdAsync),
+                    (entry, at, session, _) => keyRemoval.UpsertReplicatedKeyAsync(ChangePayload.Deserialize<ShelfKey>(entry.Payload!), entry.Action, at, session),
+                    // The primary logs a key's grants going before the key; an older state applied since may
+                    // have brought one back, so they go with it here too.
+                    keyRemoval.DeleteKeyAsync),
                 new EntityHandler(
                     ChangeEntityType.ShelfGrant,
                     "shelf_grant",
@@ -118,8 +128,10 @@ namespace ByteShelf.Server.Replication.Services
 
                         await fileRepository.PurgeForShelfAsync(id, at, session);
                         await directoryRepository.PurgeForShelfAsync(id, at, session);
+                        // Only the grants on it, which refer to it. A key left without any goes by its own
+                        // removal entry, which the primary logged before the shelf's.
                         await grantRepository.DeleteForShelfAsync(id, at, session);
-                        await keyRepository.DeleteForShelfAsync(id, at, session);
+                        await keyRemoval.RemoveReplicatedGrantsOnShelfAsync(id, at, session);
                         await shelfRepository.DeleteAsync(id, at, session);
                         return true;
                     }),
@@ -140,6 +152,7 @@ namespace ByteShelf.Server.Replication.Services
         /// to do once they commit.
         /// </summary>
         /// <exception cref="ReplicaOutdatedException">An entry is of a type this build does not know.</exception>
+        /// <exception cref="PrimaryFailedException">An entry's state is in a shape this build does not take, as from a primary on another version.</exception>
         public async Task ApplyAsync(IReadOnlyList<ChangeLogEntry> entries, IDbSession session, AppliedChanges changes)
         {
             // An entry may name a parent that a later one in the same batch writes.
@@ -157,7 +170,18 @@ namespace ByteShelf.Server.Replication.Services
                 }
                 else
                 {
-                    await handler.WriteAsync(entry, now, session, changes);
+                    try
+                    {
+                        await handler.WriteAsync(entry, now, session, changes);
+                    }
+                    catch (JsonException exception)
+                    {
+                        // Worded for the replica's admins, who see this message: the same types in another
+                        // shape mean the two servers run different versions.
+                        throw new PrimaryFailedException(
+                            $"The primary sent a {entry.EntityType} change in a shape this server does not take; run the same version of ByteShelf on both.",
+                            exception);
+                    }
                 }
             }
         }

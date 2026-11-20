@@ -28,8 +28,8 @@ AOT-compatible.
 | `StartUploadRequest`, `StartContentSwapRequest`, `UploadSession` | Starting and following a resumable upload, of a new file or swapping a file's contents in place. |
 | `TrashEntry`, `TrashEntryKind` | A deletion that can still be restored. |
 | `ShelfAccessGrant`, `SetShelfAccessRequest`, `ShelfAccessPermission` | A user's access to a shelf, and giving it. |
-| `ShelfKeyInfo`, `CreateShelfKeyRequest`, `CreatedShelfKey`, `ShelfKeyPermission` | A program's key to one shelf, and creating one. |
-| `ShelfKeys` | The `X-Api-Key` header a key is sent in, and the secret's prefix, which also tells a key sent as the bearer token from a session token. |
+| `ShelfKeyInfo`, `ShelfKeyGrantInfo`, `CreateShelfKeyRequest`, `CreatedShelfKey`, `SetShelfKeyGrantRequest`, `ShelfKeyPermission` | A program's key with the shelves it works on and what it may do on each, creating one on a shelf, and giving it another. |
+| `ShelfKeys` | The `X-Api-Key` header a key is sent in, the secret's prefix, which also tells a key sent as the bearer token from a session token, and `ValidatePermission`, which refuses a value that is no `ShelfKeyPermission`. |
 | `EntryReference` | Names a file or directory by path or by id; a path or an id converts to one. |
 | `UserInfo`, `CreateUserRequest`, `UpdateRolesRequest`, `UpdatePasswordRequest`, `UserRoles` | Users and changing them. |
 | `RequestPasswordResetRequest`, `CompletePasswordResetRequest` | Asking for a reset link, and using it. |

@@ -26,7 +26,6 @@ namespace ByteShelf.Server.Tests.Invalidation
             ChangeEntityType.File,
             ChangeEntityType.Directory,
             ChangeEntityType.ShelfGrant,
-            ChangeEntityType.ShelfKey,
         };
 
         [Theory]
@@ -47,11 +46,20 @@ namespace ByteShelf.Server.Tests.Invalidation
         }
 
         [Fact]
-        public void For_Key_MakesThatShelfsAccessStale()
+        public void For_Key_MakesNothingStale()
         {
-            IEnumerable<InvalidationEvent> events = ChangeLogInvalidations.For(Entry(ChangeEntityType.ShelfKey, ChangePayload.Serialize(ChangeStates.Key(ShelfId))));
+            Assert.Empty(ChangeLogInvalidations.For(Entry(ChangeEntityType.ShelfKey, ChangePayload.Serialize(ChangeStates.Key()))));
+            Assert.Empty(ChangeLogInvalidations.For(Entry(ChangeEntityType.ShelfKey, payload: null)));
+        }
 
-            Assert.Equal(new[] { Event(InvalidationResources.ShelfAccess, ShelfId) }, events);
+        /// <summary>A shelf's key list shows each key's other shelves, so a key's grant on one shelf changes them all.</summary>
+        [Fact]
+        public void For_KeyGrant_MakesEveryShelfsAccessStale()
+        {
+            Assert.Equal(
+                new[] { Event(InvalidationResources.ShelfAccess) },
+                ChangeLogInvalidations.For(Entry(ChangeEntityType.ShelfKeyGrant, ChangePayload.Serialize(ChangeStates.KeyGrant(ShelfId)))));
+            Assert.Equal(new[] { Event(InvalidationResources.ShelfAccess) }, ChangeLogInvalidations.For(Entry(ChangeEntityType.ShelfKeyGrant, payload: null)));
         }
 
         /// <summary>A purge leaves no state to name the shelf, so the same views go stale for every shelf.</summary>

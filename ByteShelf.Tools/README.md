@@ -56,7 +56,7 @@ the same words:
 - The tools never take a password: `download_file` refuses an encrypted file, and a directory
   download leaves encrypted files out (`EncryptedFiles.LeftOut`) and lists them.
 - Every tool working on one shelf takes `shelf` last and optional: left out, it is the only shelf
-  the caller reaches, which a shelf key always is. Several reachable shelves ask for a name.
+  the caller reaches. A caller reaching several (a user, or a key given several shelves) names it.
 - `RequiredArguments` is a call-tool filter both servers add, so a call missing a required argument
   is answered naming it rather than with the SDK's bare "An error occurred invoking".
 - `ToolInstructions` is what both servers tell an agent when it connects. Tests check what each

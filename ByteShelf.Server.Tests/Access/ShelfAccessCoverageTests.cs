@@ -57,7 +57,8 @@ namespace ByteShelf.Server.Tests.Access
             ["ShelfGrantsController.Remove"] = ShelfOperation.Administer,
             ["ShelfKeysController.List"] = ShelfOperation.Administer,
             ["ShelfKeysController.Create"] = ShelfOperation.Administer,
-            ["ShelfKeysController.Delete"] = ShelfOperation.Administer,
+            ["KeysController.SetGrant"] = ShelfOperation.Administer,
+            ["KeysController.RemoveGrant"] = ShelfOperation.Administer,
         };
 
         [Fact]

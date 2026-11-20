@@ -5,9 +5,11 @@ using System.Text;
 using System.Text.RegularExpressions;
 using ByteShelf.Tools;
 using ByteShelf.Tools.Mcp;
+using ByteShelf.Server.Access.Repositories;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
+using EasyReasy.Database;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
@@ -67,6 +69,64 @@ namespace ByteShelf.Server.Tests.Mcp
 
             Assert.Contains("one shelf, \"docs\", which every tool works on when you leave shelf out", Regex.Replace(client.ServerInstructions!, @"\s+", " "), StringComparison.Ordinal);
             Assert.Contains("The key's access is add-only", client.ServerInstructions, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task ListTools_KeyReadingOneShelfAndAddingToAnother_OffersWhatEitherAllows()
+        {
+            await using McpClient client = await ConnectAsync(await CreateKeyOnBothAsync(ShelfKeyPermission.Read, ShelfKeyPermission.AddOnly));
+
+            IList<McpClientTool> tools = await client.ListToolsAsync();
+
+            Assert.Equal(ReadTools.Concat(AddTools).Order(StringComparer.Ordinal), tools.Select(tool => tool.Name).Order(StringComparer.Ordinal));
+        }
+
+        [Fact]
+        public async Task Connect_KeyOnTwoShelves_InstructionsNameEachWithItsAccessAndStoreOnlyWhereItMay()
+        {
+            await using McpClient client = await ConnectAsync(await CreateKeyOnBothAsync(ShelfKeyPermission.Read, ShelfKeyPermission.AddOnly));
+            string instructions = client.ServerInstructions!;
+
+            Assert.Contains("give every tool the shelf to work on", instructions, StringComparison.Ordinal);
+            Assert.Contains("- \"docs\": read", instructions, StringComparison.Ordinal);
+            Assert.Contains("- \"other\": add-only", instructions, StringComparison.Ordinal);
+            Assert.DoesNotContain("when you leave shelf out", Regex.Replace(instructions, @"\s+", " "), StringComparison.Ordinal);
+            Assert.Contains("-T ./q3.pdf \"http://localhost/api/shelves/other/content", instructions, StringComparison.Ordinal);
+            Assert.DoesNotContain("-T ./q3.pdf \"http://localhost/api/shelves/docs/content", instructions, StringComparison.Ordinal);
+            Assert.Contains("never over a file already there", instructions, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Connect_KeyReadingTwoShelves_InstructionsShowNoStoring()
+        {
+            await using McpClient client = await ConnectAsync(await CreateKeyOnBothAsync(ShelfKeyPermission.Read, ShelfKeyPermission.Read));
+
+            Assert.DoesNotContain("-T ./q3.pdf", client.ServerInstructions, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task CallTool_KeyOnTwoShelves_IsRefusedOnTheShelfThatDoesNotAllowIt()
+        {
+            await using McpClient client = await ConnectAsync(await CreateKeyOnBothAsync(ShelfKeyPermission.Read, ShelfKeyPermission.AddOnly));
+
+            CallToolResult onOther = await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["shelf"] = "other", ["path"] = "/a.txt", ["text"] = "hello" });
+            CallToolResult onDocs = await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["shelf"] = "docs", ["path"] = "/a.txt", ["text"] = "hello" });
+
+            AssertSucceeded(onOther);
+            Assert.Equal(true, onDocs.IsError);
+            Assert.Contains("(permission_denied)", TextOf(onDocs), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task CallTool_ListShelvesWithAKeyOnTwoShelves_ListsExactlyThose()
+        {
+            await _host.CreateShelfAsync("hidden");
+            await using McpClient client = await ConnectAsync(await CreateKeyOnBothAsync(ShelfKeyPermission.Read, ShelfKeyPermission.AddOnly));
+
+            CallToolResult listed = await client.CallToolAsync("list_shelves", new Dictionary<string, object?>());
+
+            AssertSucceeded(listed);
+            Assert.Equal(new[] { "docs", "other" }, TextOf(listed).Split(Environment.NewLine).Select(line => line.Split("  ")[0]));
         }
 
         [Fact]
@@ -533,6 +593,31 @@ namespace ByteShelf.Server.Tests.Mcp
         }
 
         [Fact]
+        public async Task Post_WithAKeyThatReachesNoShelf_Returns403()
+        {
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            // The grant alone goes, past ShelfKeyRemoval, as a replica holds a key whose grant is still to come.
+            using (IServiceScope scope = _host.Services.CreateScope())
+            await using (IDbTransactionSession session = await scope.ServiceProvider.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync())
+            {
+                IShelfKeyGrantRepository grants = scope.ServiceProvider.GetRequiredService<IShelfKeyGrantRepository>();
+                Guid docsId = Assert.Single(await grants.GetForKeyAsync(created.Key.Id, session)).Grant.ShelfId;
+                Assert.True(await grants.DeleteAsync(docsId, created.Key.Id, DateTimeOffset.UtcNow, session));
+                await session.CommitAsync();
+            }
+
+            using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, "/mcp") { Content = JsonContent.Create(new { jsonrpc = "2.0", id = 1, method = "tools/list" }) };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", created.Secret);
+            request.Headers.Accept.ParseAdd("application/json");
+            request.Headers.Accept.ParseAdd("text/event-stream");
+
+            HttpResponseMessage response = await _host.AnonymousClient.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Equal(ErrorCodes.PermissionDenied, (await response.Content.ReadFromJsonAsync<ErrorResponse>())!.Code);
+        }
+
+        [Fact]
         public async Task LlmsTxt_WithoutSigningIn_DescribesTheServerAsText()
         {
             HttpResponseMessage response = await _host.AnonymousClient.GetAsync("/llms.txt");
@@ -566,6 +651,14 @@ namespace ByteShelf.Server.Tests.Mcp
         private async Task<string> CreateKeyAsync(string shelf, ShelfKeyPermission permission)
         {
             return (await _host.CreateKeyAsync(shelf, permission)).Secret;
+        }
+
+        /// <summary>A key made on "docs" with <paramref name="onDocs"/>, then given "other" with <paramref name="onOther"/>.</summary>
+        private async Task<string> CreateKeyOnBothAsync(ShelfKeyPermission onDocs, ShelfKeyPermission onOther)
+        {
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", onDocs);
+            (await _host.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = onOther })).EnsureSuccessStatusCode();
+            return created.Secret;
         }
 
         private Task<McpClient> ConnectAsync(string secret, bool asBearer = true, Uri? endpoint = null, ServerTestHost? host = null)

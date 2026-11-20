@@ -13,7 +13,7 @@ namespace ByteShelf.Server.Access.Services
         /// <exception cref="Shared.Errors.NotFoundException">The caller has no access to the shelf.</exception>
         Task<ShelfAccess> ResolveAsync(ShelfCaller caller, Shelf shelf);
 
-        /// <summary>Every shelf the caller has any access to, by name.</summary>
-        Task<IReadOnlyList<Shelf>> GetVisibleShelvesAsync(ShelfCaller caller);
+        /// <summary>The caller's access to every shelf it has any access to, which are the shelves it sees, by shelf name.</summary>
+        Task<IReadOnlyList<ShelfAccess>> GetAccessesAsync(ShelfCaller caller);
     }
 }

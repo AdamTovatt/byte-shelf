@@ -38,6 +38,16 @@ namespace ByteShelfClient
         Task DeleteUserAsync(Guid userId, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// The shelves a key works on, oldest grant first, each with what it may do there; admins only. A
+        /// shelf's <see cref="IShelfClient.SetKeyGrantAsync"/> and <see cref="IShelfClient.RemoveKeyGrantAsync"/>
+        /// give and take them.
+        /// </summary>
+        Task<IReadOnlyList<ShelfKeyGrantInfo>> GetKeyGrantsAsync(Guid keyId, CancellationToken cancellationToken = default);
+
+        /// <summary>Deletes a key from every shelf; requests with it fail from then on. Admins only.</summary>
+        Task DeleteKeyAsync(Guid keyId, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// This server's part in replication: its replicas and how many changes each has yet to apply,
         /// or, on a replica, the primary it follows and how far it has got; admins only.
         /// </summary>

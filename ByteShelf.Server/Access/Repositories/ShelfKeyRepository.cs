@@ -11,16 +11,14 @@ namespace ByteShelf.Server.Access.Repositories
     public class ShelfKeyRepository : RepositoryBase, IShelfKeyRepository
     {
         private const string SelectColumns = $@"
-            id,
-            shelf_id AS {nameof(ShelfKeyEntity.ShelfId)},
-            name,
-            permission,
-            secret_sha256 AS {nameof(ShelfKeyEntity.SecretSha256)},
-            created_at AS {nameof(ShelfKeyEntity.CreatedAt)}";
+            k.id,
+            k.name,
+            k.secret_sha256 AS {nameof(ShelfKeyEntity.SecretSha256)},
+            k.created_at AS {nameof(ShelfKeyEntity.CreatedAt)}";
 
         private const string InsertSql = @"
-            INSERT INTO shelf_key (id, shelf_id, name, permission, secret_sha256, created_at)
-            VALUES (@Id, @ShelfId, @Name, @Permission, @SecretSha256, @CreatedAt)";
+            INSERT INTO shelf_key (id, name, secret_sha256, created_at)
+            VALUES (@Id, @Name, @SecretSha256, @CreatedAt)";
 
         private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict(InsertSql);
 
@@ -37,7 +35,7 @@ namespace ByteShelf.Server.Access.Repositories
         {
             return await UseSessionAsync(async (dbSession) =>
             {
-                string query = $"SELECT {SelectColumns} FROM shelf_key WHERE secret_sha256 = @{nameof(secretSha256)}";
+                string query = $"SELECT {SelectColumns} FROM shelf_key k WHERE k.secret_sha256 = @{nameof(secretSha256)}";
 
                 ShelfKeyEntity? entity = await dbSession.Connection.QuerySingleOrDefaultAsync<ShelfKeyEntity>(
                     query, new { secretSha256 }, transaction: dbSession.Transaction);
@@ -51,7 +49,7 @@ namespace ByteShelf.Server.Access.Repositories
         {
             return await UseSessionAsync(async (dbSession) =>
             {
-                string query = $"SELECT {SelectColumns} FROM shelf_key WHERE id = @{nameof(id)}";
+                string query = $"SELECT {SelectColumns} FROM shelf_key k WHERE k.id = @{nameof(id)}";
 
                 ShelfKeyEntity? entity = await dbSession.Connection.QuerySingleOrDefaultAsync<ShelfKeyEntity>(
                     query, new { id }, transaction: dbSession.Transaction);
@@ -65,7 +63,12 @@ namespace ByteShelf.Server.Access.Repositories
         {
             return await UseSessionAsync(async (dbSession) =>
             {
-                string query = $"SELECT {SelectColumns} FROM shelf_key WHERE shelf_id = @{nameof(shelfId)} ORDER BY created_at, id";
+                string query = $@"
+                    SELECT {SelectColumns}
+                    FROM shelf_key k
+                    JOIN shelf_key_grant g ON g.key_id = k.id
+                    WHERE g.shelf_id = @{nameof(shelfId)}
+                    ORDER BY k.created_at, k.id";
 
                 IEnumerable<ShelfKeyEntity> entities = await dbSession.Connection.QueryAsync<ShelfKeyEntity>(
                     query, new { shelfId }, transaction: dbSession.Transaction);
@@ -82,25 +85,19 @@ namespace ByteShelf.Server.Access.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<bool> DeleteAsync(Guid shelfId, Guid keyId, DateTimeOffset deletedAt, IDbSession session)
+        public async Task<bool> DeleteIfUngrantedAsync(Guid id, DateTimeOffset deletedAt, IDbSession session)
         {
-            string query = $"DELETE FROM shelf_key WHERE id = @{nameof(keyId)} AND shelf_id = @{nameof(shelfId)} RETURNING id";
-            return await _changeLog.DeleteAndLogAsync(ChangeEntityType.ShelfKey, query, new { shelfId, keyId }, deletedAt, session) > 0;
-        }
+            string query = $@"
+                DELETE FROM shelf_key
+                WHERE id = @{nameof(id)} AND NOT EXISTS (SELECT 1 FROM shelf_key_grant WHERE key_id = @{nameof(id)})
+                RETURNING id";
 
-        /// <inheritdoc />
-        public async Task DeleteForShelfAsync(Guid shelfId, DateTimeOffset deletedAt, IDbSession session)
-        {
-            string query = $"DELETE FROM shelf_key WHERE shelf_id = @{nameof(shelfId)} RETURNING id";
-            await _changeLog.DeleteAndLogAsync(ChangeEntityType.ShelfKey, query, new { shelfId }, deletedAt, session);
+            return await _changeLog.DeleteAndLogAsync(ChangeEntityType.ShelfKey, query, new { id }, deletedAt, session) > 0;
         }
 
         /// <inheritdoc />
         public async Task UpsertReplicatedAsync(ShelfKey key, string action, DateTimeOffset at, IDbSession session)
         {
-            string asideQuery = "DELETE FROM shelf_key WHERE secret_sha256 = @SecretSha256 AND id <> @Id RETURNING id";
-            await _changeLog.DeleteAndLogAsync(ChangeEntityType.ShelfKey, asideQuery, new { key.SecretSha256, key.Id }, at, session);
-
             await session.Connection.ExecuteAsync(UpsertReplicatedSql, Parameters(key), transaction: session.Transaction);
             await _changeLog.AppendAsync(ChangeEntityType.ShelfKey, key.Id, action, key, at, session);
         }
@@ -117,9 +114,7 @@ namespace ByteShelf.Server.Access.Repositories
             return new
             {
                 key.Id,
-                key.ShelfId,
                 key.Name,
-                Permission = PermissionColumns.ToColumn(key.Permission),
                 key.SecretSha256,
                 key.CreatedAt,
             };
@@ -128,9 +123,7 @@ namespace ByteShelf.Server.Access.Repositories
         internal class ShelfKeyEntity
         {
             public Guid Id { get; set; }
-            public Guid ShelfId { get; set; }
             public string Name { get; set; } = string.Empty;
-            public string Permission { get; set; } = string.Empty;
             public string SecretSha256 { get; set; } = string.Empty;
             public DateTimeOffset CreatedAt { get; set; }
 
@@ -139,9 +132,7 @@ namespace ByteShelf.Server.Access.Repositories
                 return new ShelfKey
                 {
                     Id = Id,
-                    ShelfId = ShelfId,
                     Name = Name,
-                    Permission = PermissionColumns.ToKeyPermission(Permission),
                     SecretSha256 = SecretSha256,
                     CreatedAt = CreatedAt,
                 };

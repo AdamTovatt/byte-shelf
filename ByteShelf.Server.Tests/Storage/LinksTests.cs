@@ -189,9 +189,26 @@ namespace ByteShelf.Server.Tests.Storage
             ShelfAccess key = await KeyAccessAsync(ShelfKeyPermission.AddOnly);
             await UploadLinks.CreateAsync(key, new CreateUploadLinkRequest { Path = "/a.txt" }.Normalize());
 
-            await KeyService.DeleteAsync(_shelf, key.Caller.Key!.Id);
+            await KeyService.DeleteAsync(key.Caller.Key!.Id);
 
             Assert.Empty(await LinkService.ListAsync(_admin));
+        }
+
+        [Fact]
+        public async Task Open_KeyLosesTheLinksShelfButKeepsAnother_StopsUntilTheShelfIsGivenBack()
+        {
+            ShelfAccess key = await KeyAccessAsync(ShelfKeyPermission.AddOnly);
+            Guid keyId = key.Caller.Key!.Id;
+            await KeyService.SetGrantAsync(await CreateShelfAsync("other"), keyId, ShelfKeyPermission.AddOnly);
+            UploadLink link = await UploadLinks.CreateAsync(key, new CreateUploadLinkRequest { Path = "/a.txt" }.Normalize());
+
+            await KeyService.RemoveGrantAsync(_shelf, keyId);
+
+            await Assert.ThrowsAsync<NotFoundException>(() => UploadLinks.OpenAsync(TokenOf(link.Url), "gone"));
+
+            await KeyService.SetGrantAsync(_shelf, keyId, ShelfKeyPermission.AddOnly);
+
+            Assert.Equal(_shelf.Id, (await UploadLinks.OpenAsync(TokenOf(link.Url), "gone")).Access.Shelf.Id);
         }
 
         [Fact]

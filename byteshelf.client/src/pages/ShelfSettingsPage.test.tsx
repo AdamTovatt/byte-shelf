@@ -9,6 +9,7 @@ import { saveTokens } from '../services/authService';
 import { SHELF_ROUTE_PATTERNS } from '../lib/shelfPaths';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
+import type { ShelfKeyGrantInfo, ShelfKeyInfo } from '../services/accessService';
 import type { ShelfLink } from '../services/linkService';
 import type { UserInfo } from '../services/userService';
 
@@ -44,11 +45,21 @@ const UPLOAD_LINK: ShelfLink = {
 /** A share link to a file now in the trash, which has no path to show. */
 const TRASHED_LINK: ShelfLink = { ...SHARE_LINK, id: 'l3', path: null, fileId: 'g' };
 
-/** What the server holds for the shelf "docs", by path; the signed-in user is set per test. */
+const DOCS_GRANT: ShelfKeyGrantInfo = { keyId: 'k', shelfId: 's', shelfName: 'docs', permission: 'addOnly', createdAt: '2026-11-02T00:00:00Z', updatedAt: '2026-11-02T00:00:00Z' };
+const PHOTOS_GRANT: ShelfKeyGrantInfo = { keyId: 'k', shelfId: 'p', shelfName: 'photos', permission: 'read', createdAt: '2026-11-02T00:00:00Z', updatedAt: '2026-11-02T00:00:00Z' };
+
+/** The key "k", whose grants are set per test and change as the dialogs change them. */
+const KEY: Omit<ShelfKeyInfo, 'grants'> = { id: 'k', name: 'backup job', createdAt: '2026-11-02T00:00:00Z' };
+
+/** What the server holds for the shelf "docs", by path; the signed-in user and the keys are set per test. */
 const ANSWERS: Record<string, unknown> = {
   '/api/shelves/docs': { id: 's', name: 'docs', quotaBytes: null, usedBytes: 0, reservedBytes: 0, fileCount: 0, createdAt: '2026-11-02T00:00:00Z' },
   '/api/shelves/docs/access': [{ userId: 'u', email: 'ada@example.com', displayName: 'Ada', permission: 'read' }],
-  '/api/shelves/docs/keys': [{ id: 'k', shelfId: 's', name: 'backup job', permission: 'addOnly', createdAt: '2026-11-02T00:00:00Z' }],
+  '/api/shelves': [
+    { id: 's', name: 'docs', quotaBytes: null, usedBytes: 0, reservedBytes: 0, fileCount: 0, createdAt: '2026-11-02T00:00:00Z' },
+    { id: 'p', name: 'photos', quotaBytes: null, usedBytes: 0, reservedBytes: 0, fileCount: 0, createdAt: '2026-11-02T00:00:00Z' },
+    { id: 'b', name: 'backups', quotaBytes: null, usedBytes: 0, reservedBytes: 0, fileCount: 0, createdAt: '2026-11-02T00:00:00Z' },
+  ],
 };
 
 describe('a shelf\'s settings tabs', () => {
@@ -58,6 +69,10 @@ describe('a shelf\'s settings tabs', () => {
   let me: UserInfo | null;
   let links: ShelfLink[];
   let revokeAnswer: () => Response;
+  /** The key's grants on the server: docs and photos unless a test says otherwise. */
+  let keyGrants: ShelfKeyGrantInfo[];
+  /** Each key grant set, as the request's path and the permission it carried. */
+  let keyGrantsSet: string[];
   let sent: string[];
 
   function Location() {
@@ -72,6 +87,8 @@ describe('a shelf\'s settings tabs', () => {
     me = ADMIN;
     links = [SHARE_LINK, UPLOAD_LINK];
     revokeAnswer = () => new Response(null, { status: 204 });
+    keyGrants = [DOCS_GRANT, PHOTOS_GRANT];
+    keyGrantsSet = [];
     sent = stubServer(async (request) => {
       const path = new URL(request.url).pathname;
       if (path === '/api/users/me') return me ? json(me) : json({ message: 'The server is down.' }, 503);
@@ -80,6 +97,19 @@ describe('a shelf\'s settings tabs', () => {
         const answer = revokeAnswer();
         if (answer.ok) links = links.filter((link) => !path.endsWith(`/${link.id}`));
         return answer;
+      }
+
+      if (path === '/api/shelves/docs/keys') return json(keyGrants.some((grant) => grant.shelfName === 'docs') ? [{ ...KEY, grants: keyGrants }] : []);
+      if (path === '/api/keys/k/grants') return json(keyGrants);
+      if (request.method === 'PUT' && path.startsWith('/api/keys/')) {
+        const { permission } = await request.json() as { permission: string };
+        keyGrantsSet.push(`${path} ${permission}`);
+        return json({ keyId: 'k', shelfId: 'b', shelfName: path.split('/').pop(), permission, createdAt: '2026-11-02T00:00:00Z', updatedAt: '2026-11-02T00:00:00Z' });
+      }
+
+      if (request.method === 'DELETE' && path.startsWith('/api/keys/k/grants/')) {
+        keyGrants = keyGrants.filter((grant) => grant.shelfName !== path.split('/').pop());
+        return new Response(null, { status: 204 });
       }
 
       const answer = ANSWERS[path];
@@ -149,6 +179,77 @@ describe('a shelf\'s settings tabs', () => {
     expect(tabs()).toEqual(['Links']);
   });
 
+  it('lists each key with what it may do on this shelf and the other shelves it works on', async () => {
+    await open('/shelves/docs/settings/keys', 'backup job');
+
+    expect(container.textContent).toContain('Add only · also on photos (read) · created ');
+  });
+
+  it.each([
+    ['gives it a shelf it does not have', 'backups', 'Read', '/api/keys/k/grants/backups read'],
+    ['changes its access on another shelf', 'photos', 'Read and write', '/api/keys/k/grants/photos readWrite'],
+    ['changes its access on this shelf', 'docs', 'Read', '/api/keys/k/grants/docs read'],
+  ])('%s as the access is picked in a key\'s Shelves dialog', async (_, shelf, choice, expected) => {
+    await open('/shelves/docs/settings/keys', 'backup job');
+    await openKeyShelves();
+
+    await pick(shelf, choice);
+
+    await vi.waitFor(() => expect(keyGrantsSet).toEqual([expected]));
+  });
+
+  it('keeps a key\'s Shelves dialog open when this shelf is taken from it, which leaves this shelf\'s list', async () => {
+    await open('/shelves/docs/settings/keys', 'backup job');
+    await openKeyShelves();
+
+    await pick('docs', 'None');
+
+    await vi.waitFor(() => expect(container.textContent).not.toContain('backup job'));
+    expect(document.body.textContent).toContain('Shelves for backup job');
+    await vi.waitFor(() => expect(choices('photos')).toEqual(['Read', 'Add only', 'Read and write']));
+  });
+
+  it('describes a key whose only shelf this is by its access here alone', async () => {
+    keyGrants = [DOCS_GRANT];
+
+    await open('/shelves/docs/settings/keys', 'backup job');
+
+    expect(container.textContent).toContain('backup jobAdd only · created ');
+  });
+
+  it('takes a shelf from a key when None is picked in its Shelves dialog', async () => {
+    await open('/shelves/docs/settings/keys', 'backup job');
+    await openKeyShelves();
+
+    await pick('photos', 'None');
+
+    await vi.waitFor(() => expect(sent).toContain('DELETE /api/keys/k/grants/photos Bearer t'));
+  });
+
+  it('offers no None on a key\'s only shelf, which only its row\'s bin takes, asking first', async () => {
+    keyGrants = [DOCS_GRANT];
+    await open('/shelves/docs/settings/keys', 'backup job');
+    await openKeyShelves();
+
+    expect(choices('docs')).toEqual(['Read', 'Add only', 'Read and write']);
+    expect(choices('photos')).toEqual(['None', 'Read', 'Add only', 'Read and write']);
+  });
+
+  it.each([
+    ['takes a key off this shelf, once confirmed, when it has others', [DOCS_GRANT, PHOTOS_GRANT], 'Take the key backup job off docs?', 'Take off'],
+    ['deletes a key whose only shelf this is, once confirmed', [DOCS_GRANT], 'Delete the key backup job?', 'Delete'],
+  ])('%s', async (_, grants, title, confirmLabel) => {
+    keyGrants = grants;
+    await open('/shelves/docs/settings/keys', 'backup job');
+
+    await act(async () => (container.querySelector('[aria-label="Take the key backup job off docs"]') as HTMLButtonElement).click());
+    await vi.waitFor(() => expect(document.body.textContent).toContain(title));
+    expect(sent.some((request) => request.startsWith('DELETE /api/keys/'))).toBe(false);
+    await act(async () => buttonNamed(confirmLabel).click());
+
+    await vi.waitFor(() => expect(sent).toContain('DELETE /api/keys/k/grants/docs Bearer t'));
+  });
+
   it('lists each link with what it reaches, who made it and that it is a share or upload link', async () => {
     await open('/shelves/docs/settings/links', '/in/scan.pdf');
 
@@ -213,6 +314,29 @@ describe('a shelf\'s settings tabs', () => {
 
     expect(location).toBe('/shelves/docs/settings/general');
   });
+
+  /** Opens the key's Shelves dialog and waits for the shelves to load in it. */
+  async function openKeyShelves(): Promise<void> {
+    await act(async () => (container.querySelector('[aria-label="The shelves the key backup job works on"]') as HTMLButtonElement).click());
+    await vi.waitFor(() => expect(document.body.querySelector('[aria-label="The key\'s access to backups"]')).not.toBeNull());
+  }
+
+  function accessGroup(shelf: string): HTMLElement {
+    return document.body.querySelector(`[aria-label="The key's access to ${shelf}"]`) as HTMLElement;
+  }
+
+  function choices(shelf: string): string[] {
+    return [...accessGroup(shelf).querySelectorAll('button')].map((button) => button.textContent ?? '');
+  }
+
+  async function pick(shelf: string, choice: string): Promise<void> {
+    const button = [...accessGroup(shelf).querySelectorAll('button')].find((candidate) => candidate.textContent === choice) as HTMLButtonElement;
+    await act(async () => button.click());
+  }
+
+  function buttonNamed(label: string): HTMLButtonElement {
+    return [...document.body.querySelectorAll('button')].find((button) => button.textContent === label) as HTMLButtonElement;
+  }
 
   /** Clicks a link's Revoke, then the dialog's. */
   async function revoke(place: string): Promise<void> {

@@ -284,6 +284,46 @@ namespace ByteShelf.Server.Tests.Replication
         }
 
         [Fact]
+        public async Task Sync_ShelfDeletedOnThePrimary_KeepsAKeyOnItsOtherShelfAndDropsOneThatWorkedOnlyThere()
+        {
+            await _pair.CreateShelfAsync("gone");
+            CreatedShelfKey both = await _pair.Primary.CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            (await _pair.Primary.AdminClient.PutAsJsonAsync($"/api/keys/{both.Key.Id}/grants/gone", new SetShelfKeyGrantRequest { Permission = ShelfKeyPermission.Read })).EnsureSuccessStatusCode();
+            CreatedShelfKey only = await _pair.Primary.CreateKeyAsync("gone", ShelfKeyPermission.Read);
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+
+            (await _pair.Primary.AdminClient.DeleteAsync("/api/shelves/gone")).EnsureSuccessStatusCode();
+            await _pair.SyncAsync();
+
+            using HttpClient bothOnReplica = _pair.Replica.CreateKeyClient(both.Secret);
+            using HttpClient onlyOnReplica = _pair.Replica.CreateKeyClient(only.Secret);
+            Assert.Equal(HttpStatusCode.OK, (await bothOnReplica.GetAsync("/api/shelves/docs/entries")).StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, (await onlyOnReplica.GetAsync("/api/shelves/docs/entries")).StatusCode);
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            ShelfKeyInfo listed = Assert.Single((await replica.GetFromJsonAsync<List<ShelfKeyInfo>>("/api/shelves/docs/keys"))!);
+            Assert.Equal((both.Key.Id, "docs"), (listed.Id, Assert.Single(listed.Grants).ShelfName));
+        }
+
+        [Fact]
+        public async Task Sync_ACopyAgain_RemovesAKeysGrantThePrimaryNoLongerHas()
+        {
+            await _pair.CreateShelfAsync("other");
+            CreatedShelfKey created = await _pair.Primary.CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            (await _pair.Primary.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = ShelfKeyPermission.Read })).EnsureSuccessStatusCode();
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+
+            (await _pair.Primary.AdminClient.DeleteAsync($"/api/keys/{created.Key.Id}/grants/other")).EnsureSuccessStatusCode();
+            await CompactPrimaryAsync();
+            await _pair.SyncAsync();
+
+            using HttpClient key = _pair.Replica.CreateKeyClient(created.Secret);
+            Assert.Equal(HttpStatusCode.OK, (await key.GetAsync("/api/shelves/docs/entries")).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await key.GetAsync("/api/shelves/other/entries")).StatusCode);
+        }
+
+        [Fact]
         public async Task Sync_BehindARemovalTheLogNoLongerHolds_TakesAWholeCopyWithoutIt()
         {
             await _pair.PairAsync();
@@ -291,7 +331,7 @@ namespace ByteShelf.Server.Tests.Replication
             Guid keyId = (await created.Content.ReadFromJsonAsync<CreatedShelfKey>())!.Key.Id;
             await _pair.SyncAsync();
 
-            (await _pair.Primary.AdminClient.DeleteAsync($"/api/shelves/docs/keys/{keyId}")).EnsureSuccessStatusCode();
+            (await _pair.Primary.AdminClient.DeleteAsync($"/api/keys/{keyId}/grants/docs")).EnsureSuccessStatusCode();
             await CompactPrimaryAsync();
             await _pair.SyncAsync();
 

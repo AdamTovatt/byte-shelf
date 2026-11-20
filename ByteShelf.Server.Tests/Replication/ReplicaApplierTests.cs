@@ -1,10 +1,12 @@
 using System.Reflection;
+using System.Text.Json;
 using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Access.Repositories;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.Replication;
 using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared.Auth;
+using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
 using ByteShelf.Server.Tests.TestUtilities;
@@ -196,24 +198,93 @@ namespace ByteShelf.Server.Tests.Replication
         }
 
         [Fact]
-        public async Task ApplyAsync_KeyWithAnothersSecret_RemovesTheOther()
+        public async Task ApplyAsync_KeyGrantForTheSameKeyAndShelf_RemovesTheOther()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            CreatedShelfKey created = await KeyService.CreateAsync(shelf, "app", ShelfKeyPermission.Read);
+            ShelfKeyGrant replicated = KeyGrant(created.Key.Id, shelf.Id, ShelfKeyPermission.ReadWrite);
+
+            await ApplyAsync(Entry(ChangeEntityType.ShelfKeyGrant, replicated.Id, replicated));
+
+            ShelfKeyGrant? held = await Services.GetRequiredService<IShelfKeyGrantRepository>().GetAsync(shelf.Id, created.Key.Id);
+            Assert.Equal((replicated.Id, ShelfKeyPermission.ReadWrite), (held?.Id, held?.Permission));
+        }
+
+        [Fact]
+        public async Task ApplyAsync_KeyWithAnothersSecret_RemovesTheOtherAndItsGrants()
         {
             Shelf shelf = await CreateShelfAsync();
             CreatedShelfKey existing = await KeyService.CreateAsync(shelf, "old", ShelfKeyPermission.Read);
             ShelfKey replicated = new ShelfKey
             {
                 Id = Guid.NewGuid(),
-                ShelfId = shelf.Id,
                 Name = "new",
-                Permission = ShelfKeyPermission.Read,
                 SecretSha256 = SecretHash.Sha256Hex(existing.Secret),
                 CreatedAt = TestInstants.Now,
             };
 
             await ApplyAsync(Entry(ChangeEntityType.ShelfKey, replicated.Id, replicated));
 
-            IReadOnlyList<ShelfKey> keys = await Services.GetRequiredService<IShelfKeyRepository>().GetForShelfAsync(shelf.Id);
-            Assert.Equal(replicated.Id, Assert.Single(keys).Id);
+            Assert.Equal(replicated.Id, (await KeyService.FindBySecretAsync(existing.Secret))?.Id);
+            Assert.Null(await Services.GetRequiredService<IShelfKeyRepository>().GetByIdAsync(existing.Key.Id));
+            Assert.Empty(await Services.GetRequiredService<IShelfKeyGrantRepository>().GetForKeyAsync(existing.Key.Id));
+        }
+
+        [Fact]
+        public async Task ApplyAsync_KeyThenItsGrants_GivesTheKeyEachShelf()
+        {
+            Shelf docs = await CreateShelfAsync("docs");
+            Shelf photos = await CreateShelfAsync("photos");
+            ShelfKey key = new ShelfKey { Id = Guid.NewGuid(), Name = "app", SecretSha256 = new string('c', 64), CreatedAt = TestInstants.Now };
+            ShelfKeyGrant onDocs = KeyGrant(key.Id, docs.Id, ShelfKeyPermission.Read);
+            ShelfKeyGrant onPhotos = KeyGrant(key.Id, photos.Id, ShelfKeyPermission.AddOnly);
+
+            await ApplyAsync(
+                Entry(ChangeEntityType.ShelfKey, key.Id, key),
+                Entry(ChangeEntityType.ShelfKeyGrant, onDocs.Id, onDocs),
+                Entry(ChangeEntityType.ShelfKeyGrant, onPhotos.Id, onPhotos));
+
+            Assert.Equal(
+                new[] { ("docs", ShelfKeyPermission.Read), ("photos", ShelfKeyPermission.AddOnly) },
+                (await KeyService.GetGrantsAsync(key.Id)).Select(grant => (grant.ShelfName, grant.Permission)).OrderBy(grant => grant.ShelfName));
+        }
+
+        [Fact]
+        public async Task ApplyAsync_KeysRemoval_RemovesTheGrantsItStillHasHere()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            CreatedShelfKey created = await KeyService.CreateAsync(shelf, "app", ShelfKeyPermission.Read);
+
+            await ApplyAsync(Removal(ChangeEntityType.ShelfKey, created.Key.Id));
+
+            Assert.Null(await KeyService.FindBySecretAsync(created.Secret));
+            Assert.Empty(await Services.GetRequiredService<IShelfKeyGrantRepository>().GetForKeyAsync(created.Key.Id));
+        }
+
+        /// <summary>A key state in a shape this build does not take, as a primary on another version sends, is refused in words the replica's admins see, not applied as a key that works nowhere.</summary>
+        [Fact]
+        public async Task ApplyAsync_KeyInTheShapeBeforeGrants_IsRefusedAsFromAPrimaryOnAnotherVersion()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            Guid keyId = Guid.NewGuid();
+            string oldShape = $$"""{"id":"{{keyId:D}}","shelfId":"{{shelf.Id:D}}","name":"app","permission":"read","secretSha256":"{{new string('d', 64)}}","createdAt":"2026-01-01T00:00:00+00:00"}""";
+
+            ChangeLogEntry entry = new ChangeLogEntry
+            {
+                Sequence = ++_sequence,
+                EntityType = ChangeEntityType.ShelfKey,
+                EntityId = keyId,
+                Action = ChangeAction.Added,
+                Payload = oldShape,
+                CreatedAt = TestInstants.Now,
+            };
+
+            PrimaryFailedException refused = await Assert.ThrowsAsync<PrimaryFailedException>(() => ApplyAsync(entry));
+
+            Assert.IsType<JsonException>(refused.InnerException);
+            Assert.Contains("run the same version of ByteShelf on both", refused.Message, StringComparison.Ordinal);
+
+            Assert.Null(await Services.GetRequiredService<IShelfKeyRepository>().GetByIdAsync(keyId));
         }
 
         protected override void ConfigureServices(IServiceCollection services)
@@ -263,6 +334,19 @@ namespace ByteShelf.Server.Tests.Replication
                 Action = ChangeAction.Added,
                 Payload = ChangePayload.Serialize(state),
                 CreatedAt = TestInstants.Now,
+            };
+        }
+
+        private static ShelfKeyGrant KeyGrant(Guid keyId, Guid shelfId, ShelfKeyPermission permission)
+        {
+            return new ShelfKeyGrant
+            {
+                Id = Guid.NewGuid(),
+                KeyId = keyId,
+                ShelfId = shelfId,
+                Permission = permission,
+                CreatedAt = TestInstants.Now,
+                UpdatedAt = TestInstants.Now,
             };
         }
 

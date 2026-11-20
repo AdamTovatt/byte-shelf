@@ -27,6 +27,8 @@ export const queryKeys = {
     root: ['shelfAccess'] as const,
     grants: (shelf: string) => ['shelfAccess', shelf, 'grants'] as const,
     keys: (shelf: string) => ['shelfAccess', shelf, 'keys'] as const,
+    // Upper case, which no shelf name has, so it never meets a shelf's keys above.
+    keyGrants: (keyId: string) => ['shelfAccess', 'keyGrants', keyId] as const,
   },
   // Not an invalidation resource: links are each server's own and not in the change log, so this
   // app's own changes refresh them.

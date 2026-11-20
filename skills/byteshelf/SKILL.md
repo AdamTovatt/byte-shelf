@@ -14,12 +14,14 @@ directories and files with its own trash and quota. `byteshelf` is its command l
 dotnet tool install -g ByteShelf.Cli      # once
 export BYTESHELF_URL=https://files.example.com/
 export BYTESHELF_KEY=bsk_...              # a shelf key from the shelf's settings in the web UI
-byteshelf whoami                          # the server and the shelf the key reaches
+byteshelf whoami                          # the server and the shelves the key reaches
 ```
 
-A key reaches one shelf, with one permission: `read`, `add-only` (read, and store new files, never
-replace, move or delete) or `read-write`. Never print the key or put it on a command line; keep it in
-the environment. A person can instead run `byteshelf login <server> --email <email>` once.
+A key reaches the shelves an admin gave it, each with one permission: `read`, `add-only` (read, and
+store new files, never replace, move or delete) or `read-write`; `byteshelf shelves` lists them, and a
+command needs the shelf named unless the key reaches only one. Never print the key or put it on a
+command line; keep it in the environment. A person can instead run `byteshelf login <server> --email
+<email>` once.
 
 `byteshelf help` lists every command with its options.
 

@@ -3,7 +3,7 @@ using ByteShelfCommon.Serialization;
 
 namespace ByteShelfCommon
 {
-    /// <summary>What a program holding a shelf key may do on the key's shelf.</summary>
+    /// <summary>What a program holding a shelf key may do on one of the key's shelves.</summary>
     [JsonConverter(typeof(CamelCaseEnumConverter<ShelfKeyPermission>))]
     public enum ShelfKeyPermission
     {

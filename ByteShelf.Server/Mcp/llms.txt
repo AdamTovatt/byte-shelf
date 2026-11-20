@@ -4,16 +4,17 @@
 > files, with its own trash, quota, users' access and keys. This server answers an agent three ways:
 > MCP at /mcp, the byteshelf command line, and its REST API under /api.
 
-Paths on a shelf start with `/`, the shelf's root. A program reaches one shelf with a shelf key (a
-secret starting `bsk_`) that an admin makes in the web UI's shelf settings, with one of three
-permissions: read, add-only (read, and store new files, never replace or remove) or read-write.
+Paths on a shelf start with `/`, the shelf's root. A program reaches shelves with a shelf key (a
+secret starting `bsk_`) that an admin makes in the web UI's shelf settings and may give more shelves,
+each with one of three permissions: read, add-only (read, and store new files, never replace or
+remove) or read-write.
 
 ## MCP
 
 - `/mcp` on this server: MCP over Streamable HTTP. Send the key as `Authorization: Bearer <key>` (or
-  in `X-Api-Key`). It reaches the key's own shelf, and offers only the tools the key's permission
-  allows (only reading ones on a replica). The server tells the agent the shelf's name when it
-  connects, and every tool works on that shelf when shelf is left out. It cannot read or write the
+  in `X-Api-Key`). It reaches the key's shelves, and offers a tool when the key's permission on any
+  of them allows it (only reading ones on a replica). The server names each shelf with its access
+  when the agent connects; a tool may leave shelf out only when the key has one. It cannot read or write the
   agent's own files: upload text or base64 (up to 256 KiB), read text of up to 256 KiB or a PNG,
   JPEG, GIF or WebP image of up to 1 MiB (any other file stored as an image, up to 32 MiB, as a
   preview at most 1568 pixels on its long side), and use share_file for a link to anything else, or

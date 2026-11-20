@@ -250,13 +250,21 @@ namespace ByteShelfClient
         /// <summary>Takes a user's access to the shelf away; admins only.</summary>
         Task RemoveGrantAsync(Guid userId, CancellationToken cancellationToken = default);
 
-        /// <summary>The shelf's keys, never their secrets; admins only.</summary>
+        /// <summary>The keys with a grant on the shelf, each with all its shelves, never their secrets; admins only.</summary>
         Task<IReadOnlyList<ShelfKeyInfo>> GetKeysAsync(CancellationToken cancellationToken = default);
 
-        /// <summary>Creates a key for a program, answering its secret, the one time it is shown; admins only.</summary>
+        /// <summary>Creates a key for a program, working on this shelf, answering its secret, the one time it is shown; admins only.</summary>
+        /// <exception cref="ArgumentException"><paramref name="permission"/> is none of the values (<see cref="ShelfKeys.ValidatePermission"/>), thrown before anything is sent.</exception>
         Task<CreatedShelfKey> CreateKeyAsync(string name, ShelfKeyPermission permission, CancellationToken cancellationToken = default);
 
-        /// <summary>Deletes a key; requests with it fail from then on. Admins only.</summary>
-        Task DeleteKeyAsync(Guid keyId, CancellationToken cancellationToken = default);
+        /// <summary>Gives an existing key this shelf, or changes what it may do here; admins only.</summary>
+        /// <exception cref="ArgumentException"><paramref name="permission"/> is none of the values (<see cref="ShelfKeys.ValidatePermission"/>), thrown before anything is sent.</exception>
+        Task<ShelfKeyGrantInfo> SetKeyGrantAsync(Guid keyId, ShelfKeyPermission permission, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Takes this shelf from a key, which stops working here; the key is deleted when this was its last
+        /// shelf. Admins only. <see cref="IByteShelfClient.DeleteKeyAsync"/> deletes a key from every shelf.
+        /// </summary>
+        Task RemoveKeyGrantAsync(Guid keyId, CancellationToken cancellationToken = default);
     }
 }

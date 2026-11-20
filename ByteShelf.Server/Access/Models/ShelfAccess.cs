@@ -1,23 +1,69 @@
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
+using ByteShelfCommon;
 
 namespace ByteShelf.Server.Access.Models
 {
-    /// <summary>A caller's access to one shelf: what it may do there, worked out once per request.</summary>
+    /// <summary>
+    /// A caller's access to one shelf: what it may do there, worked out once per request from the grant
+    /// that gives it (<see cref="Services.ShelfAccessResolver"/> finds which), or from being an admin.
+    /// </summary>
     public sealed class ShelfAccess
     {
+        private static readonly IReadOnlySet<ShelfOperation> ReadOnly = new HashSet<ShelfOperation> { ShelfOperation.Read };
+        private static readonly IReadOnlySet<ShelfOperation> AddOnly = new HashSet<ShelfOperation> { ShelfOperation.Read, ShelfOperation.Add };
+        private static readonly IReadOnlySet<ShelfOperation> ReadWrite = new HashSet<ShelfOperation> { ShelfOperation.Read, ShelfOperation.Add, ShelfOperation.Write };
+        private static readonly IReadOnlySet<ShelfOperation> Everything = new HashSet<ShelfOperation>(Enum.GetValues<ShelfOperation>());
+
         private readonly IReadOnlySet<ShelfOperation> _allowed;
 
-        public ShelfAccess(Shelf shelf, ShelfCaller caller, IReadOnlySet<ShelfOperation> allowed)
+        private ShelfAccess(Shelf shelf, ShelfCaller caller, IReadOnlySet<ShelfOperation> allowed, ShelfKeyPermission? keyPermission)
         {
             Shelf = shelf;
             Caller = caller;
             _allowed = allowed;
+            KeyPermission = keyPermission;
+        }
+
+        /// <summary>A key's access by its grant's permission on the shelf.</summary>
+        public static ShelfAccess ForKey(Shelf shelf, ShelfCaller caller, ShelfKeyPermission permission)
+        {
+            IReadOnlySet<ShelfOperation> allowed = permission switch
+            {
+                ShelfKeyPermission.Read => ReadOnly,
+                ShelfKeyPermission.AddOnly => AddOnly,
+                ShelfKeyPermission.ReadWrite => ReadWrite,
+                _ => throw new InvalidOperationException($"No access is defined for a {permission} key."),
+            };
+
+            return new ShelfAccess(shelf, caller, allowed, permission);
+        }
+
+        /// <summary>A user's (not an admin's) access by their grant's permission on the shelf.</summary>
+        public static ShelfAccess ForUser(Shelf shelf, ShelfCaller caller, ShelfAccessPermission permission)
+        {
+            IReadOnlySet<ShelfOperation> allowed = permission switch
+            {
+                ShelfAccessPermission.Read => ReadOnly,
+                ShelfAccessPermission.ReadWrite => ReadWrite,
+                _ => throw new InvalidOperationException($"No access is defined for {permission} access."),
+            };
+
+            return new ShelfAccess(shelf, caller, allowed, keyPermission: null);
+        }
+
+        /// <summary>An admin's access, to everything on every shelf.</summary>
+        public static ShelfAccess ForAdmin(Shelf shelf, ShelfCaller caller)
+        {
+            return new ShelfAccess(shelf, caller, Everything, keyPermission: null);
         }
 
         public Shelf Shelf { get; }
 
         public ShelfCaller Caller { get; }
+
+        /// <summary>A key's permission on the shelf, to name it (as <c>/mcp</c> tells an agent); null for a user. What it allows is <see cref="Allows"/>'s to say.</summary>
+        public ShelfKeyPermission? KeyPermission { get; }
 
         public bool Allows(ShelfOperation operation)
         {
@@ -44,9 +90,8 @@ namespace ByteShelf.Server.Access.Models
 
         /// <summary>
         /// Throws unless the caller may look at, continue, complete or abort <paramref name="upload"/>: the
-        /// caller that started it may, anyone else needs <see cref="ShelfOperation.Write"/>. Its starter
-        /// passed <see cref="RequireStore"/> when it started, and keeps that right: a key's permission
-        /// never changes, and a user who may still add may also write.
+        /// caller that started it may while it may still store what the upload stores (a key's or user's
+        /// permission can change meanwhile), anyone else needs <see cref="ShelfOperation.Write"/>.
         /// </summary>
         /// <exception cref="PermissionDeniedException">It may not.</exception>
         public void RequireUpload(UploadRecord upload)
@@ -54,7 +99,15 @@ namespace ByteShelf.Server.Access.Models
             if (upload.StartedBy != Caller.Id)
             {
                 Require(ShelfOperation.Write);
+                return;
             }
+
+            Require(upload.Target switch
+            {
+                StoreAtPath store => StoreOperation(store.Overwrite),
+                ContentSwap => ShelfOperation.Write,
+                _ => throw new InvalidOperationException($"No operation is defined for an upload to {upload.Target.GetType().Name}."),
+            });
         }
 
         /// <summary>Throws unless the caller may do <paramref name="operation"/> here.</summary>

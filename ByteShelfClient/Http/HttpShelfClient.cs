@@ -472,6 +472,7 @@ namespace ByteShelfClient.Http
 
         public Task<CreatedShelfKey> CreateKeyAsync(string name, ShelfKeyPermission permission, CancellationToken cancellationToken = default)
         {
+            ShelfKeys.ValidatePermission(permission);
             return _connection.SendAsync(
                 HttpMethod.Post,
                 $"{_base}/keys",
@@ -481,9 +482,27 @@ namespace ByteShelfClient.Http
                 cancellationToken);
         }
 
-        public Task DeleteKeyAsync(Guid keyId, CancellationToken cancellationToken = default)
+        public Task<ShelfKeyGrantInfo> SetKeyGrantAsync(Guid keyId, ShelfKeyPermission permission, CancellationToken cancellationToken = default)
         {
-            return _connection.SendAsync(HttpMethod.Delete, $"{_base}/keys/{keyId:D}", cancellationToken);
+            ShelfKeys.ValidatePermission(permission);
+            return _connection.SendAsync(
+                HttpMethod.Put,
+                KeyGrantUri(keyId),
+                new SetShelfKeyGrantRequest { Permission = permission },
+                ByteShelfJsonContext.Default.SetShelfKeyGrantRequest,
+                ByteShelfJsonContext.Default.ShelfKeyGrantInfo,
+                cancellationToken);
+        }
+
+        public Task RemoveKeyGrantAsync(Guid keyId, CancellationToken cancellationToken = default)
+        {
+            return _connection.SendAsync(HttpMethod.Delete, KeyGrantUri(keyId), cancellationToken);
+        }
+
+        /// <summary>The key's grant on this shelf, which the key routes name the key first.</summary>
+        private string KeyGrantUri(Guid keyId)
+        {
+            return $"api/keys/{keyId:D}/grants/{Uri.EscapeDataString(Name)}";
         }
 
         /// <summary>Sends the whole file in one streamed request, which cannot be repeated after a refused token.</summary>

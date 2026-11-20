@@ -1,7 +1,7 @@
 # Change log
 
 A numbered record of every change to shelves, directories, files, users and their logins and
-passkeys, shelf grants and shelf keys, and what was read from files' contents
+passkeys, shelf grants, shelf keys and their grants, and what was read from files' contents
 ([Metadata](../Metadata/Metadata.md)), written for replicas to follow. Each row holds the entity's
 type and id, a descriptive action, and the entity's whole state afterwards as JSON (`null` once the
 entity is gone). Applying a row is an upsert or a delete by id, so applying it twice is harmless.

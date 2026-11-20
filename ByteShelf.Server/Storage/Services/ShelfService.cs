@@ -1,4 +1,5 @@
 using ByteShelf.Server.Access.Repositories;
+using ByteShelf.Server.Access.Services;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
@@ -14,7 +15,7 @@ namespace ByteShelf.Server.Storage.Services
         private readonly IShelfRepository _shelfRepository;
         private readonly IDirectoryRepository _directoryRepository;
         private readonly IShelfGrantRepository _grantRepository;
-        private readonly IShelfKeyRepository _keyRepository;
+        private readonly ShelfKeyRemoval _keyRemoval;
         private readonly TimeProvider _timeProvider;
 
         public ShelfService(
@@ -22,14 +23,14 @@ namespace ByteShelf.Server.Storage.Services
             IShelfRepository shelfRepository,
             IDirectoryRepository directoryRepository,
             IShelfGrantRepository grantRepository,
-            IShelfKeyRepository keyRepository,
+            ShelfKeyRemoval keyRemoval,
             TimeProvider timeProvider)
         {
             _sessionFactory = sessionFactory;
             _shelfRepository = shelfRepository;
             _directoryRepository = directoryRepository;
             _grantRepository = grantRepository;
-            _keyRepository = keyRepository;
+            _keyRemoval = keyRemoval;
             _timeProvider = timeProvider;
         }
 
@@ -149,11 +150,13 @@ namespace ByteShelf.Server.Storage.Services
                         $"The shelf '{shelf.Name}' still holds files, directories, uploads or trash; a shelf is deleted only once it is empty. Empty its trash to remove what is in it right away.");
                 }
 
-                // Storage removes the shelf's grants and keys itself, in this transaction: two calls,
-                // which a removal hook defined here and implemented in Access would only hide.
+                // Storage removes the shelf's grants itself, in this transaction: two calls, which a
+                // removal hook defined here and implemented in Access would only hide. Keys that worked
+                // only here go with their grants (ShelfKeyRemoval).
                 DateTimeOffset now = _timeProvider.GetUtcNow();
                 await _grantRepository.DeleteForShelfAsync(shelf.Id, now, session);
-                await _keyRepository.DeleteForShelfAsync(shelf.Id, now, session);
+                await _keyRemoval.RemoveGrantsOnShelfAsync(shelf.Id, now, session);
+
                 await _directoryRepository.DeleteRootAsync(shelf.Id, now, session);
                 await _shelfRepository.DeleteAsync(shelf.Id, now, session);
                 await session.CommitAsync();

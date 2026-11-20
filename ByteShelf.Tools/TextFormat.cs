@@ -415,14 +415,25 @@ namespace ByteShelf.Tools
         {
             return keys.Count == 0
                 ? "No keys."
-                : Lines(keys.Select(key => $"{key.Id:D}  {key.Name}  {PermissionNames.Of(key.Permission)}  created {Time(key.CreatedAt)}"));
+                : Lines(keys.Select(key => $"{key.Id:D}  {key.Name}  {KeyGrants(key.Grants)}  created {Time(key.CreatedAt)}"));
+        }
+
+        /// <summary>The shelves a key works on, each with its access: <c>docs read-write, backups add-only</c>.</summary>
+        public static string KeyGrants(IReadOnlyList<ShelfKeyGrantInfo> grants)
+        {
+            return string.Join(", ", grants.Select(grant => $"{grant.ShelfName} {PermissionNames.Of(grant.Permission)}"));
+        }
+
+        public static string KeyGrant(ShelfKeyGrantInfo grant)
+        {
+            return $"{grant.ShelfName}  {PermissionNames.Of(grant.Permission)}  (key {grant.KeyId:D})";
         }
 
         public static string CreatedKey(CreatedShelfKey created)
         {
             return Lines(new[]
             {
-                $"Created key '{created.Key.Name}' ({PermissionNames.Of(created.Key.Permission)}, id {created.Key.Id:D}).",
+                $"Created key '{created.Key.Name}' ({KeyGrants(created.Key.Grants)}, id {created.Key.Id:D}).",
                 "Its secret is shown this once:",
                 created.Secret,
             });

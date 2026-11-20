@@ -11,22 +11,27 @@ key scheme and nothing else): a key as the bearer token, which is what MCP clien
 `X-Api-Key`. No key, a key that is not one, or a user's session answer 401. There is no OAuth: a key
 is made by an admin, in the web UI's shelf settings or with `byteshelf key create`.
 
-For each request `McpCallerSetup` builds what the caller is offered:
+For each request `McpCallerSetup` builds what the caller is offered. A key that reaches no shelf at
+that moment (it lost its last since it signed in, or a replica holds it before its grant's entry) is
+refused with 403 `permission_denied`:
 
 - **Tools**: each is marked with what it needs (`ToolNeedsAttribute`): read, add, write or admin, and
   whether it works only on the agent's own files. The need maps to a `ShelfOperation`, and the key's
-  `ShelfAccess` from `ShelfAccessResolver` decides, as it does for the API: a read key gets the
-  reading tools, an add-only key those and the adding ones, a read-write key all three kinds, and no
-  key the admin ones (creating shelves). A replica offers only the tools that need read access:
+  `ShelfAccess` on each of its shelves from `ShelfAccessResolver` decides, as it does for the API: a
+  tool is offered when any of them allows it, so a key reading one shelf and adding to another gets the
+  reading and adding tools, and the API refuses a call per shelf as for any request. No key gets the
+  admin ones (creating shelves). A replica offers only the tools that need read access:
   `share_file` and `revoke_link` among them, which write only the replica's own links, never
   replicated (see [Replication](../Replication/Replication.md)). Local-file tools
   (`upload_folder`, `download_directory`) are offered only where `ToolHost` reaches the agent's
   files, which this server does not. A tool without the mark is offered to no one, and a test checks
   every tool has one.
-- **Instructions**: what ByteShelf is and how the tools fit together (`ToolInstructions`), the key's
-  shelf by name, its access, that the server cannot reach the agent's files, and `curl` commands
-  that stream a file with the key, on `APP_BASE_URL` or else the address the agent called `/mcp` at:
-  down for every key, up too for a key that may store and not on a replica. A test checks they name every tool offered.
+- **Instructions**: what ByteShelf is and how the tools fit together (`ToolInstructions`), each shelf
+  the key reaches by name with its access (a key with one is told every tool works on it when shelf
+  is left out; one with several, to give the shelf), that the server cannot reach the agent's files,
+  and `curl` commands that stream a file with the key, on `APP_BASE_URL` or else the address the agent
+  called `/mcp` at: down for every key, and up too onto a shelf whose access allows storing, never on a
+  replica. A test checks they name every tool offered.
 
 ## Acting through the API
 
@@ -45,9 +50,10 @@ address the agent called `/mcp` at, by its `Host` header as sent (`X-Forwarded-H
 believed: nothing outside Development reads the host). Either way the person the agent hands it to
 can open it.
 
-The key reaches one shelf, so every tool's `shelf` may be left out and means that shelf (the tools
-take the only shelf a caller reaches). A call missing an argument the tool requires is answered
-naming it (`RequiredArguments`), not with the SDK's bare "An error occurred invoking".
+A key reaching one shelf may leave every tool's `shelf` out, meaning that shelf (the tools take the
+only shelf a caller reaches); `list_shelves` shows the shelves a key reaches. A call missing an
+argument the tool requires is answered naming it (`RequiredArguments`), not with the SDK's bare "An
+error occurred invoking".
 
 A local path means nothing on the server, so a tool given one (`upload_file`'s `localPath`,
 `download_file`'s) refuses it and says to give the contents instead: `upload_file` takes text or a
