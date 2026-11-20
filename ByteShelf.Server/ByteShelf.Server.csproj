@@ -2,23 +2,18 @@
 
   <PropertyGroup>
     <AssemblyName>ByteShelf.Server</AssemblyName>
-    <Version>2.1.0</Version>
+    <Version>2.2.0</Version>
     <!-- The GitHub release's notes (release.yml), above the list of pull requests it generates. -->
     <PackageReleaseNotes>
 **Upgrading**
 
-- Upgrade replicas before their primary. A replica stops following a newer primary, and says to update, until it is upgraded too.
-- Share and upload links made before 2.1.0 stop working: a link's token now names a row that can be revoked. Make new ones.
-- The first start migrates the database (v0011 to v0013), then reads the time taken, position and the like of the photos, videos and PDFs already stored, in the background.
+- Upgrade each replica together with its primary, primary first. The first start migrates the database (v0014) and rewrites the shelf keys in its change log, so a replica on 2.1.0 stops at the primary's first key change and says to update; once both run 2.2.0 it picks up where it stopped.
+- Clients built on ByteShelfCommon or ByteShelfClient 2.x cannot read this server's keys; update them to 3.0.0.
 
 **New**
 
-- Find duplicate files: a Duplicates only switch in the web UI's search options, `find_duplicates` over MCP, `byteshelf find-duplicates` and the API.
-- Revoke share and upload links: a Links tab in each shelf's settings, `list_links` and `revoke_link` over MCP, `byteshelf link list` and `link revoke`.
-- What photos, videos and PDFs say about themselves (time taken, GPS position, camera, length, title, pages) is shown with a file's details and can be searched.
-- Move and describe many entries in one request, over the API, MCP and the CLI.
-- Sign in with a passkey alone, added in settings. Passkeys need `APP_BASE_URL` over HTTPS.
-- Find the files with no description: a No description switch in the web UI's search options, and the same criterion over MCP, the CLI and the API. The web UI's search results page on with Show more.
+- A shelf key can reach several shelves, each with its own permission. Give a key another shelf from the Shelves control on its row in a shelf's settings, with `byteshelf key grant` and `key ungrant`, or through `/api/keys/{keyId}/grants`. Taking a key's last shelf deletes it, and `byteshelf key delete &lt;key-id&gt;` deletes it from every shelf.
+- `/mcp` offers every tool any of a key's shelves allows and names each shelf with its access.
     </PackageReleaseNotes>
     <SpaRoot>..\byteshelf.client</SpaRoot>
     <SpaProxyLaunchCommand>npm run dev</SpaProxyLaunchCommand>
