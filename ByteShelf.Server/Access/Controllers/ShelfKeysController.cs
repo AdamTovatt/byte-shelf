@@ -17,7 +17,7 @@ namespace ByteShelf.Server.Access.Controllers
             _keyService = keyService;
         }
 
-        /// <summary>The shelf's keys, without their secrets.</summary>
+        /// <summary>The keys with a grant on the shelf, each with all its shelves, without their secrets.</summary>
         [HttpGet]
         [ShelfAccess(ShelfOperation.Administer)]
         [ProducesResponseType(typeof(IReadOnlyList<ShelfKeyInfo>), 200)]
@@ -40,7 +40,7 @@ namespace ByteShelf.Server.Access.Controllers
             return Ok(await _keyService.CreateAsync(Shelf, request.Name, request.Permission));
         }
 
-        /// <summary>Deletes a key; requests with it fail from then on.</summary>
+        /// <summary>Takes the shelf from a key; the key is deleted when that was its last shelf.</summary>
         [HttpDelete("{keyId:guid}")]
         [ShelfAccess(ShelfOperation.Administer)]
         [ProducesResponseType(204)]
@@ -48,7 +48,7 @@ namespace ByteShelf.Server.Access.Controllers
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         public async Task<IActionResult> Delete(Guid keyId)
         {
-            await _keyService.DeleteAsync(Shelf, keyId);
+            await _keyService.RemoveGrantAsync(Shelf, keyId);
             return NoContent();
         }
     }

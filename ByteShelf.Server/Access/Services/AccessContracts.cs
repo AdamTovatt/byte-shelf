@@ -20,15 +20,28 @@ namespace ByteShelf.Server.Access.Services
             };
         }
 
-        public static ShelfKeyInfo ToShelfKeyInfo(ShelfKey key)
+        /// <param name="grants">Every grant the key holds.</param>
+        public static ShelfKeyInfo ToShelfKeyInfo(ShelfKey key, IEnumerable<HeldShelfKeyGrant> grants)
         {
             return new ShelfKeyInfo
             {
                 Id = key.Id,
-                ShelfId = key.ShelfId,
                 Name = key.Name,
-                Permission = key.Permission,
+                Grants = grants.Select(ToShelfKeyGrantInfo).ToList(),
                 CreatedAt = key.CreatedAt,
+            };
+        }
+
+        public static ShelfKeyGrantInfo ToShelfKeyGrantInfo(HeldShelfKeyGrant held)
+        {
+            return new ShelfKeyGrantInfo
+            {
+                KeyId = held.Grant.KeyId,
+                ShelfId = held.Grant.ShelfId,
+                ShelfName = held.ShelfName,
+                Permission = held.Grant.Permission,
+                CreatedAt = held.Grant.CreatedAt,
+                UpdatedAt = held.Grant.UpdatedAt,
             };
         }
     }

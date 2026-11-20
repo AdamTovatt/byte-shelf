@@ -1108,7 +1108,7 @@ namespace ByteShelf.Cli.Tests
 
             string secret = created.Output.Split(Environment.NewLine)[^1];
             Assert.StartsWith(ShelfKeys.SecretPrefix, secret, StringComparison.Ordinal);
-            Assert.Contains("backup job  add-only", listed.Output, StringComparison.Ordinal);
+            Assert.Contains("backup job  docs add-only", listed.Output, StringComparison.Ordinal);
             Assert.DoesNotContain(secret, listed.Output, StringComparison.Ordinal);
         }
 

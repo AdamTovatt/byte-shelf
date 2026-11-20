@@ -82,40 +82,84 @@ namespace ByteShelf.Server.Tests.Access
         }
 
         [Fact]
-        public async Task GetVisibleShelvesAsync_UserWithOneGrant_ListsOnlyThatShelf()
+        public async Task GetAccessesAsync_UserWithOneGrant_ListsOnlyThatShelf()
         {
             Shelf granted = await CreateShelfAsync("granted");
             await CreateShelfAsync("hidden");
             User user = await CreateUserAsync("user@example.com");
             await GrantService.SetAsync(granted, user.Id, ShelfAccessPermission.Read);
 
-            IReadOnlyList<Shelf> visible = await AccessResolver.GetVisibleShelvesAsync(ShelfCaller.ForUser(user.Id, isAdmin: false));
+            IReadOnlyList<ShelfAccess> visible = await AccessResolver.GetAccessesAsync(ShelfCaller.ForUser(user.Id, isAdmin: false));
 
-            Assert.Equal("granted", Assert.Single(visible).Name);
+            Assert.Equal("granted", Assert.Single(visible).Shelf.Name);
         }
 
         [Fact]
-        public async Task GetVisibleShelvesAsync_Admin_ListsEveryShelfByName()
+        public async Task GetAccessesAsync_Admin_ListsEveryShelfByName()
         {
             await CreateShelfAsync("b");
             await CreateShelfAsync("a");
             User admin = await CreateUserAsync("admin@example.com", UserRoles.Admin);
 
-            IReadOnlyList<Shelf> visible = await AccessResolver.GetVisibleShelvesAsync(ShelfCaller.ForUser(admin.Id, isAdmin: true));
+            IReadOnlyList<ShelfAccess> visible = await AccessResolver.GetAccessesAsync(ShelfCaller.ForUser(admin.Id, isAdmin: true));
 
-            Assert.Equal(new[] { "a", "b" }, visible.Select(shelf => shelf.Name));
+            Assert.Equal(new[] { "a", "b" }, visible.Select(access => access.Shelf.Name));
         }
 
         [Fact]
-        public async Task GetVisibleShelvesAsync_Key_ListsOnlyItsShelf()
+        public async Task GetAccessesAsync_Key_ListsOnlyItsShelf()
         {
             await CreateShelfAsync("a");
             Shelf own = await CreateShelfAsync("b");
             CreatedShelfKey created = await KeyService.CreateAsync(own, "app", ShelfKeyPermission.Read);
 
-            IReadOnlyList<Shelf> visible = await AccessResolver.GetVisibleShelvesAsync(ShelfCaller.ForKey((await KeyService.FindBySecretAsync(created.Secret))!));
+            IReadOnlyList<ShelfAccess> visible = await AccessResolver.GetAccessesAsync(ShelfCaller.ForKey((await KeyService.FindBySecretAsync(created.Secret))!));
 
-            Assert.Equal("b", Assert.Single(visible).Name);
+            Assert.Equal("b", Assert.Single(visible).Shelf.Name);
+        }
+
+        [Fact]
+        public async Task ResolveAsync_KeyOnTwoShelves_AllowsOnEachWhatItsGrantThereSays()
+        {
+            Shelf docs = await CreateShelfAsync("docs");
+            Shelf backups = await CreateShelfAsync("backups");
+            Shelf hidden = await CreateShelfAsync("hidden");
+            CreatedShelfKey created = await KeyService.CreateAsync(docs, "app", ShelfKeyPermission.Read);
+            await KeyService.SetGrantAsync(backups, created.Key.Id, ShelfKeyPermission.AddOnly);
+            ShelfCaller caller = ShelfCaller.ForKey((await KeyService.FindBySecretAsync(created.Secret))!);
+
+            ShelfAccess onDocs = await AccessResolver.ResolveAsync(caller, docs);
+            ShelfAccess onBackups = await AccessResolver.ResolveAsync(caller, backups);
+
+            Assert.Equal((true, false), (onDocs.Allows(ShelfOperation.Read), onDocs.Allows(ShelfOperation.Add)));
+            Assert.Equal((true, false), (onBackups.Allows(ShelfOperation.Add), onBackups.Allows(ShelfOperation.Write)));
+            await Assert.ThrowsAsync<NotFoundException>(() => AccessResolver.ResolveAsync(caller, hidden));
+        }
+
+        [Fact]
+        public async Task GetAccessesAsync_KeyOnTwoShelves_AnswersBothByNameWithTheirOwnAccess()
+        {
+            Shelf docs = await CreateShelfAsync("docs");
+            Shelf backups = await CreateShelfAsync("backups");
+            await CreateShelfAsync("hidden");
+            CreatedShelfKey created = await KeyService.CreateAsync(docs, "app", ShelfKeyPermission.ReadWrite);
+            await KeyService.SetGrantAsync(backups, created.Key.Id, ShelfKeyPermission.Read);
+
+            IReadOnlyList<ShelfAccess> accesses = await AccessResolver.GetAccessesAsync(ShelfCaller.ForKey((await KeyService.FindBySecretAsync(created.Secret))!));
+
+            Assert.Equal(new[] { ("backups", false), ("docs", true) }, accesses.Select(access => (access.Shelf.Name, access.Allows(ShelfOperation.Write))));
+        }
+
+        [Fact]
+        public async Task ResolveAsync_KeysGrantChanged_AllowsTheNewPermissionAtOnce()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            CreatedShelfKey created = await KeyService.CreateAsync(shelf, "app", ShelfKeyPermission.ReadWrite);
+            ShelfCaller caller = ShelfCaller.ForKey((await KeyService.FindBySecretAsync(created.Secret))!);
+
+            await KeyService.SetGrantAsync(shelf, created.Key.Id, ShelfKeyPermission.Read);
+
+            Assert.False((await AccessResolver.ResolveAsync(caller, shelf)).Allows(ShelfOperation.Add));
         }
     }
 }

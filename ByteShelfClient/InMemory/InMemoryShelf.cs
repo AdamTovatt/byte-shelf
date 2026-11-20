@@ -6,7 +6,8 @@ using ByteShelfCommon;
 namespace ByteShelfClient.InMemory
 {
     /// <summary>
-    /// One shelf held in memory: its directory tree, files with their bytes, grants and keys. Files and
+    /// One shelf held in memory: its directory tree, files with their bytes and users' grants (keys,
+    /// which may work on several shelves, are the store's). Files and
     /// directories share one namespace per directory, and deleted ones stay until the purge, as on the
     /// server. Every member runs under <see cref="InMemoryStore.Gate"/>.
     /// </summary>
@@ -37,8 +38,6 @@ namespace ByteShelfClient.InMemory
         public List<FileNode> Files { get; } = new List<FileNode>();
 
         public List<ShelfAccessGrant> Grants { get; } = new List<ShelfAccessGrant>();
-
-        public List<ShelfKeyInfo> Keys { get; } = new List<ShelfKeyInfo>();
 
         /// <summary>The links made on the shelf and not revoked, run out or not.</summary>
         public List<LinkRow> Links { get; } = new List<LinkRow>();

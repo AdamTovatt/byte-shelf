@@ -11,6 +11,7 @@ namespace ByteShelf.Server.ChangeLog.Models
         public const string Passkey = "passkey";
         public const string ShelfGrant = "shelf_grant";
         public const string ShelfKey = "shelf_key";
+        public const string ShelfKeyGrant = "shelf_key_grant";
 
         /// <summary>What was read from an object's contents, named by <see cref="Metadata.Models.ObjectMetadata.IdFor"/>.</summary>
         public const string ObjectMetadata = "object_metadata";

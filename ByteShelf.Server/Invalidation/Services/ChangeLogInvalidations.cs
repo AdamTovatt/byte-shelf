@@ -41,12 +41,15 @@ namespace ByteShelf.Server.Invalidation.Services
                     yield return new InvalidationEvent(InvalidationResources.ShelfAccess, ShelfIdOf(entry));
                     break;
 
-                case ChangeEntityType.ShelfKey:
-                    yield return new InvalidationEvent(InvalidationResources.ShelfAccess, ShelfIdOf(entry));
+                case ChangeEntityType.ShelfKeyGrant:
+                    // A shelf's key list shows each key's other shelves, so a grant on one shelf changes
+                    // the list of every shelf the key works on: every shelf's access is stale.
+                    yield return new InvalidationEvent(InvalidationResources.ShelfAccess);
                     break;
 
                 default:
-                    // A user's logins (a password change) change nothing the web UI shows.
+                    // A user's logins (a password change) change nothing the web UI shows, and a key is
+                    // shown only through its grants, which are logged beside it when it comes and goes.
                     break;
             }
         }
@@ -64,7 +67,6 @@ namespace ByteShelf.Server.Invalidation.Services
                 ChangeEntityType.File => ChangePayload.Deserialize<FileRecord>(entry.Payload).ShelfId,
                 ChangeEntityType.Directory => ChangePayload.Deserialize<DirectoryRecord>(entry.Payload).ShelfId,
                 ChangeEntityType.ShelfGrant => ChangePayload.Deserialize<ShelfGrant>(entry.Payload).ShelfId,
-                ChangeEntityType.ShelfKey => ChangePayload.Deserialize<ShelfKey>(entry.Payload).ShelfId,
                 _ => throw new ArgumentException($"A {entry.EntityType} change has no shelf.", nameof(entry)),
             };
 

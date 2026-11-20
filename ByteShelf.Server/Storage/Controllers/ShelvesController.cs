@@ -29,13 +29,13 @@ namespace ByteShelf.Server.Storage.Controllers
             _accessResolver = accessResolver;
         }
 
-        /// <summary>Every shelf the caller can use, with its usage, by name: all of them for an admin, its own for a key.</summary>
+        /// <summary>Every shelf the caller can use, with its usage, by name: all of them for an admin, the ones it holds a grant on for a user or a key.</summary>
         [HttpGet]
         [Authorize(Policy = ShelfKeyAuthentication.ShelfCallerPolicy)]
         [ProducesResponseType(typeof(IReadOnlyList<ShelfInfo>), 200)]
         public async Task<IActionResult> List()
         {
-            IReadOnlyList<Shelf> shelves = await _accessResolver.GetVisibleShelvesAsync(HttpContext.GetShelfCaller());
+            IReadOnlyList<Shelf> shelves = (await _accessResolver.GetAccessesAsync(HttpContext.GetShelfCaller())).Select(access => access.Shelf).ToList();
             return Ok(await _shelfService.GetInfosAsync(shelves));
         }
 

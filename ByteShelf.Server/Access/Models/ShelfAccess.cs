@@ -1,5 +1,6 @@
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
+using ByteShelfCommon;
 
 namespace ByteShelf.Server.Access.Models
 {
@@ -8,16 +9,21 @@ namespace ByteShelf.Server.Access.Models
     {
         private readonly IReadOnlySet<ShelfOperation> _allowed;
 
-        public ShelfAccess(Shelf shelf, ShelfCaller caller, IReadOnlySet<ShelfOperation> allowed)
+        /// <param name="keyPermission">A key's permission on the shelf, which <paramref name="allowed"/> was worked out from; null for a user.</param>
+        public ShelfAccess(Shelf shelf, ShelfCaller caller, IReadOnlySet<ShelfOperation> allowed, ShelfKeyPermission? keyPermission = null)
         {
             Shelf = shelf;
             Caller = caller;
             _allowed = allowed;
+            KeyPermission = keyPermission;
         }
 
         public Shelf Shelf { get; }
 
         public ShelfCaller Caller { get; }
+
+        /// <summary>A key's permission on the shelf, to name it (as <c>/mcp</c> tells an agent); null for a user. What it allows is <see cref="Allows"/>'s to say.</summary>
+        public ShelfKeyPermission? KeyPermission { get; }
 
         public bool Allows(ShelfOperation operation)
         {
@@ -44,9 +50,8 @@ namespace ByteShelf.Server.Access.Models
 
         /// <summary>
         /// Throws unless the caller may look at, continue, complete or abort <paramref name="upload"/>: the
-        /// caller that started it may, anyone else needs <see cref="ShelfOperation.Write"/>. Its starter
-        /// passed <see cref="RequireStore"/> when it started, and keeps that right: a key's permission
-        /// never changes, and a user who may still add may also write.
+        /// caller that started it may while it may still store what the upload stores (a key's or user's
+        /// permission can change meanwhile), anyone else needs <see cref="ShelfOperation.Write"/>.
         /// </summary>
         /// <exception cref="PermissionDeniedException">It may not.</exception>
         public void RequireUpload(UploadRecord upload)
@@ -54,7 +59,15 @@ namespace ByteShelf.Server.Access.Models
             if (upload.StartedBy != Caller.Id)
             {
                 Require(ShelfOperation.Write);
+                return;
             }
+
+            Require(upload.Target switch
+            {
+                StoreAtPath store => StoreOperation(store.Overwrite),
+                ContentSwap => ShelfOperation.Write,
+                _ => throw new InvalidOperationException($"No operation is defined for an upload to {upload.Target.GetType().Name}."),
+            });
         }
 
         /// <summary>Throws unless the caller may do <paramref name="operation"/> here.</summary>

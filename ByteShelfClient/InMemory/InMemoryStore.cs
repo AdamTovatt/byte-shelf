@@ -23,6 +23,9 @@ namespace ByteShelfClient.InMemory
 
         public List<UserRow> Users { get; } = new List<UserRow>();
 
+        /// <summary>Every key, oldest first, each with the shelves it works on.</summary>
+        public List<KeyRow> Keys { get; } = new List<KeyRow>();
+
         public InMemoryReplication Replication { get; }
 
         /// <summary>What stands for this store's public URL, which its replicas' status names.</summary>
@@ -116,6 +119,77 @@ namespace ByteShelfClient.InMemory
         {
             return Users.FirstOrDefault(user => user.Id == userId)
                 ?? throw InMemoryErrors.NotFound($"There is no user {userId}.");
+        }
+
+        public KeyRow GetKey(Guid keyId)
+        {
+            return Keys.FirstOrDefault(key => key.Id == keyId)
+                ?? throw InMemoryErrors.NotFound($"There is no key {keyId}.");
+        }
+
+        /// <summary>Takes the shelf from the key, deleting the key with its last grant as the server does.</summary>
+        /// <exception cref="ByteShelfException"><see cref="ErrorCodes.NotFound"/>: the key has no grant on the shelf.</exception>
+        public void RemoveKeyGrant(Guid keyId, InMemoryShelf shelf)
+        {
+            KeyRow? key = Keys.FirstOrDefault(candidate => candidate.Id == keyId);
+            if (key == null || key.Grants.RemoveAll(grant => grant.ShelfId == shelf.Id) == 0)
+            {
+                throw InMemoryErrors.NotFound($"The shelf '{shelf.Name}' has no key {keyId}.");
+            }
+
+            if (key.Grants.Count == 0)
+            {
+                Keys.Remove(key);
+            }
+        }
+
+        /// <summary>Removes a deleted shelf's grants from every key, and the keys left with none.</summary>
+        public void RemoveKeyGrantsOn(InMemoryShelf shelf)
+        {
+            foreach (KeyRow key in Keys)
+            {
+                key.Grants.RemoveAll(grant => grant.ShelfId == shelf.Id);
+            }
+
+            Keys.RemoveAll(key => key.Grants.Count == 0);
+        }
+
+        public ShelfKeyInfo ToInfo(KeyRow key)
+        {
+            return new ShelfKeyInfo { Id = key.Id, Name = key.Name, Grants = key.Grants.Select(ToInfo).ToList(), CreatedAt = key.CreatedAt };
+        }
+
+        public ShelfKeyGrantInfo ToInfo(KeyGrantRow grant)
+        {
+            return new ShelfKeyGrantInfo
+            {
+                KeyId = grant.KeyId,
+                ShelfId = grant.ShelfId,
+                ShelfName = Shelves.First(shelf => shelf.Id == grant.ShelfId).Name,
+                Permission = grant.Permission,
+                CreatedAt = grant.CreatedAt,
+                UpdatedAt = grant.UpdatedAt,
+            };
+        }
+
+        /// <summary>A key, which works on the shelves it holds a grant on, at least one.</summary>
+        internal sealed class KeyRow
+        {
+            public required Guid Id { get; init; }
+            public required string Name { get; init; }
+            public required DateTimeOffset CreatedAt { get; init; }
+
+            /// <summary>Oldest first, as the server lists them.</summary>
+            public List<KeyGrantRow> Grants { get; } = new List<KeyGrantRow>();
+        }
+
+        internal sealed class KeyGrantRow
+        {
+            public required Guid KeyId { get; init; }
+            public required Guid ShelfId { get; init; }
+            public required ShelfKeyPermission Permission { get; set; }
+            public required DateTimeOffset CreatedAt { get; init; }
+            public required DateTimeOffset UpdatedAt { get; set; }
         }
 
         internal sealed class UserRow

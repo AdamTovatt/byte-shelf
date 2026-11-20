@@ -43,8 +43,8 @@ namespace ByteShelf.Server.Invalidation.Services
             }
 
             ShelfCaller caller = ShelfCaller.ForUser(user);
-            HashSet<string> visible = (await _accessResolver.GetVisibleShelvesAsync(caller))
-                .Select(shelf => shelf.Id.ToString("D"))
+            HashSet<string> visible = (await _accessResolver.GetAccessesAsync(caller))
+                .Select(access => access.Shelf.Id.ToString("D"))
                 .ToHashSet(StringComparer.Ordinal);
 
             return events.Where(invalidation => !NamesAShelf(invalidation) || visible.Contains(invalidation.Metadata!)).ToList();

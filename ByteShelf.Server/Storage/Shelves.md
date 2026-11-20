@@ -13,7 +13,7 @@ Anyone with access to a shelf can list and read it; everything else here is admi
 | `GET /api/shelves`, `GET /api/shelves/{shelf}` | Every shelf the caller can use, or one, with its usage. |
 | `POST /api/shelves` | Creates a shelf and its root directory in one transaction. |
 | `PUT /api/shelves/{shelf}` | Replaces the name and quota; both are always set, so a body without `quotaBytes` removes the quota. A new name changes the shelf's URLs; a quota below what the shelf holds only stops new uploads. |
-| `DELETE /api/shelves/{shelf}` | Deletes the shelf with its access and keys, only once it holds nothing: no file (the trash included), no directory but its root, no upload. 409 otherwise. Deleted files stay in the trash, and block this, until their window ends or the trash is emptied (`DELETE /api/shelves/{shelf}/trash`, see [Storage.md](Storage.md)). |
+| `DELETE /api/shelves/{shelf}` | Deletes the shelf with its grants, users' and keys', and every key that was its last shelf, only once it holds nothing: no file (the trash included), no directory but its root, no upload. 409 otherwise. Deleted files stay in the trash, and block this, until their window ends or the trash is emptied (`DELETE /api/shelves/{shelf}/trash`, see [Storage.md](Storage.md)). |
 
 The quota counts the size of every file row on the shelf, the trash included, plus the declared
 size of every upload in progress. A shelf without a quota has no limit.

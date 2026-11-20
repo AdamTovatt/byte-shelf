@@ -501,7 +501,9 @@ namespace ByteShelf.Server.Tests.Client
             ShelfKeyInfo listed = Assert.Single(await Shelf.GetKeysAsync());
 
             Assert.StartsWith(ShelfKeys.SecretPrefix, created.Secret, StringComparison.Ordinal);
-            Assert.Equal((created.Key.Id, "backup agent", ShelfKeyPermission.AddOnly), (listed.Id, listed.Name, listed.Permission));
+            Assert.Equal((created.Key.Id, "backup agent"), (listed.Id, listed.Name));
+            ShelfKeyGrantInfo grant = Assert.Single(listed.Grants);
+            Assert.Equal((created.Key.Id, "docs", ShelfKeyPermission.AddOnly), (grant.KeyId, grant.ShelfName, grant.Permission));
         }
 
         [Fact]

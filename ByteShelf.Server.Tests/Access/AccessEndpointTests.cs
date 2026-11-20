@@ -233,6 +233,109 @@ namespace ByteShelf.Server.Tests.Access
         }
 
         [Fact]
+        public async Task PutKeyGrant_AnotherShelf_KeyReachesAndListsBoth()
+        {
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            using HttpClient key = _host.CreateKeyClient(created.Secret);
+
+            HttpResponseMessage granted = await _host.AdminClient.PutAsJsonAsync(
+                $"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = ShelfKeyPermission.AddOnly });
+
+            ShelfKeyGrantInfo grant = (await granted.EnsureSuccessStatusCode().Content.ReadFromJsonAsync<ShelfKeyGrantInfo>())!;
+            Assert.Equal(("other", ShelfKeyPermission.AddOnly), (grant.ShelfName, grant.Permission));
+            Assert.Equal(HttpStatusCode.OK, (await key.GetAsync("/api/shelves/other/entries")).StatusCode);
+            Assert.Equal(new[] { "docs", "other" }, (await key.GetFromJsonAsync<IReadOnlyList<ShelfInfo>>("/api/shelves"))!.Select(shelf => shelf.Name));
+            Assert.Equal(
+                new[] { "docs", "other" },
+                (await _host.AdminClient.GetFromJsonAsync<IReadOnlyList<ShelfKeyGrantInfo>>($"/api/keys/{created.Key.Id}/grants"))!.Select(listed => listed.ShelfName));
+        }
+
+        [Fact]
+        public async Task DeleteKeyOnOneShelf_KeyWithAnother_StopsThereAndKeepsWorkingOnTheOther()
+        {
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            using HttpClient key = _host.CreateKeyClient(created.Secret);
+            (await _host.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = ShelfKeyPermission.Read })).EnsureSuccessStatusCode();
+
+            (await _host.AdminClient.DeleteAsync($"/api/shelves/docs/keys/{created.Key.Id}")).EnsureSuccessStatusCode();
+
+            Assert.Equal(HttpStatusCode.NotFound, (await key.GetAsync("/api/shelves/docs/entries")).StatusCode);
+            Assert.Equal(HttpStatusCode.OK, (await key.GetAsync("/api/shelves/other/entries")).StatusCode);
+            Assert.Empty((await _host.AdminClient.GetFromJsonAsync<IReadOnlyList<ShelfKeyInfo>>("/api/shelves/docs/keys"))!);
+        }
+
+        [Fact]
+        public async Task DeleteKeyGrant_ItsLast_DeletesTheKey()
+        {
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            using HttpClient key = _host.CreateKeyClient(created.Secret);
+
+            (await _host.AdminClient.DeleteAsync($"/api/keys/{created.Key.Id}/grants/docs")).EnsureSuccessStatusCode();
+
+            Assert.Equal(HttpStatusCode.Unauthorized, (await key.GetAsync("/api/shelves/docs/entries")).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await _host.AdminClient.GetAsync($"/api/keys/{created.Key.Id}/grants")).StatusCode);
+        }
+
+        [Fact]
+        public async Task DeleteKey_OnTwoShelves_StopsItEverywhere()
+        {
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            using HttpClient key = _host.CreateKeyClient(created.Secret);
+            (await _host.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = ShelfKeyPermission.Read })).EnsureSuccessStatusCode();
+
+            (await _host.AdminClient.DeleteAsync($"/api/keys/{created.Key.Id}")).EnsureSuccessStatusCode();
+
+            Assert.Equal(HttpStatusCode.Unauthorized, (await key.GetAsync("/api/shelves/other/entries")).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await _host.AdminClient.DeleteAsync($"/api/keys/{created.Key.Id}")).StatusCode);
+        }
+
+        /// <summary>
+        /// The routes naming no shelf take only an admin's session, so a key is 401 there and a user who is
+        /// no admin 403. Those naming a shelf go by the shelf rule: 403 for a caller that reaches the shelf
+        /// without administering it, 404 for one that does not reach it at all.
+        /// </summary>
+        [Theory]
+        [InlineData("key", "GET", "grants", HttpStatusCode.Unauthorized)]
+        [InlineData("key", "DELETE", "", HttpStatusCode.Unauthorized)]
+        [InlineData("key", "PUT", "grants/docs", HttpStatusCode.Forbidden)]
+        [InlineData("key", "PUT", "grants/other", HttpStatusCode.NotFound)]
+        [InlineData("member", "GET", "grants", HttpStatusCode.Forbidden)]
+        [InlineData("member", "DELETE", "", HttpStatusCode.Forbidden)]
+        [InlineData("member", "PUT", "grants/docs", HttpStatusCode.NotFound)]
+        public async Task KeysRoutes_ByAKeyOrAUserWhoIsNoAdmin_AreRefusedAndChangeNothing(string caller, string method, string route, HttpStatusCode expected)
+        {
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite);
+            using HttpClient key = _host.CreateKeyClient(created.Secret);
+            HttpClient client = caller == "key" ? key : _host.MemberClient;
+            using HttpRequestMessage request = new HttpRequestMessage(new HttpMethod(method), $"/api/keys/{created.Key.Id}/{route}".TrimEnd('/'));
+            if (method == "PUT")
+            {
+                request.Content = JsonContent.Create(new SetShelfKeyGrantRequest { Permission = ShelfKeyPermission.ReadWrite });
+            }
+
+            HttpResponseMessage response = await client.SendAsync(request);
+
+            Assert.Equal(expected, response.StatusCode);
+            Assert.Equal("docs", Assert.Single((await _host.AdminClient.GetFromJsonAsync<IReadOnlyList<ShelfKeyGrantInfo>>($"/api/keys/{created.Key.Id}/grants"))!).ShelfName);
+        }
+
+        [Fact]
+        public async Task Key_CompleteItsOwnOverwritingUploadAfterItsGrantBecameAddOnly_Returns403AndKeepsTheFile()
+        {
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite);
+            using HttpClient key = _host.CreateKeyClient(created.Secret);
+            HttpResponseMessage started = await key.PostAsJsonAsync("/api/shelves/docs/uploads", new StartUploadRequest { Path = "/existing.txt", SizeBytes = 3, Overwrite = true });
+            UploadSession upload = (await started.EnsureSuccessStatusCode().Content.ReadFromJsonAsync<UploadSession>())!;
+            (await key.PutAsync($"/api/shelves/docs/uploads/{upload.Id}?offset=0", new ByteArrayContent(Encoding.UTF8.GetBytes("new")))).EnsureSuccessStatusCode();
+
+            (await _host.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/docs", new SetShelfKeyGrantRequest { Permission = ShelfKeyPermission.AddOnly })).EnsureSuccessStatusCode();
+            HttpResponseMessage response = await key.PostAsync($"/api/shelves/docs/uploads/{upload.Id}/complete", null);
+
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Equal("old", await _host.AdminClient.GetStringAsync("/api/shelves/docs/content?path=/existing.txt"));
+        }
+
+        [Fact]
         public async Task ValidReadKeyAlongsideAnAdminToken_PutContent_Returns403()
         {
             CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);

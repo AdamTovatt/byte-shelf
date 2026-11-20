@@ -58,7 +58,7 @@ not, since a primary may give fewer entries than asked for.
 `ReplicaApplier` applies an entry by its entity's type: a state is written whole by id, a removal removes.
 An older state may displace a newer one (a copy holds newer states than the log replayed after it): whatever
 it displaces is set aside (a file or directory to the trash, a shelf or user under a name nobody can use, a
-login, grant or key removed) and a later entry puts it back, so the result is always the primary's. Every
+login, grant or key removed, a key with its grants) and a later entry puts it back, so the result is always the primary's. Every
 write is logged in the replica's own change log, so its pages update live and a promoted replica keeps a
 whole log.
 
@@ -90,6 +90,14 @@ A change of a type this build does not know (from a newer primary) stops replica
 `ReplicaOutdatedException`, saying to update, rather than being skipped. The replica's admins see that
 message, and those of `PrimaryFailedException` (unreachable, refused, or an answer that cannot be used);
 any other failure shows only that the server's log says why.
+
+**A replica is upgraded together with its primary.** Both run the same migrations, and a migration that
+changes what an entity's log entries hold rewrites the entries already in the log (and in a whole copy
+still being read), so a replay meets one shape; rows it makes are logged, and made alike on every server.
+An entry whose state this build cannot read, as from a primary on another version, stops the step with
+`PrimaryFailedException`, saying to run the same version on both, rather than applying part of it.
+Either order stops the replica only until both are upgraded; it then picks up where it stopped
+([Deployment](../../DEPLOYMENT.md#replicas)).
 
 ## Whole copies
 

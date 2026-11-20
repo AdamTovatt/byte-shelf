@@ -295,7 +295,7 @@ namespace ByteShelf.Server.Tests.ChangeLog
 
             IReadOnlyList<ChangeLogEntry> entries = await ChangeLog.GetAfterAsync(before, 100);
             Assert.Equal(
-                new[] { ChangeEntityType.ShelfGrant, ChangeEntityType.ShelfKey, ChangeEntityType.Directory, ChangeEntityType.Shelf },
+                new[] { ChangeEntityType.ShelfGrant, ChangeEntityType.ShelfKeyGrant, ChangeEntityType.ShelfKey, ChangeEntityType.Directory, ChangeEntityType.Shelf },
                 entries.Select(entry => entry.EntityType));
             Assert.All(entries, entry => Assert.Equal(ChangeAction.Purged, entry.Action));
         }
