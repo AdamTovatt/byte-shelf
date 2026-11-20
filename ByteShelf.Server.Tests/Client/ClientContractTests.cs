@@ -476,6 +476,19 @@ namespace ByteShelf.Server.Tests.Client
         }
 
         [Fact]
+        public async Task SetGrantAsync_UndefinedPermission_ThrowsArgumentExceptionBeforeSending()
+        {
+            UserInfo user = await CreateUserAsync("user@example.com");
+            await Shelf.SetGrantAsync(user.Id, ShelfAccessPermission.Read);
+
+            // Thrown from the call itself, before a task is answered, so before anything is sent.
+            ArgumentException exception = Assert.Throws<ArgumentException>(() => { _ = Shelf.SetGrantAsync(user.Id, (ShelfAccessPermission)42); });
+
+            Assert.Equal("permission", exception.ParamName);
+            Assert.Equal(ShelfAccessPermission.Read, Assert.Single(await Shelf.GetGrantsAsync()).Permission);
+        }
+
+        [Fact]
         public async Task SetGrantAsync_UnknownUser_ThrowsNotFound()
         {
             ByteShelfException exception = await RefusalOf(Shelf.SetGrantAsync(Guid.NewGuid(), ShelfAccessPermission.Read));

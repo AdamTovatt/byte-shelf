@@ -451,6 +451,7 @@ namespace ByteShelfClient.Http
 
         public Task<ShelfAccessGrant> SetGrantAsync(Guid userId, ShelfAccessPermission permission, CancellationToken cancellationToken = default)
         {
+            ShelfGrants.ValidatePermission(permission);
             return _connection.SendAsync(
                 HttpMethod.Put,
                 $"{_base}/access/{userId:D}",
