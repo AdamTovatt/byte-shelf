@@ -254,6 +254,32 @@ namespace ByteShelfClient.InMemory
             return Run<Stream>(cancellationToken, shelf => new MemoryStream(shelf.GetFile(file).Content, writable: false));
         }
 
+        public Task<ShelfFileRange> OpenReadRangeAsync(EntryReference file, long offset, long? length = null, string? expectedSha256 = null, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(file);
+            RangeRequest.Check(offset, length);
+            string? expected = expectedSha256 == null ? null : ContentHash.Normalize(expectedSha256);
+            return Run(cancellationToken, shelf =>
+            {
+                FileNode read = shelf.GetFile(file);
+                byte[] content = read.Content;
+
+                // As the server weighs If-Range before Range: changed contents are refused whatever the range.
+                if (expected != null && read.Sha256 != expected)
+                {
+                    throw InMemoryErrors.ContentChanged($"'{shelf.ToShelfFile(read).Path}' has changed: it holds the contents {read.Sha256}, not {expected}.");
+                }
+
+                if (offset >= content.Length && !RangeRequest.AsksForAll(offset, length))
+                {
+                    throw InMemoryErrors.RangeNotSatisfiable($"'{shelf.ToShelfFile(read).Path}' holds {content.Length} bytes, so no range starts at {offset}.");
+                }
+
+                int count = (int)Math.Min(length ?? long.MaxValue, content.Length - offset);
+                return new ShelfFileRange(new MemoryStream(content, (int)offset, count, writable: false), offset, count, content.Length, read.Sha256);
+            });
+        }
+
         /// <summary>
         /// A link under the reserved <c>.invalid</c> domain: nothing serves it, but it names the file and
         /// runs out as a server's link would.

@@ -44,6 +44,7 @@ namespace ByteShelfClient.Http
                 HttpStatusCode.NotFound => ErrorCodes.NotFound,
                 HttpStatusCode.Conflict => ErrorCodes.Conflict,
                 HttpStatusCode.RequestEntityTooLarge => ErrorCodes.TooLarge,
+                HttpStatusCode.RequestedRangeNotSatisfiable => ErrorCodes.RangeNotSatisfiable,
                 HttpStatusCode.InsufficientStorage => ErrorCodes.QuotaExceeded,
                 _ => null,
             };

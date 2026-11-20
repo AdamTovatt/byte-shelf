@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using ByteShelfClient.Http;
 using ByteShelfCommon;
@@ -238,6 +239,114 @@ namespace ByteShelfClient.Tests
             IOException exception = await Assert.ThrowsAsync<IOException>(() => stream.CopyToAsync(Stream.Null));
 
             Assert.Contains("SHA-256", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task OpenReadRangeAsync_PartWithExpectedSha256_SendsRangeAndIfRange()
+        {
+            string sha256 = new string('a', 64);
+            HttpRequestMessage? sent = null;
+            using ScriptedServer server = new ScriptedServer(request =>
+            {
+                sent = request;
+                return PartOf(Encoding.UTF8.GetBytes("0123456789"), 7, 2, sha256);
+            });
+            using HttpClient http = server.CreateClient();
+
+            await using ShelfFileRange range = await ShelfOf(http).OpenReadRangeAsync("/a.txt", 7, 2, sha256.ToUpperInvariant());
+
+            Assert.Equal(("bytes=7-8", $"\"{sha256}\"", "identity"), (sent!.Headers.Range?.ToString(), sent.Headers.IfRange?.ToString(), sent.Headers.AcceptEncoding.ToString()));
+        }
+
+        [Fact]
+        public async Task OpenReadRangeAsync_FromTheStartWithNoLength_SendsAPlainRead()
+        {
+            byte[] content = Encoding.UTF8.GetBytes("the contents");
+            string sha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(content));
+            HttpRequestMessage? sent = null;
+            using ScriptedServer server = new ScriptedServer(request =>
+            {
+                sent = request;
+                return Whole(content, sha256);
+            });
+            using HttpClient http = server.CreateClient();
+
+            await using ShelfFileRange range = await ShelfOf(http).OpenReadRangeAsync("/a.txt", 0, expectedSha256: sha256);
+
+            Assert.Equal((null, null), (sent!.Headers.Range, sent.Headers.IfRange));
+            Assert.Equal((0L, 12L, 12L), (range.Offset, range.Length, range.TotalLength));
+        }
+
+        [Fact]
+        public async Task OpenReadRangeAsync_RangeThatIsTheWholeFile_ChecksItsSha256AtTheEnd()
+        {
+            byte[] content = Encoding.UTF8.GetBytes("the contents");
+            using ScriptedServer server = new ScriptedServer(_ => PartOf(content, 0, content.Length, new string('0', 64)));
+            using HttpClient http = server.CreateClient();
+            await using ShelfFileRange range = await ShelfOf(http).OpenReadRangeAsync("/a.txt", 0, content.Length);
+
+            IOException exception = await Assert.ThrowsAsync<IOException>(() => range.Content.CopyToAsync(Stream.Null));
+
+            Assert.Contains("SHA-256", exception.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task OpenReadRangeAsync_PartOfTheFile_ReadsItUnchecked()
+        {
+            byte[] content = Encoding.UTF8.GetBytes("the contents");
+            using ScriptedServer server = new ScriptedServer(_ => PartOf(content, 4, 8, new string('0', 64)));
+            using HttpClient http = server.CreateClient();
+            await using ShelfFileRange range = await ShelfOf(http).OpenReadRangeAsync("/a.txt", 4);
+            using MemoryStream read = new MemoryStream();
+
+            await range.Content.CopyToAsync(read);
+
+            Assert.Equal("contents", Encoding.UTF8.GetString(read.ToArray()));
+        }
+
+        [Theory]
+        [InlineData("whole file to a range", 4L, null)]
+        [InlineData("no ETag", 4L, null)]
+        [InlineData("an ETag that is not a SHA-256", 4L, null)]
+        [InlineData("no Content-Range", 4L, null)]
+        [InlineData("another start", 4L, null)]
+        [InlineData("more than asked for", 4L, 2L)]
+        [InlineData("whole file without a Content-Length", 0L, null)]
+        public async Task OpenReadRangeAsync_AnswerNotTheRangeAskedFor_ThrowsInvalidResponse(string answer, long offset, long? length)
+        {
+            byte[] content = Encoding.UTF8.GetBytes("the contents");
+            string sha256 = new string('0', 64);
+            using ScriptedServer server = new ScriptedServer(_ =>
+            {
+                HttpResponseMessage response = answer switch
+                {
+                    "whole file to a range" or "whole file without a Content-Length" => Whole(content, sha256),
+                    "another start" => PartOf(content, 3, 8, sha256),
+                    _ => PartOf(content, 4, 8, sha256),
+                };
+                switch (answer)
+                {
+                    case "no ETag":
+                        response.Headers.ETag = null;
+                        break;
+                    case "an ETag that is not a SHA-256":
+                        response.Headers.ETag = new EntityTagHeaderValue("\"v1\"");
+                        break;
+                    case "no Content-Range":
+                        response.Content.Headers.ContentRange = null;
+                        break;
+                    case "whole file without a Content-Length":
+                        response.Content.Headers.ContentLength = null;
+                        break;
+                }
+
+                return response;
+            });
+            using HttpClient http = server.CreateClient();
+
+            ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(() => ShelfOf(http).OpenReadRangeAsync("/a.txt", offset, length));
+
+            Assert.Equal(ByteShelfException.InvalidResponse, exception.Code);
         }
 
         [Theory]
@@ -549,14 +658,31 @@ namespace ByteShelfClient.Tests
             return $"{{\"id\":\"{Guid.NewGuid():D}\",\"shelfId\":\"{Guid.Empty:D}\",\"directoryId\":\"{Guid.Empty:D}\",\"path\":\"/a.txt\",\"name\":\"a.txt\",\"contentType\":\"text/plain\",\"sizeBytes\":6,\"sha256\":\"{new string('0', 64)}\",\"createdAt\":\"2026-01-01T00:00:00Z\",\"updatedAt\":\"2026-01-01T00:00:00Z\",\"encrypted\":false}}";
         }
 
+        private static IShelfClient ShelfOf(HttpClient http)
+        {
+            return new ByteShelfHttpClient(http, new ShelfKeyCredentials("bsk_secret")).Shelf("docs");
+        }
+
+        /// <summary>A 200 with all of <paramref name="content"/>, under <paramref name="sha256"/> as its ETag.</summary>
+        private static HttpResponseMessage Whole(byte[] content, string sha256)
+        {
+            HttpResponseMessage response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(content) };
+            response.Headers.ETag = new EntityTagHeaderValue($"\"{sha256}\"");
+            return response;
+        }
+
+        /// <summary>A 206 with <paramref name="count"/> bytes of <paramref name="content"/> from <paramref name="from"/>, as the server sends one.</summary>
+        private static HttpResponseMessage PartOf(byte[] content, int from, int count, string sha256)
+        {
+            HttpResponseMessage response = new HttpResponseMessage(HttpStatusCode.PartialContent) { Content = new ByteArrayContent(content, from, count) };
+            response.Content.Headers.ContentRange = new ContentRangeHeaderValue(from, from + count - 1, content.Length);
+            response.Headers.ETag = new EntityTagHeaderValue($"\"{sha256}\"");
+            return response;
+        }
+
         private static ScriptedServer ServingWithSha256(byte[] content, string sha256)
         {
-            return new ScriptedServer(_ =>
-            {
-                HttpResponseMessage response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(content) };
-                response.Headers.ETag = new System.Net.Http.Headers.EntityTagHeaderValue($"\"{sha256}\"");
-                return response;
-            });
+            return new ScriptedServer(_ => Whole(content, sha256));
         }
     }
 }

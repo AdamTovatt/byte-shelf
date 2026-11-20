@@ -17,8 +17,8 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>Shared contract of ByteShelf, a self-hosted file store: the request and response types the server and ByteShelfClient exchange, path rules, and source-generated JSON.</Description>
     <Copyright>MIT</Copyright>
-    <Version>2.1.0</Version>
-    <PackageReleaseNotes>The types of ByteShelf server 2.1.0. FileCriteria holds the criteria FileSearch now builds on, and adds HasDescription (the files still to describe) and criteria on what the server reads from a file: TakenFrom, TakenBefore, HasGps, Min/MaxDurationSeconds and Min/MaxPageCount, with Text also matching a title or camera. DuplicateSearch takes the same criteria to find files with the same contents, answered as DuplicateSearchResults. FileMetadata is what the server read from a photo, video or PDF. ShelfLink, ShelfLinkKind and LinkMaker describe a shelf's share and upload links, and DownloadLink and UploadLink carry the Id that revokes them. MoveEntriesRequest and SetDescriptionsRequest move and describe many entries in one request, answered item by item as EntryMoveResult and DescriptionResult. An upload link's path and description are no longer capped at 4096 bytes. See https://github.com/AdamTovatt/byte-shelf/blob/client-v$(Version)/ByteShelfCommon/README.md</PackageReleaseNotes>
+    <Version>2.2.0</Version>
+    <PackageReleaseNotes>Adds ErrorCodes.RangeNotSatisfiable (range_not_satisfiable), for a ranged read starting at or past the end of a file, and ErrorCodes.ContentChanged (content_changed), for a read whose file no longer holds the contents it expected, both for ByteShelfClient 2.2.0's ranged reads. ContentHash checks a SHA-256 named in a request, the rule FileCriteria already applied. See https://github.com/AdamTovatt/byte-shelf/blob/client-v$(Version)/ByteShelfCommon/README.md</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

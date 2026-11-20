@@ -207,6 +207,110 @@ namespace ByteShelfClient.Http
             return OpenContentAsync($"{_base}/content?{file.ToQuery()}", cancellationToken);
         }
 
+        public async Task<ShelfFileRange> OpenReadRangeAsync(EntryReference file, long offset, long? length = null, string? expectedSha256 = null, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(file);
+            RangeRequest.Check(offset, length);
+            string? expected = expectedSha256 == null ? null : ContentHash.Normalize(expectedSha256);
+
+            // The whole file is asked for without a Range, which an empty file would refuse.
+            bool asksForAll = RangeRequest.AsksForAll(offset, length);
+            string url = $"{_base}/content?{file.ToQuery()}";
+            HttpResponseMessage response = await _connection.SendRawAsync(
+                () =>
+                {
+                    HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, url);
+
+                    // Offsets and lengths count the stored bytes, so a proxy must not compress them. An HttpClient
+                    // that decompresses on its own still offers gzip beside this; a whole file it decompressed has no
+                    // Content-Length, and is refused below as not ByteShelf's rather than given a wrong length.
+                    request.Headers.AcceptEncoding.Add(new StringWithQualityHeaderValue("identity"));
+                    if (!asksForAll)
+                    {
+                        // A length running past what a long holds asks for everything to the end.
+                        long? last = length == null || length.Value > long.MaxValue - offset ? null : offset + length.Value - 1;
+                        request.Headers.Range = new RangeHeaderValue(offset, last);
+                        if (expected != null)
+                        {
+                            request.Headers.IfRange = new RangeConditionHeaderValue(new EntityTagHeaderValue($"\"{expected}\""));
+                        }
+                    }
+
+                    return request;
+                },
+                cancellationToken,
+                completion: HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false);
+
+            try
+            {
+                // A failed If-Range answers the whole of the contents the file holds now, under their own ETag; a
+                // plain read is compared here alone.
+                if (ETagOf(response) is not { } etag || !ContentHash.TryNormalize(etag, out string? sha256))
+                {
+                    throw NotARange(response, "without a SHA-256 for its ETag");
+                }
+
+                if (expected != null && sha256 != expected)
+                {
+                    throw new ByteShelfException(
+                        $"'{file}' has changed: it holds the contents {sha256}, not {expected}.",
+                        ErrorCodes.ContentChanged,
+                        response.StatusCode);
+                }
+
+                (long start, long count, long total) = ReadRange(response, asksForAll);
+                if (start != offset || count > length)
+                {
+                    throw NotARange(response, $"of {count} bytes from {start} when {length?.ToString(CultureInfo.InvariantCulture) ?? "all"} from {offset} were asked for");
+                }
+
+                // Only the whole file can be checked against its SHA-256.
+                string? check = start == 0 && count == total ? sha256 : null;
+                Stream body = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                return new ShelfFileRange(new ResponseStream(response, body, check), start, count, total, sha256);
+            }
+            catch
+            {
+                response.Dispose();
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// The range a successful read answered: a 206's <c>Content-Range</c>, or all of a 200 when the whole
+        /// file was asked for.
+        /// </summary>
+        /// <exception cref="ByteShelfException">The answer is not the range asked for (<see cref="ByteShelfException.InvalidResponse"/>).</exception>
+        private static (long Start, long Count, long Total) ReadRange(HttpResponseMessage response, bool asksForAll)
+        {
+            if (response.StatusCode == HttpStatusCode.PartialContent)
+            {
+                ContentRangeHeaderValue? range = response.Content.Headers.ContentRange;
+                if (range is not { From: long from, To: long to, Length: long total })
+                {
+                    throw NotARange(response, "without a Content-Range of bytes from, to and of how many");
+                }
+
+                return (from, to - from + 1, total);
+            }
+
+            if (response.StatusCode == HttpStatusCode.OK && asksForAll)
+            {
+                long whole = response.Content.Headers.ContentLength ?? throw NotARange(response, "without a Content-Length");
+                return (0, whole, whole);
+            }
+
+            throw NotARange(response, "to a ranged read");
+        }
+
+        private static ByteShelfException NotARange(HttpResponseMessage response, string what)
+        {
+            return new ByteShelfException(
+                $"The server answered {(int)response.StatusCode} {what}, which is not how ByteShelf answers a ranged read.",
+                ByteShelfException.InvalidResponse,
+                response.StatusCode);
+        }
+
         public Task<Stream> OpenDeletedReadAsync(Guid deletionId, Guid fileId, CancellationToken cancellationToken = default)
         {
             return OpenContentAsync($"{_base}/trash/{deletionId:D}/content?id={fileId:D}", cancellationToken);
@@ -222,8 +326,7 @@ namespace ByteShelfClient.Http
 
             try
             {
-                // The server's ETag is the contents' SHA-256, quoted.
-                string? sha256 = response.StatusCode == HttpStatusCode.OK ? response.Headers.ETag?.Tag.Trim('"') : null;
+                string? sha256 = response.StatusCode == HttpStatusCode.OK ? ETagOf(response) : null;
                 return new ResponseStream(response, await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false), sha256);
             }
             catch
@@ -231,6 +334,15 @@ namespace ByteShelfClient.Http
                 response.Dispose();
                 throw;
             }
+        }
+
+        /// <summary>
+        /// The server's ETag unquoted, which is the contents' SHA-256, as it came: a value that is not one is
+        /// left for the caller to refuse, or for <see cref="ResponseStream"/> to fail to match. Null when there is none.
+        /// </summary>
+        private static string? ETagOf(HttpResponseMessage response)
+        {
+            return response.Headers.ETag?.Tag.Trim('"');
         }
 
         public Task<PathEncryption> GetEncryptionAsync(string path, CancellationToken cancellationToken = default)

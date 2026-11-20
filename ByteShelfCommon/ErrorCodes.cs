@@ -35,5 +35,21 @@ namespace ByteShelfCommon
 
         /// <summary>A replica's primary could not be reached, or what it answered could not be used.</summary>
         public const string PrimaryFailed = "primary_failed";
+
+        /// <summary>
+        /// A ranged read starts at or past the end of the file. Answered with status 416, without a body.
+        /// </summary>
+        public const string RangeNotSatisfiable = "range_not_satisfiable";
+
+        /// <summary>
+        /// A read named the SHA-256 of the contents it expected, and the file now holds other contents. The
+        /// server never sends it: a client refuses the other contents it is answered with.
+        /// </summary>
+        /// <remarks>
+        /// Kept among the server's codes rather than beside <c>ByteShelfException.InvalidResponse</c>, the other
+        /// code only a client raises: it is a refusal about the file, which a program acts on as it does on the
+        /// codes above, while <c>InvalidResponse</c> says the answer itself was not ByteShelf's.
+        /// </remarks>
+        public const string ContentChanged = "content_changed";
     }
 }

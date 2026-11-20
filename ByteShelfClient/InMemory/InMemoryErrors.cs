@@ -20,6 +20,16 @@ namespace ByteShelfClient.InMemory
             return new ByteShelfException(message, ErrorCodes.InvalidRequest);
         }
 
+        public static ByteShelfException RangeNotSatisfiable(string message)
+        {
+            return new ByteShelfException(message, ErrorCodes.RangeNotSatisfiable);
+        }
+
+        public static ByteShelfException ContentChanged(string message)
+        {
+            return new ByteShelfException(message, ErrorCodes.ContentChanged);
+        }
+
         /// <summary>
         /// Runs a check the server makes, turning its <see cref="ArgumentException"/> into the
         /// <see cref="ErrorCodes.InvalidRequest"/> the server would answer.
