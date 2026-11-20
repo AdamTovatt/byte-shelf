@@ -4715,6 +4715,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/version/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ServerVersion"];
+                        "application/json": components["schemas"]["ServerVersion"];
+                        "text/json": components["schemas"]["ServerVersion"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4973,6 +5021,10 @@ export interface components {
         };
         RequestPasswordResetRequest: {
             email: string;
+        };
+        ServerVersion: {
+            version: string;
+            versionId: string;
         };
         SetDescriptionRequest: {
             description?: string | null;

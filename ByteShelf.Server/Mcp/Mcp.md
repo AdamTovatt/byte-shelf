@@ -26,7 +26,9 @@ refused with 403 `permission_denied`:
   (`upload_folder`, `download_directory`) are offered only where `ToolHost` reaches the agent's
   files, which this server does not. A tool without the mark is offered to no one, and a test checks
   every tool has one.
-- **Instructions**: what ByteShelf is and how the tools fit together (`ToolInstructions`), each shelf
+- **Instructions**: what ByteShelf is and how the tools fit together (`ToolInstructions`), the
+  server's release (every caller here holds a key, so may know it; see
+  [Version](../Version/Version.md)), each shelf
   the key reaches by name with its access (a key with one is told every tool works on it when shelf
   is left out; one with several, to give the shelf), that the server cannot reach the agent's files,
   and `curl` commands that stream a file with the key, on `APP_BASE_URL` or else the address the agent

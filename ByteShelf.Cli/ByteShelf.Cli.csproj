@@ -17,8 +17,8 @@
     <PackageTags>storage, cli, mcp, mcp-server, byteshelf, byte shelf, file storage</PackageTags>
     <Description>The ByteShelf command line: shelves, files, the trash, users and keys from a terminal, and with --mcp an MCP server for agents.</Description>
     <Copyright>MIT</Copyright>
-    <Version>2.2.0</Version>
-    <PackageReleaseNotes>A shelf key can reach several shelves: byteshelf key grant gives a key another shelf or changes its access there, key ungrant takes one (deleting the key with its last), key delete takes a key id and deletes the key from every shelf, and keys lists each key with all its shelves. Over --mcp a tool may leave the shelf out only when the login reaches one shelf. Made for ByteShelf server 2.2.0, whose keys hold grants; it cannot manage keys on a 2.1.0 server. See https://github.com/AdamTovatt/byte-shelf/blob/cli-v$(Version)/ByteShelf.Cli/README.md</PackageReleaseNotes>
+    <Version>2.3.0</Version>
+    <PackageReleaseNotes>byteshelf version prints the CLI's version and, when signed in, the server's. When the server cannot be asked (unreachable, or the login no longer works) it says why and exits non-zero, so a script can tell; with no login it prints only its own and succeeds. Asking the server's version needs ByteShelf server 2.3.0. See https://github.com/AdamTovatt/byte-shelf/blob/cli-v$(Version)/ByteShelf.Cli/README.md</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>

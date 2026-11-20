@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -19,6 +20,12 @@ namespace ByteShelf.Cli.Tests
 
         private readonly InMemoryClientSource _clients = new InMemoryClientSource();
         private readonly WorkFolder _work = new WorkFolder();
+
+        /// <summary>
+        /// The CLI's release as its assembly version says, which carries the csproj's Version and never
+        /// the commit, so it does not ask the code under test.
+        /// </summary>
+        private static string CliRelease => typeof(CliApp).Assembly.GetName().Version!.ToString(3);
 
         private IShelfClient Docs => _clients.Client.Shelf("docs");
 
@@ -1028,6 +1035,81 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
+        public async Task Version_SignedIn_PrintsTheClisAndTheServersVersion()
+        {
+            CliRun run = await RunAsync("version");
+
+            ServerVersion server = await _clients.Client.GetServerVersionAsync();
+            Assert.Equal((CliApp.Succeeded, $"byteshelf {CliRelease}{Environment.NewLine}server {server.Version} at memory as admin"), (run.ExitCode, run.Output));
+        }
+
+        [Fact]
+        public async Task Version_Json_PrintsBothVersionsAsOneObject()
+        {
+            CliRun run = await RunAsync("version", "--json");
+
+            using JsonDocument printed = JsonDocument.Parse(run.Output);
+            ServerVersion server = await _clients.Client.GetServerVersionAsync();
+            Assert.Equal(
+                (CliRelease, server.Version, server.VersionId),
+                (printed.RootElement.GetProperty("cli").GetString(), printed.RootElement.GetProperty("server").GetProperty("version").GetString(), printed.RootElement.GetProperty("server").GetProperty("versionId").GetString()));
+        }
+
+        [Theory]
+        [InlineData(false, "byteshelf {0}")]
+        [InlineData(true, "{{\"cli\":\"{0}\",\"server\":null}}")]
+        public async Task Version_NoConnection_PrintsOnlyTheClisAndSucceeds(bool json, string expected)
+        {
+            using ConfiguredClientSource clients = new ConfiguredClientSource(new CliConfigStore(_work.File("config/config.json")), _ => null);
+
+            CliRun run = await CliRun.RunAsync(clients, json ? new[] { "version", "--json" } : new[] { "version" });
+
+            Assert.Equal((CliApp.Succeeded, string.Format(CultureInfo.InvariantCulture, expected, CliRelease), string.Empty), (run.ExitCode, run.Output, run.Error));
+        }
+
+        [Theory]
+        [InlineData(false, "byteshelf {0}")]
+        [InlineData(true, "{{\"cli\":\"{0}\",\"server\":null}}")]
+        public async Task Version_ServerUnreachable_PrintsTheClisAndFailsSayingWhy(bool json, string expected)
+        {
+            using ScriptedHandler unreachable = new ScriptedHandler(_ => throw new HttpRequestException("No route to host."));
+            using ConfiguredClientSource clients = KeyClients(unreachable);
+
+            CliRun run = await CliRun.RunAsync(clients, json ? new[] { "version", "--json" } : new[] { "version" });
+
+            Assert.Equal(
+                (CliApp.Failed, string.Format(CultureInfo.InvariantCulture, expected, CliRelease), "Could not reach the server: No route to host."),
+                (run.ExitCode, run.Output, run.Error));
+        }
+
+        [Fact]
+        public async Task Version_ServerRefusesTheLogin_FailsSayingWhy()
+        {
+            using ScriptedHandler refusing = new ScriptedHandler(_ => new HttpResponseMessage(HttpStatusCode.Unauthorized));
+            using ConfiguredClientSource clients = KeyClients(refusing);
+
+            CliRun run = await CliRun.RunAsync(clients, new[] { "version" });
+
+            Assert.Equal((CliApp.Failed, $"byteshelf {CliRelease}"), (run.ExitCode, run.Output));
+            Assert.Contains($"({ErrorCodes.Unauthenticated})", run.Error, StringComparison.Ordinal);
+            Assert.Equal(new[] { "GET https://files.test/api/version/release bsk_key" }, refusing.Requests);
+        }
+
+        [Fact]
+        public async Task Version_ServerOlderThanTheReleaseRoute_FailsSayingItIsOlder()
+        {
+            // How a server before 2.3.0 answers any /api path it does not have: a bare 404 (MapSpaFallback).
+            using ScriptedHandler older = new ScriptedHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+            using ConfiguredClientSource clients = KeyClients(older);
+
+            CliRun run = await CliRun.RunAsync(clients, new[] { "version" });
+
+            Assert.Equal(
+                (CliApp.Failed, $"byteshelf {CliRelease}", "The server is older than 2.3.0, the first to answer its version."),
+                (run.ExitCode, run.Output, run.Error));
+        }
+
+        [Fact]
         public async Task Passwd_ReadsBothPasswordsFromStandardInput()
         {
             CliRun run = await RunAsync(new[] { "passwd" }, input: $"password-for-tests{Environment.NewLine}a-new-password{Environment.NewLine}");
@@ -1163,9 +1245,7 @@ namespace ByteShelf.Cli.Tests
         public async Task ServerUnreachable_FailsSayingSo()
         {
             using ScriptedHandler unreachable = new ScriptedHandler(_ => throw new HttpRequestException("No route to host."));
-            CliConfigStore store = new CliConfigStore(_work.File("config/config.json"));
-            store.Save(new CliConfig { Server = "https://files.test/", Login = new KeyLogin { Key = "bsk_key" } });
-            using ConfiguredClientSource clients = new ConfiguredClientSource(store, _ => null, unreachable);
+            using ConfiguredClientSource clients = KeyClients(unreachable);
 
             CliRun run = await CliRun.RunAsync(clients, new[] { "shelves" });
 
@@ -1214,6 +1294,14 @@ namespace ByteShelf.Cli.Tests
 
             Assert.Single(help.Split(Environment.NewLine), line => line.StartsWith("  key create <shelf>", StringComparison.Ordinal));
             Assert.Contains("--mcp", help, StringComparison.Ordinal);
+        }
+
+        /// <summary>Commands signed in to https://files.test/ with a key, sending to <paramref name="server"/>.</summary>
+        private ConfiguredClientSource KeyClients(ScriptedHandler server)
+        {
+            CliConfigStore store = new CliConfigStore(_work.File("config/config.json"));
+            store.Save(new CliConfig { Server = "https://files.test/", Login = new KeyLogin { Key = "bsk_key" } });
+            return new ConfiguredClientSource(store, _ => null, server);
         }
 
         private Task<CliRun> RunAsync(params string[] commandLine)

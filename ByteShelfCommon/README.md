@@ -36,6 +36,7 @@ AOT-compatible.
 | `RequestPasswordResetRequest`, `CompletePasswordResetRequest` | Asking for a reset link, and using it. |
 | `SignInRequest`, `SessionTokens`, `RefreshTokenRequest` | Signing in, refreshing and signing out at `/api/auth`. |
 | `ReplicationStatus`, `ReplicaInfo`, `ReplicationSourceInfo`, `PairingCodeResponse`, `PairWithPrimaryRequest`, `PromoteResponse` | A server's replicas or the primary it follows, pairing one, and promoting it. |
+| `ServerVersion`, `ReleaseVersion` | The release a server runs, which only signed-in users and keys may read, and reading an assembly's release from its informational version, without the commit after the `+`. |
 | `ErrorResponse`, `ErrorCodes` | Every error body, with a machine-readable code. |
 | `UploadLimits` | The server's limits, such as the largest chunk. |
 

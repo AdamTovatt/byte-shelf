@@ -22,6 +22,9 @@ namespace ByteShelfClient
         /// <summary>The signed-in user.</summary>
         Task<UserInfo> GetCurrentUserAsync(CancellationToken cancellationToken = default);
 
+        /// <summary>The release the server runs and its deploy id; any signed-in user or shelf key may ask.</summary>
+        Task<ServerVersion> GetServerVersionAsync(CancellationToken cancellationToken = default);
+
         /// <summary>Changes the signed-in user's password.</summary>
         Task ChangePasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default);
 

@@ -1,6 +1,8 @@
+using System.Reflection;
 using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Tests.Replication;
 using ByteShelf.Server.Tests.TestUtilities;
+using ByteShelf.Server.Version.Services;
 using ByteShelfClient;
 using ByteShelfClient.Http;
 using ByteShelfCommon;
@@ -116,6 +118,8 @@ namespace ByteShelf.Server.Tests.Client
         }
 
         protected override string PrimaryUrl => _host.Services.GetRequiredService<ReplicationOptions>().PublicUrl;
+
+        protected override Assembly ReleaseAssembly => typeof(VersionService).Assembly;
 
         protected override async Task<IByteShelfClient> CreateServerToFollowAsync()
         {

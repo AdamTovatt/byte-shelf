@@ -2,17 +2,21 @@ using System.Security.Cryptography;
 using System.Text;
 using ByteShelf.Server.Shared.StaticFiles;
 using ByteShelf.Server.Version.Models;
+using ByteShelfCommon;
 
 namespace ByteShelf.Server.Version.Services
 {
     /// <summary>
-    /// Identifies the running deploy: a hash of the server assembly's <c>ModuleVersionId</c> and the web
-    /// UI's <c>index.html</c>. The build is deterministic, so the module id changes exactly when the
-    /// server's code does; <c>index.html</c> names the content-hashed bundles, so it changes exactly when
-    /// the web UI does. Either changing changes the id.
+    /// Names the release this server runs, and identifies the running deploy: a hash of the server
+    /// assembly's <c>ModuleVersionId</c> and the web UI's <c>index.html</c>. The build is deterministic,
+    /// so the module id changes exactly when the server's code does; <c>index.html</c> names the
+    /// content-hashed bundles, so it changes exactly when the web UI does. Either changing changes the id.
     /// </summary>
     public class VersionService : IVersionService
     {
+        /// <summary>The release this server was built as: the csproj's <c>Version</c>, which a release's tag must name.</summary>
+        private static readonly string Release = ReleaseVersion.Of(typeof(VersionService).Assembly);
+
         private readonly Lazy<string> _versionId;
 
         public VersionService(IWebHostEnvironment environment)
@@ -23,6 +27,11 @@ namespace ByteShelf.Server.Version.Services
         public VersionView GetCurrent()
         {
             return new VersionView { VersionId = _versionId.Value };
+        }
+
+        public ServerVersion GetRelease()
+        {
+            return new ServerVersion { Version = Release, VersionId = _versionId.Value };
         }
 
         private static string ComputeVersionId(string? webRootPath)

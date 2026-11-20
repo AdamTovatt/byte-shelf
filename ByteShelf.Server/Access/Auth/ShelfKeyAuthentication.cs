@@ -7,7 +7,7 @@ namespace ByteShelf.Server.Access.Auth
         public const string Scheme = "ShelfKey";
 
         /// <summary>
-        /// The policy shelf endpoints require: a signed-in user or a key. Only these endpoints run the key
+        /// A signed-in user or a shelf key. Only the endpoints that require this policy run the key
         /// scheme, so a key can never reach the user endpoints.
         /// </summary>
         public const string ShelfCallerPolicy = "ShelfCaller";

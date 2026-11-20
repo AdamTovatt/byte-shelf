@@ -75,6 +75,12 @@ namespace ByteShelfClient.Http
         }
 
         /// <inheritdoc />
+        public Task<ServerVersion> GetServerVersionAsync(CancellationToken cancellationToken = default)
+        {
+            return _connection.SendAsync(HttpMethod.Get, "api/version/release", ByteShelfJsonContext.Default.ServerVersion, cancellationToken);
+        }
+
+        /// <inheritdoc />
         public Task ChangePasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default)
         {
             return _connection.SendAsync(

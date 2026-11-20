@@ -229,7 +229,8 @@ warning, so a server without a mail provider ([Email](#email)) still has it in i
 Upgrade a replica together with its primary, primary first. A replica older than its primary stops at
 the first change it does not know and says to update. One newer than its primary stops at the first
 change in a shape it no longer takes, and says to run the same version on both. Either way it picks up
-where it stopped once both run the same version, and nothing it applied is lost.
+where it stopped once both run the same version, and nothing it applied is lost. `byteshelf version`,
+signed in to a server, prints the release it runs, so running it against each shows whether they match.
 
 To make a replica the primary, promote it on its Replication page, then point clients and
 `APP_BASE_URL` at it. Stop the old primary: other replicas keep following it, and pairing them with the

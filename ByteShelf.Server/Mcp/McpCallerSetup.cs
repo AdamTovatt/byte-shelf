@@ -7,6 +7,7 @@ using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Controllers;
+using ByteShelf.Server.Version.Services;
 using ByteShelfCommon;
 using ModelContextProtocol.Server;
 
@@ -15,10 +16,10 @@ namespace ByteShelf.Server.Mcp
     /// <summary>
     /// What <c>/mcp</c> offers one call, made afresh for every request (it serves statelessly): the
     /// tools any of its key's grants allows, only the reading ones on a replica, never the admin ones or
-    /// the ones that work on the agent's own files; and instructions naming each of the key's shelves
-    /// with its access. A tool not marked with <see cref="ToolNeedsAttribute"/> is offered to no one. The
-    /// API the tools call checks every call again, per shelf; the offer only keeps an agent from seeing
-    /// tools that could only fail.
+    /// the ones that work on the agent's own files; and instructions naming the server's release and
+    /// each of the key's shelves with its access. A tool not marked with <see cref="ToolNeedsAttribute"/>
+    /// is offered to no one. The API the tools call checks every call again, per shelf; the offer only
+    /// keeps an agent from seeing tools that could only fail.
     /// </summary>
     internal static class McpCallerSetup
     {
@@ -52,7 +53,8 @@ namespace ByteShelf.Server.Mcp
             // The configured address, else the one this request came in at, where the agent reached the
             // server; CalledAt is the tools' own rule for where to call it, kept beside them in Mcp.
             Uri server = services.GetRequiredService<PublicAddress>().Configured ?? CallerKeyClientSource.CalledAt(httpContext.Request);
-            options.ServerInstructions = InstructionsFor(shelves, isReplica, server);
+            string release = services.GetRequiredService<IVersionService>().GetRelease().Version;
+            options.ServerInstructions = InstructionsFor(shelves, isReplica, server, release);
         }
 
         /// <summary>
@@ -86,7 +88,8 @@ namespace ByteShelf.Server.Mcp
 
         /// <param name="shelves">The key's access to each shelf it reaches (a key reaches at least one), whose permission the instructions name and which decides the ways in shown, as it decides the tools offered.</param>
         /// <param name="server">The server's root, ending in <c>/</c>, for the curl commands.</param>
-        internal static string InstructionsFor(IReadOnlyList<ShelfAccess> shelves, bool isReplica, Uri server)
+        /// <param name="release">The release the server runs, which every caller here may know, since each holds a key.</param>
+        internal static string InstructionsFor(IReadOnlyList<ShelfAccess> shelves, bool isReplica, Uri server, string release)
         {
             bool oneShelf = shelves.Count == 1;
             string reach = oneShelf
@@ -128,7 +131,7 @@ namespace ByteShelf.Server.Mcp
             return $"""
                 {ToolInstructions.Text}
 
-                This server is the ByteShelf server itself, reached with a shelf key. {reach}
+                This server is the ByteShelf server itself, release {release}, reached with a shelf key. {reach}
                 {offer}
                 {files}
 

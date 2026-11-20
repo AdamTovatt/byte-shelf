@@ -1,3 +1,4 @@
+using System.Reflection;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfClient;
 using ByteShelfClient.InMemory;
@@ -14,6 +15,8 @@ namespace ByteShelf.Server.Tests.Client
         }
 
         protected override string PrimaryUrl => ((InMemoryByteShelfClient)Client).Address;
+
+        protected override Assembly ReleaseAssembly => typeof(InMemoryByteShelfClient).Assembly;
 
         protected override Task<IByteShelfClient> CreateServerToFollowAsync()
         {

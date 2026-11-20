@@ -50,6 +50,7 @@ namespace ByteShelf.Cli.Commands
                 new Command(Section.SigningIn, "login", "<server-url> --email <email> | --key", "sign in as a user, or with a shelf key; the password or key is read from the terminal or stdin", LoginAsync),
                 new Command(Section.SigningIn, "logout", string.Empty, "end the session and forget the login", LogoutAsync),
                 new Command(Section.SigningIn, "whoami", string.Empty, "the server and who commands act as", WhoAmIAsync),
+                new Command(Section.SigningIn, "version", string.Empty, "this CLI's version and, when signed in, the server's; fails when the server cannot be asked", VersionAsync),
 
                 new Command(Section.Shelves, "shelves", string.Empty, "list the shelves you can reach", ListShelvesAsync),
                 new Command(Section.Shelves, "shelf info", "<shelf>", "a shelf's usage and quota", ShelfInfoAsync),
@@ -255,6 +256,39 @@ namespace ByteShelf.Cli.Commands
                 // what it is. A session that has ended is refused here too, and throws on.
                 Print(await client.GetShelvesAsync(cancellationToken), ByteShelfJsonContext.Default.IReadOnlyListShelfInfo, shelves => $"{description}{Environment.NewLine}{TextFormat.Shelves(shelves)}");
             }
+        }
+
+        private async Task VersionAsync(ArgumentList arguments, CancellationToken cancellationToken)
+        {
+            arguments.EnsureAllUsed();
+            VersionReport report = new VersionReport { Cli = ReleaseVersion.Of(typeof(CliApp).Assembly) };
+            string? description = _clients.Describe();
+            string Text(VersionReport printed) => printed.Server == null
+                ? $"byteshelf {printed.Cli}"
+                : $"byteshelf {printed.Cli}{Environment.NewLine}server {printed.Server.Version} at {description}";
+
+            if (description != null)
+            {
+                try
+                {
+                    report = new VersionReport { Cli = report.Cli, Server = await (await _clients.OpenAsync(cancellationToken)).GetServerVersionAsync(cancellationToken) };
+                }
+                catch (Exception exception) when (!cancellationToken.IsCancellationRequested && Failure.From(exception) != null)
+                {
+                    // The CLI's own version is printed even when the server cannot be asked; the
+                    // failure then fails the command, so a script can tell.
+                    Print(report, CliOutputJsonContext.Default.VersionReport, Text);
+                    if (exception is ByteShelfException { IsNotFound: true })
+                    {
+                        // Servers before 2.3.0 have no release route, and answer 404 for it.
+                        throw new IOException("The server is older than 2.3.0, the first to answer its version.", exception);
+                    }
+
+                    throw;
+                }
+            }
+
+            Print(report, CliOutputJsonContext.Default.VersionReport, Text);
         }
 
         private async Task ListShelvesAsync(ArgumentList arguments, CancellationToken cancellationToken)

@@ -36,6 +36,7 @@ spaces.
 | To | Run |
 |---|---|
 | See which shelves you reach | `byteshelf shelves`, and `byteshelf whoami` for who you act as |
+| See which release the server runs | `byteshelf version` (the CLI's, then the server's) |
 | See what is there | `byteshelf ls docs:/2026` or, everything below, `byteshelf tree docs:/2026 --depth 2` |
 | Find files | `byteshelf find docs invoice --type application/pdf --created-from 2026-03-01` |
 | Find copies to tidy away | `byteshelf find-duplicates docs:/photos --type 'image/*'` (the most repeated bytes first) |

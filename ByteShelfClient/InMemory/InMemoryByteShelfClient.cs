@@ -15,7 +15,10 @@ namespace ByteShelfClient.InMemory
         /// <summary>The restore window, as the server's default.</summary>
         public static readonly TimeSpan DefaultRestoreWindow = TimeSpan.FromDays(30);
 
+        private static readonly string PackageVersion = ReleaseVersion.Of(typeof(InMemoryByteShelfClient).Assembly);
+
         private readonly InMemoryStore _store;
+        private readonly string _versionId = Guid.NewGuid().ToString("N");
 
         /// <param name="email">The email of the admin the client acts as.</param>
         /// <param name="password">That admin's password, for <see cref="ChangePasswordAsync"/>.</param>
@@ -79,6 +82,16 @@ namespace ByteShelfClient.InMemory
         public Task<UserInfo> GetCurrentUserAsync(CancellationToken cancellationToken = default)
         {
             return _store.RunAsync(() => _store.GetUser(CurrentUser.Id).ToInfo(), cancellationToken);
+        }
+
+        /// <inheritdoc />
+        /// <remarks>
+        /// There is no server, so it answers this ByteShelfClient package's own release, and a deploy id
+        /// that stays the same for the client's life.
+        /// </remarks>
+        public Task<ServerVersion> GetServerVersionAsync(CancellationToken cancellationToken = default)
+        {
+            return _store.RunAsync(() => new ServerVersion { Version = PackageVersion, VersionId = _versionId }, cancellationToken);
         }
 
         /// <inheritdoc />
