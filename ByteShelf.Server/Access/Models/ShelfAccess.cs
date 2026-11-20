@@ -4,18 +4,58 @@ using ByteShelfCommon;
 
 namespace ByteShelf.Server.Access.Models
 {
-    /// <summary>A caller's access to one shelf: what it may do there, worked out once per request.</summary>
+    /// <summary>
+    /// A caller's access to one shelf: what it may do there, worked out once per request from the grant
+    /// that gives it (<see cref="Services.ShelfAccessResolver"/> finds which), or from being an admin.
+    /// </summary>
     public sealed class ShelfAccess
     {
+        private static readonly IReadOnlySet<ShelfOperation> ReadOnly = new HashSet<ShelfOperation> { ShelfOperation.Read };
+        private static readonly IReadOnlySet<ShelfOperation> AddOnly = new HashSet<ShelfOperation> { ShelfOperation.Read, ShelfOperation.Add };
+        private static readonly IReadOnlySet<ShelfOperation> ReadWrite = new HashSet<ShelfOperation> { ShelfOperation.Read, ShelfOperation.Add, ShelfOperation.Write };
+        private static readonly IReadOnlySet<ShelfOperation> Everything = new HashSet<ShelfOperation>(Enum.GetValues<ShelfOperation>());
+
         private readonly IReadOnlySet<ShelfOperation> _allowed;
 
-        /// <param name="keyPermission">A key's permission on the shelf, which <paramref name="allowed"/> was worked out from; null for a user.</param>
-        public ShelfAccess(Shelf shelf, ShelfCaller caller, IReadOnlySet<ShelfOperation> allowed, ShelfKeyPermission? keyPermission = null)
+        private ShelfAccess(Shelf shelf, ShelfCaller caller, IReadOnlySet<ShelfOperation> allowed, ShelfKeyPermission? keyPermission)
         {
             Shelf = shelf;
             Caller = caller;
             _allowed = allowed;
             KeyPermission = keyPermission;
+        }
+
+        /// <summary>A key's access by its grant's permission on the shelf.</summary>
+        public static ShelfAccess ForKey(Shelf shelf, ShelfCaller caller, ShelfKeyPermission permission)
+        {
+            IReadOnlySet<ShelfOperation> allowed = permission switch
+            {
+                ShelfKeyPermission.Read => ReadOnly,
+                ShelfKeyPermission.AddOnly => AddOnly,
+                ShelfKeyPermission.ReadWrite => ReadWrite,
+                _ => throw new InvalidOperationException($"No access is defined for a {permission} key."),
+            };
+
+            return new ShelfAccess(shelf, caller, allowed, permission);
+        }
+
+        /// <summary>A user's (not an admin's) access by their grant's permission on the shelf.</summary>
+        public static ShelfAccess ForUser(Shelf shelf, ShelfCaller caller, ShelfAccessPermission permission)
+        {
+            IReadOnlySet<ShelfOperation> allowed = permission switch
+            {
+                ShelfAccessPermission.Read => ReadOnly,
+                ShelfAccessPermission.ReadWrite => ReadWrite,
+                _ => throw new InvalidOperationException($"No access is defined for {permission} access."),
+            };
+
+            return new ShelfAccess(shelf, caller, allowed, keyPermission: null);
+        }
+
+        /// <summary>An admin's access, to everything on every shelf.</summary>
+        public static ShelfAccess ForAdmin(Shelf shelf, ShelfCaller caller)
+        {
+            return new ShelfAccess(shelf, caller, Everything, keyPermission: null);
         }
 
         public Shelf Shelf { get; }

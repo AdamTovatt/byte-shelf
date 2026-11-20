@@ -10,12 +10,6 @@ namespace ByteShelf.Server.Access.Services
     /// <inheritdoc />
     public class ShelfAccessResolver : IShelfAccessResolver
     {
-        private static readonly IReadOnlySet<ShelfOperation> Nothing = new HashSet<ShelfOperation>();
-        private static readonly IReadOnlySet<ShelfOperation> ReadOnly = new HashSet<ShelfOperation> { ShelfOperation.Read };
-        private static readonly IReadOnlySet<ShelfOperation> AddOnly = new HashSet<ShelfOperation> { ShelfOperation.Read, ShelfOperation.Add };
-        private static readonly IReadOnlySet<ShelfOperation> ReadWrite = new HashSet<ShelfOperation> { ShelfOperation.Read, ShelfOperation.Add, ShelfOperation.Write };
-        private static readonly IReadOnlySet<ShelfOperation> Everything = new HashSet<ShelfOperation>(Enum.GetValues<ShelfOperation>());
-
         private readonly IShelfGrantRepository _grantRepository;
         private readonly IShelfKeyGrantRepository _keyGrantRepository;
         private readonly IShelfRepository _shelfRepository;
@@ -52,7 +46,7 @@ namespace ByteShelf.Server.Access.Services
 
             if (caller.IsAdmin)
             {
-                return new ShelfAccess(shelf, caller, Everything);
+                return ShelfAccess.ForAdmin(shelf, caller);
             }
 
             return ForUser(caller, shelf, await _grantRepository.GetAsync(shelf.Id, caller.UserId!.Value));
@@ -70,7 +64,7 @@ namespace ByteShelf.Server.Access.Services
 
             if (caller.IsAdmin)
             {
-                return shelf => new ShelfAccess(shelf, caller, Everything);
+                return shelf => ShelfAccess.ForAdmin(shelf, caller);
             }
 
             Dictionary<Guid, ShelfGrant> grants = (await _grantRepository.GetForUserAsync(caller.UserId!.Value)).ToDictionary(grant => grant.ShelfId);
@@ -80,30 +74,13 @@ namespace ByteShelf.Server.Access.Services
         /// <summary>A key's access to a shelf given its grant there; none without one.</summary>
         private static ShelfAccess? ForKey(ShelfCaller caller, Shelf shelf, ShelfKeyGrant? grant)
         {
-            IReadOnlySet<ShelfOperation> allowed = grant?.Permission switch
-            {
-                null => Nothing,
-                ShelfKeyPermission.Read => ReadOnly,
-                ShelfKeyPermission.AddOnly => AddOnly,
-                ShelfKeyPermission.ReadWrite => ReadWrite,
-                _ => throw new InvalidOperationException($"No access is defined for a {grant.Permission} key."),
-            };
-
-            return allowed.Count == 0 ? null : new ShelfAccess(shelf, caller, allowed, grant!.Permission);
+            return grant == null ? null : ShelfAccess.ForKey(shelf, caller, grant.Permission);
         }
 
         /// <summary>A user's (not an admin's) access to a shelf given their grant there; none without one.</summary>
         private static ShelfAccess? ForUser(ShelfCaller caller, Shelf shelf, ShelfGrant? grant)
         {
-            IReadOnlySet<ShelfOperation> allowed = grant?.Permission switch
-            {
-                null => Nothing,
-                ShelfAccessPermission.Read => ReadOnly,
-                ShelfAccessPermission.ReadWrite => ReadWrite,
-                _ => throw new InvalidOperationException($"No access is defined for {grant.Permission} access."),
-            };
-
-            return allowed.Count == 0 ? null : new ShelfAccess(shelf, caller, allowed);
+            return grant == null ? null : ShelfAccess.ForUser(shelf, caller, grant.Permission);
         }
     }
 }

@@ -38,7 +38,12 @@ namespace ByteShelf.Server.Tests.Access
         private static readonly OldKey Deleted = new OldKey(Guid.Parse("20000000-0000-0000-0000-000000000004"), Docs, "deleted", "read", ShelfKeyPermission.Read);
         private static readonly Guid LinkId = Guid.Parse("30000000-0000-0000-0000-000000000001");
 
+        /// <summary>The keys the old log holds a state of: the three still there and the one purged since.</summary>
+        private static readonly OldKey[] LoggedKeys = { Writer, Backup, Deleted, Reader };
+
         private RootFolder _old = null!;
+        private DateTimeOffset _migrationStarted;
+        private DateTimeOffset _migrationEnded;
 
         public override async Task InitializeAsync()
         {
@@ -47,7 +52,9 @@ namespace ByteShelf.Server.Tests.Access
             MigrateThroughV0013(_old.ConnectionString);
             await FillAsBeforeV0014Async(_old.ConnectionString);
 
+            _migrationStarted = DateTimeOffset.UtcNow;
             DatabaseMigrator.RunMigrations(_old.ConnectionString, NullLogger.Instance);
+            _migrationEnded = DateTimeOffset.UtcNow;
         }
 
         public override async Task DisposeAsync()
@@ -78,26 +85,43 @@ namespace ByteShelf.Server.Tests.Access
         }
 
         [Fact]
-        public async Task Migrate_ChangeLog_HoldsKeysOnlyInTheNewShapeAndLogsEachGrant()
+        public async Task Migrate_ChangeLog_HoldsEveryKeyStateInTheNewShape()
         {
             IReadOnlyList<ChangeLogEntry> entries = await ReadLogAsync(_old.ConnectionString);
 
             List<ChangeLogEntry> keyStates = entries.Where(entry => entry.EntityType == ChangeEntityType.ShelfKey && entry.Payload != null).ToList();
-            Assert.Equal(4, keyStates.Count);
-            foreach (ChangeLogEntry key in keyStates)
+
+            Assert.Equal(LoggedKeys.Select(key => key.Id), keyStates.Select(entry => entry.EntityId));
+            Assert.All(keyStates, key =>
             {
                 using JsonDocument payload = JsonDocument.Parse(key.Payload!);
                 Assert.Equal(new[] { "id", "name", "secretSha256", "createdAt" }, payload.RootElement.EnumerateObject().Select(property => property.Name));
                 Assert.Equal(key.EntityId, ChangePayload.Deserialize<ShelfKey>(key.Payload!).Id);
-            }
+            });
+        }
+
+        /// <summary>
+        /// Each grant is logged as added, after every entry already there and dated when the migration ran,
+        /// so a replica neither misses the entries nor looks behind for them.
+        /// </summary>
+        [Fact]
+        public async Task Migrate_ChangeLog_LogsEachGrantAfterTheEntriesThereDatedWhenItRan()
+        {
+            IReadOnlyList<ChangeLogEntry> entries = await ReadLogAsync(_old.ConnectionString);
 
             List<ChangeLogEntry> grantEntries = entries.Where(entry => entry.EntityType == ChangeEntityType.ShelfKeyGrant).ToList();
-            Assert.All(grantEntries, entry => Assert.Equal(ChangeAction.Added, entry.Action));
             long lastBefore = entries.Where(entry => entry.EntityType != ChangeEntityType.ShelfKeyGrant).Max(entry => entry.Sequence);
-            Assert.All(grantEntries, entry => Assert.InRange(entry.Sequence, lastBefore + 1, long.MaxValue));
+
             Assert.Equal(
                 (await ReadGrantsAsync(_old.ConnectionString)).Select(Describe).OrderBy(grant => grant),
                 grantEntries.Select(entry => Describe(ChangePayload.Deserialize<ShelfKeyGrant>(entry.Payload!))).OrderBy(grant => grant));
+            Assert.All(grantEntries, entry =>
+            {
+                Assert.Equal(ChangeAction.Added, entry.Action);
+                Assert.InRange(entry.Sequence, lastBefore + 1, long.MaxValue);
+                // The clock's text keeps whole milliseconds and less.
+                Assert.InRange(entry.CreatedAt, _migrationStarted.AddMilliseconds(-1), _migrationEnded);
+            });
         }
 
         [Fact]
@@ -187,7 +211,7 @@ namespace ByteShelf.Server.Tests.Access
                     $"INSERT INTO shelf_key (id, shelf_id, name, permission, secret_sha256, created_at) VALUES ('{key.Id:D}', '{key.ShelfId:D}', '{key.Name}', '{key.Column}', '{key.SecretSha256}', '{now}')");
             }
 
-            foreach (OldKey key in new[] { Writer, Backup, Deleted, Reader })
+            foreach (OldKey key in LoggedKeys)
             {
                 await LogAsync(connection, ChangeEntityType.ShelfKey, key.Id, ChangeAction.Added, key.Payload);
             }
@@ -229,10 +253,12 @@ namespace ByteShelf.Server.Tests.Access
             DbSessionFactory sessions = new DbSessionFactory(dataSource);
             ShelfKeyGrantRepository grants = new ShelfKeyGrantRepository(dataSource, sessions, new ChangeLogRepository(dataSource, sessions));
 
+            // Every key the table holds a grant for, not only the keys the test made, so a stray grant shows.
+            await using SqliteConnection connection = await OpenAsync(connectionString);
             List<ShelfKeyGrant> all = new List<ShelfKeyGrant>();
-            foreach (OldKey key in new[] { Writer, Backup, Reader, Deleted })
+            foreach (string keyId in await StringsAsync(connection, "SELECT DISTINCT key_id FROM shelf_key_grant"))
             {
-                all.AddRange((await grants.GetForKeyAsync(key.Id)).Select(held => held.Grant));
+                all.AddRange((await grants.GetForKeyAsync(Guid.Parse(keyId))).Select(held => held.Grant));
             }
 
             return all;
@@ -269,10 +295,16 @@ namespace ByteShelf.Server.Tests.Access
             return await command.ExecuteScalarAsync();
         }
 
-        private static async Task<IReadOnlyList<string>> ColumnsAsync(SqliteConnection connection, string table)
+        private static Task<IReadOnlyList<string>> ColumnsAsync(SqliteConnection connection, string table)
+        {
+            return StringsAsync(connection, $"SELECT name FROM pragma_table_info('{table}') ORDER BY cid");
+        }
+
+        /// <summary>The first column of every row <paramref name="sql"/> answers.</summary>
+        private static async Task<IReadOnlyList<string>> StringsAsync(SqliteConnection connection, string sql)
         {
             await using SqliteCommand command = connection.CreateCommand();
-            command.CommandText = $"SELECT name FROM pragma_table_info('{table}') ORDER BY cid";
+            command.CommandText = sql;
             List<string> columns = new List<string>();
             await using SqliteDataReader reader = await command.ExecuteReaderAsync();
             while (await reader.ReadAsync())

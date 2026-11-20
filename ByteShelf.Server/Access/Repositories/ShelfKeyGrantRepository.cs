@@ -133,7 +133,6 @@ namespace ByteShelf.Server.Access.Repositories
             string asideQuery = "DELETE FROM shelf_key_grant WHERE key_id = @KeyId AND shelf_id = @ShelfId AND id <> @Id RETURNING id";
             await _changeLog.DeleteAndLogAsync(ChangeEntityType.ShelfKeyGrant, asideQuery, new { grant.KeyId, grant.ShelfId, grant.Id }, at, session);
 
-
             await session.Connection.ExecuteAsync(UpsertReplicatedSql, Parameters(grant), transaction: session.Transaction);
             await _changeLog.AppendAsync(ChangeEntityType.ShelfKeyGrant, grant.Id, action, grant, at, session);
         }

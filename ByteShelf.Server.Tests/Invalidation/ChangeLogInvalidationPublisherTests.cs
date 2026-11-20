@@ -15,6 +15,9 @@ namespace ByteShelf.Server.Tests.Invalidation
     public sealed class ChangeLogInvalidationPublisherTests : IDisposable
     {
         private readonly FakeChangeLog _changeLog = new FakeChangeLog();
+        /// <summary>What one user grant in the log publishes: its shelf's access, and the shelf list, which shows the shelves a user reaches.</summary>
+        private const int EventsPerGrant = 2;
+
         private readonly RecordingBroadcaster _broadcaster = new RecordingBroadcaster();
         private readonly FakeTimeProvider _clock = new FakeTimeProvider(TestInstants.Now);
         private readonly ServiceProvider _services;
@@ -80,7 +83,7 @@ namespace ByteShelf.Server.Tests.Invalidation
             await _publisher.StartAsync(CancellationToken.None);
             await _changeLog.LatestRead;
             _changeLog.AddGrant(later);
-            await _clock.AdvanceUntilAsync(_broadcaster.WaitForAsync(2), ChangeLogInvalidationPublisher.PollInterval);
+            await _clock.AdvanceUntilAsync(_broadcaster.WaitForAsync(EventsPerGrant), ChangeLogInvalidationPublisher.PollInterval);
             await _publisher.StopAsync(CancellationToken.None);
 
             Assert.Equal(later.ToString("D"), _broadcaster.ShelfAccessPublished[0].Metadata);
@@ -95,7 +98,7 @@ namespace ByteShelf.Server.Tests.Invalidation
             await _publisher.StartAsync(CancellationToken.None);
             await _changeLog.LatestRead;
             _changeLog.AddGrant(shelf);
-            await _clock.AdvanceUntilAsync(_broadcaster.WaitForAsync(2), ChangeLogInvalidationPublisher.PollInterval);
+            await _clock.AdvanceUntilAsync(_broadcaster.WaitForAsync(EventsPerGrant), ChangeLogInvalidationPublisher.PollInterval);
             await _publisher.StopAsync(CancellationToken.None);
 
             Assert.False(_changeLog.FailNextRead);
@@ -111,7 +114,7 @@ namespace ByteShelf.Server.Tests.Invalidation
             await _publisher.StartAsync(CancellationToken.None);
             await _clock.AdvanceUntilAsync(_changeLog.LatestRead, ChangeLogInvalidationPublisher.PollInterval);
             _changeLog.AddGrant(shelf);
-            await _clock.AdvanceUntilAsync(_broadcaster.WaitForAsync(2), ChangeLogInvalidationPublisher.PollInterval);
+            await _clock.AdvanceUntilAsync(_broadcaster.WaitForAsync(EventsPerGrant), ChangeLogInvalidationPublisher.PollInterval);
             await _publisher.StopAsync(CancellationToken.None);
 
             Assert.False(_changeLog.FailNextLatestRead);

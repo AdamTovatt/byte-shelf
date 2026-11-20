@@ -299,9 +299,11 @@ namespace ByteShelf.Server.Tests.Access
         [InlineData("key", "DELETE", "", HttpStatusCode.Unauthorized)]
         [InlineData("key", "PUT", "grants/docs", HttpStatusCode.Forbidden)]
         [InlineData("key", "PUT", "grants/other", HttpStatusCode.NotFound)]
+        [InlineData("key", "DELETE", "grants/docs", HttpStatusCode.Forbidden)]
         [InlineData("member", "GET", "grants", HttpStatusCode.Forbidden)]
         [InlineData("member", "DELETE", "", HttpStatusCode.Forbidden)]
         [InlineData("member", "PUT", "grants/docs", HttpStatusCode.NotFound)]
+        [InlineData("member", "DELETE", "grants/docs", HttpStatusCode.NotFound)]
         public async Task KeysRoutes_ByAKeyOrAUserWhoIsNoAdmin_AreRefusedAndChangeNothing(string caller, string method, string route, HttpStatusCode expected)
         {
             CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite);

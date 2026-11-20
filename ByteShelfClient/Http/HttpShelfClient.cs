@@ -487,7 +487,7 @@ namespace ByteShelfClient.Http
             ShelfKeys.ValidatePermission(permission);
             return _connection.SendAsync(
                 HttpMethod.Put,
-                $"api/keys/{keyId:D}/grants/{Uri.EscapeDataString(Name)}",
+                KeyGrantUri(keyId),
                 new SetShelfKeyGrantRequest { Permission = permission },
                 ByteShelfJsonContext.Default.SetShelfKeyGrantRequest,
                 ByteShelfJsonContext.Default.ShelfKeyGrantInfo,
@@ -496,7 +496,13 @@ namespace ByteShelfClient.Http
 
         public Task RemoveKeyGrantAsync(Guid keyId, CancellationToken cancellationToken = default)
         {
-            return _connection.SendAsync(HttpMethod.Delete, $"api/keys/{keyId:D}/grants/{Uri.EscapeDataString(Name)}", cancellationToken);
+            return _connection.SendAsync(HttpMethod.Delete, KeyGrantUri(keyId), cancellationToken);
+        }
+
+        /// <summary>The key's grant on this shelf, which the key routes name the key first.</summary>
+        private string KeyGrantUri(Guid keyId)
+        {
+            return $"api/keys/{keyId:D}/grants/{Uri.EscapeDataString(Name)}";
         }
 
         /// <summary>Sends the whole file in one streamed request, which cannot be repeated after a refused token.</summary>

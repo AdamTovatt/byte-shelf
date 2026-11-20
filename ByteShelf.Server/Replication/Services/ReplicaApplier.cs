@@ -47,7 +47,6 @@ namespace ByteShelf.Server.Replication.Services
             IFileRepository fileRepository,
             IObjectMetadataRepository metadataRepository,
             IShelfGrantRepository grantRepository,
-            IShelfKeyGrantRepository keyGrantRepository,
             ShelfKeyRemoval keyRemoval,
             IReplicationCopyRepository copyRepository,
             TimeProvider timeProvider)
@@ -64,8 +63,8 @@ namespace ByteShelf.Server.Replication.Services
                 new EntityHandler(
                     ChangeEntityType.ShelfKeyGrant,
                     "shelf_key_grant",
-                    (entry, at, session, _) => keyGrantRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<ShelfKeyGrant>(entry.Payload!), entry.Action, at, session),
-                    keyGrantRepository.DeleteByIdAsync),
+                    (entry, at, session, _) => keyRemoval.UpsertReplicatedGrantAsync(ChangePayload.Deserialize<ShelfKeyGrant>(entry.Payload!), entry.Action, at, session),
+                    keyRemoval.RemoveReplicatedGrantAsync),
                 new EntityHandler(
                     ChangeEntityType.ShelfKey,
                     "shelf_key",
@@ -132,7 +131,7 @@ namespace ByteShelf.Server.Replication.Services
                         // Only the grants on it, which refer to it. A key left without any goes by its own
                         // removal entry, which the primary logged before the shelf's.
                         await grantRepository.DeleteForShelfAsync(id, at, session);
-                        await keyGrantRepository.DeleteForShelfAsync(id, at, session);
+                        await keyRemoval.RemoveReplicatedGrantsOnShelfAsync(id, at, session);
                         await shelfRepository.DeleteAsync(id, at, session);
                         return true;
                     }),

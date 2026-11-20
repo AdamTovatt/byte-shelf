@@ -11,7 +11,9 @@ key scheme and nothing else): a key as the bearer token, which is what MCP clien
 `X-Api-Key`. No key, a key that is not one, or a user's session answer 401. There is no OAuth: a key
 is made by an admin, in the web UI's shelf settings or with `byteshelf key create`.
 
-For each request `McpCallerSetup` builds what the caller is offered:
+For each request `McpCallerSetup` builds what the caller is offered. A key that reaches no shelf at
+that moment (it lost its last since it signed in, or a replica holds it before its grant's entry) is
+refused with 403 `permission_denied`:
 
 - **Tools**: each is marked with what it needs (`ToolNeedsAttribute`): read, add, write or admin, and
   whether it works only on the agent's own files. The need maps to a `ShelfOperation`, and the key's

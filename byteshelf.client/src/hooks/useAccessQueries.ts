@@ -3,6 +3,7 @@ import { queryKeys } from '../lib/queryKeys';
 import {
   createKey,
   fetchGrants,
+  fetchKeyGrants,
   fetchKeys,
   removeGrant,
   removeKeyGrant,
@@ -18,6 +19,11 @@ export function useGrants(shelf: string) {
 
 export function useKeys(shelf: string) {
   return useQuery({ queryKey: queryKeys.shelfAccess.keys(shelf), queryFn: () => fetchKeys(shelf) });
+}
+
+/** The shelves a key works on, read by its id, so they show while the key leaves the shelf it was opened from. */
+export function useKeyGrants(keyId: string) {
+  return useQuery({ queryKey: queryKeys.shelfAccess.keyGrants(keyId), queryFn: () => fetchKeyGrants(keyId) });
 }
 
 function useInvalidateAccess() {

@@ -9,14 +9,15 @@ import { QuotaField } from '../components/QuotaField';
 import { SectionTitle } from '../components/SectionTitle';
 import { CardList } from '../components/CardList';
 import { ShelfHeader } from '../components/ShelfHeader';
-import { useCreateKey, useGrants, useKeys, useRemoveGrant, useRemoveKeyGrant, useSetGrant, useSetKeyGrant } from '../hooks/useAccessQueries';
+import { useCreateKey, useGrants, useKeyGrants, useKeys, useRemoveGrant, useRemoveKeyGrant, useSetGrant, useSetKeyGrant } from '../hooks/useAccessQueries';
+import { ShelfAccessRows } from '../components/ShelfAccessRows';
 import { useDeleteShelf, useShelf, useShelves, useUpdateShelf } from '../hooks/useShelfQueries';
 import { useUsers } from '../hooks/useUserQueries';
 import { KnownRole } from '../components/KnownRole';
 import { useLinks, useRevokeLink } from '../hooks/useLinkQueries';
 import type { ShelfLink } from '../services/linkService';
 import { formatQuota, formatTime, parseQuota, tryParseQuota, type QuotaUnit } from '../lib/format';
-import { ACCESS_OPTIONS, KEY_CHOICES, KEY_OPTIONS, NO_ACCESS, keyPermissionLabel, type KeyAccessChoice } from '../lib/access';
+import { ACCESS_OPTIONS, KEY_CHOICES, KEY_OPTIONS, NO_ACCESS, keyPermissionLabel } from '../lib/access';
 import { SHELF_SETTINGS_TABS, shelfSettingsRoute, type ShelfSettingsTab } from '../lib/shelfPaths';
 import { ROUTES } from '../lib/routes';
 import { runOrToast } from '../lib/utils';
@@ -230,10 +231,11 @@ function GiveAccessDialog({ shelf, grantedUserIds, onClose }: { shelf: string; g
 function KeysSection({ shelf }: { shelf: string }) {
   const { data: keys = [], error } = useKeys(shelf);
   const [creating, setCreating] = useState(false);
-  const [managingId, setManagingId] = useState<string | null>(null);
+  // The Shelves dialog reads the key's shelves by its id, so it stays open while the key leaves this
+  // shelf's list; a key's name never changes.
+  const [managing, setManaging] = useState<ShelfKeyInfo | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
-  // Read from the list each render, so a dialog follows changes to its key, and closes once the key is gone.
-  const managing = keys.find((key) => key.id === managingId);
+  // Read from the list each render, so the dialog sees the key's shelves as they are, and closes once the key is gone.
   const removing = keys.find((key) => key.id === removingId);
 
   return (
@@ -253,14 +255,14 @@ function KeysSection({ shelf }: { shelf: string }) {
                 <div className="truncate text-body-md text-fg">{key.name}</div>
                 <div className="text-body-sm text-muted">{describeKey(key, shelf)} · created {formatTime(key.createdAt)}</div>
               </div>
-              <Button size="sm" variant="secondary" aria-label={`The shelves the key ${key.name} works on`} onClick={() => setManagingId(key.id)}>Shelves</Button>
+              <Button size="sm" variant="secondary" aria-label={`The shelves the key ${key.name} works on`} onClick={() => setManaging(key)}>Shelves</Button>
               <IconButton variant="ghost" size="sm" icon={iconMap.delete} aria-label={`Take the key ${key.name} off ${shelf}`} onClick={() => setRemovingId(key.id)} />
             </div>
           ))}
         </CardList>
       )}
       {creating && <CreateKeyDialog shelf={shelf} onClose={() => setCreating(false)} />}
-      {managing && <KeyShelvesDialog shelfKey={managing} onClose={() => setManagingId(null)} />}
+      {managing && <KeyShelvesDialog shelfKey={managing} onClose={() => setManaging(null)} />}
       {removing && <RemoveKeyDialog shelf={shelf} shelfKey={removing} onClose={() => setRemovingId(null)} />}
     </section>
   );
@@ -306,35 +308,25 @@ function RemoveKeyDialog({ shelf, shelfKey, onClose }: { shelf: string; shelfKey
  */
 function KeyShelvesDialog({ shelfKey, onClose }: { shelfKey: ShelfKeyInfo; onClose: () => void }) {
   const { data: shelves = [] } = useShelves();
+  const { data: grants = shelfKey.grants, error } = useKeyGrants(shelfKey.id);
   const setKeyGrant = useSetKeyGrant();
   const removeKeyGrant = useRemoveKeyGrant();
-  const onlyShelf = shelfKey.grants.length === 1 ? shelfKey.grants[0].shelfId : null;
-
-  function change(shelf: string, choice: KeyAccessChoice): Promise<void> {
-    return runOrToast(
-      () => (choice === NO_ACCESS
-        ? removeKeyGrant.mutateAsync({ shelf, keyId: shelfKey.id })
-        : setKeyGrant.mutateAsync({ shelf, keyId: shelfKey.id, permission: choice })),
-      `Could not change the key's access to ${shelf}`,
-    );
-  }
+  const onlyShelf = grants.length === 1 ? grants[0].shelfId : null;
 
   return (
     <FormDialog open title={`Shelves for ${shelfKey.name}`} onClose={onClose}>
-      <div className="divide-y divide-border">
-        {shelves.map((candidate) => (
-          <div key={candidate.id} className="flex flex-wrap items-center justify-between gap-3 py-2">
-            <span className="min-w-0 truncate text-body-md text-fg">{candidate.name}</span>
-            <ButtonGroup<KeyAccessChoice>
-              size="sm"
-              options={candidate.id === onlyShelf ? KEY_OPTIONS : KEY_CHOICES}
-              value={shelfKey.grants.find((grant) => grant.shelfId === candidate.id)?.permission ?? NO_ACCESS}
-              onChange={(choice) => void change(candidate.name, choice)}
-              ariaLabel={`The key's access to ${candidate.name}`}
-            />
-          </div>
-        ))}
-      </div>
+      <LoadError error={error} failure="Could not load the key's shelves" />
+      <ShelfAccessRows<ShelfKeyPermission>
+        rows={shelves.map((candidate) => ({
+          shelf: candidate.name,
+          value: grants.find((grant) => grant.shelfId === candidate.id)?.permission ?? NO_ACCESS,
+          options: candidate.id === onlyShelf ? KEY_OPTIONS : KEY_CHOICES,
+        }))}
+        onSet={(shelf, permission) => setKeyGrant.mutateAsync({ shelf, keyId: shelfKey.id, permission })}
+        onRemove={(shelf) => removeKeyGrant.mutateAsync({ shelf, keyId: shelfKey.id })}
+        failure={(shelf) => `Could not change the key's access to ${shelf}`}
+        ariaLabel={(shelf) => `The key's access to ${shelf}`}
+      />
       {onlyShelf && <p className="text-body-sm text-muted">A key keeps at least one shelf; the bin on its row deletes it.</p>}
     </FormDialog>
   );

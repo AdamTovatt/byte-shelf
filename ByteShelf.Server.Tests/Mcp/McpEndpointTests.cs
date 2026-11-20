@@ -5,9 +5,11 @@ using System.Text;
 using System.Text.RegularExpressions;
 using ByteShelf.Tools;
 using ByteShelf.Tools.Mcp;
+using ByteShelf.Server.Access.Repositories;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
+using EasyReasy.Database;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol;
 using ModelContextProtocol.Client;
@@ -111,7 +113,7 @@ namespace ByteShelf.Server.Tests.Mcp
             CallToolResult onDocs = await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["shelf"] = "docs", ["path"] = "/a.txt", ["text"] = "hello" });
 
             AssertSucceeded(onOther);
-            Assert.True(onDocs.IsError == true);
+            Assert.Equal(true, onDocs.IsError);
             Assert.Contains("(permission_denied)", TextOf(onDocs), StringComparison.Ordinal);
         }
 
@@ -588,6 +590,31 @@ namespace ByteShelf.Server.Tests.Mcp
             HttpResponseMessage response = await _host.AnonymousClient.SendAsync(request);
 
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        [Fact]
+        public async Task Post_WithAKeyThatReachesNoShelf_Returns403()
+        {
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            // The grant alone goes, past ShelfKeyRemoval, as a replica holds a key whose grant is still to come.
+            using (IServiceScope scope = _host.Services.CreateScope())
+            await using (IDbTransactionSession session = await scope.ServiceProvider.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync())
+            {
+                IShelfKeyGrantRepository grants = scope.ServiceProvider.GetRequiredService<IShelfKeyGrantRepository>();
+                Guid docsId = Assert.Single(await grants.GetForKeyAsync(created.Key.Id, session)).Grant.ShelfId;
+                Assert.True(await grants.DeleteAsync(docsId, created.Key.Id, DateTimeOffset.UtcNow, session));
+                await session.CommitAsync();
+            }
+
+            using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, "/mcp") { Content = JsonContent.Create(new { jsonrpc = "2.0", id = 1, method = "tools/list" }) };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", created.Secret);
+            request.Headers.Accept.ParseAdd("application/json");
+            request.Headers.Accept.ParseAdd("text/event-stream");
+
+            HttpResponseMessage response = await _host.AnonymousClient.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+            Assert.Equal(ErrorCodes.PermissionDenied, (await response.Content.ReadFromJsonAsync<ErrorResponse>())!.Code);
         }
 
         [Fact]

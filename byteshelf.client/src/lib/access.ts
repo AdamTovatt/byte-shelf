@@ -20,8 +20,8 @@ export function keyPermissionLabel(permission: ShelfKeyPermission): string {
 /** The choice that takes a shelf away, beside a permission in a list of every shelf. */
 export const NO_ACCESS = 'none';
 
-export type AccessChoice = ShelfAccessPermission | typeof NO_ACCESS;
-export type KeyAccessChoice = ShelfKeyPermission | typeof NO_ACCESS;
+type AccessChoice = ShelfAccessPermission | typeof NO_ACCESS;
+type KeyAccessChoice = ShelfKeyPermission | typeof NO_ACCESS;
 
 export const ACCESS_CHOICES: { value: AccessChoice; label: string }[] = [{ value: NO_ACCESS, label: 'None' }, ...ACCESS_OPTIONS];
 export const KEY_CHOICES: { value: KeyAccessChoice; label: string }[] = [{ value: NO_ACCESS, label: 'None' }, ...KEY_OPTIONS];

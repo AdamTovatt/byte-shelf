@@ -28,6 +28,11 @@ export function createKey(shelf: string, name: string, permission: ShelfKeyPermi
   return unwrapResponse(apiClient.POST('/api/shelves/{shelf}/keys', { params: { path: { shelf } }, body: { name, permission } }));
 }
 
+/** Every shelf the key works on, with what it may do on each. */
+export function fetchKeyGrants(keyId: string): Promise<ShelfKeyGrantInfo[]> {
+  return unwrapResponse(apiClient.GET('/api/keys/{keyId}/grants', { params: { path: { keyId } } }));
+}
+
 /** Gives an existing key the shelf, or changes what it may do there. */
 export function setKeyGrant(shelf: string, keyId: string, permission: ShelfKeyPermission): Promise<ShelfKeyGrantInfo> {
   return unwrapResponse(apiClient.PUT('/api/keys/{keyId}/grants/{shelf}', { params: { path: { keyId, shelf } }, body: { permission } }));

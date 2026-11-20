@@ -8,7 +8,8 @@ import { PasswordInput } from '../components/PasswordInput';
 import { useCreateUser, useCurrentUser, useDeleteUser, useSetRoles, useUsers } from '../hooks/useUserQueries';
 import { useGrantsByShelf, useRemoveGrant, useSetGrant } from '../hooks/useAccessQueries';
 import { useShelves } from '../hooks/useShelfQueries';
-import { ACCESS_CHOICES, NO_ACCESS, type AccessChoice } from '../lib/access';
+import { ACCESS_CHOICES, NO_ACCESS } from '../lib/access';
+import { ShelfAccessRows } from '../components/ShelfAccessRows';
 import { validatePassword } from '../lib/passwordValidation';
 import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
@@ -117,32 +118,16 @@ function UserAccessDialog({ user, shelves, access, onClose }: { user: UserInfo; 
   const setGrant = useSetGrant();
   const removeGrant = useRemoveGrant();
 
-  function change(shelf: string, choice: AccessChoice): Promise<void> {
-    return runOrToast(
-      () => (choice === NO_ACCESS
-        ? removeGrant.mutateAsync({ shelf, userId: user.id })
-        : setGrant.mutateAsync({ shelf, userId: user.id, permission: choice })),
-      `Could not change ${user.email}'s access to ${shelf}`,
-    );
-  }
-
   return (
     <FormDialog open title={`${user.displayName}'s shelves`} onClose={onClose}>
       {shelves.length === 0 && <p className="text-body-md text-muted">There are no shelves yet.</p>}
-      <div className="divide-y divide-border">
-        {shelves.map((shelf) => (
-          <div key={shelf} className="flex flex-wrap items-center justify-between gap-3 py-2">
-            <span className="min-w-0 truncate text-body-md text-fg">{shelf}</span>
-            <ButtonGroup
-              size="sm"
-              options={ACCESS_CHOICES}
-              value={access.find((candidate) => candidate.shelf === shelf)?.permission ?? NO_ACCESS}
-              onChange={(choice) => void change(shelf, choice)}
-              ariaLabel={`Access to ${shelf}`}
-            />
-          </div>
-        ))}
-      </div>
+      <ShelfAccessRows<ShelfAccessPermission>
+        rows={shelves.map((shelf) => ({ shelf, value: access.find((candidate) => candidate.shelf === shelf)?.permission ?? NO_ACCESS, options: ACCESS_CHOICES }))}
+        onSet={(shelf, permission) => setGrant.mutateAsync({ shelf, userId: user.id, permission })}
+        onRemove={(shelf) => removeGrant.mutateAsync({ shelf, userId: user.id })}
+        failure={(shelf) => `Could not change ${user.email}'s access to ${shelf}`}
+        ariaLabel={(shelf) => `Access to ${shelf}`}
+      />
     </FormDialog>
   );
 }

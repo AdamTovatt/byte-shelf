@@ -7,7 +7,8 @@ namespace ByteShelf.Server.Access.Services
     /// <summary>
     /// How keys and their grants go, in the caller's transaction: the one home for the rules that a key's
     /// grants go before the key (they refer to it) and that a key goes with its last grant (a key always
-    /// works somewhere). Each removal is logged by the repositories.
+    /// works somewhere), and for how a replica writes and removes them as its primary's log says. Each
+    /// change is logged by the repositories.
     /// </summary>
     public sealed class ShelfKeyRemoval
     {
@@ -46,6 +47,34 @@ namespace ByteShelf.Server.Access.Services
         {
             await _grantRepository.DeleteForKeyAsync(keyId, at, session);
             return await _keyRepository.DeleteByIdAsync(keyId, at, session);
+        }
+
+        /// <summary>
+        /// Writes a grant as a primary's change log holds it, logged as <paramref name="action"/>; a
+        /// different grant for the same key and shelf is removed first.
+        /// </summary>
+        public Task UpsertReplicatedGrantAsync(ShelfKeyGrant grant, string action, DateTimeOffset at, IDbSession session)
+        {
+            return _grantRepository.UpsertReplicatedAsync(grant, action, at, session);
+        }
+
+        /// <summary>
+        /// Removes a grant by id as a primary's change log says, leaving its key: on a replica a key left
+        /// without grants goes by its own removal entry, which the primary logged, and a page of the log
+        /// may end between the two. False when there is no such grant.
+        /// </summary>
+        public Task<bool> RemoveReplicatedGrantAsync(Guid id, DateTimeOffset at, IDbSession session)
+        {
+            return _grantRepository.DeleteByIdAsync(id, at, session);
+        }
+
+        /// <summary>
+        /// Removes every grant on a shelf the primary deleted, leaving their keys, which go by their own
+        /// removal entries as in <see cref="RemoveReplicatedGrantAsync"/>.
+        /// </summary>
+        public Task RemoveReplicatedGrantsOnShelfAsync(Guid shelfId, DateTimeOffset at, IDbSession session)
+        {
+            return _grantRepository.DeleteForShelfAsync(shelfId, at, session);
         }
 
         /// <summary>

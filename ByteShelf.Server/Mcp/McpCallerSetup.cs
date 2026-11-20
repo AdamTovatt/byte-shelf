@@ -5,6 +5,7 @@ using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Access.Services;
 using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared;
+using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Controllers;
 using ByteShelfCommon;
 using ModelContextProtocol.Server;
@@ -28,6 +29,13 @@ namespace ByteShelf.Server.Mcp
                 ?? throw new InvalidOperationException("/mcp ran without the key its policy requires.");
             bool isReplica = !await services.GetRequiredService<ReplicationState>().AllowsWritesAsync();
             IReadOnlyList<ShelfAccess> shelves = await services.GetRequiredService<IShelfAccessResolver>().GetAccessesAsync(ShelfCaller.ForKey(key));
+            if (shelves.Count == 0)
+            {
+                // A key works somewhere, but not at every moment: it lost its last shelf since signing in,
+                // or a replica holds it between its own log entry and its grant's.
+                throw new PermissionDeniedException("The key reaches no shelf.");
+            }
+
             ToolHost host = services.GetRequiredService<ToolHost>();
 
             McpServerPrimitiveCollection<McpServerTool> offered = new McpServerPrimitiveCollection<McpServerTool>();
@@ -132,7 +140,8 @@ namespace ByteShelf.Server.Mcp
 
         private static string PermissionOf(ShelfAccess access)
         {
-            return PermissionNames.Of(access.KeyPermission ?? throw new InvalidOperationException("Only a key's access names a key permission."));
+            // Every access here is a key's (ShelfAccess.ForKey), which always carries its permission.
+            return PermissionNames.Of(access.KeyPermission!.Value);
         }
 
         private static string ContentUrl(Uri server, string shelf)
