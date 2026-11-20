@@ -1,13 +1,16 @@
+using System.Net;
 using System.Net.Http.Json;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Version.Models;
 using ByteShelf.Server.Version.Services;
+using ByteShelfCommon;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 
 namespace ByteShelf.Server.Tests.Version
 {
-    /// <summary>The id the web UI polls to notice a new deploy.</summary>
+    /// <summary>The id the web UI polls to notice a new deploy, and the release only signed-in callers may read.</summary>
     public sealed class VersionServiceTests : IDisposable
     {
         private readonly string _webRoot = Path.Combine(Path.GetTempPath(), "byteshelf-webroot-" + Guid.NewGuid().ToString("N"));
@@ -53,6 +56,66 @@ namespace ByteShelf.Server.Tests.Version
             VersionView? version = await host.AnonymousClient.GetFromJsonAsync<VersionView>("/api/version/current");
 
             Assert.Matches("^[0-9a-f]{32}$", version?.VersionId);
+        }
+
+        [Fact]
+        public void GetRelease_IsTheServersVersionWithoutTheCommitAndTheDeployId()
+        {
+            VersionService service = ServiceOn(WithIndex("anything"));
+
+            ServerVersion release = service.GetRelease();
+
+            // The assembly version carries the csproj's Version and never the commit.
+            Assert.Equal(typeof(VersionService).Assembly.GetName().Version!.ToString(3), release.Version);
+            Assert.Equal(service.GetCurrent().VersionId, release.VersionId);
+        }
+
+        [Fact]
+        public async Task GetRelease_OverHttpSignedOut_IsRefused()
+        {
+            await using ServerTestHost host = await ServerTestHost.StartAsync();
+
+            HttpResponseMessage response = await host.AnonymousClient.GetAsync("/api/version/release");
+
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+            Assert.DoesNotContain(ReleaseVersion.Of(typeof(VersionService).Assembly), await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task GetRelease_OverHttpWithAKeyThatIsNoKey_IsRefused()
+        {
+            await using ServerTestHost host = await ServerTestHost.StartAsync();
+            using HttpClient client = host.CreateKeyClient(ShelfKeys.SecretPrefix + "not-a-key");
+
+            HttpResponseMessage response = await client.GetAsync("/api/version/release");
+
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        [Fact]
+        public async Task GetRelease_OverHttpAsAUserWithoutRolesOrShelves_AnswersIt()
+        {
+            await using ServerTestHost host = await ServerTestHost.StartAsync();
+
+            ServerVersion? release = await host.MemberClient.GetFromJsonAsync<ServerVersion>("/api/version/release");
+
+            Assert.Equal(host.Services.GetRequiredService<IVersionService>().GetRelease().Version, release?.Version);
+            Assert.Equal((await host.AnonymousClient.GetFromJsonAsync<VersionView>("/api/version/current"))?.VersionId, release?.VersionId);
+        }
+
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task GetRelease_OverHttpWithAReadKey_AnswersIt(bool asBearer)
+        {
+            await using ServerTestHost host = await ServerTestHost.StartAsync();
+            await host.CreateShelfAsync("docs");
+            string secret = (await host.CreateKeyAsync("docs", ShelfKeyPermission.Read)).Secret;
+            using HttpClient client = asBearer ? host.CreateClient(secret) : host.CreateKeyClient(secret);
+
+            ServerVersion? release = await client.GetFromJsonAsync<ServerVersion>("/api/version/release");
+
+            Assert.Equal(host.Services.GetRequiredService<IVersionService>().GetRelease().Version, release?.Version);
         }
 
         public void Dispose()

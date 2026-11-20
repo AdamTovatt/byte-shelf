@@ -8,6 +8,7 @@ using ByteShelf.Tools.Mcp;
 using ByteShelf.Server.Access.Repositories;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Tests.TestUtilities;
+using ByteShelf.Server.Version.Services;
 using ByteShelfCommon;
 using EasyReasy.Database;
 using Microsoft.Extensions.DependencyInjection;
@@ -69,6 +70,15 @@ namespace ByteShelf.Server.Tests.Mcp
 
             Assert.Contains("one shelf, \"docs\", which every tool works on when you leave shelf out", Regex.Replace(client.ServerInstructions!, @"\s+", " "), StringComparison.Ordinal);
             Assert.Contains("The key's access is add-only", client.ServerInstructions, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Connect_Instructions_NameTheServersRelease()
+        {
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+
+            string release = typeof(VersionService).Assembly.GetName().Version!.ToString(3);
+            Assert.Contains($"This server is the ByteShelf server itself, release {release}, reached with a shelf key.", client.ServerInstructions, StringComparison.Ordinal);
         }
 
         [Fact]

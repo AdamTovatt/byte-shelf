@@ -29,7 +29,8 @@ await session.SignOutAsync();   // ends it on the server; disposing alone leaves
 ```
 
 `IByteShelfClient` lists and creates shelves and, with a `UserSession`, the signed-in user and
-(for admins) the other users; a shelf key cannot reach users. Admins also drive replication through
+(for admins) the other users; a shelf key cannot reach users. `GetServerVersionAsync` answers the
+release the server runs to any signed-in user or key. Admins also drive replication through
 it: `GetReplicationAsync` (the replicas and how far behind each is, or the primary followed),
 `CreatePairingCodeAsync`, `FollowPrimaryAsync`, `RemoveReplicaAsync` and `PromoteAsync`. `IShelfClient` works on one shelf:
 list a directory or its whole tree, search, find duplicates (`FindDuplicatesAsync`), read what the
@@ -179,6 +180,9 @@ File metadata (`GetFileMetadataAsync`: when a photo was taken, a PDF's title and
 by the server, with libraries this package does not carry. In memory every file's metadata is
 `FileMetadata.None`, a search criterion about it (`TakenFrom`, `HasGps`, durations, page counts)
 matches no file, and search text matches no title or camera.
+
+There is no server, so `GetServerVersionAsync`, which over HTTP answers the release the server runs,
+answers this package's own version, with a deploy id that stays the same for the client's life.
 
 ```csharp
 InMemoryByteShelfClient client = new InMemoryByteShelfClient(email: "me@example.com", password: "a-long-password");

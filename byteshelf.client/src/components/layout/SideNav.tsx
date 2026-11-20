@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useShelves } from '../../hooks/useShelfQueries';
 import { useCurrentUser, useIsAdmin } from '../../hooks/useUserQueries';
+import { useServerVersion } from '../../hooks/useServerVersion';
 import { shelfRoute } from '../../lib/shelfPaths';
 import { ROUTES } from '../../lib/routes';
 import {
@@ -47,6 +48,7 @@ export function SideNav() {
   const { logout } = useAuth();
   const { data: shelves } = useShelves();
   const { data: me } = useCurrentUser();
+  const { data: serverVersion } = useServerVersion();
   const isAdmin = useIsAdmin();
   const { theme, setTheme } = useTheme();
   const { isCollapsed, setIsCollapsed, toggleCollapsed, sidebarWidth, setSidebarWidth } = useSidebar();
@@ -129,6 +131,7 @@ export function SideNav() {
           className="w-full"
         >
           {me && <div className="px-3 pt-2 pb-1 text-body-sm text-muted truncate">{me.email}</div>}
+          {serverVersion && <div className="px-3 pb-1 text-body-sm text-muted truncate">ByteShelf {serverVersion.version}</div>}
           <div className="px-2 py-1.5">
             <ButtonGroup options={THEME_OPTIONS} value={theme} onChange={setTheme} size="sm" ariaLabel="Theme" className="w-full" />
           </div>

@@ -83,6 +83,8 @@ keeping its name. `mv` and `describe` act on each path on its own, in order, pri
 and fail when any was refused, after doing the rest. A colon before any `/` is read as
 following a shelf name, so a name holding a colon is written starting with `/`: `/a:b`, as `a:b`
 names the shelf `a`. `shelves` lists the shelves you can reach and `whoami` says who commands act as.
+`version` prints the CLI's version and, when signed in, the server's; when the server cannot be
+asked (unreachable, or the login no longer works) it says why and fails, so a script can tell.
 
 ## Shelves, users and keys
 

@@ -63,6 +63,7 @@ namespace ByteShelfCommon.Serialization
     [JsonSerializable(typeof(SessionTokens))]
     [JsonSerializable(typeof(RefreshTokenRequest))]
     [JsonSerializable(typeof(ReplicationStatus))]
+    [JsonSerializable(typeof(ServerVersion))]
     [JsonSerializable(typeof(PairWithPrimaryRequest))]
     [JsonSerializable(typeof(PairingCodeResponse))]
     [JsonSerializable(typeof(PromoteResponse))]

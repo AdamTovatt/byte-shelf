@@ -2,18 +2,12 @@
 
   <PropertyGroup>
     <AssemblyName>ByteShelf.Server</AssemblyName>
-    <Version>2.2.0</Version>
+    <Version>2.3.0</Version>
     <!-- The GitHub release's notes (release.yml), above the list of pull requests it generates. -->
     <PackageReleaseNotes>
-**Upgrading**
-
-- Upgrade each replica together with its primary, primary first. The first start migrates the database (v0014) and rewrites the shelf keys in its change log, so a replica on 2.1.0 stops at the primary's first key change and says to update; once both run 2.2.0 it picks up where it stopped.
-- Clients built on ByteShelfCommon or ByteShelfClient 2.x cannot read this server's keys; update them to 3.0.0.
-
 **New**
 
-- A shelf key can reach several shelves, each with its own permission. Give a key another shelf from the Shelves control on its row in a shelf's settings, with `byteshelf key grant` and `key ungrant`, or through `/api/keys/{keyId}/grants`. Taking a key's last shelf deletes it, and `byteshelf key delete &lt;key-id&gt;` deletes it from every shelf.
-- `/mcp` offers every tool any of a key's shelves allows and names each shelf with its access.
+- Signed-in users and shelf keys can read which release the server runs: `GET /api/version/release` answers it with the deploy id, and 401 to anyone else, so the release stays hidden from anonymous callers. The web UI shows it in the account menu, `byteshelf version` prints it, and `/mcp` names it in its instructions. `GET /api/version/current` is unchanged.
     </PackageReleaseNotes>
     <SpaRoot>..\byteshelf.client</SpaRoot>
     <SpaProxyLaunchCommand>npm run dev</SpaProxyLaunchCommand>

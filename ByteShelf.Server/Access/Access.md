@@ -15,7 +15,8 @@ Shelves themselves are in [Shelves.md](../Storage/Shelves.md), users in [Users.m
   the bearer token (`Authorization: Bearer bsk_...`, which MCP clients send); a bearer token is a key
   only when it starts with `bsk_`, which no session token does. The key is looked up each time, so
   deleting it stops it at once. Only the SHA-256 of the secret is stored. Keys are accepted on the
-  shelf endpoints and `/mcp` only, never on the user endpoints.
+  shelf endpoints, `/mcp` and `GET /api/version/release` ([Version](../Version/Version.md)) only,
+  never on the user endpoints.
 
 A signed-in user's access token comes in the `Authorization` header, or, under `/api/open` only, in
 a cookie for a browser's plain navigation ([Storage](../Storage/Storage.md#opening-in-a-browser-authsetupcookietokenpath));
