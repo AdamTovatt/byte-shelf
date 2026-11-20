@@ -13,4 +13,7 @@ export const ERROR_CODES = {
   permissionDenied: 'permission_denied',
   readOnlyReplica: 'read_only_replica',
   primaryFailed: 'primary_failed',
+  rangeNotSatisfiable: 'range_not_satisfiable',
+  // Never in a server's error body: ByteShelfClient's ranged read refuses changed contents with it.
+  contentChanged: 'content_changed',
 } as const;

@@ -33,7 +33,8 @@ await session.SignOutAsync();   // ends it on the server; disposing alone leaves
 it: `GetReplicationAsync` (the replicas and how far behind each is, or the primary followed),
 `CreatePairingCodeAsync`, `FollowPrimaryAsync`, `RemoveReplicaAsync` and `PromoteAsync`. `IShelfClient` works on one shelf:
 list a directory or its whole tree, search, find duplicates (`FindDuplicatesAsync`), read what the
-server read from a file's contents (`GetFileMetadataAsync`), upload, open, describe (many files in
+server read from a file's contents (`GetFileMetadataAsync`), upload, open (part of a file with
+`OpenReadRangeAsync`), describe (many files in
 one request with `SetDescriptionsAsync`), share by a link, make an upload
 link, encrypt directories and swap a file's contents in place (`SwapContentAsync`), create
 directories, move (many entries in one request with `MoveAsync`; a batch applies each item on its
@@ -63,9 +64,11 @@ each request; a program that sends large chunks over a slow line can raise it.
 A shelf name, path, content type, description, search, tree query or link lifetime the rules in
 ByteShelfCommon refuse throws `ArgumentException` before anything is sent. Anything the server refuses throws
 `ByteShelfException`, whose `Code` is one of `ErrorCodes`: `not_found`, `conflict`,
-`permission_denied`, `quota_exceeded` and so on. A successful answer whose body is not ByteShelf's
-throws it with `ByteShelfException.InvalidResponse` (`invalid_response`), a code only ByteShelfClient
-uses; a failed one takes its code from its status. `IsAccessRefused` (`unauthenticated`,
+`permission_denied`, `quota_exceeded`, `range_not_satisfiable` and so on. Two codes come from the
+client rather than the server: a ranged read refuses a file whose contents changed with
+`content_changed`, one of `ErrorCodes`, and a successful answer that is not ByteShelf's (its body,
+or a ranged read's headers) throws `ByteShelfException.InvalidResponse` (`invalid_response`). A
+failed answer without a code in its body takes its code from its status. `IsAccessRefused` (`unauthenticated`,
 `invalid_credentials` or `permission_denied`: the server refused who is asking, or a password or key
 they gave, and the same credentials get the same answer), `IsNotFound` and `IsInvalidResponse` sort
 the codes a program usually acts on. A request that never reached the server throws what `HttpClient` throws.
@@ -92,6 +95,17 @@ requests fail with `unauthenticated` without being sent.
 
 `OpenReadAsync` hashes the bytes as they are read, and reading to the end throws `IOException` if
 they do not match the file's SHA-256, so a file read whole is the file that was stored.
+
+`OpenReadRangeAsync` reads part of a file, to seek in a video or answer a browser's `Range`
+request: the bytes from an offset, for a length or to the end, answered as a `ShelfFileRange` with
+the range's `Offset` and `Length`, the file's `TotalLength` and the `Sha256` of the contents it came
+from. Dispose the range to dispose its stream. A range running past the end is cut at the end; one
+starting at or past the end is refused with `range_not_satisfiable`, except offset 0 with no length,
+which answers an empty file as an empty range. Give it the `Sha256` read earlier and a file whose
+contents have changed since is refused with `content_changed` rather than answering bytes of other
+contents. Part of a file cannot be checked against its SHA-256, so only a range that turns out to be
+the whole file is checked. An encrypted file's range is over its stored age bytes, as
+`OpenReadAsync` reads them.
 
 ## Links
 

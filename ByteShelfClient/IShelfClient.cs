@@ -81,6 +81,32 @@ namespace ByteShelfClient
         Task<Stream> OpenReadAsync(EntryReference file, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Opens part of a file's contents: <paramref name="length"/> bytes from <paramref name="offset"/>, or to
+        /// the end when <paramref name="length"/> is null, with the file's total length, to seek in a video or
+        /// answer a browser's <c>Range</c> request. A range running past the end is cut at the end; one starting
+        /// at or past the end is refused with <see cref="ErrorCodes.RangeNotSatisfiable"/>, except offset 0 with
+        /// no length, which answers an empty file as an empty range. Dispose the range when done.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// With <paramref name="expectedSha256"/> (a file's <see cref="ShelfFile.Sha256"/>), the range is read
+        /// only from those contents: if the file holds others now, it is refused with
+        /// <see cref="ErrorCodes.ContentChanged"/> rather than answering bytes of other contents.
+        /// </para>
+        /// <para>
+        /// A part of a file cannot be checked against its SHA-256, so only a range that turns out to be the whole
+        /// file is checked, as <see cref="OpenReadAsync"/>'s stream is. An encrypted file's range is over its
+        /// stored age bytes, as <see cref="OpenReadAsync"/> reads them.
+        /// </para>
+        /// </remarks>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// <paramref name="offset"/> is negative or <paramref name="length"/> is not positive, thrown before
+        /// anything is sent.
+        /// </exception>
+        /// <exception cref="ArgumentException"><paramref name="expectedSha256"/> is not 64 hex digits, thrown before anything is sent.</exception>
+        Task<ShelfFileRange> OpenReadRangeAsync(EntryReference file, long offset, long? length = null, string? expectedSha256 = null, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// A link to a file's contents that works without signing in for <paramref name="lifetime"/>
         /// (<c>DownloadLink.Lifetime.Default</c> when null, whole minutes up to
         /// <c>DownloadLink.Lifetime.Max</c>), to share the file with someone who has no access, until

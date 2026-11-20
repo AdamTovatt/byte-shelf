@@ -283,13 +283,7 @@ namespace ByteShelfCommon
                 return null;
             }
 
-            string trimmed = sha256.Trim().ToLowerInvariant();
-            if (trimmed.Length != 64 || !trimmed.All(char.IsAsciiHexDigit))
-            {
-                throw new ArgumentException($"'{sha256}' is not a SHA-256: 64 hex digits.", nameof(sha256));
-            }
-
-            return trimmed;
+            return ContentHash.Normalize(sha256);
         }
     }
 }

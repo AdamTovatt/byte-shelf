@@ -56,6 +56,8 @@ AOT-compatible.
   `FileSearch.Normalize` adds a page of 1 to 1,000 files (100 by default), and
   `DuplicateSearch.Normalize` a page of 1 to 1,000 groups (100 by default). `Fold` is how search
   compares text, both sides: normalization form C, then invariant lowercase.
+- `ContentHash` checks a SHA-256 named in a request (64 hex digits, in either case) and answers it
+  lowercase, as the server stores it.
 - `ContentTypes` checks the media type stored with a file, and `ForUpload` picks it when an upload
   gives none: the one its path's extension names, else `application/octet-stream`.
 - `NormalizedUploadLinkRequest.Create` checks an upload link's request: a file's path (never the
@@ -64,7 +66,7 @@ AOT-compatible.
   `UserFields` an email and display name, `DisplayText` short names such as a key's, and
   `UserRoles` a user's roles.
 - The server applies every rule, and so does the in-memory client in ByteShelfClient. The HTTP
-  client applies `ShelfPath`, `ContentTypes`, `FileDescription`, `FileSearch`, `DuplicateSearch`, the link lifetimes
+  client applies `ShelfPath`, `ContentHash`, `ContentTypes`, `FileDescription`, `FileSearch`, `DuplicateSearch`, the link lifetimes
   and `NormalizedUploadLinkRequest` before sending,
   since they shape the request, and leaves the rest to the server.
 

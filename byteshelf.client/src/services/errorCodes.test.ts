@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { ERROR_CODES } from './errorCodes';
 
 describe('error codes', () => {
-  it('mirrors every code the server sends', () => {
+  it('mirrors every code in ErrorCodes.cs', () => {
     const testDirectory = dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(resolve(testDirectory, '../../../ByteShelfCommon/ErrorCodes.cs'), 'utf8');
 
