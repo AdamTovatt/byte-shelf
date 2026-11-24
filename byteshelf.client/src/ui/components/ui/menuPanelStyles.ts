@@ -108,6 +108,9 @@ export function menuRowClass({ selected = false, highlighted = false, canAct = t
   );
 }
 
+/** How wide a checkable row's tick is, and the icon of a row among checkable ones, whose labels line up with theirs. */
+export const MENU_TICK_SIZE = 14;
+
 /**
  * The horizontal half of the panel's inset, for a list that has to take it on its own box rather than
  * on the panel's: the assistant's `@` picker puts it on its list, so the legend beneath keeps a

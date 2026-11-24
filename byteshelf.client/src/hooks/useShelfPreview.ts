@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { openFile } from '../components/fileOpening';
 import { neighboursOf, type Steps } from '../lib/preview/neighbours';
 import type { PagePreview } from '../lib/preview/shownPreview';
 import { runOrToast } from '../lib/utils';
 import { isNotFound } from '../services/apiClient';
-import type { FileReading } from '../services/fileReading';
+import { openable, type FileReading } from '../services/fileReading';
 import type { ShelfFile } from '../services/shelfService';
 import { usePluginsSettled } from './usePluginHost';
 import { useCloseWhenGone, usePreviewParam } from './usePreviewParam';
@@ -26,6 +27,7 @@ export interface FetchedFiles {
 export interface ShelfPreview extends PagePreview {
   /** Whether a file opens in the preview: a viewer shows it in this browser, or one of a plugin still loading may. */
   showsInPreview: (file: ShelfFile) => boolean;
+  /** Opens a file in the preview, or in a new tab when it does not open there. */
   open: (file: ShelfFile) => void;
 }
 
@@ -73,10 +75,17 @@ export function useShelfPreview(shelf: string, shown: ShownFiles, reading: FileR
     toNext: among.next ? () => moveTo(among.next!.id) : fetchMore ? () => void moveFurther(fetchMore) : null,
   };
 
+  function showsInPreview(file: ShelfFile): boolean {
+    return Boolean(viewers.viewerFor(file)?.viewer) || !pluginsSettled;
+  }
+
   return {
     isOpen: id !== null && !gone,
-    showsInPreview: (each) => Boolean(viewers.viewerFor(each)?.viewer) || !pluginsSettled,
-    open: (opened) => open(opened.id),
+    showsInPreview,
+    open: (opened) => {
+      if (showsInPreview(opened)) open(opened.id);
+      else void openFile(openable({ file: opened, reading }));
+    },
     shown: {
       previewed: file ? { file, reading } : null,
       error,

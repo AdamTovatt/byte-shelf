@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
@@ -18,6 +18,7 @@ import {
   getFileIcon,
   iconMap,
 } from '../ui';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { FileDetailsDialog } from '../components/FileDetailsDialog';
 import { FormDialog } from '../components/FormDialog';
 import { LoadError } from '../components/LoadError';
@@ -25,6 +26,7 @@ import { PagedResults } from '../components/PagedResults';
 import { CardList } from '../components/CardList';
 import { MoveDialog } from '../components/MoveDialog';
 import { ShelfHeader } from '../components/ShelfHeader';
+import { TypedFolder } from '../components/TypedFolder';
 import { PREFETCHED_SUBFOLDERS, useCreateDirectory, useDeleteEntry, useDuplicateSearch, useFileSearch, useListing, useMoveEntry, usePrefetchListing, useRestoreDeletion, useSetDescription } from '../hooks/useShelfQueries';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useCreateDownloadLink } from '../hooks/useLinkQueries';
@@ -32,16 +34,16 @@ import { useSelection, type SelectionClickModifiers } from '../hooks/useSelectio
 import { useFoundFiles } from '../hooks/useFoundFiles';
 import { useFilePicker } from '../hooks/useFilePicker';
 import { MobileTopBarActions, MobileTopBarOverlay } from '../components/layout/MobileTopBar';
-import { useUploads } from '../hooks/useUploads';
-import { encryptionActions, useEncryption } from '../hooks/useEncryption';
-import { useFileActions } from '../hooks/useFileActions';
+import { encryptionActions } from '../hooks/useEncryption';
+import { useFolderView, type WayToViewer } from '../hooks/useFolderView';
+import { usePluginHost } from '../hooks/usePluginHost';
+import { useShelfWork, type ShelfWork } from '../hooks/useShelfWork';
 import { FileActionItems } from '../components/FileActionItems';
 import { openFile, opensInTab, saveFiles } from '../components/fileOpening';
 import { FilePreview } from '../components/preview/FilePreview';
 import { useShelfPreview } from '../hooks/useShelfPreview';
 import { isTypingTarget } from '../lib/keys';
-import { liveContent } from '../services/contentService';
-import { fileReading, openable } from '../services/fileReading';
+import { openable } from '../services/fileReading';
 import { showActionToast } from '../components/actionToast';
 import { NameAndReason, NameLine } from '../components/MiddleTruncatedName';
 import { reasonOf, runOrToastNamed, toastNamedFailure } from '../components/nameToasts';
@@ -49,7 +51,9 @@ import { DndContext, DragOverlay, pointerWithin } from '@dnd-kit/core';
 import { DraggableEntryRow, DroppableCrumb, EntryDragPreview } from '../components/EntryDragAndDrop';
 import { useEntryDragAndDrop } from '../hooks/useEntryDragAndDrop';
 import { formatBytes, formatTime } from '../lib/format';
-import { joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../lib/shelfPaths';
+import type { FolderType } from '../lib/plugins/folderType';
+import { folderTypeOf } from '../lib/plugins/folderTypes';
+import { folderContentsRoute, joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../lib/shelfPaths';
 import { copyWhenReady } from '../lib/clipboard';
 import { runOrToast } from '../lib/utils';
 import { useIsOverlayOpen } from '../ui/hooks/useOverlay';
@@ -60,7 +64,7 @@ import { NO_SEARCH_FILTERS, isSearch, searchCriteria } from '../lib/searchFilter
 
 // Its toasts and dialogs stay here with the page rather than in modules of their own: each is small
 // and serves this page alone, so apart they would only be moved, not made simpler or shared.
-/** One directory on a shelf: what is in it, uploading into it, and renaming, moving and deleting what is there. */
+/** One directory on a shelf: in the viewer of its type, or its listing. */
 export function ShelfPage() {
   // Nothing begun on one shelf goes on over another, such as a dialog of one's file or a search of it.
   const shelf = useParams().shelf!;
@@ -68,16 +72,34 @@ export function ShelfPage() {
 }
 
 function FilesOf({ shelf }: { shelf: string }) {
-  const params = useParams();
-  const path = pathFromRoute(params['*']);
+  const path = pathFromRoute(useParams()['*']);
+  const work = useShelfWork(shelf);
+  const view = useFolderView(shelf, path, work.encryption.folderPassword);
+  const { data: listing } = useListing(shelf, path);
+
+  if (view.as === 'listing') return <FolderListing shelf={shelf} path={path} work={work} toViewer={view.toViewer} />;
+  // A viewer that fails leaves the listing, until the folder is opened again or is another.
+  return (
+    <ErrorBoundary key={`${path}\n${listing?.directory.id}`} fallback={<FolderListing shelf={shelf} path={path} work={work} toViewer={null} />}>
+      <TypedFolder shelf={shelf} path={path} work={work} viewed={view.as === 'viewer' ? view : null} />
+    </ErrorBoundary>
+  );
+}
+
+interface FolderListingProps {
+  shelf: string;
+  path: string;
+  work: ShelfWork;
+  /** The way to the viewer this is shown instead of; null for none. */
+  toViewer: WayToViewer | null;
+}
+
+/** What is in a directory, uploading into it, and renaming, moving and deleting what is there. */
+function FolderListing({ shelf, path, work: { encryption, reading, uploads, fileActions }, toViewer }: FolderListingProps) {
   const navigate = useNavigate();
+  const { plugins } = usePluginHost();
   const { data: listing, isLoading, error } = useListing(shelf, path);
-  const uploads = useUploads(shelf);
-  const encryption = useEncryption(shelf);
-  const { decryption } = encryption;
-  const reading = useMemo(() => fileReading(liveContent(shelf), decryption), [shelf, decryption]);
   const openableHere = (file: ShelfFile) => openable({ file, reading });
-  const fileActions = useFileActions(shelf);
   const overlayOpen = useIsOverlayOpen();
   const deleteEntry = useDeleteEntry(shelf);
   const restore = useRestoreDeletion(shelf);
@@ -121,8 +143,7 @@ function FilesOf({ shelf }: { shelf: string }) {
   /** Opens a row: a folder by going into it, a file in the preview when a viewer shows it or one still loading may, else in a new tab. */
   function open(entry: Entry): void {
     if (entry.kind === 'directory') navigate(shelfRoute(shelf, entry.value.path));
-    else if (preview.showsInPreview(entry.value)) preview.open(entry.value);
-    else void openFile(openableHere(entry.value));
+    else preview.open(entry.value);
   }
 
   /**
@@ -236,6 +257,7 @@ function FilesOf({ shelf }: { shelf: string }) {
     // A link would hand on only encrypted bytes, so an encrypted file has none. Only a listing's rows
     // know whether they are under an encrypted folder.
     const encrypted = entry.value.encrypted;
+    const type = entry.kind === 'directory' ? folderTypeOf(plugins, entry.value.name) : null;
     const encrypting = encryptionActions(entry, !options.selectable ? 'unknown' : listing?.encryptedBy ? 'encrypted' : 'plain');
     const shown = (
       <EntryRow
@@ -248,7 +270,9 @@ function FilesOf({ shelf }: { shelf: string }) {
           onToggle: () => selection.toggle(entry.value.id),
         } : undefined}
         opensIn={entry.kind === 'file' && preview.showsInPreview(entry.value) ? 'preview' : 'tab'}
+        type={type}
         onOpen={() => open(entry)}
+        onShowContents={type ? () => navigate(folderContentsRoute(shelf, entry.value.path)) : undefined}
         onOpenInTab={entry.kind === 'file' && opensInTab(entry.value) ? () => void openFile(openableHere(entry.value)) : undefined}
         onPrefetch={entry.kind === 'directory' ? () => prefetchListing(entry.value.path) : undefined}
         onDownload={entry.kind === 'file' ? () => void saveFiles([openableHere(entry.value)]) : undefined}
@@ -342,6 +366,7 @@ function FilesOf({ shelf }: { shelf: string }) {
           shelf={shelf}
           view="files"
           path={path}
+          menuItem={toViewer?.by === 'choice' ? { label: `Show as ${toViewer.type.label}`, icon: (size) => <FolderIcon type={toViewer.type} size={size} />, onChoose: toViewer.show } : undefined}
           wrapFolderCrumb={(folderPath, crumb) => <DroppableCrumb folderPath={folderPath} disabled={drag.dragged === null || folderPath === path}>{crumb}</DroppableCrumb>}
         />
 
@@ -351,6 +376,7 @@ function FilesOf({ shelf }: { shelf: string }) {
         <div className="relative hidden md:block">
           <div className={cn('flex items-center gap-2', selecting && 'invisible')}>
             <div className="min-w-0 flex-1">{searchField()}</div>
+            {toViewer?.by === 'password' && <Button variant="secondary" icon={<Icon icon={iconMap.unlock} size={16} />} onClick={toViewer.unlock}>Unlock</Button>}
             <Dropdown align="right" trigger={<Button variant="main" icon={<Icon icon={iconMap.add} size={16} />}>Add</Button>}>
               {addItems}
             </Dropdown>
@@ -359,6 +385,7 @@ function FilesOf({ shelf }: { shelf: string }) {
         </div>
         <MobileTopBarActions>
           <div className="min-w-0 flex-1">{searchField()}</div>
+          {toViewer?.by === 'password' && <IconButton variant="secondary" icon={iconMap.unlock} aria-label="Unlock" onClick={toViewer.unlock} />}
           <Dropdown align="right" trigger={<IconButton variant="main" icon={iconMap.add} aria-label="Add" />}>
             {addItems}
           </Dropdown>
@@ -525,7 +552,11 @@ interface EntryRowProps {
   selection?: RowSelection;
   /** Where a file opens: over the page, or in a tab of its own. */
   opensIn: 'preview' | 'tab';
+  /** For a folder: its type, whose viewer opens it; null for a plain one. */
+  type: FolderType | null;
   onOpen: () => void;
+  /** For a folder of a type: shows its listing. */
+  onShowContents?: () => void;
   /** For a file a tab shows. */
   onOpenInTab?: () => void;
   /** For a folder: fetch what it holds ahead, as the pointer or focus reaches the row. */
@@ -544,7 +575,7 @@ interface EntryRowProps {
   onDelete: () => void;
 }
 
-function EntryRow({ entry, label, selection, opensIn, onOpen, onOpenInTab, onPrefetch, onDownload, onDescribe, onShowDetails, onCopyLink, onEncrypt, onRemoveEncryption, pluginItems, onRename, onMove, onDelete }: EntryRowProps) {
+function EntryRow({ entry, label, selection, opensIn, type, onOpen, onShowContents, onOpenInTab, onPrefetch, onDownload, onDescribe, onShowDetails, onCopyLink, onEncrypt, onRemoveEncryption, pluginItems, onRename, onMove, onDelete }: EntryRowProps) {
   const isFile = entry.kind === 'file';
   const name = entry.value.name;
   const selected = selection?.selected ?? false;
@@ -580,7 +611,7 @@ function EntryRow({ entry, label, selection, opensIn, onOpen, onOpenInTab, onPre
         aria-pressed={selection ? selected : undefined}
         className="flex min-w-0 flex-1 select-none items-center gap-3 rounded-lg px-2 py-2 text-left"
       >
-        <Icon icon={isFile ? getFileIcon(name) : iconMap.folder} size={18} className="shrink-0 text-muted" />
+        {isFile ? <Icon icon={getFileIcon(name)} size={18} className="shrink-0 text-muted" /> : <FolderIcon type={type} size={18} className="shrink-0 text-muted" />}
         <span className="min-w-0 truncate text-body-md text-fg">{label ?? name}</span>
         {entry.value.encrypted && <Icon icon={iconMap.lock} size={14} className="shrink-0 text-muted" aria-label="Encrypted" />}
         {isFile && (
@@ -590,6 +621,7 @@ function EntryRow({ entry, label, selection, opensIn, onOpen, onOpenInTab, onPre
         )}
       </button>
       <Dropdown align="right" trigger={<IconButton variant="ghost" size="sm" icon={iconMap.more} aria-label={`Actions for ${name}`} />}>
+        {onShowContents && <DropdownItem icon={<Icon icon={iconMap.folder} size={16} />} onClick={onShowContents}>Show contents</DropdownItem>}
         {onOpenInTab && <DropdownItem icon={<Icon icon={iconMap.openInTab} size={16} />} onClick={onOpenInTab}>Open in new tab</DropdownItem>}
         {onDownload && <DropdownItem icon={<Icon icon={iconMap.download} size={16} />} onClick={onDownload}>Download</DropdownItem>}
         {onCopyLink && <DropdownItem icon={<Icon icon={iconMap.copy} size={16} />} onClick={onCopyLink}>Copy link</DropdownItem>}
@@ -603,6 +635,17 @@ function EntryRow({ entry, label, selection, opensIn, onOpen, onOpenInTab, onPre
         <DropdownItem icon={<Icon icon={iconMap.delete} size={16} />} variant="danger" onClick={onDelete}>Delete</DropdownItem>
       </Dropdown>
     </div>
+  );
+}
+
+/** A folder's icon: its type's, or a plain one's, as while the type's loads or when it cannot be drawn. */
+function FolderIcon({ type, size, className }: { type: FolderType | null; size: number; className?: string }) {
+  const plain = <Icon icon={iconMap.folder} size={size} className={className} />;
+  if (!type) return plain;
+  return (
+    <ErrorBoundary key={type.suffix} fallback={plain}>
+      <Suspense fallback={plain}><Icon icon={type.icon} size={size} className={className} /></Suspense>
+    </ErrorBoundary>
   );
 }
 

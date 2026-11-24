@@ -14,6 +14,7 @@ import type { EncryptedFolder } from '../services/encryptionService';
 import type { StoreFolder } from '../services/fileStoring';
 import type { Entry, ShelfDirectory, ShelfFile } from '../services/shelfService';
 import { fill, press, textOf as messageText } from '../test/dom';
+import { shelfDirectory } from '../test/shelfFiles';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -129,7 +130,7 @@ vi.mock('../services/shelfService', async (original) => ({
 }));
 
 function directory(path: string, encrypted = false): ShelfDirectory {
-  const created = { id: `dir:${path}`, shelfId: 's', parentId: null, path, name: path.split('/').pop()!, createdAt: '2026-11-02T00:00:00Z', encrypted };
+  const created = shelfDirectory(path, { encrypted });
   shelf.directories.set(created.id, created);
   return created;
 }

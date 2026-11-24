@@ -5,11 +5,15 @@ import type { LockableReader } from '../content/lockableReader';
 
 /**
  * What is below a folder, as its viewer reads and changes it. Paths are from the folder (`small/beach.jpg`),
- * so nothing outside it can be named. What fails says so to the viewer alone; once the viewer has gone,
- * everything does, with an `AbortError`.
+ * so nothing outside it can be named. What fails says so to the viewer alone. Once the viewer has gone, or
+ * was given other contents, as the folder's encryption is removed, everything does, with an `AbortError`.
  */
 export interface FolderContents {
-  /** What the key of a query of `list` starts with, for it to be asked again as anything on the shelf changes. */
+  /**
+   * What the key of a query of `list` starts with, for it to be asked again as anything on the shelf changes.
+   * Of `list` alone: a query keeps its answer after the viewer is gone, so what is read of a file, which may
+   * be decrypted, is for `useLoaded`.
+   */
   readonly queryKey: readonly unknown[];
   /** The folders and files below the folder at any depth, a page at a time: the first, or the one after the cursor `after`. */
   list: (after?: string, signal?: AbortSignal) => Promise<DirectoryTree>;
@@ -37,6 +41,7 @@ export interface FolderViewerProps {
   /** The name of the shelf the folder is on. */
   shelf: string;
   folder: ShelfDirectory;
+  /** What is below the folder; another once the folder's encryption is removed. */
   contents: FolderContents;
   /** Whether the person may store, delete and move files here; false until it is known. */
   canWrite: boolean;

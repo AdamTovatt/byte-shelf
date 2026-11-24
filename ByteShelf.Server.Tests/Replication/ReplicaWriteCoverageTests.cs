@@ -38,6 +38,7 @@ namespace ByteShelf.Server.Tests.Replication
 
             // The web UI's fallback answers anything but a page with 404.
             "* {*path:nonfile}",
+            "* shelves/{*path}",
         };
 
         [Fact]

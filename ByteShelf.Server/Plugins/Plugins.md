@@ -147,9 +147,16 @@ A module's default export is `definePlugin({ viewers, fileActions, folderTypes }
 - **Folder types** are folders whose names end in a dot and a suffix: `{ suffix, label, icon, component }`.
   `suffix` is at least two lowercase letters and digits, matched whatever their case; a name that is only
   the suffix (`.album`) is a plain folder, and the first plugin by id has a suffix two declare. They stay
-  ordinary folders to everything else. The component, which may be a `lazy` one, gets the shelf, the folder,
-  whether the person may write, and the folder's contents (`FolderContents`): listing what is below it,
-  storing, moving and deleting files by their path in it, opening one as a listing does, and reading one.
+  ordinary folders to everything else, and have a listing in the web UI too, which is shown instead of a
+  viewer that throws, until the folder is next opened from somewhere else. An encrypted one's viewer shows once
+  the folder is unlocked. The component, which may be a `lazy` one, as the icon may, has everything under the
+  breadcrumbs, in a flex column that fills what the page, at least as tall as the window, has left there. It
+  has no padding; `PageLayout` gives it the app's. It is unmounted, losing what it holds unsaved, as the person
+  leaves the folder or shows its contents, as the folder is deleted, moved, renamed or encrypted, is given
+  another password, or another takes its place. It gets the shelf, the folder, whether the person may write,
+  and the folder's contents (`FolderContents`), which are others once the folder's encryption is removed:
+  listing what is below it, storing, moving and deleting files by their path in it, opening one as a listing
+  does, and reading one.
   A read asks for no password, and of a file that is locked fails with a `LockedError`, until the viewer asks
   to unlock it. Storing over a file moves the old one to the trash. What is stored in an encrypted folder is
   encrypted with its password, and over a file with a password of its own with that one; nothing is sent once

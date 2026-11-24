@@ -25,8 +25,8 @@ app-specific pieces (the form dialog, the password dialog, the quota field) and 
 written for this app (`CardList`, `MiddleTruncatedName`). The file picker is a hook,
 `hooks/useFilePicker.tsx`. A dialog that code shows, rather than a page's own state, such as a password
 prompt or a file action's, is held by `contexts/DialogHost.tsx`, apart from the pages, so one stays as
-it is while the preview under it opens or closes, but for the preview's own prompt, which goes with it.
-All close as the shelf or page they were shown on is left.
+it is while the preview under it opens or closes, but for a prompt of what is then gone: the preview's, a
+folder's as it opens, or a viewer's. All close as the shelf or page they were shown on is left.
 
 ## Working on it
 
@@ -35,7 +35,7 @@ npm ci
 npm run dev        # Vite on port 44903, forwarding /api, /plugins, /mcp, /llms.txt and /swagger to the server (ASPNETCORE_URLS, else :5190)
 npm run lint
 npm test           # Vitest
-npm run test:e2e   # Playwright: builds the UI and the Markdown plugin, starts the server on a root of its own, runs e2e/
+npm run test:e2e   # Playwright: builds the UI and the Markdown plugin, adds e2e/albumPlugin, starts the server on a root of its own, runs e2e/
 npm run build      # into dist/, which a published server serves
 ```
 
@@ -181,8 +181,18 @@ npm run codegen    # in a second terminal
   (`hooks/useFileActions.tsx`), and reads and writes its documents about files with
   `hooks/usePluginDocuments.ts`, for which its viewers and dialogs are drawn in a `PluginIdentity`. It may
   also add folder types, found by a folder's name alone (`lib/plugins/folderTypes.ts`), whose viewers get the
-  folder's contents (`lib/plugins/folderContents.ts`). Each viewer, menu item and dialog is drawn in an error
-  boundary.
+  folder's contents (`lib/plugins/folderContents.ts`). Each viewer, icon, menu item and dialog is drawn in an
+  error boundary.
+- **Folders of a plugin's type** (`hooks/useFolderView.ts`, `components/TypedFolder.tsx`) open in its viewer,
+  which has everything under the breadcrumbs, in a column that fills the page; their rows have its icon. "Show
+  contents", in the row's menu and the page's, shows the listing instead (`?view=contents`), whose menu offers
+  the viewer again ("Show as …"). A folder whose name may have a type waits for plugins still loading, at most 3
+  seconds once for each visit to a shelf. One whose plugin loads later keeps its listing, which then offers the
+  viewer too, and one whose viewer throws shows its listing; either opens in the viewer when it is next opened
+  from somewhere else. An encrypted one asks for its password as it opens (`hooks/useFolderLock.ts`);
+  cancelled, its listing shows, with Unlock. A file the viewer opens is previewed alone, and a file dropped on
+  it, which it does not take, is refused. What goes on with a shelf's files (uploads, file actions) goes on from
+  a listing to a viewer and back (`hooks/useShelfWork.ts`).
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and
   refetches what each event makes stale (`lib/invalidationMap.ts`), so a change made elsewhere shows up
   within about a second. A test checks the map covers every resource the server publishes. The

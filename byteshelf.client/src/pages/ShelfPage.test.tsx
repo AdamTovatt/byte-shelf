@@ -2,7 +2,7 @@
 import { act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import toast from 'react-hot-toast';
-import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DialogHost } from '../contexts/DialogHost';
@@ -18,6 +18,8 @@ import { encryptBlob } from '../lib/encryption/age';
 import { removePdfViewer, restorePdfViewer, stubTabs } from '../test/browser';
 import { button, dialogTitles, dimmingTitles, field, fill, labelled, press, shows, submitPassword, untilFound } from '../test/dom';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
+import { pageHistory } from '../test/pageHistory';
+import { shelfDirectory } from '../test/shelfFiles';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -29,10 +31,6 @@ vi.mock('../hooks/usePluginHost', () => ({
   usePluginsSettled: () => plugins.settled,
   usePluginsAwaited: () => !plugins.settled,
 }));
-
-function directory(path: string) {
-  return { id: `dir:${path}`, shelfId: 's', parentId: null, path, name: path.slice(path.lastIndexOf('/') + 1), createdAt: '2026-11-02T00:00:00Z', encrypted: false };
-}
 
 function file(name: string) {
   return {
@@ -51,8 +49,8 @@ let elsewhere: ReturnType<typeof file>[];
 
 function listing(path: string) {
   return path === '/'
-    ? { directory: directory('/'), directories: [{ directory: directory('/reports'), sizeBytes: 0, fileCount: 0, encryptedFileCount: 0 }], files: rootFiles }
-    : { directory: directory(path), directories: [], files: [] };
+    ? { directory: shelfDirectory('/'), directories: [{ directory: shelfDirectory('/reports'), sizeBytes: 0, fileCount: 0, encryptedFileCount: 0 }], files: rootFiles }
+    : { directory: shelfDirectory(path), directories: [], files: [] };
 }
 
 /** A group of `name` in the root and a copy of it in /reports. */
@@ -98,20 +96,7 @@ describe('the shelf page\'s rows', () => {
   let container: HTMLDivElement;
   let client: QueryClient;
   let sent: string[];
-  let location: string;
-  let goBack: () => void;
-  let goForward: () => void;
-  let goTo: (url: string) => void;
-
-  function Location() {
-    const { pathname, search } = useLocation();
-    location = pathname + search;
-    const navigate = useNavigate();
-    goBack = () => act(() => navigate(-1));
-    goForward = () => act(() => navigate(1));
-    goTo = (url) => act(() => navigate(url));
-    return null;
-  }
+  let page: ReturnType<typeof pageHistory>;
 
   beforeEach(async () => {
     localStorage.clear();
@@ -157,6 +142,7 @@ describe('the shelf page\'s rows', () => {
   /** Opens the page at `url` in a tab of its own: no history and nothing cached. */
   async function renderAt(url: string): Promise<void> {
     root = createRoot(container);
+    page = pageHistory();
     client = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0 } } });
     await act(async () => root.render(
       <QueryClientProvider client={client}>
@@ -167,7 +153,7 @@ describe('the shelf page\'s rows', () => {
               <Route path={SHELF_ROUTE_PATTERNS.files} element={<ShelfPage />} />
             </Routes>
           </DialogHost>
-          <Location />
+          <page.Follow />
         </MemoryRouter>
       </QueryClientProvider>,
     ));
@@ -232,7 +218,7 @@ describe('the shelf page\'s rows', () => {
   it('opens a row on Enter', () => {
     key(row('reports')!, { key: 'Enter' });
 
-    expect(location).toBe('/shelves/docs/files/reports');
+    expect(page.url).toBe('/shelves/docs/files/reports');
   });
 
   it('toggles a row on Space, keeping the others', () => {
@@ -516,7 +502,7 @@ describe('the shelf page\'s rows', () => {
       format.value = 'PNG';
       act(() => format.focus());
 
-      goBack();
+      page.back();
 
       await vi.waitFor(() => expect(dialogTitles()).toEqual(['Convert it']));
       expect(document.querySelector('input[aria-label="Format"]')).toBe(format);
@@ -532,7 +518,7 @@ describe('the shelf page\'s rows', () => {
       await press('Convert');
       expect(dialogTitles()).toEqual(['Convert it']);
 
-      goTo('/shelves/other');
+      page.to('/shelves/other');
 
       await vi.waitFor(() => expect(dialogTitles()).toEqual([]));
     });
@@ -542,10 +528,10 @@ describe('the shelf page\'s rows', () => {
       await previews({ name: 'a.txt', position: '1 of 2' });
       openMenu('More actions');
       await press('Convert');
-      goBack();
+      page.back();
       await vi.waitFor(() => expect(dialogTitles()).toEqual(['Convert it']));
 
-      goForward();
+      page.forward();
 
       await vi.waitFor(() => expect(dialogTitles()).toEqual(['Convert it', 'a.txt']));
       key(document, { key: 'Escape' });
@@ -583,11 +569,11 @@ describe('the shelf page\'s rows', () => {
   it('previews a file on Enter, in the URL, and Back closes it', async () => {
     key(row('b.txt')!, { key: 'Enter' });
     await previews({ name: 'b.txt', position: '2 of 2' });
-    expect(location).toBe('/shelves/docs?preview=file%3Ab.txt');
+    expect(page.url).toBe('/shelves/docs?preview=file%3Ab.txt');
 
-    goBack();
+    page.back();
     await previews(null);
-    expect(location).toBe('/shelves/docs');
+    expect(page.url).toBe('/shelves/docs');
   });
 
   it('previews a file on a double-click', async () => {
@@ -602,11 +588,11 @@ describe('the shelf page\'s rows', () => {
 
     key(document, { key: 'ArrowRight' });
     await previews({ name: 'b.txt', position: '2 of 2' });
-    expect(location).toBe('/shelves/docs?preview=file%3Ab.txt');
+    expect(page.url).toBe('/shelves/docs?preview=file%3Ab.txt');
     key(document, { key: 'Escape' });
 
     await previews(null);
-    expect(location).toBe('/shelves/docs');
+    expect(page.url).toBe('/shelves/docs');
     expect(selected()).toEqual(['reports', 'a.txt', 'b.txt']);
   });
 
@@ -695,7 +681,7 @@ describe('the shelf page\'s rows', () => {
 
     await untilFound('button[aria-label="Open d.txt"]');
     await act(async () => {});
-    expect([location, previewed()]).toEqual(['/shelves/docs', null]);
+    expect([page.url, previewed()]).toEqual(['/shelves/docs', null]);
   });
 
   it('stays on the last result when the last page holds nothing a viewer takes', async () => {
@@ -767,7 +753,7 @@ describe('the shelf page\'s rows', () => {
     key(document, { key: 'Escape' });
 
     await previews(null);
-    expect(location).toBe('/shelves/docs');
+    expect(page.url).toBe('/shelves/docs');
   });
 
   it('offers the file\'s details', async () => {
@@ -912,7 +898,7 @@ describe('the shelf page\'s rows', () => {
       const prompt = document.querySelector('form')!;
       fill('Password', 'pw');
 
-      goBack();
+      page.back();
 
       await previews({ name: 'Unlock b.txt', position: undefined });
       expect(document.querySelector('form')).toBe(prompt);
@@ -960,7 +946,7 @@ describe('the shelf page\'s rows', () => {
       key(row('b.txt')!, { key: 'Enter' });
       await locked(true);
 
-      goBack();
+      page.back();
 
       await previews(null);
       expect(document.querySelector('form')).toBeNull();
@@ -1001,7 +987,7 @@ describe('the shelf page\'s rows', () => {
     await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
     await previews(null);
     expect(said).toHaveBeenCalledWith('That file is no longer here.', expect.anything());
-    expect(location).toBe('/shelves/docs');
+    expect(page.url).toBe('/shelves/docs');
   });
 
   it('previews a file that was gone once it is back', async () => {
