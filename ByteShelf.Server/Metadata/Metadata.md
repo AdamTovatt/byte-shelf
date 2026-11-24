@@ -100,10 +100,12 @@ The log keeps only the newest state of a document of either kind
 Documents do not count toward a shelf's quota, as descriptions and what the server itself read do not: storing
 a file over another copies up to 64 KiB per plugin whatever the new file's size.
 
-Everything metadata knows of plugins comes from `IMetadataPlugins`: the plugins the server loaded
-([Plugins](../Plugins/Plugins.md)), none for a command. A plugin that is no longer loaded keeps its documents,
-invisible until it is back: those about a file go with it, those about contents are dropped by the job like
-any. `ByteShelf.Server --forget-plugin <id>` (`PluginMetadataCommand`) deletes both kinds, logged, with the
+Everything metadata knows of plugins comes from what loads them ([Plugins](../Plugins/Plugins.md)):
+`InstalledPlugins`, what they declare, and `IPluginReaders`. A command and a backup do not know them
+(`KnownPlugins.NotKnown`), so they can remove documents but not write one (`PluginFieldValueRepository`
+refuses): its values would be lost. A plugin that is no longer loaded keeps its documents, invisible until it
+is back: those about a file go with it, those about contents are dropped by the job like any.
+`ByteShelf.Server --forget-plugin <id>` (`PluginMetadataCommand`) deletes both kinds, logged, with the
 versions of those about files, and the log forgets their states; a replica refuses it.
 
 `PUT files/plugin-metadata?plugin=` writes the one about a file (`FileMetadataService`), whole, by anyone who
@@ -131,8 +133,9 @@ a document (`PluginFieldValueRepository`, called by both documents' repositories
 a foreign key, so it never outlives one erased. Text is folded as a title is, its first 1,000 code points. The
 values are neither logged nor replicated: every server takes its own by the plugins it has.
 
-`plugin_declared_fields` says by which fields a plugin's values were taken. At startup, before the server takes
-requests, `PluginFieldIndex` takes them again for a plugin that declares others now and drops those of one
+`plugin_values_taken` says by which fields a plugin's values were taken, and by which of the server's own
+rules (`PluginFieldIndex.Version`, raised with them). At startup, before the server takes requests,
+`PluginFieldIndex` takes them again for a plugin whose fields or rules are others now and drops those of one
 that is gone.
 
 - **A file's metadata** (`GET files/metadata`) has those with a value, by plugin, and the web UI's Details
@@ -167,11 +170,16 @@ upload finishes (`MetadataReadingSignal`, woken by `UploadService`), and hourly.
    stored, a batch at a time by SHA-256, each in its own transaction. Every reader has a version (the
    server's own is `MetadataReader.Version`), and what another version read it reads again.
 
+A plugin's reader is made the first time it has something to read, and has 60 seconds for that; one that is
+not made by then says nothing of any contents, which stay to be read.
+
 A read that throws, answers no valid document, or takes over 60 seconds is recorded as having found nothing,
-and so not tried again by that version: contents never change. A read over its time is cancelled by its token, and by its stream,
-which refuses the next read (`CancellableReadStream`), so a reader that looks at no token still stops. One
-that has not stopped 5 seconds later is left behind on the thread it holds, and its reader is not run again
-until the server restarts; the other readers go on (`ContentReadRunner`). Shutting down records nothing.
+and so not tried again by that version: contents never change. A read over its time is cancelled by its token,
+and by its stream, which refuses the next read (`CancellableReadStream`), so a reader that looks at no token
+still stops. One that has not stopped 5 seconds later is left behind on the thread it holds. A reader left
+behind, or not made, is not run again until the server restarts, and admins are told why (`ReaderProblems`,
+[Plugins](../Plugins/Plugins.md)); the other readers go on (`ContentReadRunner`). Shutting down records
+nothing.
 
 Uploads never wait for it. Contents that vanish between being listed and read are passed over.
 

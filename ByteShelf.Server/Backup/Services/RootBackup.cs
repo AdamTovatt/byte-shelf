@@ -349,8 +349,7 @@ namespace ByteShelf.Server.Backup.Services
                 _dataSource = DataSources.Create(connectionString);
                 Sessions = new DbSessionFactory(_dataSource);
                 ChangeLogRepository changeLog = new ChangeLogRepository(_dataSource, Sessions);
-                // Nothing here writes a document, whose plugins would decide what is taken from it.
-                PluginFieldValueRepository fieldValues = new PluginFieldValueRepository(_dataSource, Sessions, new NoMetadataPlugins());
+                PluginFieldValueRepository fieldValues = new PluginFieldValueRepository(_dataSource, Sessions, KnownPlugins.NotKnown);
                 MetadataUpkeep = new MetadataUpkeep(
                     new ObjectMetadataRepository(_dataSource, Sessions, changeLog),
                     new ContentPluginMetadataRepository(_dataSource, Sessions, changeLog, fieldValues),

@@ -13,8 +13,6 @@ namespace ByteShelf.Server.Tests.Metadata
     {
         private const string Plugin = TestPluginMetadata.Plugin;
 
-        private readonly TestMetadataPlugins _plugins = new TestMetadataPlugins();
-
         [Fact]
         public async Task BringUpToDateAsync_PluginInstalledOverDocuments_TakesTheirValues()
         {
@@ -103,7 +101,7 @@ namespace ByteShelf.Server.Tests.Metadata
             ShelfFile file = await StoreTextAsync(await CreateShelfAsync(), "/a.txt", "a");
             await Services.SetFileDocumentAsync(file.Id, "{\"rating\":4}");
 
-            _plugins.All = [];
+            InstallPlugins();
             await Services.StartPluginFieldIndexAsync();
             Assert.Empty(await ValuesAsync());
             Assert.Equal("{\"rating\":4}", await Services.GetFileDocumentAsync(file.Id));
@@ -117,9 +115,9 @@ namespace ByteShelf.Server.Tests.Metadata
         public async Task BringUpToDateAsync_TwoPluginsOnOneFile_TakesOrDropsTheValuesOfTheOneThatChangedAlone()
         {
             PluginField[] fields = [Field("rating", PluginFieldKind.Number), Field("width", PluginFieldKind.Number, PluginDocumentSubject.Contents)];
-            MetadataPlugin first = new MetadataPlugin(new PluginDeclaration(Plugin, "Test plugin", fields));
-            MetadataPlugin second = new MetadataPlugin(new PluginDeclaration("second", "Second", fields));
-            _plugins.All = [first, second];
+            TestMetadataPlugin first = new TestMetadataPlugin(new PluginDeclaration(Plugin, "Test plugin", fields));
+            TestMetadataPlugin second = new TestMetadataPlugin(new PluginDeclaration("second", "Second", fields));
+            InstallPlugins(first, second);
             await Services.StartPluginFieldIndexAsync();
             ShelfFile file = await StoreTextAsync(await CreateShelfAsync(), "/a.txt", "a");
             foreach ((string plugin, int value) in new[] { (Plugin, 1), ("second", 2) })
@@ -132,11 +130,11 @@ namespace ByteShelf.Server.Tests.Metadata
             await Services.RecordContentDocumentAsync(file.Sha256, "{\"width\":3}", "second", version: 2);
             Assert.Equal(["rating 1", "rating 3", "width 1", "width 3"], await ValuesAsync());
 
-            _plugins.All = [first, new MetadataPlugin(new PluginDeclaration("second", "Second", [fields[0]]))];
+            InstallPlugins(first, new TestMetadataPlugin(new PluginDeclaration("second", "Second", [fields[0]])));
             await Services.StartPluginFieldIndexAsync();
             Assert.Equal(["rating 1", "rating 3", "width 1"], await ValuesAsync());
 
-            _plugins.All = [first];
+            InstallPlugins(first);
             await Services.StartPluginFieldIndexAsync();
             Assert.Equal(["rating 1", "width 1"], await ValuesAsync());
         }
@@ -147,7 +145,23 @@ namespace ByteShelf.Server.Tests.Metadata
             await using ServerTestHost host = await ServerTestHost.StartAsync(services => new TestMetadataPlugins(TestMetadataPlugins.Declaration).AddTo(services));
 
             await using IDbSession session = await host.TestRoot.SessionFactory.CreateSessionAsync();
-            Assert.Equal(1, await TestQueries.CountAsync(session, $"plugin_declared_fields WHERE plugin_id = '{Plugin}'"));
+            Assert.Equal(1, await TestQueries.CountAsync(session, $"plugin_values_taken WHERE plugin_id = '{Plugin}'"));
+        }
+
+        [Fact]
+        public async Task BringUpToDateAsync_ValuesTakenByOtherRulesOfTheServers_TakesThemAnew()
+        {
+            Install(Field("rating", PluginFieldKind.Number));
+            await Services.StartPluginFieldIndexAsync();
+            ShelfFile file = await StoreTextAsync(await CreateShelfAsync(), "/a.txt", "a");
+            await Services.SetFileDocumentAsync(file.Id, "{\"rating\":4}");
+            await Services.InTransactionAsync((_, session) => session.Connection.ExecuteAsync(
+                $"UPDATE plugin_field_value SET number = 5; UPDATE plugin_values_taken SET taken_by = replace(taken_by, '\"Version\":{PluginFieldIndex.Version}', '\"Version\":0')",
+                transaction: session.Transaction));
+
+            await Services.StartPluginFieldIndexAsync();
+
+            Assert.Equal(["rating 4"], await ValuesAsync());
         }
 
         [Fact]
@@ -163,14 +177,9 @@ namespace ByteShelf.Server.Tests.Metadata
             Assert.Equal(before, await ChangeLog.GetLatestSequenceAsync());
         }
 
-        protected override void ConfigureServices(IServiceCollection services)
-        {
-            _plugins.AddTo(services);
-        }
-
         private void Install(params PluginField[] fields)
         {
-            _plugins.All = [new MetadataPlugin(new PluginDeclaration(Plugin, "Test plugin", fields))];
+            InstallPlugins(new TestMetadataPlugin(new PluginDeclaration(Plugin, "Test plugin", fields)));
         }
 
         private static PluginField Field(string name, PluginFieldKind kind, PluginDocumentSubject document = PluginDocumentSubject.File)

@@ -5154,6 +5154,7 @@ export interface components {
             version: string;
             moduleUrl: string | null;
             stylesheetUrl: string | null;
+            readerProblem: string | null;
         };
         PromoteResponse: {
             primaryTold: boolean;

@@ -5,20 +5,28 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace ByteShelf.Server.Tests.TestUtilities
 {
-    /// <summary>The plugins a test says are installed. A test may set others, as a restart with others installed would.</summary>
-    public sealed class TestMetadataPlugins : IMetadataPlugins
+    /// <summary>A plugin a test says is installed, with its reader if it has one.</summary>
+    public sealed record TestMetadataPlugin(PluginDeclaration Declaration, TestDocumentReader? Reader = null);
+
+    /// <summary>The plugins a test says are installed. Others set since are what services made after have, as after a restart.</summary>
+    public sealed class TestMetadataPlugins : IPluginReaders
     {
-        public TestMetadataPlugins(params MetadataPlugin[] plugins)
+        public TestMetadataPlugins(params TestMetadataPlugin[] plugins)
         {
             All = plugins;
         }
 
         public TestMetadataPlugins(PluginDeclaration declaration)
-            : this(new MetadataPlugin(declaration))
+            : this(new TestMetadataPlugin(declaration))
         {
         }
 
-        public IReadOnlyList<MetadataPlugin> All { get; set; }
+        public IReadOnlyList<TestMetadataPlugin> All { get; set; }
+
+        IReadOnlyList<PluginReader> IPluginReaders.All => All
+            .Where(plugin => plugin.Reader != null)
+            .Select(plugin => plugin.Reader!.AsReaderOf(plugin.Declaration.Id))
+            .ToList();
 
         /// <summary>A plugin with a field of every kind in its document about a file, and two in the one about its contents.</summary>
         public static PluginDeclaration Declaration { get; } = new PluginDeclaration(
@@ -43,7 +51,9 @@ namespace ByteShelf.Server.Tests.TestUtilities
         /// <summary>Installs these plugins in place of none.</summary>
         public void AddTo(IServiceCollection services)
         {
-            services.Replace(ServiceDescriptor.Singleton<IMetadataPlugins>(this));
+            services.Replace(ServiceDescriptor.Transient(_ => new InstalledPlugins(All.Select(plugin => plugin.Declaration))));
+            services.Replace(ServiceDescriptor.Transient(provider => KnownPlugins.Of(provider.GetRequiredService<InstalledPlugins>())));
+            services.Replace(ServiceDescriptor.Singleton<IPluginReaders>(this));
         }
     }
 }

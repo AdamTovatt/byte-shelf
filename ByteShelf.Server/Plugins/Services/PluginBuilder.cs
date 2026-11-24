@@ -18,18 +18,14 @@ namespace ByteShelf.Server.Plugins.Services
         public PluginReaderRegistration? Reader { get; private set; }
 
         public void AddReader<TReader>(int version, IReadOnlyList<string> mediaTypes)
-            where TReader : class, IContentDocumentReader
+            where TReader : class, IContentDocumentReader, new()
         {
             if (Reader != null)
             {
                 throw new InvalidOperationException("A plugin has one reader at most.");
             }
 
-            Reader = new PluginReaderRegistration(typeof(TReader), version, MediaTypeSet.Of(mediaTypes));
-
-            // Made by a function, which the container does not look into as it is built: one that needs a
-            // service nobody registered fails where it is made (LoadedMetadataPlugins), not the server's start.
-            Services.AddSingleton(provider => ActivatorUtilities.CreateInstance<TReader>(provider));
+            Reader = new PluginReaderRegistration(() => new TReader(), version, MediaTypeSet.Of(mediaTypes));
         }
     }
 }

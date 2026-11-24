@@ -6,7 +6,8 @@ namespace ByteShelf.Plugins
     /// A plugin's reader of files' contents (<see cref="IPluginBuilder.AddReader{TReader}"/>). The server runs
     /// it in the background over every object that a live file of its media types holds, never over an
     /// encrypted file's, and keeps what it answers as the plugin's document about the contents, which is gone
-    /// when no plain file holds them any more. One is made for the server, and reads one object at a time.
+    /// when no plain file holds them any more. One is made, with no services, and reads one object at a time, in
+    /// whichever process the server runs it: it shares no state with the rest of its plugin.
     /// </summary>
     public interface IContentDocumentReader
     {

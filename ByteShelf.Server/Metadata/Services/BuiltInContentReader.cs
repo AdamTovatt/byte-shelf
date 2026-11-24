@@ -21,6 +21,11 @@ namespace ByteShelf.Server.Metadata.Services
 
         public override RecordReading Nothing => Record(ContentMetadata.None);
 
+        public override Task PrepareAsync()
+        {
+            return Task.CompletedTask;
+        }
+
         public override Task<IReadOnlyList<string>> GetUnreadAsync(string? after, int limit)
         {
             return _repository.GetUnreadAsync(MetadataReader.Version, ReadMediaTypes.All, after, limit);

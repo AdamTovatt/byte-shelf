@@ -13,7 +13,7 @@ namespace ByteShelf.Server.Metadata.Services
     {
         private readonly IDbSessionFactory _sessionFactory;
         private readonly ShelfTree _shelfTree;
-        private readonly IMetadataPlugins _plugins;
+        private readonly InstalledPlugins _plugins;
         private readonly IObjectMetadataRepository _objectMetadata;
         private readonly IContentPluginMetadataRepository _contentDocuments;
         private readonly IFilePluginMetadataRepository _fileDocuments;
@@ -22,7 +22,7 @@ namespace ByteShelf.Server.Metadata.Services
         public FileMetadataService(
             IDbSessionFactory sessionFactory,
             ShelfTree shelfTree,
-            IMetadataPlugins plugins,
+            InstalledPlugins plugins,
             IObjectMetadataRepository objectMetadata,
             IContentPluginMetadataRepository contentDocuments,
             IFilePluginMetadataRepository fileDocuments,
@@ -53,7 +53,7 @@ namespace ByteShelf.Server.Metadata.Services
             ObjectMetadata? read = readable ? await _objectMetadata.GetBySha256Async(file.Sha256, session) : null;
 
             Dictionary<string, PluginFileMetadata> plugins = new Dictionary<string, PluginFileMetadata>(StringComparer.Ordinal);
-            foreach (PluginDeclaration plugin in _plugins.Installed.All)
+            foreach (PluginDeclaration plugin in _plugins.All)
             {
                 PluginFileMetadata kept = await OfPluginAsync(plugin, file, session);
                 if (kept.ContentsDocument != null || kept.FileVersion != null)
@@ -74,7 +74,7 @@ namespace ByteShelf.Server.Metadata.Services
         /// <exception cref="ConflictException">Another version is there.</exception>
         public async Task<PluginFileMetadata> SetPluginDocumentAsync(Shelf shelf, EntryReference reference, string pluginId, SetPluginMetadataRequest request)
         {
-            PluginDeclaration plugin = _plugins.Installed.Find(pluginId)
+            PluginDeclaration plugin = _plugins.Find(pluginId)
                 ?? throw new NotFoundException($"There is no plugin '{pluginId}' on this server.");
 
             await using IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync();

@@ -20,7 +20,7 @@ namespace ByteShelf.Server.Storage.Services
         private readonly ObjectStore _objectStore;
         private readonly ITrashService _trashService;
         private readonly ListedFiles _listedFiles;
-        private readonly IMetadataPlugins _plugins;
+        private readonly InstalledPlugins _plugins;
         private readonly TimeProvider _timeProvider;
 
         public FileService(
@@ -31,7 +31,7 @@ namespace ByteShelf.Server.Storage.Services
             ObjectStore objectStore,
             ITrashService trashService,
             ListedFiles listedFiles,
-            IMetadataPlugins plugins,
+            InstalledPlugins plugins,
             TimeProvider timeProvider)
         {
             _sessionFactory = sessionFactory;
@@ -136,7 +136,7 @@ namespace ByteShelf.Server.Storage.Services
         public async Task<FileSearchResults> SearchAsync(Shelf shelf, FileSearch search)
         {
             FileSearch normalized = search.Normalize();
-            _plugins.Installed.Check(normalized.PluginFields);
+            _plugins.Check(normalized.PluginFields);
             DirectoryRecord directory = await _shelfTree.GetDirectoryAsync(shelf.Id, EntryReference.ForPath(normalized.Under!));
 
             // One more than a page, to tell whether another page follows without a count.
@@ -155,7 +155,7 @@ namespace ByteShelf.Server.Storage.Services
         public async Task<DuplicateSearchResults> FindDuplicatesAsync(Shelf shelf, DuplicateSearch search)
         {
             DuplicateSearch normalized = search.Normalize();
-            _plugins.Installed.Check(normalized.PluginFields);
+            _plugins.Check(normalized.PluginFields);
             DirectoryRecord directory = await _shelfTree.GetDirectoryAsync(shelf.Id, EntryReference.ForPath(normalized.Under!));
 
             // One group more than a page, to tell whether another page follows without a count.

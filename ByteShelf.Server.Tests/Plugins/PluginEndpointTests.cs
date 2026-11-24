@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Metadata.Repositories;
+using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Plugins.Services;
 using ByteShelf.Server.Tests.TestUtilities;
@@ -271,31 +272,55 @@ namespace ByteShelf.Server.Tests.Plugins
             Assert.Equal(["first: a", "second: a"], (await ReadWordsAsync(host, "/a.txt")).Order());
         }
 
-        [Theory]
-        [InlineData("fail-reader")]
-        [InlineData("needing-reader")]
-        public async Task AReaderThatCannotBeMade_IsLoggedAndLeavesWhatItWouldReadForTheNextStart(string file)
+        [Fact]
+        public async Task AReaderThatCannotBeMade_IsLoggedAndLeavesWhatItWouldReadForTheNextStart()
         {
-            TestPlugins.Write(_plugins.AddReadingServerPlugin("reading", "1 text/plain"), file, string.Empty);
-            RecordingLogger<LoadedMetadataPlugins> logger = new RecordingLogger<LoadedMetadataPlugins>();
-            await using ServerTestHost host = await ServerTestHost.StartAsync(
-                services => services.AddSingleton<ILogger<LoadedMetadataPlugins>>(logger), _plugins.Path);
-            await host.CreateShelfAsync("docs");
+            RecordingLogger<ContentReadRunner> logger = new RecordingLogger<ContentReadRunner>();
+            await using ServerTestHost host = await StartWithAnUnmadeReaderAsync(services => services.AddSingleton<ILogger<ContentReadRunner>>(logger));
             ShelfFile stored = await host.PutAsAdminAsync("docs", "/a.txt", "Ett äpple"u8.ToArray(), "text/plain");
 
             await host.Services.ReadMetadataAsync();
 
-            Assert.Empty(await ReadWordsAsync(host, "/a.txt"));
+            Assert.Equal(["healthy: Ett äpple"], await ReadWordsAsync(host, "/a.txt"));
             await using AsyncServiceScope scope = host.Services.CreateAsyncScope();
             IContentPluginMetadataRepository repository = scope.ServiceProvider.GetRequiredService<IContentPluginMetadataRepository>();
             Assert.Equal([stored.Sha256], await repository.GetUnreadAsync("reading", 1, MediaTypeSet.Of("text/plain"), null, 10));
-            Assert.Equal(["The reader of the plugin reading could not be made, so it reads nothing until the server restarts."], logger.Messages);
-            Assert.Single(logger.Exceptions);
+            Assert.Equal(["The reader reading could not be made, so it reads nothing until the server restarts: It was told to fail."], logger.Messages);
+            Assert.IsType<InvalidOperationException>(Assert.Single(logger.Exceptions));
+        }
+
+        [Fact]
+        public async Task List_ForAdminsAlone_SaysWhyAReaderReadsNothing()
+        {
+            await using ServerTestHost host = await StartWithAnUnmadeReaderAsync();
+            await host.PutAsAdminAsync("docs", "/a.txt", "a"u8.ToArray(), "text/plain");
+            await host.Services.ReadMetadataAsync();
+
+            string problem = "Its reader of files' contents could not be made, so it reads nothing until the server restarts: It was told to fail.";
+            Assert.Equal([("healthy", null), ("reading", problem)], await ReadProblemsAsync(host.AdminClient));
+            Assert.Equal([("healthy", null), ("reading", null)], await ReadProblemsAsync(host.MemberClient));
         }
 
         public void Dispose()
         {
             _plugins.Dispose();
+        }
+
+        /// <summary>A server with the shelf "docs" and two reading plugins: "reading", whose reader cannot be made, and "healthy".</summary>
+        private async Task<ServerTestHost> StartWithAnUnmadeReaderAsync(Action<IServiceCollection>? configureServices = null)
+        {
+            TestPlugins.Write(_plugins.AddReadingServerPlugin("reading", "1 text/plain"), "fail-reader", string.Empty);
+            _plugins.AddReadingServerPlugin("healthy", "1 text/plain");
+            ServerTestHost host = await ServerTestHost.StartAsync(configureServices, _plugins.Path);
+            await host.CreateShelfAsync("docs");
+            return host;
+        }
+
+        /// <summary>Each plugin with what is wrong with its reader, as <paramref name="client"/> is told.</summary>
+        private static async Task<IEnumerable<(string Id, string? Problem)>> ReadProblemsAsync(HttpClient client)
+        {
+            PluginList? list = await client.GetFromJsonAsync<PluginList>("/api/plugins");
+            return list!.Plugins.Select(plugin => (plugin.Id, plugin.ReaderProblem));
         }
 
         /// <summary>The words each plugin's reader found, as "plugin: words".</summary>

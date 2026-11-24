@@ -61,9 +61,9 @@ CREATE TABLE plugin_field_value (
 CREATE UNIQUE INDEX idx_plugin_field_value_contents ON plugin_field_value (sha256, plugin_id, field);
 CREATE UNIQUE INDEX idx_plugin_field_value_file ON plugin_field_value (file_id, plugin_id, field);
 
--- The fields the values above were taken by, as each plugin declared them: a plugin that declares others at startup, or is
--- gone, has its values taken again, or dropped (PluginFieldIndex).
-CREATE TABLE plugin_declared_fields (
+-- What the values above were taken by: the fields each plugin declared, and the version of the server's own rules. A plugin
+-- whose values would be taken by something else at startup, or that is gone, has them taken again, or dropped (PluginFieldIndex).
+CREATE TABLE plugin_values_taken (
     plugin_id TEXT PRIMARY KEY,
-    fields TEXT NOT NULL
+    taken_by TEXT NOT NULL
 );

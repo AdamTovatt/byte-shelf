@@ -1,4 +1,5 @@
 using ByteShelf.Server.Access.Auth;
+using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Plugins.Services;
 using ByteShelfCommon;
@@ -12,16 +13,18 @@ namespace ByteShelf.Server.Plugins.Controllers
     public class PluginsController : ControllerBase
     {
         private readonly IPluginCatalog _catalog;
+        private readonly ReaderProblems _readerProblems;
 
-        public PluginsController(IPluginCatalog catalog)
+        public PluginsController(IPluginCatalog catalog, ReaderProblems readerProblems)
         {
             _catalog = catalog;
+            _readerProblems = readerProblems;
         }
 
         /// <summary>
         /// The plugins this server loaded, for any signed-in user or shelf key, and for an admin those it
-        /// skipped and why. Not public, as the release is not: the version of a plugin released with the
-        /// server is the server's.
+        /// skipped and why, and why one no longer reads contents. Not public, as the release is not: the version
+        /// of a plugin released with the server is the server's.
         /// </summary>
         [HttpGet]
         [Authorize(Policy = ShelfKeyAuthentication.ShelfCallerPolicy)]
@@ -29,14 +32,15 @@ namespace ByteShelf.Server.Plugins.Controllers
         [ProducesResponseType(typeof(ErrorResponse), 401)]
         public IActionResult List()
         {
+            bool isAdmin = User.IsInRole(UserRoles.Admin);
             return Ok(new PluginList
             {
-                Plugins = _catalog.Loaded.Select(ViewOf).ToList(),
-                Skipped = User.IsInRole(UserRoles.Admin) ? _catalog.Skipped : null,
+                Plugins = _catalog.Loaded.Select(plugin => ViewOf(plugin, isAdmin)).ToList(),
+                Skipped = isAdmin ? _catalog.Skipped : null,
             });
         }
 
-        private static PluginView ViewOf(LoadedPlugin plugin)
+        private PluginView ViewOf(LoadedPlugin plugin, bool isAdmin)
         {
             return new PluginView
             {
@@ -45,6 +49,7 @@ namespace ByteShelf.Server.Plugins.Controllers
                 Version = plugin.Manifest.Version,
                 ModuleUrl = plugin.Ui?.ModuleAddress,
                 StylesheetUrl = plugin.Ui?.StylesheetAddress,
+                ReaderProblem = isAdmin ? _readerProblems.Of(plugin.Manifest.Id) : null,
             };
         }
     }

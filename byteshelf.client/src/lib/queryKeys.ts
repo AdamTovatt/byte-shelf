@@ -42,7 +42,8 @@ export const queryKeys = {
   replication: {
     status: ['replication', 'status'] as const,
   },
-  // Not an invalidation resource: the plugins change only with a restart of the server.
+  // Not an invalidation resource: which plugins there are changes only with a restart of the server, and what
+  // is wrong with a reader, which may change while it runs, is seen the next time they are listed.
   plugins: {
     list: ['plugins'] as const,
   },

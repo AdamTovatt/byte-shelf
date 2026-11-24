@@ -13,9 +13,9 @@ namespace ByteShelf.Server.Metadata.Repositories
 {
     public class PluginFieldValueRepository : RepositoryBase, IPluginFieldValueRepository
     {
-        private readonly IMetadataPlugins _plugins;
+        private readonly KnownPlugins _plugins;
 
-        public PluginFieldValueRepository(DbDataSource dataSource, IDbSessionFactory sessionFactory, IMetadataPlugins plugins)
+        public PluginFieldValueRepository(DbDataSource dataSource, IDbSessionFactory sessionFactory, KnownPlugins plugins)
             : base(dataSource, sessionFactory)
         {
             _plugins = plugins;
@@ -37,7 +37,7 @@ namespace ByteShelf.Server.Metadata.Repositories
         public async Task<IReadOnlyDictionary<Guid, ListedFields>> GetListedAsync(
             IReadOnlyCollection<FileRecord> files, IDbSession? session = null)
         {
-            if (files.Count == 0 || _plugins.All.Count == 0)
+            if (files.Count == 0 || _plugins.Installed.All.Count == 0)
             {
                 return new Dictionary<Guid, ListedFields>();
             }
@@ -65,22 +65,22 @@ namespace ByteShelf.Server.Metadata.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<IReadOnlyDictionary<string, string>> GetDeclaredFieldsAsync(IDbSession session)
+        public async Task<IReadOnlyDictionary<string, string>> GetTakenByAsync(IDbSession session)
         {
-            IEnumerable<DeclaredEntity> entities = await session.Connection.QueryAsync<DeclaredEntity>(
-                $"SELECT plugin_id AS {nameof(DeclaredEntity.PluginId)}, fields FROM plugin_declared_fields", transaction: session.Transaction);
+            IEnumerable<TakenEntity> entities = await session.Connection.QueryAsync<TakenEntity>(
+                $"SELECT plugin_id AS {nameof(TakenEntity.PluginId)}, taken_by AS {nameof(TakenEntity.TakenBy)} FROM plugin_values_taken", transaction: session.Transaction);
 
-            return entities.ToDictionary(entity => entity.PluginId, entity => entity.Fields, StringComparer.Ordinal);
+            return entities.ToDictionary(entity => entity.PluginId, entity => entity.TakenBy, StringComparer.Ordinal);
         }
 
         /// <inheritdoc />
-        public async Task SetDeclaredFieldsAsync(string pluginId, string fields, IDbSession session)
+        public async Task SetTakenByAsync(string pluginId, string takenBy, IDbSession session)
         {
             string query = $@"
-                INSERT INTO plugin_declared_fields (plugin_id, fields) VALUES (@{nameof(pluginId)}, @{nameof(fields)})
-                ON CONFLICT (plugin_id) DO UPDATE SET fields = excluded.fields";
+                INSERT INTO plugin_values_taken (plugin_id, taken_by) VALUES (@{nameof(pluginId)}, @{nameof(takenBy)})
+                ON CONFLICT (plugin_id) DO UPDATE SET taken_by = excluded.taken_by";
 
-            await session.Connection.ExecuteAsync(query, new { pluginId, fields }, transaction: session.Transaction);
+            await session.Connection.ExecuteAsync(query, new { pluginId, takenBy }, transaction: session.Transaction);
         }
 
         /// <inheritdoc />
@@ -89,7 +89,7 @@ namespace ByteShelf.Server.Metadata.Repositories
             await session.Connection.ExecuteAsync(
                 $"DELETE FROM plugin_field_value WHERE plugin_id = @{nameof(pluginId)}", new { pluginId }, transaction: session.Transaction);
             await session.Connection.ExecuteAsync(
-                $"DELETE FROM plugin_declared_fields WHERE plugin_id = @{nameof(pluginId)}", new { pluginId }, transaction: session.Transaction);
+                $"DELETE FROM plugin_values_taken WHERE plugin_id = @{nameof(pluginId)}", new { pluginId }, transaction: session.Transaction);
         }
 
         private async Task TakeAsync(string pluginId, Subject subject, PluginDocument? document, IDbSession session)
@@ -99,7 +99,12 @@ namespace ByteShelf.Server.Metadata.Repositories
                 new { pluginId, subject.Sha256, subject.FileId },
                 transaction: session.Transaction);
 
-            if (document == null || _plugins.Installed.Find(pluginId) is not { } plugin)
+            if (document == null)
+            {
+                return;
+            }
+
+            if (_plugins.Installed.Find(pluginId) is not { } plugin)
             {
                 return;
             }
@@ -176,10 +181,10 @@ namespace ByteShelf.Server.Metadata.Repositories
             }
         }
 
-        internal sealed class DeclaredEntity
+        internal sealed class TakenEntity
         {
             public string PluginId { get; set; } = string.Empty;
-            public string Fields { get; set; } = string.Empty;
+            public string TakenBy { get; set; } = string.Empty;
         }
     }
 }

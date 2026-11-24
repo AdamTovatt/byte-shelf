@@ -4,7 +4,7 @@ import { SectionTitle } from './SectionTitle';
 import { usePluginHost } from '../hooks/usePluginHost';
 import { usePlugins } from '../hooks/usePlugins';
 
-/** The server's plugins in an admin's settings, and why one was skipped; nothing on a server without any. */
+/** The server's plugins in an admin's settings, and what is wrong with one or why it was skipped; nothing on a server without any. */
 export function PluginsSection() {
   const { data, error } = usePlugins();
   const { failures } = usePluginHost();
@@ -23,7 +23,7 @@ export function PluginsSection() {
               key={plugin.id}
               name={plugin.name}
               details={`Version ${plugin.version}`}
-              problem={failures.has(plugin.id) ? `Its part in the web UI failed: ${failures.get(plugin.id)}` : undefined}
+              problems={[failures.has(plugin.id) && `Its part in the web UI failed: ${failures.get(plugin.id)}`, plugin.readerProblem]}
             />
           ))}
           {skipped.map((plugin) => (
@@ -31,7 +31,7 @@ export function PluginsSection() {
               key={plugin.folder}
               name={plugin.name ?? plugin.id ?? 'Unknown plugin'}
               details={[plugin.version && `Version ${plugin.version}`, plugin.folder].filter(Boolean).join(' · ')}
-              problem={`Skipped: ${plugin.reason}`}
+              problems={[`Skipped: ${plugin.reason}`]}
             />
           ))}
         </CardList>
@@ -40,12 +40,12 @@ export function PluginsSection() {
   );
 }
 
-function PluginRow({ name, details, problem }: { name: string; details: string; problem?: string }) {
+function PluginRow({ name, details, problems }: { name: string; details: string; problems: (string | false | null)[] }) {
   return (
     <div className="px-4 py-3">
       <div className="truncate text-body-md text-fg">{name}</div>
       <div className="truncate text-body-sm text-muted">{details}</div>
-      {problem && <div className="text-body-sm text-danger-11 [overflow-wrap:anywhere]">{problem}</div>}
+      {problems.map((problem) => problem && <div key={problem} className="text-body-sm text-danger-11 [overflow-wrap:anywhere]">{problem}</div>)}
     </div>
   );
 }

@@ -158,13 +158,7 @@ namespace ByteShelf.Server.Plugins.Services
             }
             catch (Exception exception)
             {
-                // A TargetInvocationException says only that what it invoked threw, and a ReflectionTypeLoadException why, once for every type.
-                Exception cause = exception switch
-                {
-                    TargetInvocationException { InnerException: { } inner } => inner,
-                    ReflectionTypeLoadException { LoaderExceptions: [{ } first, ..] } => first,
-                    _ => exception,
-                };
+                Exception cause = PluginFailure.CauseOf(exception);
                 throw new PluginRefusedException($"{failure}: {cause.Message}", cause);
             }
         }

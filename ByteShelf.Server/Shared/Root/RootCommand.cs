@@ -1,3 +1,4 @@
+using ByteShelf.Server.Metadata;
 using ByteShelf.Server.Replication;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Errors;
@@ -99,6 +100,7 @@ namespace ByteShelf.Server.Shared.Root
 
             Program.AddDomainServices(services, settings);
             services.AddReplicationState();
+            services.AddPluginsNotKnown();
             configureServices?.Invoke(services);
             return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         }

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type UseMutationResult, type UseQueryResult } from '@tanstack/react-query';
+import { usePluginId } from '../contexts/PluginIdentity';
 import { queryKeys } from '../lib/queryKeys';
 import { fetchFileMetadata, setPluginDocument, type FileMetadata, type PluginFileMetadata, type ShelfFile } from '../services/shelfService';
 import { shelfName, useInvalidateShelf } from './useShelfQueries';
@@ -25,10 +26,12 @@ export interface PluginDocumentWrite {
 }
 
 /**
- * What the plugin `pluginId` keeps about a live file. Read again when a document about a file changes on the
- * file's shelf, whoever changes it; what its reader finds later is there the next time it is asked for.
+ * What the plugin whose viewer or dialog calls this keeps about a live file. Read again when a document about
+ * a file changes on the file's shelf, whoever changes it; what its reader finds later is there the next time
+ * it is asked for.
  */
-export function usePluginDocuments(pluginId: string, file: ShelfFile): UseQueryResult<PluginDocuments> {
+export function usePluginDocuments(file: ShelfFile): UseQueryResult<PluginDocuments> {
+  const pluginId = usePluginId();
   const queryClient = useQueryClient();
   return useQuery({
     queryKey: metadataKey(file),
@@ -39,8 +42,9 @@ export function usePluginDocuments(pluginId: string, file: ShelfFile): UseQueryR
   });
 }
 
-/** Writes the document of the plugin `pluginId` about a live file; whoever may write the file may. */
-export function useSetPluginDocument(pluginId: string, file: ShelfFile): UseMutationResult<PluginDocuments, Error, PluginDocumentWrite> {
+/** Writes the document about a live file of the plugin whose viewer or dialog calls this; whoever may write the file may. */
+export function useSetPluginDocument(file: ShelfFile): UseMutationResult<PluginDocuments, Error, PluginDocumentWrite> {
+  const pluginId = usePluginId();
   const queryClient = useQueryClient();
   const invalidate = useInvalidateShelf();
   return useMutation({

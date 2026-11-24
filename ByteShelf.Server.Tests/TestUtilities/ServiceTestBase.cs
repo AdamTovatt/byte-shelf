@@ -31,6 +31,8 @@ namespace ByteShelf.Server.Tests.TestUtilities
 
         private ServiceProvider _provider = null!;
         private AsyncServiceScope _scope;
+        private readonly TestMetadataPlugins _plugins = new TestMetadataPlugins();
+        private readonly List<AsyncServiceScope> _earlierScopes = new List<AsyncServiceScope>();
 
         protected TestRoot TestRoot { get; private set; } = null!;
         protected TestClock Clock { get; } = new TestClock(TestInstants.Now);
@@ -57,6 +59,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
             services.AddSingleton<TimeProvider>(Clock);
             services.AddLogging(builder => builder.SetMinimumLevel(LogLevel.Warning));
             Program.AddDomainServices(services, ServerSettings.Open(TestRoot.Root) with { PublicAddress = new PublicAddress(AppBaseUrl) });
+            _plugins.AddTo(services);
             ConfigureServices(services);
 
             // Not ValidateOnBuild: the auth registrations need routing, which only the web host adds.
@@ -69,8 +72,21 @@ namespace ByteShelf.Server.Tests.TestUtilities
         public virtual async Task DisposeAsync()
         {
             await _scope.DisposeAsync();
+            foreach (AsyncServiceScope earlier in _earlierScopes)
+            {
+                await earlier.DisposeAsync();
+            }
+
             await _provider.DisposeAsync();
             await TestRoot.DisposeAsync();
+        }
+
+        /// <summary>Installs <paramref name="plugins"/> in place of those there were, with <see cref="Services"/> made anew, as after a restart.</summary>
+        protected void InstallPlugins(params IReadOnlyList<TestMetadataPlugin> plugins)
+        {
+            _plugins.All = plugins;
+            _earlierScopes.Add(_scope);
+            _scope = _provider.CreateAsyncScope();
         }
 
         /// <summary>Replaces registrations for one test class; runs after the server's own.</summary>

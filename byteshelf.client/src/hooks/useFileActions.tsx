@@ -7,7 +7,6 @@ import { openableReader } from '../lib/content/openableReader';
 import { isAbortError } from '../lib/abort';
 import { runOrToast } from '../lib/utils';
 import type { DrawDialog } from '../lib/drawDialog';
-import type { FileAction } from '../lib/plugins/fileAction';
 import type { OpenableFile } from '../services/fileReading';
 import type { ShelfFile } from '../services/shelfService';
 import { useClosedWhenGone } from './useClosedWhenGone';
@@ -17,7 +16,7 @@ import { usePluginHost } from './usePluginHost';
 export interface FileActions {
   /** Those a file has. */
   actionsFor: (file: ShelfFile) => OfferedAction[];
-  run: (action: FileAction, target: OpenableFile) => Promise<void>;
+  run: (offered: OfferedAction, target: OpenableFile) => Promise<void>;
 }
 
 /** The plugins' actions for the live files of a shelf. */
@@ -28,13 +27,13 @@ export function useFileActions(shelf: string): FileActions {
   // Closed with the page, also while an action is still at it.
   const readingRef = useClosedWhenGone<ClosableReader>();
 
-  const run = useCallback(async (action: FileAction, target: OpenableFile): Promise<void> => {
+  const run = useCallback(async ({ pluginId, action }: OfferedAction, target: OpenableFile): Promise<void> => {
     const content = openableReader(target);
     readingRef.current.open.add(content);
     const closing: Promise<void>[] = [];
 
     function showDialog(draw: DrawDialog): void {
-      closing.push(show((close) => <PluginDialog title={action.label} draw={draw} close={close} />).closed);
+      closing.push(show((close) => <PluginDialog pluginId={pluginId} title={action.label} draw={draw} close={close} />).closed);
     }
 
     await runOrToast(async () => {

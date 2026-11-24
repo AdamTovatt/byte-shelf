@@ -3,8 +3,9 @@ import { logFailureOnce } from '../logFailureOnce';
 import type { FileAction } from './fileAction';
 import type { RunningPlugin } from './pluginHost';
 
-/** An action as a menu offers it. */
+/** A plugin's action as a menu offers it. */
 export interface OfferedAction {
+  pluginId: string;
   /** Apart from every other plugin's actions too. */
   key: string;
   action: FileAction;
@@ -22,5 +23,5 @@ export function fileActionsFor(plugins: readonly RunningPlugin[], file: ShelfFil
         return false;
       }
     })
-    .map((action) => ({ key: `${id} ${action.id}`, action })));
+    .map((action) => ({ pluginId: id, key: `${id} ${action.id}`, action })));
 }

@@ -1,16 +1,18 @@
-using System.Collections.Concurrent;
 using ByteShelf.Server.Shared.IO;
 using ByteShelf.Server.Storage.Services;
 
 namespace ByteShelf.Server.Metadata.Services
 {
     /// <summary>
-    /// Runs one reader over one object, for as long as a read may take. A reader that keeps running past that
-    /// though cancelled is left behind: its read still holds a thread, and the reader is not run again in this
-    /// process, so each holds at most one.
+    /// Runs one reader over one object, for as long as a read may take. A reader that cannot be made ready in
+    /// time, or keeps running past its time though cancelled, is left behind: it may still hold a thread, and is
+    /// not run again in this process, so each holds at most one.
     /// </summary>
     internal sealed class ContentReadRunner
     {
+        /// <summary>How long a reader may take to be made ready.</summary>
+        private static readonly TimeSpan PrepareLimit = TimeSpan.FromSeconds(60);
+
         /// <summary>How long a reader may take over one object.</summary>
         private static readonly TimeSpan ReadLimit = TimeSpan.FromSeconds(60);
 
@@ -20,32 +22,39 @@ namespace ByteShelf.Server.Metadata.Services
         /// <summary>The reads a stream gets buffered by: the object store's own streams read unbuffered, and the parsers read a few bytes at a time.</summary>
         private const int ReadBufferBytes = 64 * 1024;
 
-        private readonly ConcurrentDictionary<string, bool> _leftBehind = new ConcurrentDictionary<string, bool>(StringComparer.Ordinal);
         private readonly ObjectStore _objectStore;
+        private readonly ReaderProblems _problems;
         private readonly TimeProvider _timeProvider;
         private readonly ILogger<ContentReadRunner> _logger;
 
-        public ContentReadRunner(ObjectStore objectStore, TimeProvider timeProvider, ILogger<ContentReadRunner> logger)
+        public ContentReadRunner(ObjectStore objectStore, ReaderProblems problems, TimeProvider timeProvider, ILogger<ContentReadRunner> logger)
         {
             _objectStore = objectStore;
+            _problems = problems;
             _timeProvider = timeProvider;
             _logger = logger;
         }
 
-        /// <summary>Whether <paramref name="reader"/> is left behind, and so not to be run again.</summary>
-        public bool IsLeftBehind(ContentReader reader)
+        /// <summary>Whether <paramref name="reader"/> may run; not once it was left behind.</summary>
+        public bool MayRun(ContentReader reader)
         {
-            return _leftBehind.ContainsKey(reader.Id);
+            return _problems.Of(reader.Id) == null;
         }
 
         /// <summary>
         /// Runs <paramref name="reader"/> over the contents <paramref name="sha256"/>. A read that failed
-        /// records that they say nothing, so they are not read again. Null when the object is gone, removed
-        /// with the last file holding it after it was listed, which leaves nothing to record.
+        /// records that they say nothing, so they are not read again. Null, with nothing to record, when the
+        /// object is gone, removed with the last file holding it after it was listed, or the reader cannot be
+        /// made ready, which says nothing of the contents: <see cref="MayRun"/> is false from then on.
         /// </summary>
         /// <exception cref="OperationCanceledException">The server is shutting down, which says nothing of the reader.</exception>
         public async Task<ReadOutcome?> ReadAsync(ContentReader reader, string sha256, CancellationToken cancellationToken)
         {
+            if (!await PrepareAsync(reader, cancellationToken))
+            {
+                return null;
+            }
+
             FileStream file;
             try
             {
@@ -74,7 +83,7 @@ namespace ByteShelf.Server.Metadata.Services
                 }
                 else
                 {
-                    _leftBehind[reader.Id] = true;
+                    _problems.Report(reader.Id, "Its reader of files' contents did not stop when it was told to, so it reads nothing more until the server restarts.");
                     _logger.LogError(
                         "The reader {Reader} did not stop reading the contents {Sha256} when cancelled. The read is left behind, and the reader is not run again until the server restarts.",
                         reader.Id,
@@ -104,13 +113,42 @@ namespace ByteShelf.Server.Metadata.Services
             }
         }
 
-        /// <summary>Whether <paramref name="reading"/> ends, however it does, before <paramref name="limit"/> has passed.</summary>
-        /// <exception cref="OperationCanceledException">The server is shutting down; the reading is left to end on its own.</exception>
-        private async Task<bool> EndsWithinAsync(Task reading, TimeSpan limit, CancellationToken cancellationToken)
+        /// <summary>Makes <paramref name="reader"/> ready; false, saying why, when it cannot be.</summary>
+        /// <exception cref="OperationCanceledException">The server is shutting down, which says nothing of the reader.</exception>
+        private async Task<bool> PrepareAsync(ContentReader reader, CancellationToken cancellationToken)
         {
-            await reading.WaitAsync(limit, _timeProvider, cancellationToken).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            Exception? failure = null;
+            string reason;
+            try
+            {
+                Task preparing = reader.PrepareAsync();
+                if (await EndsWithinAsync(preparing, PrepareLimit, cancellationToken))
+                {
+                    await preparing;
+                    return true;
+                }
+
+                reason = $"It took over {PrepareLimit.TotalSeconds} seconds.";
+            }
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                // It has seen no contents that this could quote.
+                failure = exception;
+                reason = exception.Message;
+            }
+
+            _problems.Report(reader.Id, $"Its reader of files' contents could not be made, so it reads nothing until the server restarts: {reason}");
+            _logger.LogError(failure, "The reader {Reader} could not be made, so it reads nothing until the server restarts: {Reason}", reader.Id, reason);
+            return false;
+        }
+
+        /// <summary>Whether <paramref name="work"/>, a reader's, ends, however it does, before <paramref name="limit"/> has passed.</summary>
+        /// <exception cref="OperationCanceledException">The server is shutting down; the work is left to end on its own.</exception>
+        private async Task<bool> EndsWithinAsync(Task work, TimeSpan limit, CancellationToken cancellationToken)
+        {
+            await work.WaitAsync(limit, _timeProvider, cancellationToken).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
             cancellationToken.ThrowIfCancellationRequested();
-            return reading.IsCompleted;
+            return work.IsCompleted;
         }
 
         /// <summary>Reads <paramref name="file"/> and closes it, whenever that ends: a reading left behind still holds it.</summary>

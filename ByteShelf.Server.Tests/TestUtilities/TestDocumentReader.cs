@@ -24,6 +24,9 @@ namespace ByteShelf.Server.Tests.TestUtilities
 
         public int Reads => _streams.Count;
 
+        /// <summary>What making it waits for, and fails as; at once when not set.</summary>
+        public Task Making { get; init; } = Task.CompletedTask;
+
         /// <summary>A reader of text files that answers the text itself, as <c>{"text": …}</c>.</summary>
         public static TestDocumentReader OfText(int version = 1)
         {
@@ -37,10 +40,10 @@ namespace ByteShelf.Server.Tests.TestUtilities
             return await reader.ReadToEndAsync(cancellationToken);
         }
 
-        /// <summary>This as an installed plugin's reader.</summary>
-        public MetadataPluginReader AsPluginReader()
+        /// <summary>This as the reader of the plugin <paramref name="pluginId"/>.</summary>
+        public PluginReader AsReaderOf(string pluginId)
         {
-            return new MetadataPluginReader(this, _version, MediaTypeSet.Of(_mediaTypes));
+            return new PluginReader(pluginId, MadeAsync, _version, MediaTypeSet.Of(_mediaTypes));
         }
 
         /// <summary>Waits until every read has ended and its file is closed; throws when one is not.</summary>
@@ -51,6 +54,12 @@ namespace ByteShelf.Server.Tests.TestUtilities
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(5), limit.Token);
             }
+        }
+
+        private async Task<IContentDocumentReader> MadeAsync()
+        {
+            await Making;
+            return this;
         }
 
         public Task<JsonObject?> ReadAsync(Stream contents, CancellationToken cancellationToken)

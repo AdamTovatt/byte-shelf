@@ -26,9 +26,12 @@ export function FileActionsMenu({ actions, target }: FileActionsProps): ReactNod
 }
 
 function itemsOf(offered: OfferedAction[], { actions: { run }, target }: FileActionsProps): ReactNode {
-  return offered.map(({ key, action }) => (
-    <ErrorBoundary key={key} fallback={null}>
-      <DropdownItem icon={action.icon && <Icon icon={action.icon} size={16} />} onClick={() => void run(action, target)}>{action.label}</DropdownItem>
-    </ErrorBoundary>
-  ));
+  return offered.map((each) => {
+    const { key, action } = each;
+    return (
+      <ErrorBoundary key={key} fallback={null}>
+        <DropdownItem icon={action.icon && <Icon icon={action.icon} size={16} />} onClick={() => void run(each, target)}>{action.label}</DropdownItem>
+      </ErrorBoundary>
+    );
+  });
 }

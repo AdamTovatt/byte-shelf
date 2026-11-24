@@ -62,7 +62,7 @@ namespace ByteShelf.Server.Metadata.Services
         }
 
         /// <summary>
-        /// Reads everything <paramref name="reader"/> has yet to read, until it is left behind if it is; answers
+        /// Reads everything <paramref name="reader"/> has yet to read, until it may not run any more; answers
         /// <paramref name="summary"/> with what it did counted in.
         /// </summary>
         private async Task<MetadataReadingSummary> RunReaderAsync(ContentReader reader, MetadataReadingSummary summary, CancellationToken cancellationToken)
@@ -75,7 +75,7 @@ namespace ByteShelf.Server.Metadata.Services
                 foreach (string sha256 in unread)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (_runner.IsLeftBehind(reader))
+                    if (!_runner.MayRun(reader))
                     {
                         return summary;
                     }

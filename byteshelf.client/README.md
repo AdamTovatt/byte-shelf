@@ -175,10 +175,12 @@ npm run codegen    # in a second terminal
   the preview and actions to the menus of live files: in a listing, a search's results and the preview,
   an encrypted file's too, whose password is asked for once the action reads it
   (`hooks/useFileActions.tsx`), and reads and writes its documents about files with
-  `hooks/usePluginDocuments.ts`. Each viewer, menu item and dialog is drawn in an error boundary.
+  `hooks/usePluginDocuments.ts`, for which its viewers and dialogs are drawn in a `PluginIdentity`. Each
+  viewer, menu item and dialog is drawn in an error boundary.
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and
   refetches what each event makes stale (`lib/invalidationMap.ts`), so a change made elsewhere shows up
   within about a second. A test checks the map covers every resource the server publishes. The
   exceptions are the Replication page's status, polled every 5 seconds, as a replica's lag changes
-  without anything being published, and the plugins, which change only with a restart of the server:
-  they are read at sign-in, and again once that is stale as a shelf, a preview or Settings opens.
+  without anything being published, and the plugins, which change only with a restart of the server, but
+  for what is wrong with a reader: they are read at sign-in, and again once that is stale as a shelf, a
+  preview or Settings opens.

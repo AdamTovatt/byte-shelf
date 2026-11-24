@@ -8,10 +8,8 @@ namespace ByteShelf.Server.Tests.Plugin
     {
         private const string FailingFileName = "fail-reader";
 
-        // Made with a service of the plugin's own, as a reader may be.
-        public WordsReader(PluginGreeting greeting)
+        public WordsReader()
         {
-            ArgumentNullException.ThrowIfNull(greeting);
             if (File.Exists(Path.Combine(Path.GetDirectoryName(typeof(WordsReader).Assembly.Location)!, FailingFileName)))
             {
                 throw new InvalidOperationException("It was told to fail.");

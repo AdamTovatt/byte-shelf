@@ -15,10 +15,73 @@ namespace ByteShelf.Server.Tests.Metadata
         private static readonly TimeSpan OneMoment = TimeSpan.FromMilliseconds(1);
 
         // Written out rather than taken from the code, so a change of either is noticed.
+        private static readonly TimeSpan PrepareLimit = TimeSpan.FromSeconds(60);
         private static readonly TimeSpan ReadLimit = TimeSpan.FromSeconds(60);
         private static readonly TimeSpan StopLimit = TimeSpan.FromSeconds(5);
 
         private readonly RecordingLogger<ContentReadRunner> _logger = new RecordingLogger<ContentReadRunner>();
+        private readonly ReaderProblems _problems = new ReaderProblems();
+
+        [Fact]
+        public async Task ReadAsync_ReaderMadeWithinTheLimit_Reads()
+        {
+            TaskCompletionSource made = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            TestDocumentReader reader = new TestDocumentReader((_, _) => Task.FromResult<JsonObject?>(null)) { Making = made.Task };
+            ContentReadRunner runner = NewRunner();
+
+            Task<ReadOutcome?> read = runner.ReadAsync(Reader(reader), await StoreAFileAsync(), CancellationToken.None);
+            await Clock.WaitForTimerAsync(PrepareLimit);
+            Clock.Advance(PrepareLimit - OneMoment);
+            made.SetResult();
+
+            Assert.False((await read.WaitAsync(RealTimeLimit))!.Failed);
+            Assert.True(runner.MayRun(Reader(reader)));
+        }
+
+        [Fact]
+        public async Task ReadAsync_ReaderStillBeingMadeAtTheLimit_IsNotRunAndSaysNothingOfTheContents()
+        {
+            TestDocumentReader reader = new TestDocumentReader((_, _) => Task.FromResult<JsonObject?>(null)) { Making = NewSignal().Task };
+            ContentReadRunner runner = NewRunner();
+
+            Task<ReadOutcome?> read = runner.ReadAsync(Reader(reader), await StoreAFileAsync(), CancellationToken.None);
+            await Clock.WaitForTimerAsync(PrepareLimit);
+            Clock.Advance(PrepareLimit);
+
+            Assert.Null(await read.WaitAsync(RealTimeLimit));
+            Assert.False(runner.MayRun(Reader(reader)));
+            Assert.Equal("Its reader of files' contents could not be made, so it reads nothing until the server restarts: It took over 60 seconds.", _problems.Of(TestPluginMetadata.Plugin));
+            Assert.Equal(["The reader test-plugin could not be made, so it reads nothing until the server restarts: It took over 60 seconds."], _logger.Messages);
+        }
+
+        /// <summary>As if cancelled, which the server's shutting down alone is.</summary>
+        [Fact]
+        public async Task ReadAsync_ReaderThatFailsToBeMade_IsNotRunAndSaysWhy()
+        {
+            TestDocumentReader reader = new TestDocumentReader((_, _) => Task.FromResult<JsonObject?>(null)) { Making = Task.FromException(new OperationCanceledException("It gave up.")) };
+            ContentReadRunner runner = NewRunner();
+
+            Assert.Null(await runner.ReadAsync(Reader(reader), await StoreAFileAsync(), CancellationToken.None));
+
+            Assert.Equal("Its reader of files' contents could not be made, so it reads nothing until the server restarts: It gave up.", _problems.Of(TestPluginMetadata.Plugin));
+            Assert.False(runner.MayRun(Reader(reader)));
+        }
+
+        [Fact]
+        public async Task ReadAsync_ServerShutsDownWhileTheReaderIsMade_SaysNothingOfTheReader()
+        {
+            TestDocumentReader reader = new TestDocumentReader((_, _) => Task.FromResult<JsonObject?>(null)) { Making = NewSignal().Task };
+            ContentReadRunner runner = NewRunner();
+            using CancellationTokenSource shuttingDown = new CancellationTokenSource();
+
+            Task<ReadOutcome?> read = runner.ReadAsync(Reader(reader), await StoreAFileAsync(), shuttingDown.Token);
+            await Clock.WaitForTimerAsync(PrepareLimit);
+            await shuttingDown.CancelAsync();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read.WaitAsync(RealTimeLimit));
+            Assert.True(runner.MayRun(Reader(reader)));
+            Assert.Empty(_logger.Messages);
+        }
 
         [Fact]
         public async Task ReadAsync_WithinTheReadLimit_IsNotCancelled()
@@ -65,7 +128,7 @@ namespace ByteShelf.Server.Tests.Metadata
             stopped.SetResult(new JsonObject());
 
             Assert.True((await read.WaitAsync(RealTimeLimit))!.Failed);
-            Assert.False(runner.IsLeftBehind(contentReader));
+            Assert.True(runner.MayRun(contentReader));
         }
 
         [Fact]
@@ -83,8 +146,9 @@ namespace ByteShelf.Server.Tests.Metadata
             Clock.Advance(StopLimit);
 
             Assert.True((await read.WaitAsync(RealTimeLimit))!.Failed);
-            Assert.True(runner.IsLeftBehind(contentReader));
-            Assert.False(runner.IsLeftBehind(Reader(reader, "another")));
+            Assert.False(runner.MayRun(contentReader));
+            Assert.True(runner.MayRun(Reader(reader, "another")));
+            Assert.Equal("Its reader of files' contents did not stop when it was told to, so it reads nothing more until the server restarts.", _problems.Of(contentReader.Id));
             stuck.SetResult(null);
             await reader.AllReadsEndedAsync();
         }
@@ -125,12 +189,12 @@ namespace ByteShelf.Server.Tests.Metadata
 
         private ContentReadRunner NewRunner()
         {
-            return new ContentReadRunner(ObjectStore, Clock, _logger);
+            return new ContentReadRunner(ObjectStore, _problems, Clock, _logger);
         }
 
         private PluginContentReader Reader(TestDocumentReader reader, string plugin = TestPluginMetadata.Plugin)
         {
-            return new PluginContentReader(plugin, reader.AsPluginReader(), Services.GetRequiredService<IContentPluginMetadataRepository>());
+            return new PluginContentReader(reader.AsReaderOf(plugin), Services.GetRequiredService<IContentPluginMetadataRepository>());
         }
 
         private async Task<string> StoreAFileAsync()

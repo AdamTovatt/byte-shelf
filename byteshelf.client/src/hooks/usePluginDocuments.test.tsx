@@ -3,6 +3,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+import { PluginIdentity } from '../contexts/PluginIdentity';
 import { usePluginDocuments, useSetPluginDocument, type PluginDocumentWrite } from './usePluginDocuments';
 import { invalidateResource } from '../lib/invalidate';
 import { queryClient } from '../lib/queryClient';
@@ -23,6 +25,7 @@ function kept(fileDocument: Record<string, unknown> | null, fileVersion: number,
 }
 
 describe('a plugin\'s documents about a file', () => {
+  let container: HTMLElement;
   let root: Root;
   let read: ReturnType<typeof usePluginDocuments>;
   let set: ReturnType<typeof useSetPluginDocument>;
@@ -35,13 +38,13 @@ describe('a plugin\'s documents about a file', () => {
   let bodies: unknown[];
 
   function Probe() {
-    read = usePluginDocuments('notes', file);
-    set = useSetPluginDocument('notes', file);
+    read = usePluginDocuments(file);
+    set = useSetPluginDocument(file);
     return null;
   }
 
   function render() {
-    return act(async () => root.render(<QueryClientProvider client={queryClient}><Probe /></QueryClientProvider>));
+    return act(async () => root.render(<QueryClientProvider client={queryClient}><PluginIdentity id="notes"><Probe /></PluginIdentity></QueryClientProvider>));
   }
 
   function write(change: PluginDocumentWrite) {
@@ -69,12 +72,14 @@ describe('a plugin\'s documents about a file', () => {
       await holdReads;
       return json({ readable: true, readAt: null, plugins });
     });
-    root = createRoot(document.createElement('div'));
+    container = document.createElement('div');
+    root = createRoot(container);
   });
 
   afterEach(() => {
     act(() => root.unmount());
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('are the plugin\'s own, read from the shelf the file is on', async () => {
@@ -198,6 +203,22 @@ describe('a plugin\'s documents about a file', () => {
     answer(json([{ id: 's', name: 'docs' }]));
 
     await expect(written).resolves.toMatchObject({ fileVersion: 1 });
+  });
+
+  it.each([
+    ['read', () => void usePluginDocuments(FILE)],
+    ['written', () => void useSetPluginDocument(FILE)],
+  ])('cannot be %s but in what a plugin draws', async (_, use) => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    function Outside() {
+      use();
+      return null;
+    }
+
+    await act(async () => root.render(<QueryClientProvider client={queryClient}><ErrorBoundary fallback="It failed."><Outside /></ErrorBoundary></QueryClientProvider>));
+
+    expect(container.textContent).toBe('It failed.');
+    expect(sent).toEqual([]);
   });
 
   it.each([

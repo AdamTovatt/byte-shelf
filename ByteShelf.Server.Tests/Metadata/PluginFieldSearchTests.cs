@@ -15,7 +15,13 @@ namespace ByteShelf.Server.Tests.Metadata
     {
         private const string Plugin = TestPluginMetadata.Plugin;
 
-        private readonly TestMetadataPlugins _plugins = new TestMetadataPlugins(TestMetadataPlugins.Declaration);
+        private static readonly TestMetadataPlugin TestPlugin = new TestMetadataPlugin(TestMetadataPlugins.Declaration);
+
+        public override async Task InitializeAsync()
+        {
+            await base.InitializeAsync();
+            InstallPlugins(TestPlugin);
+        }
 
         [Fact]
         public async Task SearchAsync_FieldOfTheContents_FindsEveryPlainFileThatHoldsThem()
@@ -63,7 +69,7 @@ namespace ByteShelf.Server.Tests.Metadata
         public async Task SearchAsync_AnotherPluginHasAFieldOfTheSameName_FindsByTheOneNamed()
         {
             PluginField rating = new PluginField("rating", "Rating", PluginFieldKind.Number, PluginDocumentSubject.File);
-            _plugins.All = [.. _plugins.All, new MetadataPlugin(new PluginDeclaration("other-plugin", "Other plugin", [rating]))];
+            InstallPlugins(TestPlugin, new TestMetadataPlugin(new PluginDeclaration("other-plugin", "Other plugin", [rating])));
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
             await Services.SetFileDocumentAsync(file.Id, "{\"rating\":4}");
@@ -135,14 +141,14 @@ namespace ByteShelf.Server.Tests.Metadata
             await Services.SetFileDocumentAsync(file.Id, "{\"caption\":\"apple\"}");
             await Services.StartPluginFieldIndexAsync();
 
-            _plugins.All = [];
+            InstallPlugins();
             await Services.StartPluginFieldIndexAsync();
             Assert.Empty((await MetadataAsync(shelf, file)).Plugins);
             Assert.Empty((await FileService.SearchAsync(shelf, new FileSearch { Text = "apple" })).Files);
             Assert.Null(Assert.Single((await DirectoryService.ListAsync(shelf, EntryReference.ForPath("/"))).Files).PluginFields);
             await Assert.ThrowsAsync<ArgumentException>(() => FindAsync(shelf, $"{Plugin}.caption"));
 
-            _plugins.All = [new MetadataPlugin(TestMetadataPlugins.Declaration)];
+            InstallPlugins(TestPlugin);
             await Services.StartPluginFieldIndexAsync();
             Assert.Equal("{\"caption\":\"apple\"}", (await MetadataAsync(shelf, file)).Plugins[Plugin].FileDocument?.Json);
             Assert.Equal("/a.txt", Assert.Single((await FileService.SearchAsync(shelf, new FileSearch { Text = "apple" })).Files).Path);
@@ -191,11 +197,6 @@ namespace ByteShelf.Server.Tests.Metadata
             DeletionTree tree = await TrashService.ListDeletionAsync(shelf, deleted.DeletionId, new TreeQuery());
 
             Assert.Equal("apple", Assert.Single(tree.Tree.Files).PluginFields![Plugin]["words"].Text);
-        }
-
-        protected override void ConfigureServices(IServiceCollection services)
-        {
-            _plugins.AddTo(services);
         }
 
         private Task<FileMetadata> MetadataAsync(Shelf shelf, ShelfFile file)

@@ -8,8 +8,8 @@ namespace ByteShelf.Server.Metadata.Services
 {
     /// <summary>
     /// Brings the values of plugins' declared fields in step with what is installed, before the server takes
-    /// requests: one that declares other fields than its values were taken by has them taken again from its
-    /// documents, and one that is gone loses them, so nothing of it is found or listed. Each plugin in a
+    /// requests: one that declares other fields than its values were taken by, or by other rules of the server's,
+    /// has them taken again from its documents, and one that is gone loses them, so nothing of it is found or listed. Each plugin in a
     /// transaction of its own, so a start that stops half-way goes on from there.
     /// </summary>
     internal sealed class PluginFieldIndex
@@ -17,14 +17,21 @@ namespace ByteShelf.Server.Metadata.Services
         /// <summary>How many documents one query reads.</summary>
         internal const int BatchSize = 100;
 
-        private readonly IMetadataPlugins _plugins;
+        /// <summary>
+        /// The server's own rules for what it takes and keeps of a field: <see cref="PluginFieldValue.Of"/>, the
+        /// folding and cutting of text, the limit on what is listed and the JSON that is. Raised when one
+        /// changes, which has every value taken again.
+        /// </summary>
+        internal const int Version = 1;
+
+        private readonly InstalledPlugins _plugins;
         private readonly IPluginFieldValueRepository _values;
         private readonly IContentPluginMetadataRepository _contentDocuments;
         private readonly IFilePluginMetadataRepository _fileDocuments;
         private readonly IDbSessionFactory _sessionFactory;
 
         public PluginFieldIndex(
-            IMetadataPlugins plugins,
+            InstalledPlugins plugins,
             IPluginFieldValueRepository values,
             IContentPluginMetadataRepository contentDocuments,
             IFilePluginMetadataRepository fileDocuments,
@@ -42,11 +49,10 @@ namespace ByteShelf.Server.Metadata.Services
             IReadOnlyDictionary<string, string> takenBy;
             await using (IDbSession session = await _sessionFactory.CreateSessionAsync())
             {
-                takenBy = await _values.GetDeclaredFieldsAsync(session);
+                takenBy = await _values.GetTakenByAsync(session);
             }
 
-            InstalledPlugins installed = _plugins.Installed;
-            foreach (string gone in takenBy.Keys.Where(id => installed.Find(id) == null))
+            foreach (string gone in takenBy.Keys.Where(id => _plugins.Find(id) == null))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 await using IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync();
@@ -54,24 +60,28 @@ namespace ByteShelf.Server.Metadata.Services
                 await session.CommitAsync();
             }
 
-            foreach (PluginDeclaration plugin in installed.All)
+            foreach (PluginDeclaration plugin in _plugins.All)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                string fields = Describe(plugin);
-                if (takenBy.GetValueOrDefault(plugin.Id) != fields)
+                string takenNow = Describe(plugin);
+                if (takenBy.GetValueOrDefault(plugin.Id) != takenNow)
                 {
-                    await TakeAgainAsync(plugin.Id, fields, cancellationToken);
+                    await TakeAgainAsync(plugin.Id, takenNow, cancellationToken);
                 }
             }
         }
 
-        /// <summary>The fields a plugin declares, as far as their values depend on it: its labels may change without a value changing.</summary>
+        /// <summary>What a plugin's values are taken by: <see cref="Version"/> and the fields it declares, whose labels may change without a value changing.</summary>
         private static string Describe(PluginDeclaration plugin)
         {
-            return JsonSerializer.Serialize(plugin.Fields.Select(field => new { field.Name, field.Kind, field.Document, field.Searched, field.Listed }));
+            return JsonSerializer.Serialize(new
+            {
+                Version,
+                Fields = plugin.Fields.Select(field => new { field.Name, field.Kind, field.Document, field.Searched, field.Listed }),
+            });
         }
 
-        private async Task TakeAgainAsync(string pluginId, string fields, CancellationToken cancellationToken)
+        private async Task TakeAgainAsync(string pluginId, string takenBy, CancellationToken cancellationToken)
         {
             await using IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync();
             await _values.DropAsync(pluginId, session);
@@ -85,7 +95,7 @@ namespace ByteShelf.Server.Metadata.Services
                 document => _values.TakeAsync(document, session),
                 cancellationToken);
 
-            await _values.SetDeclaredFieldsAsync(pluginId, fields, session);
+            await _values.SetTakenByAsync(pluginId, takenBy, session);
             await session.CommitAsync();
         }
 
