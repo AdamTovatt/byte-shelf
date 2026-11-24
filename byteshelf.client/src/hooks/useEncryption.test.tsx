@@ -11,6 +11,7 @@ import { folderPasswordKey, rememberPassword, rememberedPassword, filePasswordKe
 import { liveContent, type ContentSource } from '../services/contentService';
 import { fileReading, unlockedContents } from '../services/fileReading';
 import type { EncryptedFolder } from '../services/encryptionService';
+import type { StoreFolder } from '../services/fileStoring';
 import type { Entry, ShelfDirectory, ShelfFile } from '../services/shelfService';
 import { fill, press, textOf as messageText } from '../test/dom';
 
@@ -51,7 +52,10 @@ const shelf = vi.hoisted(() => ({
 vi.mock('../services/encryptionService', () => {
   const filesUnder = (path: string) => Array.from(shelf.files.values()).map((each) => each.file).filter((file) => file.path.startsWith(`${path}/`));
   return {
-    fetchEncryptedFolder: (_shelf: string, path: string) => shelf.folderFor(path),
+    fetchEncryptedFolder: async (_shelf: string, path: string, signal?: AbortSignal) => {
+      signal?.throwIfAborted();
+      return shelf.folderFor(path);
+    },
     encryptDirectory: async (_shelf: string, id: string, check: string) => {
       await shelf.beforeMark();
       shelf.folderMarks.push(`encrypt ${id}`);
@@ -96,6 +100,32 @@ vi.mock('../services/contentService', async (original) => ({
     },
     encryptedFolderOf: (file: ShelfFile) => shelf.folderFor(file.path),
   }),
+}));
+
+/** What was stored, as it was sent; the file stored at a path gets an id of its own. */
+const uploads = vi.hoisted(() => [] as { path: string; contents: Blob; type: string; overwrite: boolean; encrypted: boolean }[]);
+
+/** The folder found at a path as it is asked for; another id, or none, once a test has it moved away. */
+const folderIds = vi.hoisted(() => new Map<string, string>());
+
+vi.mock('../services/uploadService', () => ({
+  uploadFile: async ({ path, file: contents, overwrite, encrypted, signal }: { path: string; file: Blob; overwrite: boolean; encrypted: boolean; signal?: AbortSignal }) => {
+    signal?.throwIfAborted();
+    uploads.push({ path, contents, type: contents.type, overwrite, encrypted });
+    return { id: `stored:${path}`, path, encrypted };
+  },
+}));
+
+vi.mock('../services/shelfService', async (original) => ({
+  ...(await original<typeof import('../services/shelfService')>()),
+  fetchFileAt: async (_shelf: string, path: string, signal?: AbortSignal) => {
+    signal?.throwIfAborted();
+    return Array.from(shelf.files.values()).find(({ file }) => file.path === path)?.file ?? null;
+  },
+  requireDirectoryAt: async (_shelf: string, { id, name, path }: ShelfDirectory, signal?: AbortSignal) => {
+    signal?.throwIfAborted();
+    if ((folderIds.get(path) ?? id) !== id) throw new Error(`${name} is no longer where it was.`);
+  },
 }));
 
 function directory(path: string, encrypted = false): ShelfDirectory {
@@ -181,6 +211,8 @@ describe('encryption in the browser', () => {
     shelf.checks.clear();
     shelf.directories.clear();
     shelf.failing.clear();
+    uploads.length = 0;
+    folderIds.clear();
     errors.length = 0;
     vi.spyOn(toast, 'error').mockImplementation((message) => {
       errors.push(messageText(message as ReactNode));
@@ -211,6 +243,173 @@ describe('encryption in the browser', () => {
 
     expect(await asked).toBe('new');
     expect(rememberedPassword(folderPasswordKey('docs', vault.id))).toBe('new');
+  });
+
+  describe('storing a file', () => {
+    const contents = new Blob(['new'], { type: 'image/x-new' });
+
+    /** The folder at `path` as it was read, with the encrypted folder it was in then. */
+    function into(path: string, encryptedBy: ShelfDirectory | null = null): StoreFolder {
+      const read = shelf.directories.get(`dir:${path}`) ?? directory(path);
+      return { directory: read, encryptedBy: encryptedBy && { directory: encryptedBy, check: shelf.checks.get(encryptedBy.id)! } };
+    }
+
+    function prompt(): Element | null {
+      return document.body.querySelector('form');
+    }
+
+    it('stores plain, over what is there, where nothing is encrypted', async () => {
+      await encryption.store(into('/a'), '/a/new.txt', contents);
+
+      expect(uploads).toEqual([{ path: '/a/new.txt', contents, type: 'image/x-new', overwrite: true, encrypted: false }]);
+    });
+
+    it('stores plain over a plain file, asking for nothing', async () => {
+      await file('/a/old.txt', 'old');
+
+      await encryption.store(into('/a'), '/a/old.txt', contents);
+
+      expect(uploads.map(({ encrypted }) => encrypted)).toEqual([false]);
+      expect(prompt()).toBeNull();
+    });
+
+    describe('in an encrypted folder', () => {
+      let vault: ShelfDirectory;
+
+      beforeEach(async () => {
+        vault = await encryptedFolder('/vault', 'right');
+      });
+
+      it('encrypts it with the folder\'s kept password, typed as it was', async () => {
+        rememberPassword(folderPasswordKey('docs', vault.id), 'right');
+
+        const stored = await encryption.store(into('/vault', vault), '/vault/a.txt', contents);
+
+        expect(stored?.id).toBe('stored:/vault/a.txt');
+        expect(uploads).toMatchObject([{ path: '/vault/a.txt', type: 'image/x-new', overwrite: true, encrypted: true }]);
+        expect(await (await decryptBlob(uploads[0].contents, 'right', '')).text()).toBe('new');
+      });
+
+      it('asks for the folder\'s password when none is kept', async () => {
+        const { answer } = await untilAsked(() => encryption.store(into('/vault', vault), '/vault/a.txt', contents));
+        fill('Password', 'right');
+        await press('Unlock');
+
+        expect((await answer)?.id).toBe('stored:/vault/a.txt');
+      });
+
+      it('stores nothing with the prompt cancelled', async () => {
+        const { answer } = await untilAsked(() => encryption.store(into('/vault', vault), '/vault/a.txt', contents));
+        await press('Cancel');
+
+        expect(await answer).toBeNull();
+        expect(uploads).toEqual([]);
+      });
+
+      it('stores nothing with the prompt taken back', async () => {
+        const asking = new AbortController();
+        const { answer } = await untilAsked(() => encryption.store(into('/vault', vault), '/vault/a.txt', contents, { asking: asking.signal }));
+        act(() => asking.abort());
+
+        expect(await answer).toBeNull();
+        expect(uploads).toEqual([]);
+        expect(prompt()).toBeNull();
+      });
+
+      it('sends nothing once the folder is no longer encrypted as it was read, as one moved away is not', async () => {
+        const read = into('/vault', vault);
+        shelf.checks.delete(vault.id);
+
+        await expect(encryption.store(read, '/vault/a.txt', contents)).rejects.toThrow('vault is no longer encrypted as it was, or where it was.');
+        expect(uploads).toEqual([]);
+      });
+    });
+
+    it('sends nothing to a folder that has been moved away, though it was plain when it was read', async () => {
+      const read = into('/a');
+      folderIds.set('/a', 'another');
+
+      await expect(encryption.store(read, '/a/a.txt', contents)).rejects.toThrow('a is no longer where it was.');
+      expect(uploads).toEqual([]);
+    });
+
+    it('sends nothing to a folder moved away while its password was asked for', async () => {
+      const vault = await encryptedFolder('/vault', 'right');
+      const { answer } = await untilAsked(() => encryption.store(into('/vault', vault), '/vault/a.txt', contents).catch((error: Error) => error.message));
+      folderIds.set('/vault', 'another');
+      fill('Password', 'right');
+      await press('Unlock');
+
+      expect(await answer).toBe('vault is no longer where it was.');
+      expect(uploads).toEqual([]);
+    });
+
+    describe('over a file with a password of its own', () => {
+      beforeEach(async () => {
+        await file('/a/own.txt', 'old', 'own');
+      });
+
+      it('encrypts it with that password, kept for the file it becomes', async () => {
+        const { answer } = await untilAsked(() => encryption.store(into('/a'), '/a/own.txt', contents));
+        fill('Password', 'own');
+        await press('Unlock');
+        await answer;
+
+        expect(uploads).toMatchObject([{ type: 'image/x-new', overwrite: true, encrypted: true }]);
+        expect(await (await decryptBlob(uploads[0].contents, 'own', '')).text()).toBe('new');
+        expect(rememberedPassword(filePasswordKey('docs', undefined, 'stored:/a/own.txt'))).toBe('own');
+      });
+
+      it('stores nothing with the prompt cancelled', async () => {
+        const { answer } = await untilAsked(() => encryption.store(into('/a'), '/a/own.txt', contents));
+        await press('Cancel');
+
+        expect(await answer).toBeNull();
+        expect(uploads).toEqual([]);
+      });
+
+      it('stores nothing with the prompt taken back', async () => {
+        const asking = new AbortController();
+        const { answer } = await untilAsked(() => encryption.store(into('/a'), '/a/own.txt', contents, { asking: asking.signal }));
+        act(() => asking.abort());
+
+        expect(await answer).toBeNull();
+        expect(uploads).toEqual([]);
+      });
+
+      it('is given up at the prompt as it is ended', async () => {
+        const storing = new AbortController();
+        const { answer } = await untilAsked(() => encryption.store(into('/a'), '/a/own.txt', contents, { storing: storing.signal }).catch((error: Error) => error.name));
+        act(() => storing.abort());
+
+        expect(await answer).toBe('AbortError');
+        expect(prompt()).toBeNull();
+      });
+    });
+
+    it('goes on where a password is no longer asked for, when it needs none', async () => {
+      await encryption.store(into('/a'), '/a/a.txt', contents, { asking: AbortSignal.abort() });
+
+      expect(uploads).toHaveLength(1);
+    });
+
+    it('looks nothing up once it is ended', async () => {
+      const lookedUp = vi.spyOn(shelf, 'folderFor');
+
+      await expect(encryption.store(into('/a'), '/a/a.txt', contents, { storing: AbortSignal.abort() })).rejects.toMatchObject({ name: 'AbortError' });
+      expect(lookedUp).not.toHaveBeenCalled();
+    });
+  });
+
+  it('takes back asking for a folder\'s password as its signal aborts', async () => {
+    const vault = await encryptedFolder('/vault', 'right');
+    const asking = new AbortController();
+    const { answer } = await untilAsked(() => encryption.folderPassword({ directory: vault, check: shelf.checks.get(vault.id)! }, asking.signal));
+
+    act(() => asking.abort());
+
+    expect(await answer).toBeNull();
+    expect(document.body.querySelector('form')).toBeNull();
   });
 
   it('forgets a kept password that no longer opens a file', async () => {

@@ -1,3 +1,4 @@
+using ByteShelf.Server.Replication;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Storage.Repositories;
@@ -10,6 +11,7 @@ namespace ByteShelf.Server.Storage
         public static IServiceCollection AddStorageServices(this IServiceCollection services, StorageOptions options)
         {
             services.TryAddTimeProvider();
+            services.AddReplicationState();
 
             services.AddSingleton(options);
             services.AddSingleton<ObjectStore>();

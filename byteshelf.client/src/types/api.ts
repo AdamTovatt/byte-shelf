@@ -5295,6 +5295,8 @@ export interface components {
             fileCount: number;
             /** Format: date-time */
             createdAt: string;
+            permission: components["schemas"]["ShelfPermission"];
+            onReplica: boolean;
         };
         ShelfKeyGrantInfo: {
             /** Format: uuid */
@@ -5335,6 +5337,8 @@ export interface components {
         };
         /** @enum {string} */
         ShelfLinkKind: "download" | "upload";
+        /** @enum {string} */
+        ShelfPermission: "read" | "addOnly" | "readWrite";
         SkippedPlugin: {
             folder: string;
             id: string | null;

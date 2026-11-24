@@ -55,7 +55,7 @@ describe('running a file action', () => {
   }
 
   beforeEach(() => {
-    host.state = { plugins: [{ id: 'a', viewers: [], fileActions: [action(() => undefined)] }], failures: new Map() } satisfies PluginHostState;
+    host.state = { plugins: [{ id: 'a', viewers: [], fileActions: [action(() => undefined)], folderTypes: [] }], failures: new Map() } satisfies PluginHostState;
     target = { file, source: {} as ContentSource, readWhole: async () => new Blob(['plain']) };
     errors = [];
     vi.spyOn(toast, 'error').mockImplementation((message) => {

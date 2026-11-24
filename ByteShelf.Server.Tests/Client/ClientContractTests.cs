@@ -356,6 +356,35 @@ namespace ByteShelf.Server.Tests.Client
         }
 
         [Fact]
+        public async Task GetInfoAsync_AnAdminOnAPrimary_AllowsEverything()
+        {
+            AssertAllowsEverything(await Shelf.GetInfoAsync());
+        }
+
+        [Fact]
+        public async Task GetShelvesAsync_AnAdminOnAPrimary_AllowsEverything()
+        {
+            AssertAllowsEverything(Assert.Single(await Client.GetShelvesAsync()));
+        }
+
+        [Fact]
+        public async Task CreateShelfAsync_AnAdminOnAPrimary_AllowsEverything()
+        {
+            AssertAllowsEverything(await Client.CreateShelfAsync("backups"));
+        }
+
+        [Fact]
+        public async Task UpdateAsync_AnAdminOnAPrimary_AllowsEverything()
+        {
+            AssertAllowsEverything(await Shelf.UpdateAsync("papers", quotaBytes: null));
+        }
+
+        private static void AssertAllowsEverything(ShelfInfo info)
+        {
+            Assert.Equal((ShelfPermission.ReadWrite, false), (info.Permission, info.OnReplica));
+        }
+
+        [Fact]
         public async Task CreateShelfAsync_NameTaken_ThrowsConflict()
         {
             ByteShelfException exception = await RefusalOf(Client.CreateShelfAsync("docs"));

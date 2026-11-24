@@ -1,5 +1,7 @@
+using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Access.Repositories;
 using ByteShelf.Server.Access.Services;
+using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
@@ -16,6 +18,7 @@ namespace ByteShelf.Server.Storage.Services
         private readonly IDirectoryRepository _directoryRepository;
         private readonly IShelfGrantRepository _grantRepository;
         private readonly ShelfKeyRemoval _keyRemoval;
+        private readonly ReplicationState _replicationState;
         private readonly TimeProvider _timeProvider;
 
         public ShelfService(
@@ -24,6 +27,7 @@ namespace ByteShelf.Server.Storage.Services
             IDirectoryRepository directoryRepository,
             IShelfGrantRepository grantRepository,
             ShelfKeyRemoval keyRemoval,
+            ReplicationState replicationState,
             TimeProvider timeProvider)
         {
             _sessionFactory = sessionFactory;
@@ -31,6 +35,7 @@ namespace ByteShelf.Server.Storage.Services
             _directoryRepository = directoryRepository;
             _grantRepository = grantRepository;
             _keyRemoval = keyRemoval;
+            _replicationState = replicationState;
             _timeProvider = timeProvider;
         }
 
@@ -49,14 +54,15 @@ namespace ByteShelf.Server.Storage.Services
         }
 
         /// <inheritdoc />
-        public async Task<IReadOnlyList<ShelfInfo>> GetInfosAsync(IReadOnlyList<Shelf> shelves)
+        public async Task<IReadOnlyList<ShelfInfo>> GetInfosAsync(IReadOnlyList<ShelfAccess> accesses)
         {
+            bool onReplica = await _replicationState.IsReplicaAsync();
             await using (IDbSession session = await _sessionFactory.CreateSessionAsync())
             {
-                List<ShelfInfo> result = new List<ShelfInfo>(shelves.Count);
-                foreach (Shelf shelf in shelves)
+                List<ShelfInfo> result = new List<ShelfInfo>(accesses.Count);
+                foreach (ShelfAccess access in accesses)
                 {
-                    result.Add(StorageContracts.ToShelfInfo(shelf, await _shelfRepository.GetUsageAsync(shelf.Id, session)));
+                    result.Add(StorageContracts.ToShelfInfo(access, await _shelfRepository.GetUsageAsync(access.Shelf.Id, session), onReplica));
                 }
 
                 return result;
@@ -64,9 +70,10 @@ namespace ByteShelf.Server.Storage.Services
         }
 
         /// <inheritdoc />
-        public async Task<ShelfInfo> GetInfoAsync(Shelf shelf)
+        public async Task<ShelfInfo> GetInfoAsync(ShelfAccess access)
         {
-            return StorageContracts.ToShelfInfo(shelf, await _shelfRepository.GetUsageAsync(shelf.Id));
+            ShelfUsage usage = await _shelfRepository.GetUsageAsync(access.Shelf.Id);
+            return StorageContracts.ToShelfInfo(access, usage, await _replicationState.IsReplicaAsync());
         }
 
         /// <inheritdoc />

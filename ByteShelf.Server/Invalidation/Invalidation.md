@@ -27,7 +27,7 @@ it, and a failed read, that first one included, is tried again at the next poll.
 | Resource | Made stale by | Metadata |
 |---|---|---|
 | `users` | a user's changes | none |
-| `shelves` | a shelf's changes, any file or directory (usage), any user's grant (who sees which shelf) | none |
+| `shelves` | a shelf's changes, any file or directory (usage), any user's grant (who sees which shelf, and what they may do there) | none |
 | `shelf-contents` | a shelf's changes, its files and directories (the trash included), and what plugins keep about a file | the shelf's id; none for a purge, which no longer knows its shelf |
 | `shelf-access` | a shelf's changes and its users' grants; any key's grant | the shelf's id; none once the user's grant is gone, and none for a key's grant, since a shelf's key list shows each key's other shelves and so every shelf's list is stale |
 

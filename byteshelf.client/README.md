@@ -117,7 +117,9 @@ npm run codegen    # in a second terminal
     in new tab" would run a blob: SVG as the app. An image, text, XML or JSON type gets a data: URL instead,
     any other a blob: one of untyped bytes. What the page reads itself goes past the browser's cache, so
     nothing of it is left there, and a cached part is never taken for the whole of contents swapped since
-    (`requestBytes` in `services/contentService.ts`).
+    (`requestBytes` in `services/contentService.ts`). What no preview shows is read once something asks: a
+    file action's reader (`openableReader.ts`) asks for a locked file's password then, a folder viewer's
+    (`lockableReader.ts`) asks for none and fails with a `LockedError` until it is told to unlock.
   - *A viewer that cannot:* one that throws while rendering is caught and Download offered. A file that
     could not be read says why, and an image, video or recording the browser cannot decode says so, each
     with Try again: a connection lost as the browser loaded it reads as either. A viewer that cannot show
@@ -152,7 +154,9 @@ npm run codegen    # in a second terminal
   through a link, and shown in the preview; one no viewer takes, or opened in a tab, is shown from a local
   blob: in a tab for images, PDFs, plain text, audio and video, saved for every other type, since a blob
   runs as the app. Opening one asks for its password; reached by previous, next or a reload it shows Unlock
-  instead. Reading a file asks for no password and answers that it is locked; unlocking it asks, and answers
+  instead. A plugin's folder viewer stores a file (`StoreFile` in `services/fileStoring.ts`) encrypted with
+  its encrypted folder's password, or with that of the file it is stored over, and sends nothing to a folder
+  that is no longer where it was or encrypted as it was. Reading a file asks for no password and answers that it is locked; unlocking it asks, and answers
   the contents (`Decryption` in `services/fileReading.ts`). A password is asked for once and kept in the
   tab's `sessionStorage` (an encrypted folder's under the folder), taken out of any tab the app opens, and
   forgotten on sign-in, as the session ends, and when the app starts with none (a tab the browser restores
@@ -175,12 +179,15 @@ npm run codegen    # in a second terminal
   the preview and actions to the menus of live files: in a listing, a search's results and the preview,
   an encrypted file's too, whose password is asked for once the action reads it
   (`hooks/useFileActions.tsx`), and reads and writes its documents about files with
-  `hooks/usePluginDocuments.ts`, for which its viewers and dialogs are drawn in a `PluginIdentity`. Each
-  viewer, menu item and dialog is drawn in an error boundary.
+  `hooks/usePluginDocuments.ts`, for which its viewers and dialogs are drawn in a `PluginIdentity`. It may
+  also add folder types, found by a folder's name alone (`lib/plugins/folderTypes.ts`), whose viewers get the
+  folder's contents (`lib/plugins/folderContents.ts`). Each viewer, menu item and dialog is drawn in an error
+  boundary.
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and
   refetches what each event makes stale (`lib/invalidationMap.ts`), so a change made elsewhere shows up
   within about a second. A test checks the map covers every resource the server publishes. The
   exceptions are the Replication page's status, polled every 5 seconds, as a replica's lag changes
-  without anything being published, and the plugins, which change only with a restart of the server, but
-  for what is wrong with a reader: they are read at sign-in, and again once that is stale as a shelf, a
+  without anything being published, a promotion and a change of someone's role, which a shelf's `onReplica`
+  and `permission` show once it is next read, and the plugins, which change only with a restart of the server,
+  but for what is wrong with a reader: they are read at sign-in, and again once that is stale as a shelf, a
   preview or Settings opens.

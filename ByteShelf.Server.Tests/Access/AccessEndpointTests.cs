@@ -65,6 +65,31 @@ namespace ByteShelf.Server.Tests.Access
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         }
 
+        [Theory]
+        [InlineData(ShelfKeyPermission.Read, ShelfPermission.Read)]
+        [InlineData(ShelfKeyPermission.AddOnly, ShelfPermission.AddOnly)]
+        [InlineData(ShelfKeyPermission.ReadWrite, ShelfPermission.ReadWrite)]
+        public async Task ShelfInfo_AKeys_SaysWhatItMayDoOnEachShelf(ShelfKeyPermission held, ShelfPermission expected)
+        {
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", held);
+            (await _host.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = ShelfKeyPermission.Read })).EnsureSuccessStatusCode();
+            using HttpClient key = _host.CreateKeyClient(created.Secret);
+
+            Assert.Equal(expected, (await key.GetFromJsonAsync<ShelfInfo>("/api/shelves/docs"))?.Permission);
+            Assert.Equal(new[] { expected, ShelfPermission.Read }, (await key.GetFromJsonAsync<IReadOnlyList<ShelfInfo>>("/api/shelves"))!.Select(shelf => shelf.Permission));
+        }
+
+        [Theory]
+        [InlineData(ShelfAccessPermission.Read, ShelfPermission.Read)]
+        [InlineData(ShelfAccessPermission.ReadWrite, ShelfPermission.ReadWrite)]
+        public async Task ShelfInfo_AUsers_SaysWhatTheyMayDo(ShelfAccessPermission held, ShelfPermission expected)
+        {
+            await _host.GrantMemberAsync("docs", held);
+
+            Assert.Equal(expected, (await _host.MemberClient.GetFromJsonAsync<ShelfInfo>("/api/shelves/docs"))?.Permission);
+            Assert.Equal(expected, Assert.Single((await _host.MemberClient.GetFromJsonAsync<IReadOnlyList<ShelfInfo>>("/api/shelves"))!).Permission);
+        }
+
         [Fact]
         public async Task ReadKey_PutContent_Returns403()
         {

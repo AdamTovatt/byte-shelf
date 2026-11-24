@@ -103,6 +103,7 @@ describe('the plugin host', () => {
 
   const viewer = { id: 'a', mediaTypes: ['text/plain'], extensions: ['.txt'], component: () => null };
   const action = { id: 'a', label: 'Act', showsFor: () => true, run: () => undefined };
+  const folderType = { suffix: 'album', label: 'Album', icon: () => null, component: () => null };
   const lacking = (name: string) => `One of its ${name} lacks what each must have.`;
 
   it.each<[string, object, string]>([
@@ -121,6 +122,16 @@ describe('the plugin host', () => {
     ['a file action that cannot be asked whether it shows', { fileActions: [{ ...action, showsFor: undefined }] }, lacking('fileActions')],
     ['a file action that cannot be run', { fileActions: [{ ...action, run: undefined }] }, lacking('fileActions')],
     ['two file actions of one id', { fileActions: [action, { ...action }] }, 'Two of its fileActions have the id a.'],
+    ['folder types that are no list', { folderTypes: {} }, 'Its folderTypes are not a list.'],
+    ['a missing folder type', { folderTypes: [null] }, lacking('folderTypes')],
+    ['a folder type without a suffix', { folderTypes: [{ ...folderType, suffix: undefined }] }, lacking('folderTypes')],
+    ['a folder type with a short suffix', { folderTypes: [{ ...folderType, suffix: 'a' }] }, lacking('folderTypes')],
+    ['a folder type whose suffix is not all letters and digits', { folderTypes: [{ ...folderType, suffix: '.album' }] }, lacking('folderTypes')],
+    ['a folder type whose suffix is not lowercase', { folderTypes: [{ ...folderType, suffix: 'Album' }] }, lacking('folderTypes')],
+    ['a folder type without a label', { folderTypes: [{ ...folderType, label: undefined }] }, lacking('folderTypes')],
+    ['a folder type without an icon', { folderTypes: [{ ...folderType, icon: undefined }] }, lacking('folderTypes')],
+    ['a folder type without a component', { folderTypes: [{ ...folderType, component: undefined }] }, lacking('folderTypes')],
+    ['two folder types of one suffix', { folderTypes: [folderType, { ...folderType }] }, 'Two of its folderTypes have the suffix album.'],
   ])('skips a plugin with %s, which the app would fail on as it draws', async (_, definition, reason) => {
     transport.importModule.mockResolvedValue({ default: definePlugin(definition) });
 
@@ -128,6 +139,14 @@ describe('the plugin host', () => {
 
     expect(host.state().plugins).toEqual([]);
     expect([...host.state().failures]).toEqual([['a', reason]]);
+  });
+
+  it('takes a folder type', async () => {
+    transport.importModule.mockResolvedValue({ default: definePlugin({ folderTypes: [folderType] }) });
+
+    await host.load([pluginView('a')]);
+
+    expect(host.state().plugins.map(({ folderTypes }) => folderTypes)).toEqual([[folderType]]);
   });
 
   it('takes a viewer drawn by a component that is loaded when it is shown', async () => {

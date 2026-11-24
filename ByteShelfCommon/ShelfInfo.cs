@@ -23,5 +23,11 @@ namespace ByteShelfCommon
 
         /// <summary>When the shelf was created.</summary>
         public required DateTimeOffset CreatedAt { get; init; }
+
+        /// <summary>What the caller may do with the shelf's files.</summary>
+        public required ShelfPermission Permission { get; init; }
+
+        /// <summary>Whether the server is a replica, which refuses every change to the shelf's files, whatever <see cref="Permission"/> allows.</summary>
+        public required bool OnReplica { get; init; }
     }
 }

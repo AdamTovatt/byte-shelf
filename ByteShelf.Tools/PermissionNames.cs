@@ -32,6 +32,17 @@ namespace ByteShelf.Tools
             return Key.First(pair => pair.Value == permission).Key;
         }
 
+        public static string Of(ShelfPermission permission)
+        {
+            return Of(permission switch
+            {
+                ShelfPermission.Read => ShelfKeyPermission.Read,
+                ShelfPermission.AddOnly => ShelfKeyPermission.AddOnly,
+                ShelfPermission.ReadWrite => ShelfKeyPermission.ReadWrite,
+                _ => throw new InvalidOperationException($"No word is defined for {permission}."),
+            });
+        }
+
         /// <exception cref="UsageException">It is not one of <see cref="AccessWords"/>.</exception>
         public static ShelfAccessPermission ParseAccess(string word)
         {

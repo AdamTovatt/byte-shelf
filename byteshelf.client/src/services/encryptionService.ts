@@ -1,13 +1,13 @@
 import { apiClient, unwrapResponse } from './apiClient';
 import type { components } from '../types/api';
-import type { ShelfDirectory, ShelfFile } from './shelfService';
+import { fetchTree, type ShelfDirectory, type ShelfFile } from './shelfService';
 import { swapContent } from './uploadService';
 
 export type EncryptedFolder = components['schemas']['EncryptedFolder'];
 
 /** The encrypted folder a file at `path` is, or would be, under; null for none. */
-export async function fetchEncryptedFolder(shelf: string, path: string): Promise<EncryptedFolder | null> {
-  const answer = await unwrapResponse(apiClient.GET('/api/shelves/{shelf}/directories/encryption', { params: { path: { shelf }, query: { path } } }));
+export async function fetchEncryptedFolder(shelf: string, path: string, signal?: AbortSignal): Promise<EncryptedFolder | null> {
+  const answer = await unwrapResponse(apiClient.GET('/api/shelves/{shelf}/directories/encryption', { params: { path: { shelf }, query: { path } }, signal }));
   return answer.encryptedBy ?? null;
 }
 
@@ -24,7 +24,7 @@ export function removeDirectoryEncryption(shelf: string, id: string): Promise<Sh
 /**
  * Swaps `file`'s contents in place for `content`, encrypted or not: it keeps its id, type and
  * description, and the old contents are gone at once. Refused when it changed since it was read.
- * Named here, beside the folder calls, so encrypting reaches the server through this one module
+ * Named here, beside the folder calls, so encrypting in place reaches the server through this one module
  * (and its tests stand in for that one module).
  */
 export function replaceContent(shelf: string, file: ShelfFile, content: Blob, encrypted: boolean): Promise<ShelfFile> {
@@ -37,7 +37,7 @@ export async function treeUnder(shelf: string, path: string): Promise<{ director
   const files: ShelfFile[] = [];
   let after: string | undefined;
   do {
-    const page = await unwrapResponse(apiClient.GET('/api/shelves/{shelf}/tree', { params: { path: { shelf }, query: { under: path, limit: 1000, after } } }));
+    const page = await fetchTree(shelf, path, { after, limit: 1000 });
     directories.push(...page.directories);
     files.push(...page.files);
     after = page.nextCursor ?? undefined;

@@ -28,7 +28,7 @@ namespace ByteShelf.Server.Mcp
             IServiceProvider services = httpContext.RequestServices;
             ShelfKey key = ShelfKeyAuthenticationHandler.GetKey(httpContext)
                 ?? throw new InvalidOperationException("/mcp ran without the key its policy requires.");
-            bool isReplica = !await services.GetRequiredService<ReplicationState>().AllowsWritesAsync();
+            bool isReplica = await services.GetRequiredService<ReplicationState>().IsReplicaAsync();
             IReadOnlyList<ShelfAccess> shelves = await services.GetRequiredService<IShelfAccessResolver>().GetAccessesAsync(ShelfCaller.ForKey(key));
             if (shelves.Count == 0)
             {
@@ -95,11 +95,11 @@ namespace ByteShelf.Server.Mcp
             string reach = oneShelf
                 ? $"""The key reaches one shelf, "{shelves[0].Shelf.Name}", which every tool works on when you leave shelf out."""
                 : "The key reaches these shelves; give every tool the shelf to work on:\n"
-                    + string.Join("\n", shelves.Select(access => $"""- "{access.Shelf.Name}": {PermissionOf(access)}"""));
+                    + string.Join("\n", shelves.Select(access => $"""- "{access.Shelf.Name}": {PermissionNames.Of(access.Permission)}"""));
             string offer = isReplica
                 ? "This server is a replica, a read-only copy of another, so only the tools that need read access are offered: they read, and make, list and revoke this server's own links."
                 : oneShelf
-                    ? $"The key's access is {PermissionOf(shelves[0])}, and only the tools it allows are offered."
+                    ? $"The key's access is {PermissionNames.Of(shelves[0].Permission)}, and only the tools it allows are offered."
                     : "The tools any of those accesses allows are offered; a shelf whose access does not allow one refuses it (permission_denied).";
 
             ShelfAccess? storing = isReplica ? null : shelves.FirstOrDefault(access => access.AllowsStore(overwrite: false));
@@ -139,12 +139,6 @@ namespace ByteShelf.Server.Mcp
                 the API instead, the path URL-encoded{(oneShelf ? string.Empty : ", on any of its shelves by name in the URL")}:
                 {streaming}
                 """;
-        }
-
-        private static string PermissionOf(ShelfAccess access)
-        {
-            // Every access here is a key's (ShelfAccess.ForKey), which always carries its permission.
-            return PermissionNames.Of(access.KeyPermission!.Value);
         }
 
         private static string ContentUrl(Uri server, string shelf)

@@ -8,7 +8,7 @@ AOT-compatible.
 
 | Type | What it is |
 |---|---|
-| `ShelfInfo` | A shelf with its quota and usage. |
+| `ShelfInfo`, `ShelfPermission` | A shelf with its quota and usage, what the caller may do with its files, and whether the server is a replica. |
 | `CreateShelfRequest`, `UpdateShelfRequest` | Creates a shelf, and replaces its name and quota. |
 | `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps, description, whether its contents are encrypted (`Encrypted`), and in listings the values of the fields plugins declare for them (`PluginFields`). |
 | `SetDescriptionRequest`, `FileDescription` | Setting a file's description, and its rules. |

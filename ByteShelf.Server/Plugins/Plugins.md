@@ -122,14 +122,14 @@ server.
 
 The app asks for the list once someone is signed in and imports each plugin's module
 (`lib/plugins/pluginHost.ts`), showing it once its stylesheet is there too. One whose module or
-stylesheet fails, whose default export is not made with `definePlugin`, or whose viewers or file
-actions lack what each must have (`partsOf` in `lib/plugins/pluginDefinition.ts`), adds nothing to
+stylesheet fails, whose default export is not made with `definePlugin`, or whose viewers, file
+actions or folder types lack what each must have (`partsOf` in `lib/plugins/pluginDefinition.ts`), adds nothing to
 the page and leaves no styles in it; the others are not affected, nor is its own server part, and
 admins see the reason on the Settings page. `index.html`'s import map
 (`byteshelf.client/build/sharedModules.ts`) has the browser resolve the modules plugins share with
 the app, so there is one React and one of each context.
 
-A module's default export is `definePlugin({ viewers, fileActions })`, from `@byteshelf/plugin`:
+A module's default export is `definePlugin({ viewers, fileActions, folderTypes })`, from `@byteshelf/plugin`:
 
 - **Viewers** show files in the preview, as the app's own do: `{ id, mediaTypes, extensions, component,
   unavailable? }`. `extensions` count only for files stored without a type
@@ -144,6 +144,16 @@ A module's default export is `definePlugin({ viewers, fileActions })`, from `@by
   are first read. What `run` throws is shown to the person, but for an `AbortError`, which says they gave
   up, as at that prompt. As the person leaves the shelf's files, its dialogs close and a read fails with
   an `AbortError`; `run` is not stopped, but a dialog it shows after that never appears.
+- **Folder types** are folders whose names end in a dot and a suffix: `{ suffix, label, icon, component }`.
+  `suffix` is at least two lowercase letters and digits, matched whatever their case; a name that is only
+  the suffix (`.album`) is a plain folder, and the first plugin by id has a suffix two declare. They stay
+  ordinary folders to everything else. The component, which may be a `lazy` one, gets the shelf, the folder,
+  whether the person may write, and the folder's contents (`FolderContents`): listing what is below it,
+  storing, moving and deleting files by their path in it, opening one as a listing does, and reading one.
+  A read asks for no password, and of a file that is locked fails with a `LockedError`, until the viewer asks
+  to unlock it. Storing over a file moves the old one to the trash. What is stored in an encrypted folder is
+  encrypted with its password, and over a file with a password of its own with that one; nothing is sent once
+  the folder is no longer at its path or encrypted as it was.
 
 A plugin's module lives as long as the page does, which starts anew as the session ends: what it keeps
 in memory is never there for the next person to sign in. What it keeps in the browser's storage is,
@@ -158,8 +168,8 @@ read again ([Metadata](../Metadata/Metadata.md)). Both know the plugin by what d
 elsewhere. **What was read from a file's plaintext must not go into the document about the file**, which is
 kept when the file is encrypted. For a file in the trash both fail.
 
-Ids are apart within a plugin's viewers, and within its file actions. Every type is in
-`byteshelf.client/src/plugin/index.ts`.
+Ids are apart within a plugin's viewers, and within its file actions, as suffixes are within its folder
+types. Every type is in `byteshelf.client/src/plugin/index.ts`.
 
 ## Versions
 

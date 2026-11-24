@@ -61,6 +61,9 @@ namespace ByteShelfClient.InMemory
                 ReservedBytes = 0,
                 FileCount = Files.Count(file => file.IsLive),
                 CreatedAt = CreatedAt,
+                Permission = ShelfPermission.ReadWrite,
+                // A store that follows a primary holds no shelf.
+                OnReplica = false,
             };
         }
 

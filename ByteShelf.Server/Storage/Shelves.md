@@ -10,7 +10,7 @@ Anyone with access to a shelf can list and read it; everything else here is admi
 
 | Method and route | What it does |
 |---|---|
-| `GET /api/shelves`, `GET /api/shelves/{shelf}` | Every shelf the caller can use, or one, with its usage. |
+| `GET /api/shelves`, `GET /api/shelves/{shelf}` | Every shelf the caller can use, or one, with its usage, what the caller may do with its files, and whether the server is a replica. |
 | `POST /api/shelves` | Creates a shelf and its root directory in one transaction. |
 | `PUT /api/shelves/{shelf}` | Replaces the name and quota; both are always set, so a body without `quotaBytes` removes the quota. A new name changes the shelf's URLs; a quota below what the shelf holds only stops new uploads. |
 | `DELETE /api/shelves/{shelf}` | Deletes the shelf with its grants, users' and keys', and every key that was its last shelf, only once it holds nothing: no file (the trash included), no directory but its root, no upload. 409 otherwise. Deleted files stay in the trash, and block this, until their window ends or the trash is emptied (`DELETE /api/shelves/{shelf}/trash`, see [Storage.md](Storage.md)). |

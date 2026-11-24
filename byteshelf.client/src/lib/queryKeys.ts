@@ -18,6 +18,7 @@ export const queryKeys = {
   shelfContents: {
     root: ['shelfContents'] as const,
     listing: (shelf: string, path: string) => ['shelfContents', shelf, 'listing', path] as const,
+    tree: (shelf: string, path: string) => ['shelfContents', shelf, 'tree', path] as const,
     file: (shelf: string, id: string) => ['shelfContents', shelf, 'file', id] as const,
     deletion: (shelf: string, deletionId: string) => ['shelfContents', shelf, 'deletion', deletionId] as const,
     trash: (shelf: string) => ['shelfContents', shelf, 'trash'] as const,

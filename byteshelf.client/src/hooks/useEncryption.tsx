@@ -18,7 +18,9 @@ import {
 } from '../services/encryptionService';
 import { liveContent, type ContentSource } from '../services/contentService';
 import { fileReading, unlockedContents, type Decryption } from '../services/fileReading';
-import type { Entry, ShelfDirectory, ShelfFile } from '../services/shelfService';
+import type { StoreFile, StoreFolder, StoreSignals } from '../services/fileStoring';
+import { fetchFileAt, requireDirectoryAt, type Entry, type ShelfDirectory, type ShelfFile } from '../services/shelfService';
+import { uploadFile } from '../services/uploadService';
 import { usePasswordPrompt } from './usePasswordPrompt';
 import { useInvalidateShelf } from './useShelfQueries';
 
@@ -44,11 +46,14 @@ export function encryptionActions(entry: Entry, inside: 'encrypted' | 'plain' | 
     : { encrypt: true, removeEncryption: entry.encryptedFileCount > 0 };
 }
 
+/** What a file is encrypted with as it is stored, and, for one with a password of its own, the file it is stored over. */
+type StorePassword = { kind: 'none' } | { kind: 'cancelled' } | { kind: 'given'; password: string; over: ShelfFile | null };
+
 /**
  * Encrypted files on one shelf, in the browser: their passwords asked for once a tab and kept
- * (`passwords.ts`), their contents decrypted from the stored bytes (never through a link), and
- * encrypting or decrypting a file or a folder in place. `workFactor` is what new files and folders are
- * encrypted at; only tests lower it.
+ * (`passwords.ts`), their contents decrypted from the stored bytes (never through a link),
+ * encrypting or decrypting a file or a folder in place, and storing a file, encrypted where it must be.
+ * `workFactor` is what new files and folders are encrypted at; only tests lower it.
  *
  * These jobs stay in one hook: they share the one prompt and the tab's kept passwords, which split
  * apart each would have to take as arguments.
@@ -74,9 +79,9 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
       return password;
     }
 
-    /** The folder's password, tested against its check. Null when cancelled. */
-    function folderPassword(folder: EncryptedFolder): Promise<string | null> {
-      return passwordFor(folderPasswordKey(shelf, folder.directory.id), folder.directory.name, (given) => checkMatches(folder.check, given));
+    /** The folder's password, tested against its check. Null when cancelled, as `signal` cancels it. */
+    function folderPassword(folder: EncryptedFolder, signal?: AbortSignal): Promise<string | null> {
+      return passwordFor(folderPasswordKey(shelf, folder.directory.id), folder.directory.name, (given) => checkMatches(folder.check, given), signal);
     }
 
     /** An encrypted file's contents, with the password kept for its folder or for it, and that password asked for. */
@@ -133,6 +138,46 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
       } finally {
         checking.abort();
       }
+    }
+
+    /** What a file stored at `path` is encrypted with, looked up and asked for when it is not kept. */
+    async function storePassword(folder: StoreFolder, path: string, { asking, storing }: StoreSignals): Promise<StorePassword> {
+      const prompting = asking ? eitherAborts(asking, storing) : storing;
+      const encryptedBy = await fetchEncryptedFolder(shelf, path, storing);
+      if (folder.encryptedBy && folder.encryptedBy.directory.id !== encryptedBy?.directory.id) {
+        throw new Error(`${folder.directory.name} is no longer encrypted as it was, or where it was.`);
+      }
+      if (encryptedBy) {
+        const password = await folderPassword(encryptedBy, prompting);
+        return password === null ? { kind: 'cancelled' } : { kind: 'given', password, over: null };
+      }
+
+      const over = await fetchFileAt(shelf, path, storing);
+      if (!over?.encrypted) return { kind: 'none' };
+      const password = await filePassword(over, prompting);
+      return password === null ? { kind: 'cancelled' } : { kind: 'given', password, over };
+    }
+
+    const store: StoreFile = async (folder, path, contents, signals = {}) => {
+      const { storing } = signals;
+      const sealing = await storePassword(folder, path, signals);
+      // A prompt taken back answers as one that was cancelled.
+      storing?.throwIfAborted();
+      if (sealing.kind === 'cancelled') return null;
+
+      const encrypted = sealing.kind === 'given';
+      const file = encrypted ? await encryptBlob(contents, sealing.password, contents.type, workFactor) : contents;
+      // After what it is encrypted with was looked up by path, so that was this folder's.
+      await requireDirectoryAt(shelf, folder.directory, storing);
+      const stored = await uploadFile({ shelf, path, file, overwrite: true, encrypted, signal: storing });
+      // Stored over, the file there is another, with an id of its own.
+      if (encrypted && sealing.over) rememberPassword(filePasswordKey(shelf, undefined, stored.id), sealing.password);
+      return stored;
+    };
+
+    /** The password a live file has of its own. Null when cancelled, as `signal` cancels it. */
+    function filePassword(file: ShelfFile, signal?: AbortSignal): Promise<string | null> {
+      return passwordFor(filePasswordKey(shelf, undefined, file.id), file.name, (given) => fileOpensWith(file, liveContent(shelf), given), signal);
     }
 
     async function encryptInPlace(file: ShelfFile, password: string): Promise<ShelfFile> {
@@ -286,6 +331,6 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
       );
     }
 
-    return { folderPassword, decryption, encrypt, removeEncryption };
+    return { folderPassword, decryption, store, encrypt, removeEncryption };
   }, [shelf, workFactor, ask, invalidate]);
 }

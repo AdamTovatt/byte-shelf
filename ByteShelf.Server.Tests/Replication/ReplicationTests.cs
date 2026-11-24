@@ -48,6 +48,37 @@ namespace ByteShelf.Server.Tests.Replication
         }
 
         [Fact]
+        public async Task Pair_TheReplicasShelves_SayTheyAreOnOne()
+        {
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            Assert.True((await replica.GetFromJsonAsync<ShelfInfo>("/api/shelves/docs"))?.OnReplica);
+            Assert.True(Assert.Single((await replica.GetFromJsonAsync<List<ShelfInfo>>("/api/shelves"))!).OnReplica);
+        }
+
+        [Fact]
+        public async Task Pair_ThePrimarysShelves_SayTheyAreOnNone()
+        {
+            await _pair.PairAsync();
+
+            Assert.False((await _pair.Primary.AdminClient.GetFromJsonAsync<ShelfInfo>("/api/shelves/docs"))?.OnReplica);
+        }
+
+        [Fact]
+        public async Task Promote_TheReplicasShelves_SayTheyAreOnNone()
+        {
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+
+            (await replica.PostAsync("/api/replication/promote", null)).EnsureSuccessStatusCode();
+
+            Assert.False((await replica.GetFromJsonAsync<ShelfInfo>("/api/shelves/docs"))?.OnReplica);
+        }
+
+        [Fact]
         public async Task Pair_TheReplicasOwnUsers_CanNoLongerRenewTheirSessions()
         {
             HttpResponseMessage login = await _pair.Replica.AnonymousClient.PostAsJsonAsync("/api/auth/login", new { username = ServerTestHost.AdminEmail, password = ServerTestHost.Password });

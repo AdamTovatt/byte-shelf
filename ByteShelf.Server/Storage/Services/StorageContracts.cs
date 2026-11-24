@@ -1,3 +1,4 @@
+using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Storage.Models;
 using ByteShelfCommon;
 
@@ -92,8 +93,9 @@ namespace ByteShelf.Server.Storage.Services
             };
         }
 
-        public static ShelfInfo ToShelfInfo(Shelf shelf, ShelfUsage usage)
+        public static ShelfInfo ToShelfInfo(ShelfAccess access, ShelfUsage usage, bool onReplica)
         {
+            Shelf shelf = access.Shelf;
             return new ShelfInfo
             {
                 Id = shelf.Id,
@@ -103,6 +105,8 @@ namespace ByteShelf.Server.Storage.Services
                 ReservedBytes = usage.ReservedBytes,
                 FileCount = usage.FileCount,
                 CreatedAt = shelf.CreatedAt,
+                Permission = access.Permission,
+                OnReplica = onReplica,
             };
         }
     }

@@ -434,6 +434,7 @@ describe('the shelf page\'s rows', () => {
         plugins: [{
           id: 'a',
           viewers: [],
+          folderTypes: [],
           fileActions: [{
             id: 'broken', label: 'Broken', showsFor: () => true, run: () => undefined,
             icon: () => { throw new Error('It cannot be drawn.'); },
@@ -928,6 +929,7 @@ describe('the shelf page\'s rows', () => {
         plugins: [{
           id: 'a',
           viewers: [],
+          folderTypes: [],
           fileActions: [{
             id: 'convert', label: 'Convert', showsFor: () => true,
             run: ({ content, showDialog }) => showDialog((close) => (

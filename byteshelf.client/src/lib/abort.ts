@@ -14,6 +14,11 @@ export function untilAborted<T>(work: Promise<T>, signal?: AbortSignal): Promise
   });
 }
 
+/** What fails for want of a password nobody gave. */
+export function noPasswordGiven(): DOMException {
+  return new DOMException('No password was given.', 'AbortError');
+}
+
 /** Whether something ended because it was given up, rather than failed. */
 export function isAbortError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError';

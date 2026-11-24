@@ -1,9 +1,10 @@
-import { apiClient, unwrapNoContentResponse, unwrapResponse } from './apiClient';
+import { apiClient, isNotFound, unwrapNoContentResponse, unwrapResponse } from './apiClient';
 import type { components } from '../types/api';
 import type { SearchCriteria } from '../lib/searchFilters';
 
 export type ShelfInfo = components['schemas']['ShelfInfo'];
 export type DirectoryListing = components['schemas']['DirectoryListing'];
+export type DirectoryTree = components['schemas']['DirectoryTree'];
 export type ShelfFile = components['schemas']['ShelfFile'];
 export type ShelfDirectory = components['schemas']['ShelfDirectory'];
 export type ListedDirectory = components['schemas']['ListedDirectory'];
@@ -69,6 +70,17 @@ export function fetchListing(shelf: string, path: string): Promise<DirectoryList
   return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/entries', { params: { ...shelfPath(shelf), query: { path } } }));
 }
 
+/** A page of every folder and file under the folder at `path`, at any depth: the first, or the one after the cursor `after`. */
+export function fetchTree(shelf: string, path: string, { after, limit, signal }: { after?: string; limit?: number; signal?: AbortSignal } = {}): Promise<DirectoryTree> {
+  return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/tree', { params: { ...shelfPath(shelf), query: { under: path, limit, after } }, signal }));
+}
+
+/** Fails unless `directory` is still the folder at its path: not moved, renamed or deleted since it was read. */
+export async function requireDirectoryAt(shelf: string, directory: ShelfDirectory, signal?: AbortSignal): Promise<void> {
+  const page = await fetchTree(shelf, directory.path, { limit: 1, signal });
+  if (page.directory.id !== directory.id) throw new Error(`${directory.name} is no longer where it was.`);
+}
+
 export function createDirectory(shelf: string, path: string): Promise<ShelfDirectory> {
   return unwrapResponse(apiClient.POST('/api/shelves/{shelf}/directories', { params: shelfPath(shelf), body: { path } }));
 }
@@ -84,6 +96,16 @@ export function moveDirectory(shelf: string, id: string, toPath: string): Promis
 /** A live file's record. */
 export function fetchFile(shelf: string, id: string): Promise<ShelfFile> {
   return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/files', { params: { ...shelfPath(shelf), query: { id } } }));
+}
+
+/** The record of the live file at `path`; null for none. */
+export async function fetchFileAt(shelf: string, path: string, signal?: AbortSignal): Promise<ShelfFile | null> {
+  try {
+    return await unwrapResponse(apiClient.GET('/api/shelves/{shelf}/files', { params: { ...shelfPath(shelf), query: { path } }, signal }));
+  } catch (caught) {
+    if (isNotFound(caught)) return null;
+    throw caught;
+  }
 }
 
 /** What the server read from a file's contents; `readAt` is null until it has, and for good when `readable` is false (an encrypted file, or a type it does not read). */
