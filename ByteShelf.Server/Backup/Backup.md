@@ -16,8 +16,9 @@ it never migrates the database or creates folders there, and it refuses a zip pa
    `FileRepository`, logged as the server logged them. What was read from contents that no plain file in
    the backup holds then goes too: their plaintext may be gone for having been encrypted. What
    goes from the snapshot is overwritten in it, as in any database the server opens (`DatabaseFile`),
-   since the zip holds the snapshot's pages as they are. `VACUUM INTO` copies none of the live database's
-   free pages.
+   since the zip holds the snapshot's pages as they are, but for what
+   [SQLite leaves](../../DEPLOYMENT.md#deleted-data) as it splits a page. `VACUUM INTO` copies none of the live
+   database's free pages.
 3. **The snapshot itself**, without uploads in progress (their staged bytes are not copied), as
    `byteshelf.db`, then every file in `keys/`.
 
@@ -26,7 +27,9 @@ in `keys/` (the link secret signs share and upload links), and on a replica the 
 database. Keep it as safe as the root itself.
 
 The zip is written as `<zip>.partial` and renamed into place only when whole, so a failed backup leaves
-nothing behind and never replaces a good one. `<zip>.lock` is held exclusively for the whole run, so a
+nothing behind and never replaces a good one. One that is killed leaves `<zip>.partial` and
+`<zip>.db.partial`, the copy of the database, until the next backup to the same path. That copy holds what the
+live database does, and is removed without being overwritten. `<zip>.lock` is held exclusively for the whole run, so a
 second backup to the same path fails rather than sharing those files. It is created readable by its owner only, and the database
 and keys inside it unzip that way.
 

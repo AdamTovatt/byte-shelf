@@ -6,6 +6,7 @@ using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
+using EasyReasy.Database.Mapping;
 
 namespace ByteShelf.Server.Tests.Access
 {
@@ -79,10 +80,8 @@ namespace ByteShelf.Server.Tests.Access
 
         private async Task<string?> ScalarAsync(string sql)
         {
-            await using DbConnection connection = await _host.TestRoot.DataSource.OpenConnectionAsync();
-            await using DbCommand command = connection.CreateCommand();
-            command.CommandText = sql;
-            return (string?)await command.ExecuteScalarAsync();
+            await using DbConnection connection = await _host.TestRoot.Root.Database.OpenConnectionAsync();
+            return await connection.ExecuteScalarAsync<string?>(sql);
         }
     }
 }

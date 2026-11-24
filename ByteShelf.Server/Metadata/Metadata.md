@@ -51,8 +51,8 @@ keep about the file itself it still has.
 **What was read from plaintext never outlives it** in the tables and the log, whichever reader read it.
 In the database file it is overwritten as any deleted or changed row is: every connection to a database,
 a replica's and a command's too, is opened by `DatabaseFile` with `secure_delete` on, which zeros what is
-no longer held and the pages that frees. DEPLOYMENT.md says
-[what that does not reach](../../DEPLOYMENT.md#deleted-data), such as the write-ahead log.
+no longer held and the pages that frees, in `byteshelf.db` from SQLite's next checkpoint. DEPLOYMENT.md
+says [what that does not reach](../../DEPLOYMENT.md#deleted-data), such as the write-ahead log.
 
 - A file encrypted in place drops what was read from its plain contents in the swap's transaction
   (`FileRepository.SwapContentAsync`, the one way to swap contents, for a backup too, through

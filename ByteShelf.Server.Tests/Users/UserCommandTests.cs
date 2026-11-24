@@ -9,6 +9,7 @@ using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Services;
 using ByteShelfCommon;
+using EasyReasy.Database.Mapping;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -265,7 +266,7 @@ namespace ByteShelf.Server.Tests.Users
         public async Task AnyCommand_OnADatabaseAMigrationBehind_FailsWithoutMigratingIt()
         {
             const string CountApplied = "SELECT COUNT(*) FROM SchemaVersions";
-            long applied = (long)(await ExecuteAsync(CountApplied))!;
+            long applied = (await ExecuteAsync(CountApplied))!.Value;
             await ExecuteAsync("DELETE FROM SchemaVersions WHERE SchemaVersionID = (SELECT MAX(SchemaVersionID) FROM SchemaVersions)");
             RecordingLoggerFactory logs = new RecordingLoggerFactory();
 
@@ -404,12 +405,10 @@ namespace ByteShelf.Server.Tests.Users
         }
 
         /// <summary>Runs <paramref name="sql"/> on the host's database and answers the first value it returns, if any.</summary>
-        private async Task<object?> ExecuteAsync(string sql)
+        private async Task<long?> ExecuteAsync(string sql)
         {
-            await using DbConnection connection = await _host.TestRoot.DataSource.OpenConnectionAsync();
-            await using DbCommand command = connection.CreateCommand();
-            command.CommandText = sql;
-            return await command.ExecuteScalarAsync();
+            await using DbConnection connection = await _host.TestRoot.Root.Database.OpenConnectionAsync();
+            return await connection.ExecuteScalarAsync<long?>(sql);
         }
 
         private Task<int> RunAsync(Passwords passwords, params string[] args)

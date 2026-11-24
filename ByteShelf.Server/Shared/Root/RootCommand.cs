@@ -159,17 +159,11 @@ namespace ByteShelf.Server.Shared.Root
 
             public void Remove()
             {
-                RootFolder root = RootFolder.At(Path);
-                root.Database.Release();
+                RootFolder.At(Path).Database.Delete();
                 if (!_folderWasThere)
                 {
                     Directory.Delete(Path, recursive: true);
                     return;
-                }
-
-                foreach (string file in new[] { root.DatabasePath, root.DatabasePath + "-wal", root.DatabasePath + "-shm" })
-                {
-                    File.Delete(file);
                 }
 
                 foreach (string folder in _madeFolders)

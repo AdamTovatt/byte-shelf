@@ -6,6 +6,7 @@ using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
+using EasyReasy.Database.Mapping;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ByteShelf.Server.Tests.Replication
@@ -268,10 +269,8 @@ namespace ByteShelf.Server.Tests.Replication
 
             Assert.Equal(RootCommand.Done, promoted);
             Assert.Empty((await _pair.Replica.AdminClient.GetFromJsonAsync<List<ShelfInfo>>("/api/shelves"))!);
-            await using DbConnection connection = await _pair.Replica.TestRoot.DataSource.OpenConnectionAsync();
-            await using DbCommand count = connection.CreateCommand();
-            count.CommandText = "SELECT COUNT(*) FROM replication_copy";
-            Assert.Equal(0L, await count.ExecuteScalarAsync());
+            await using DbConnection connection = await _pair.Replica.TestRoot.Root.Database.OpenConnectionAsync();
+            Assert.Equal(0L, await connection.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM replication_copy"));
         }
 
         [Theory]

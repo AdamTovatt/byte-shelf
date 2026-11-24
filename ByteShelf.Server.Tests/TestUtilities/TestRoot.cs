@@ -20,12 +20,10 @@ namespace ByteShelf.Server.Tests.TestUtilities
         private TestRoot(RootFolder root)
         {
             Root = root;
-            SessionFactory = new DbSessionFactory(DataSource);
+            SessionFactory = new DbSessionFactory(root.Database);
         }
 
         public RootFolder Root { get; }
-
-        public DbDataSource DataSource => Root.Database;
 
         public IDbSessionFactory SessionFactory { get; }
 
