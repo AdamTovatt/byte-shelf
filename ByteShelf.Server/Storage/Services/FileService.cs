@@ -1,5 +1,6 @@
 using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Metadata.Repositories;
+using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
@@ -57,7 +58,7 @@ namespace ByteShelf.Server.Storage.Services
 
             // The row is the contents', which an encrypted file's are not to be read for, even when a
             // plain file holds the same bytes.
-            bool readable = !file.Encrypted && ReadMediaTypes.Include(ContentTypes.MediaTypeOf(file.ContentType));
+            bool readable = !file.Encrypted && ReadMediaTypes.All.Includes(ContentTypes.MediaTypeOf(file.ContentType));
             ObjectMetadata? read = readable ? await _metadataRepository.GetBySha256Async(file.Sha256) : null;
             return StorageContracts.ToFileMetadata(readable, read);
         }

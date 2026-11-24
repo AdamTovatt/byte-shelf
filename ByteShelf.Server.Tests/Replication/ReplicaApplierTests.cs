@@ -3,6 +3,7 @@ using System.Text.Json;
 using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Access.Repositories;
 using ByteShelf.Server.ChangeLog.Models;
+using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Replication;
 using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared.Auth;
@@ -287,6 +288,30 @@ namespace ByteShelf.Server.Tests.Replication
             Assert.Null(await Services.GetRequiredService<IShelfKeyRepository>().GetByIdAsync(keyId));
         }
 
+        /// <summary>A replica writes what it is sent into its own table and log: a document its rules refuse stops it rather than being kept.</summary>
+        [Theory]
+        [InlineData("[1]")]
+        [InlineData("\"text\"")]
+        [InlineData(null)]
+        public async Task ApplyAsync_PluginDocumentThatBreaksTheRules_IsRefusedAsFromAPrimaryOnAnotherVersion(string? document)
+        {
+            string sent = document ?? $"{{\"t\":\"{new string('x', PluginDocument.MaxBytes)}\"}}";
+            ContentPluginMetadata metadata = ContentPluginMetadata.Of(TestPluginMetadata.Plugin, new string('a', 64), 1, TestInstants.Now, PluginDocument.Parse("{}"));
+            ChangeLogEntry entry = new ChangeLogEntry
+            {
+                Sequence = ++_sequence,
+                EntityType = ChangeEntityType.ContentPluginMetadata,
+                EntityId = metadata.Id,
+                Action = ChangeAction.Added,
+                Payload = ChangePayload.Serialize(metadata).Replace("\"document\":{}", $"\"document\":{sent}", StringComparison.Ordinal),
+                CreatedAt = TestInstants.Now,
+            };
+
+            await Assert.ThrowsAsync<PrimaryFailedException>(() => ApplyAsync(entry));
+
+            Assert.Null(await Services.GetContentDocumentAsync(metadata.Sha256));
+        }
+
         protected override void ConfigureServices(IServiceCollection services)
         {
             services.AddReplicationServices(new ReplicationOptions { PublicUrl = AppBaseUrl });
@@ -372,7 +397,10 @@ namespace ByteShelf.Server.Tests.Replication
         private async Task ApplyAsync(params ChangeLogEntry[] entries)
         {
             await using IDbTransactionSession session = await Services.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync();
-            await Services.GetRequiredService<ReplicaApplier>().ApplyAsync(entries, session, new AppliedChanges());
+            ReplicaApplier applier = Services.GetRequiredService<ReplicaApplier>();
+            AppliedChanges changes = new AppliedChanges();
+            await applier.ApplyAsync(entries, session, changes);
+            await applier.SettleAsync(session, changes);
             await session.CommitAsync();
         }
     }

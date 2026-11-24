@@ -95,40 +95,41 @@ namespace ByteShelf.Server.ChangeLog.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<IReadOnlyList<ChangeLogEntry>> GetLatestStatesAfterAsync(long afterSequence, int limit, IDbSession? session = null)
+        public Task<ChangeLogPage> GetPageAsync(long afterSequence, ChangeLogPageLimit limit, IDbSession session)
         {
-            return await UseSessionAsync(async (dbSession) =>
-            {
-                string query = $@"
-                    SELECT {SelectColumns}
-                    FROM change_log AS entry
-                    WHERE entry.sequence > @{nameof(afterSequence)}
-                      AND NOT EXISTS (
-                          SELECT 1 FROM change_log AS newer
-                          WHERE newer.entity_type = entry.entity_type
-                            AND newer.entity_id = entry.entity_id
-                            AND newer.sequence > entry.sequence)
-                    ORDER BY entry.sequence
-                    LIMIT @{nameof(limit)}";
+            return ChangeLogPages.ReadAsync("change_log", "1", afterSequence, limit, session);
+        }
 
-                IEnumerable<ChangeLogEntity> entities = await dbSession.Connection.QueryAsync<ChangeLogEntity>(
-                    query, new { afterSequence, limit }, transaction: dbSession.Transaction);
+        /// <inheritdoc />
+        public Task<ChangeLogPage> GetLatestStatesPageAsync(long afterSequence, ChangeLogPageLimit limit, IDbSession session)
+        {
+            string newest = @"
+                NOT EXISTS (
+                    SELECT 1 FROM change_log AS newer
+                    WHERE newer.entity_type = entry.entity_type
+                      AND newer.entity_id = entry.entity_id
+                      AND newer.sequence > entry.sequence)";
 
-                return (IReadOnlyList<ChangeLogEntry>)entities.Select(entity => entity.ToDomain()).ToList();
-            }, session);
+            return ChangeLogPages.ReadAsync("change_log", newest, afterSequence, limit, session);
         }
 
         /// <inheritdoc />
         public async Task<int> CompactAsync(DateTimeOffset before, IDbSession session)
         {
+            // The newest entry of a row that went with its owner, unlogged, would stay for good.
+            string goneWithOwner = string.Concat(ChangeEntityType.Owned.Select(owned => $@"
+                       OR (entity_type = '{owned.Key}'
+                           AND NOT EXISTS (SELECT 1 FROM {owned.Value.Table} WHERE id = change_log.entity_id))"));
+
             string deleteQuery = $@"
                 DELETE FROM change_log
                 WHERE created_at < @{nameof(before)}
-                  AND (payload IS NULL OR EXISTS (
-                      SELECT 1 FROM change_log AS newer
-                      WHERE newer.entity_type = change_log.entity_type
-                        AND newer.entity_id = change_log.entity_id
-                        AND newer.sequence > change_log.sequence))
+                  AND (payload IS NULL
+                       OR EXISTS (
+                           SELECT 1 FROM change_log AS newer
+                           WHERE newer.entity_type = change_log.entity_type
+                             AND newer.entity_id = change_log.entity_id
+                             AND newer.sequence > change_log.sequence){goneWithOwner})
                 RETURNING sequence";
 
             List<long> dropped = (await session.Connection.QueryAsync<long>(deleteQuery, new { before }, transaction: session.Transaction)).ToList();

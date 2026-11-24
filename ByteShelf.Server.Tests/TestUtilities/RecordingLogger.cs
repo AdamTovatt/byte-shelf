@@ -2,10 +2,12 @@ using Microsoft.Extensions.Logging;
 
 namespace ByteShelf.Server.Tests.TestUtilities
 {
-    /// <summary>A logger that keeps each message it is given, formatted, for a test to read.</summary>
+    /// <summary>A logger that keeps each message it is given, formatted, and the exceptions given with them, for a test to read.</summary>
     public class RecordingLogger : ILogger
     {
         public List<string> Messages { get; } = new List<string>();
+
+        public List<Exception> Exceptions { get; } = new List<Exception>();
 
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull
@@ -21,6 +23,10 @@ namespace ByteShelf.Server.Tests.TestUtilities
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {
             Messages.Add(formatter(state, exception));
+            if (exception != null)
+            {
+                Exceptions.Add(exception);
+            }
         }
     }
 

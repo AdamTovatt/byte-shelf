@@ -147,6 +147,7 @@ namespace ByteShelf.Server.Replication.Services
             await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
             {
                 await _applier.ApplyAsync(WithoutUnavailable(entries, unavailable), session, changes);
+                await _applier.SettleAsync(session, changes);
                 if (!await _sourceRepository.SetProgressAsync(source, reached, reachedFingerprint, _timeProvider.GetUtcNow(), session))
                 {
                     return;
@@ -218,15 +219,17 @@ namespace ByteShelf.Server.Replication.Services
                 long applied = 0;
                 while (true)
                 {
-                    IReadOnlyList<ChangeLogEntry> copied = await _copyRepository.GetAfterAsync(applied, _pageSize, session);
-                    if (copied.Count == 0)
+                    ChangeLogPage copied = await _copyRepository.GetPageAsync(applied, new ChangeLogPageLimit(_pageSize, IReplicationFeed.MaxPagePayloadBytes), session);
+                    if (copied.Entries.Count == 0)
                     {
                         break;
                     }
 
-                    await _applier.ApplyAsync(WithoutUnavailable(copied, unavailable), session, changes);
-                    applied = copied[^1].Sequence;
+                    await _applier.ApplyAsync(WithoutUnavailable(copied.Entries, unavailable), session, changes);
+                    applied = copied.Entries[^1].Sequence;
                 }
+
+                await _applier.SettleAsync(session, changes);
 
                 // No fingerprint: the entry at startedAt may not be in the copy, which holds only the newest
                 // state of each entity. The next page applied gives one.

@@ -7,7 +7,8 @@ namespace ByteShelf.Server.ChangeLog.Services
 {
     /// <summary>
     /// Compacts the change log daily: an entry older than <see cref="Retention"/> goes once a newer one
-    /// for its entity exists, and a removal goes once it is that old. A replica behind anything dropped,
+    /// for its entity exists, a removal goes once it is that old, and so does an entry of what went with its
+    /// owner unlogged (a plugin's document about a file that is gone). A replica behind anything dropped,
     /// which in practice means one that has not followed the log for that long, takes a whole copy.
     /// </summary>
     public sealed class ChangeLogCompactionWorker : PeriodicJobWorker<int>

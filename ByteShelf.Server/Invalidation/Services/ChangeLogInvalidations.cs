@@ -50,6 +50,7 @@ namespace ByteShelf.Server.Invalidation.Services
                 default:
                     // A user's logins (a password change) change nothing the web UI shows, and a key is
                     // shown only through its grants, which are logged beside it when it comes and goes.
+                    // Neither what was read from contents nor what plugins keep about files (Invalidation.md).
                     break;
             }
         }

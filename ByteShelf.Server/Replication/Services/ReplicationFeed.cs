@@ -65,12 +65,10 @@ namespace ByteShelf.Server.Replication.Services
 
             if (copyNeeded)
             {
-                return Page(instanceId, Array.Empty<ChangeLogEntry>(), hasMore: false, latest, copyNeeded: true);
+                return Page(instanceId, new ChangeLogPage([], HasMore: false), latest, copyNeeded: true);
             }
 
-            int pageSize = PageSize(limit);
-            IReadOnlyList<ChangeLogEntry> entries = await _changeLog.GetAfterAsync(afterSequence, pageSize + 1, session);
-            return Page(instanceId, entries.Take(pageSize).ToList(), entries.Count > pageSize, latest, copyNeeded: false);
+            return Page(instanceId, await _changeLog.GetPageAsync(afterSequence, PageLimit(limit), session), latest, copyNeeded: false);
         }
 
         /// <inheritdoc />
@@ -84,14 +82,12 @@ namespace ByteShelf.Server.Replication.Services
             // the copy is in, so nothing made while it reads the copy is missed.
             await using IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync();
             long latest = await _changeLog.GetLatestSequenceAsync(session);
-            int pageSize = PageSize(limit);
-            IReadOnlyList<ChangeLogEntry> entries = await _changeLog.GetLatestStatesAfterAsync(afterSequence, pageSize + 1, session);
-            return Page(instanceId, entries.Take(pageSize).ToList(), entries.Count > pageSize, latest, copyNeeded: false);
+            return Page(instanceId, await _changeLog.GetLatestStatesPageAsync(afterSequence, PageLimit(limit), session), latest, copyNeeded: false);
         }
 
-        private static int PageSize(int limit)
+        private static ChangeLogPageLimit PageLimit(int limit)
         {
-            return Math.Clamp(limit, 1, IReplicationFeed.MaxPageSize);
+            return new ChangeLogPageLimit(Math.Clamp(limit, 1, IReplicationFeed.MaxPageSize), IReplicationFeed.MaxPagePayloadBytes);
         }
 
         /// <summary>
@@ -110,13 +106,13 @@ namespace ByteShelf.Server.Replication.Services
             return entry != null && string.Equals(entry.GetFingerprint(), fingerprint, StringComparison.Ordinal);
         }
 
-        private static ChangeFeedPage Page(string instanceId, IReadOnlyList<ChangeLogEntry> entries, bool hasMore, long latest, bool copyNeeded)
+        private static ChangeFeedPage Page(string instanceId, ChangeLogPage page, long latest, bool copyNeeded)
         {
             return new ChangeFeedPage
             {
                 InstanceId = instanceId,
-                Entries = entries,
-                HasMore = hasMore,
+                Entries = page.Entries,
+                HasMore = page.HasMore,
                 LatestSequence = latest,
                 CopyNeeded = copyNeeded,
             };

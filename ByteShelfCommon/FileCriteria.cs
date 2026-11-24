@@ -11,8 +11,6 @@ namespace ByteShelfCommon
     /// </summary>
     public class FileCriteria
     {
-        private const string WildcardSubtype = "/*";
-
         /// <summary>Criteria to set with an object initializer.</summary>
         public FileCriteria()
         {
@@ -195,23 +193,19 @@ namespace ByteShelfCommon
         /// <remarks>Methods rather than properties, so binding a search from a query string neither offers nor reads them.</remarks>
         public string? ExactMediaType()
         {
-            return ContentType != null && !IsFamily(ContentType) ? ContentType : null;
+            return ContentTypePattern()?.Type;
         }
 
         /// <summary>What every type of the family asked for starts with, such as <c>image/</c>; null for none or one type. Call it on normalized criteria.</summary>
         public string? MediaTypePrefix()
         {
-            return ContentType != null && IsFamily(ContentType) ? ContentType[..^1] : null;
+            return ContentTypePattern()?.Prefix;
         }
 
         /// <summary>Whether a stored content type is the one <see cref="ContentType"/> asks for. Call it on normalized criteria.</summary>
         public bool MatchesContentType(string storedContentType)
         {
-            string mediaType = ContentTypes.MediaTypeOf(storedContentType);
-            string? exact = ExactMediaType();
-            string? prefix = MediaTypePrefix();
-            return (exact == null || mediaType == exact)
-                && (prefix == null || mediaType.StartsWith(prefix, StringComparison.Ordinal));
+            return ContentTypePattern()?.Includes(ContentTypes.MediaTypeOf(storedContentType)) ?? true;
         }
 
         /// <summary>The query string's parts for every criterion that is set, escaped.</summary>
@@ -249,9 +243,9 @@ namespace ByteShelfCommon
             }
         }
 
-        private static bool IsFamily(string contentType)
+        private MediaTypePattern? ContentTypePattern()
         {
-            return contentType.EndsWith(WildcardSubtype, StringComparison.Ordinal);
+            return ContentType == null ? null : MediaTypePattern.Of(ContentType);
         }
 
         private static string? NormalizeContentType(string? contentType)
@@ -262,9 +256,9 @@ namespace ByteShelfCommon
             }
 
             string trimmed = contentType.Trim().ToLowerInvariant();
-            if (IsFamily(trimmed))
+            if (MediaTypePattern.Of(trimmed).Prefix is { } prefix)
             {
-                string type = trimmed[..^WildcardSubtype.Length];
+                string type = prefix[..^1];
                 if (type.Length == 0 || type.Contains('/', StringComparison.Ordinal) || type.Contains(';', StringComparison.Ordinal))
                 {
                     throw new ArgumentException($"'{contentType}' is not a media type, nor a type with /*.", nameof(contentType));

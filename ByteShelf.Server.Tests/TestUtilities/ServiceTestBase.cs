@@ -1,15 +1,16 @@
 using System.Text;
 using ByteShelf.Server.Access.Services;
 using ByteShelf.Server.ChangeLog.Repositories;
+using ByteShelf.Server.ChangeLog.Services;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Services;
 using ByteShelfCommon;
+using EasyReasy.Database;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Time.Testing;
 
 namespace ByteShelf.Server.Tests.TestUtilities
 {
@@ -25,11 +26,14 @@ namespace ByteShelf.Server.Tests.TestUtilities
         /// <summary>The caller the service tests start uploads as; who starts one matters only at the API.</summary>
         protected const string Uploader = "user:00000000-0000-0000-0000-00000000000a";
 
+        /// <summary>Contents the server takes as encrypted: it checks only that they start as an age file.</summary>
+        protected static readonly byte[] AgeBytes = Encoding.ASCII.GetBytes("age-encryption.org/v1\nan encrypted file");
+
         private ServiceProvider _provider = null!;
         private AsyncServiceScope _scope;
 
         protected TestRoot TestRoot { get; private set; } = null!;
-        protected FakeTimeProvider Clock { get; } = new FakeTimeProvider(TestInstants.Now);
+        protected TestClock Clock { get; } = new TestClock(TestInstants.Now);
         protected IServiceProvider Services => _scope.ServiceProvider;
 
         protected IShelfService ShelfService => Services.GetRequiredService<IShelfService>();
@@ -97,6 +101,22 @@ namespace ByteShelf.Server.Tests.TestUtilities
         {
             StartUploadRequest request = new StartUploadRequest { Path = path, SizeBytes = contents.Length, ContentType = contentType, Encrypted = encrypted };
             return UploadService.StoreAsync(shelf, request, Uploader, new MemoryStream(contents), CancellationToken.None);
+        }
+
+        /// <summary>Swaps a plain file's contents for <see cref="AgeBytes"/>, in a scope of its own as a request has, so something the test runs meanwhile may do it.</summary>
+        protected async Task EncryptInPlaceAsync(Shelf shelf, ShelfFile file)
+        {
+            StartContentSwapRequest request = new StartContentSwapRequest { FileId = file.Id, Sha256 = file.Sha256, SizeBytes = AgeBytes.Length, Encrypted = true };
+            using IServiceScope scope = Services.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IUploadService>().SwapAsync(shelf, request, Uploader, new MemoryStream(AgeBytes), CancellationToken.None);
+        }
+
+        /// <summary>Compacts the change log as the job does at the clock's time.</summary>
+        protected async Task CompactChangeLogAsync()
+        {
+            await using IDbTransactionSession session = await Services.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync();
+            await ChangeLog.CompactAsync(Clock.GetUtcNow() - ChangeLogCompactionWorker.Retention, session);
+            await session.CommitAsync();
         }
 
         /// <summary>What a single PUT of <paramref name="sizeBytes"/> to <paramref name="path"/> asks for.</summary>

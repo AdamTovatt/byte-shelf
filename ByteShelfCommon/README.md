@@ -19,6 +19,8 @@ AOT-compatible.
 | `UploadLink`, `CreateUploadLinkRequest`, `NormalizedUploadLinkRequest` | A link that stores one file sent to it without a token, with its id, and asking for one (`Lifetime`: 15 minutes by default, at most 24 hours). |
 | `ShelfLink`, `ShelfLinkKind`, `LinkMaker`, `LinkMakerKind` | A download or upload link as listed, to revoke by its id: what it reaches, who made it, and when it runs out. |
 | `FileMetadata` | What the server read from a file's contents (when and where a photo was taken, the camera, a video's length, a PDF's title and pages), and whether it reads that file at all (`Readable`). |
+| `PluginDocument` | What a plugin keeps about a file or its contents: one JSON object, which is how it is written in JSON. |
+| `MediaTypePattern` | One media type or a family such as `image/*`, and which media types it covers. |
 | `LinkLifetime` | One kind of link's lifetime rule: its default, its bounds and `Normalize`. |
 | `FileEncryption`, `EncryptedFolder`, `PathEncryption`, `SetFolderEncryptionRequest` | Password encryption: how an age file starts, an encrypted directory's check text, an encrypted directory with its check, what a path is encrypted under, and encrypting a directory. |
 | `ShelfDirectory`, `DirectoryListing`, `ListedDirectory` | A directory and whether it is encrypted (`Encrypted`), what one holds, and a directory in a listing with the size and count of the files under it, and how many are encrypted. |
@@ -58,6 +60,9 @@ AOT-compatible.
   `FileSearch.Normalize` adds a page of 1 to 1,000 files (100 by default), and
   `DuplicateSearch.Normalize` a page of 1 to 1,000 groups (100 by default). `Fold` is how search
   compares text, both sides: normalization form C, then invariant lowercase.
+- `PluginDocument.Parse` checks a plugin's document, and its JSON converter does the same for one that
+  is sent: one JSON object, nested at most 32 deep, of at most 64 KiB, counted in UTF-8 without
+  whitespace and with its text as itself rather than as escapes.
 - `ContentHash` checks a SHA-256 named in a request (64 hex digits, in either case) and answers it
   lowercase, as the server stores it.
 - `ContentTypes` checks the media type stored with a file, and `ForUpload` picks it when an upload
@@ -74,6 +79,7 @@ AOT-compatible.
 
 ## JSON
 
-`ByteShelfCommon.Serialization.ByteShelfJsonContext` serializes every type without reflection, in
-camelCase like the server. Enums are written as camelCase strings and read back ignoring case, by
+`ByteShelfCommon.Serialization.ByteShelfJsonContext` serializes every type that is sent without
+reflection, in camelCase like the server; a `PluginDocument` is written by its own converter
+(`PluginDocumentJsonConverter`), wherever it stands. Enums are written as camelCase strings and read back ignoring case, by
 `CamelCaseEnumConverter`, set on each enum type so the server and every client agree.

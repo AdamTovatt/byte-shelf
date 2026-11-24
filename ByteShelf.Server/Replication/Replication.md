@@ -53,7 +53,8 @@ replica is), fetches the bytes of every file it names that are not here yet
 (`GET api/replication/feed/files/{id}/object?sha256=H`), checks each one's SHA-256 before keeping it, and applies
 the page in one transaction with how far it reaches. A replica stopped anywhere picks up where it was,
 and applying an entry twice is harmless. A page says whether more follow (`HasMore`); its length does
-not, since a primary may give fewer entries than asked for.
+not, since a primary may give fewer entries than asked for: at most 1,000, and as many as hold 4 MiB of
+payload together (`IReplicationFeed.MaxPagePayloadBytes`), though always one.
 
 `ReplicaApplier` applies an entry by its entity's type: a state is written whole by id, a removal removes.
 An older state may displace a newer one (a copy holds newer states than the log replayed after it): whatever
@@ -62,8 +63,15 @@ login, grant or key removed, a key with its grants) and a later entry puts it ba
 write is logged in the replica's own change log, so its pages update live and a promoted replica keeps a
 whole log.
 
-What the primary read from files' contents arrives the same way, as `object_metadata` entries: a replica
-never reads contents itself, and starts to once promoted ([Metadata](../Metadata/Metadata.md)).
+What the primary read from files' contents arrives the same way, as `object_metadata` and
+`content_plugin_metadata` entries: a replica never reads contents itself, and starts to once promoted
+([Metadata](../Metadata/Metadata.md)).
+
+A plugin's document about a file (`file_plugin_metadata`) refers to the file and may come before it: a copy
+holds each entity's newest entry, and the file may have changed after the document. So only after the last
+entry of a transaction (`ReplicaApplier.SettleAsync`) is a document whose file is not here passed over. Its
+file was purged, or was itself passed over for contents the primary no longer held (below), and the swap
+that made it so logs the file's documents again after it.
 
 An entry naming contents the primary no longer holds for that file is passed over: the file was purged,
 or its contents swapped (encrypted or decrypted in place) before the replica fetched them. The primary
@@ -83,7 +91,8 @@ A shelf's removal removes what the replica held for it at once: the primary remo
 person confirmed cannot be undone ([Storage](../Storage/Storage.md#encryption-shelfencryption)). A row's
 SHA-256 changes in no other way, so when an applied state points a file here at other contents, the old
 object is removed once the page (or the whole copy) commits, unless a row here still points at it, such
-as another file with the same contents. Removed users' sessions end first; a removal that fails is logged
+as another file with the same contents. What was read from them has gone by then: the primary logs those
+removals before the swap ([Metadata](../Metadata/Metadata.md)). Removed users' sessions end first; a removal that fails is logged
 and left to maintenance, which removes whatever nothing points at.
 
 A change of a type this build does not know (from a newer primary) stops replication with
@@ -118,7 +127,9 @@ its state, or its removal once it is gone. The pages go into `replication_copy`,
 they arrive, and then one transaction removes what the copy does not hold (files and directories only to
 the trash, as above) and writes everything it does. `ReplicaApplier` holds, for each entity type, its table
 and how to write and remove one, so the removal pass and applying entries cannot disagree on the types
-there are.
+there are. What goes with its owner unlogged (`ChangeEntityType.Owned`: a plugin's document about a file) is
+removed only when the copy holds its owner: without the file, the copy says nothing of its documents, which
+stay while this server keeps the file in its trash.
 
 The pages are not one snapshot: each is read when it is asked for, and the primary goes on changing in
 between. An entity that changes after its page was read has a newer entry, so it comes again on a later

@@ -34,6 +34,7 @@ namespace ByteShelf.Server.Replication.Services
     public sealed class ReplicaApplier
     {
         private readonly IReadOnlyList<EntityHandler> _handlers;
+        private readonly IFilePluginMetadataRepository _filePluginMetadataRepository;
         private readonly IReplicationCopyRepository _copyRepository;
         private readonly TimeProvider _timeProvider;
 
@@ -46,11 +47,14 @@ namespace ByteShelf.Server.Replication.Services
             IDirectoryRepository directoryRepository,
             IFileRepository fileRepository,
             IObjectMetadataRepository metadataRepository,
+            IContentPluginMetadataRepository contentPluginMetadataRepository,
+            IFilePluginMetadataRepository filePluginMetadataRepository,
             IShelfGrantRepository grantRepository,
             ShelfKeyRemoval keyRemoval,
             IReplicationCopyRepository copyRepository,
             TimeProvider timeProvider)
         {
+            _filePluginMetadataRepository = filePluginMetadataRepository;
             _copyRepository = copyRepository;
             _timeProvider = timeProvider;
 
@@ -88,6 +92,22 @@ namespace ByteShelf.Server.Replication.Services
                     (entry, at, session, _) => metadataRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<ObjectMetadata>(entry.Payload!), entry.Action, at, session),
                     metadataRepository.DeleteByIdAsync),
                 new EntityHandler(
+                    ChangeEntityType.ContentPluginMetadata,
+                    "content_plugin_metadata",
+                    (entry, at, session, _) => contentPluginMetadataRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<ContentPluginMetadata>(entry.Payload!), entry.Action, at, session),
+                    contentPluginMetadataRepository.DeleteByIdAsync),
+                new EntityHandler(
+                    ChangeEntityType.FilePluginMetadata,
+                    "file_plugin_metadata",
+                    async (entry, at, session, changes) =>
+                    {
+                        // Its file may be written by a later entry of the same transaction, or not at all
+                        // (SettleAsync).
+                        await filePluginMetadataRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<FilePluginMetadata>(entry.Payload!), entry.Action, at, session);
+                        changes.FileDocumentWritten();
+                    },
+                    filePluginMetadataRepository.DeleteByIdAsync),
+                new EntityHandler(
                     ChangeEntityType.Passkey,
                     "passkey",
                     (entry, at, session, _) => passkeyRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<Passkey>(entry.Payload!), entry.Action, at, session),
@@ -102,12 +122,13 @@ namespace ByteShelf.Server.Replication.Services
                         // hashes, not by the entry's action: a whole copy holds only a file's newest
                         // entry, so a swap followed by a move arrives as a move.
                         FileRecord file = ChangePayload.Deserialize<FileRecord>(entry.Payload!);
-                        if (await fileRepository.GetByIdAsync(file.Id, session) is FileRecord here && here.Sha256 != file.Sha256)
+                        FileRecord? here = await fileRepository.GetByIdAsync(file.Id, session);
+                        await fileRepository.UpsertReplicatedAsync(file, entry.Action, Guid.NewGuid(), at, session);
+
+                        if (here != null && here.Sha256 != file.Sha256)
                         {
                             changes.ObjectReleased(here.Sha256);
                         }
-
-                        await fileRepository.UpsertReplicatedAsync(file, entry.Action, Guid.NewGuid(), at, session);
                     },
                     (id, at, session) => fileRepository.SoftDeleteAsync(id, Guid.NewGuid(), at, session)),
                 new EntityHandler(
@@ -149,7 +170,8 @@ namespace ByteShelf.Server.Replication.Services
 
         /// <summary>
         /// Applies <paramref name="entries"/> in order, noting in <paramref name="changes"/> what is left
-        /// to do once they commit.
+        /// to do. <see cref="SettleAsync"/> follows the last call in the same transaction, whose commit a
+        /// document without its file would otherwise fail.
         /// </summary>
         /// <exception cref="ReplicaOutdatedException">An entry is of a type this build does not know.</exception>
         /// <exception cref="PrimaryFailedException">An entry's state is in a shape this build does not take, as from a primary on another version.</exception>
@@ -197,10 +219,28 @@ namespace ByteShelf.Server.Replication.Services
             DateTimeOffset now = _timeProvider.GetUtcNow();
             foreach (EntityHandler handler in _handlers)
             {
-                foreach (Guid id in await _copyRepository.GetIdsMissingAsync(handler.EntityType, handler.Table, session))
+                // What goes with an owner the copy lacks leaves no removal and no entries on the primary: it
+                // stays until this server purges the owner.
+                EntityOwner? owner = ChangeEntityType.OwnerOf(handler.EntityType);
+                foreach (Guid id in await _copyRepository.GetIdsMissingAsync(handler.EntityType, handler.Table, owner, session))
                 {
                     await RemoveAsync(handler, id, now, session, changes);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Settles what only a transaction's last entry decides; called once, after it. A plugin's document
+        /// about a file may come before its file (a copy holds each entity's newest entry, and the file may
+        /// have changed after the document), so only now is one without a file passed over. Its file was
+        /// purged, or passed over itself for contents the primary no longer holds, and then the swap that made
+        /// it so logs its documents again after it (<see cref="IFilePluginMetadataRepository.LogAgainAsync"/>).
+        /// </summary>
+        public async Task SettleAsync(IDbSession session, AppliedChanges changes)
+        {
+            if (changes.DocumentsMayLackFiles)
+            {
+                await _filePluginMetadataRepository.DeleteWithoutFileAsync(_timeProvider.GetUtcNow(), session);
             }
         }
 

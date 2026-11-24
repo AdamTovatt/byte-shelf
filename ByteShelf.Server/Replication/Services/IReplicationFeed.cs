@@ -9,6 +9,12 @@ namespace ByteShelf.Server.Replication.Services
         public const int MaxPageSize = 1000;
 
         /// <summary>
+        /// The most bytes of UTF-8 the payloads of one page's entries hold together, unless one alone holds
+        /// more. An entry may carry a plugin's document of 64 KiB, and both servers hold a whole page.
+        /// </summary>
+        public const long MaxPagePayloadBytes = 4 * 1024 * 1024;
+
+        /// <summary>
         /// The log after <paramref name="afterSequence"/>, which is also how far <paramref name="replica"/>
         /// has applied it, so this records that. A replica behind something compaction dropped, ahead of the
         /// log, or whose last entry (<paramref name="afterFingerprint"/>) the log no longer holds under that

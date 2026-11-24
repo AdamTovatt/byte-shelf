@@ -17,9 +17,9 @@ A Server-Sent Events stream that tells the web UI which cached queries to refetc
 ## Where events come from
 
 `ChangeLogInvalidationPublisher` follows the change log, polling it once a second, and publishes
-what each new entry makes stale (`ChangeLogInvalidations`). Every change to storage, users and
-access is in the log, written in the transaction that made it, so no service publishes on its own:
-nothing can forget to, and nothing is published for a change that rolls back. SQLite commits one
+what each new entry makes stale (`ChangeLogInvalidations`). Every change a service makes to storage,
+users and access is in the log, written in the transaction that made it, so no service publishes on its
+own (what goes with a file by a foreign key is not in it, but the file's purge is): nothing can forget to, and nothing is published for a change that rolls back. SQLite commits one
 writer at a time in sequence order, so following the sequence misses nothing. It starts from where
 the log stands when it first reads it, and a failed read, that first one included, is tried again at
 the next poll.
@@ -36,7 +36,8 @@ when it comes and goes.
 
 What was read from files' contents ([Metadata](../Metadata/Metadata.md)) makes nothing stale: an
 entry names an object, not a shelf, and refreshing every open listing for each file read would cost
-more than it shows. The web UI fetches a file's metadata afresh whenever it shows it.
+more than it shows. The web UI fetches a file's metadata afresh whenever it shows it. What plugins keep
+about files makes nothing stale either, as the web UI shows none of it.
 
 Every constant in `InvalidationResources` needs an entry in the web UI's map from resources to
 queries; a missing one silently stops that resource from refreshing, and a client test checks the

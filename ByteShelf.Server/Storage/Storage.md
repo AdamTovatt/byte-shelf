@@ -191,7 +191,8 @@ A file has at most one description, free text of up to 2,000 characters (code po
 `length()` counts them), trimmed, with blank meaning none. It is part of the file's row, so the change
 log carries it to replicas. Setting it moves the file's `updatedAt` and is logged as an update;
 setting the text it already has changes and logs nothing. A file stored over another keeps the
-other's description unless its upload brings one: a new version of a file is still that file.
+other's description unless its upload brings one: a new version of a file is still that file. It keeps
+what plugins keep about the other, too ([Metadata](../Metadata/Metadata.md)).
 
 Search runs in one query: a recursive walk from the `under` directory builds each live file's full
 path, and the criteria of `ByteShelfCommon.FileCriteria` filter the files. `text` matches the name or
@@ -236,7 +237,8 @@ directory before its files.
 Files are encrypted with a password in the clients, never on the server: the password and the
 plaintext never reach it. An encrypted file's contents are an age file (c2sp.org/age) with a scrypt
 recipient, which `age -d` opens anywhere; only the contents are encrypted, so names, sizes (of the
-encrypted bytes), directories and descriptions stay as they are and search keeps finding them, and
+encrypted bytes), directories, descriptions and plugins' documents about the file stay as they are,
+readable by the server and whoever can read the shelf, and search keeps finding them, and
 the content type is the decrypted file's. A file is stored as encrypted with `encrypted=true` on
 `PUT content` or in `POST uploads`, and the server checks it starts as an age file (400 otherwise);
 it cannot check the password. The flag is on the file row and its change log entry, so replicas
@@ -258,10 +260,12 @@ removing its encryption decrypts nothing, so a client decrypts them after; the s
 the mark.
 
 A client encrypts or decrypts a stored file by swapping its contents in place (`PUT content/swap`,
-`POST uploads/swap`): the file keeps its id, path, type and description, and its old contents are
-removed at once rather than moved to the trash, unless another file holds the same ones. This is the
-one write that destroys contents without the trash, and it is allowed only for what the person
-confirmed cannot be undone: it must flip the file's encryption, and it must name the SHA-256 the
+`POST uploads/swap`): the file keeps its id, path, type, description and plugins' documents about it,
+and its old contents are removed at once rather than moved to the trash, unless another file holds the
+same ones. What was read from them goes in the same transaction, unless another plain file holds them
+([Metadata](../Metadata/Metadata.md)). This is the one write that destroys contents without the trash,
+and it is allowed only for what the person confirmed cannot be undone: it must flip the file's
+encryption, and it must name the SHA-256 the
 contents still have, so a change made since they were read is never lost (409 otherwise). Its change
 log entry (`swapped`) points the row at the new contents, and a replica removes the old ones as soon
 as it applies it, the one exception to replicas keeping what the primary drops for their own restore

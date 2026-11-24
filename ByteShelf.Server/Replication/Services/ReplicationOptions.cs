@@ -18,7 +18,7 @@ namespace ByteShelf.Server.Replication.Services
 
         /// <summary>
         /// How many entries a replica asks its primary for, and applies, at a time; the primary may give
-        /// fewer (at most <see cref="IReplicationFeed.MaxPageSize"/>).
+        /// fewer (at most <see cref="IReplicationFeed.MaxPageSize"/>, and <see cref="IReplicationFeed.MaxPagePayloadBytes"/> of payloads).
         /// </summary>
         public int PageSize { get; init; } = 500;
 
