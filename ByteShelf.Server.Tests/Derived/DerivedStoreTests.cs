@@ -17,12 +17,13 @@ namespace ByteShelf.Server.Tests.Derived
         private readonly TestClock _clock = new TestClock(TestInstants.Now);
         private TestRoot _root = null!;
         private readonly ContentsLocks _locks = new ContentsLocks();
+        private readonly DerivedChanges _changes = new DerivedChanges();
         private DerivedStore _store = null!;
 
         public Task InitializeAsync()
         {
             _root = TestRoot.Create();
-            _store = new DerivedStore(_root.Root, _locks, _clock);
+            _store = new DerivedStore(_root.Root, _locks, _changes, _clock);
             return Task.CompletedTask;
         }
 
@@ -52,7 +53,7 @@ namespace ByteShelf.Server.Tests.Derived
         {
             Put(DerivedKind.Thumbnail, Sha256, Made, "small");
 
-            _store.Put(DerivedKind.Thumbnail, Sha256, Failed, sourcePath: null);
+            _store.Put(Sha256, new KeptFile(DerivedKind.Thumbnail, Failed, SourcePath: null));
             Assert.Equal(Failed, _store.Find(DerivedKind.Thumbnail, Sha256));
             Assert.Single(AllFiles());
 
@@ -73,6 +74,75 @@ namespace ByteShelf.Server.Tests.Derived
             Assert.Null(_store.Find(DerivedKind.Thumbnail, Sha256));
             File.Delete(path + ".json");
             Assert.Null(_store.Find(DerivedKind.Thumbnail, Sha256));
+        }
+
+        [UnixFact]
+        public void Find_AnEntryThatCannotBeRead_IsNothing()
+        {
+            Put(DerivedKind.Thumbnail, Sha256, Made, "small");
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(_store.GetPath(DerivedKind.Thumbnail, Sha256) + ".json", UnixFileMode.None);
+            }
+
+            Assert.Null(_store.Find(DerivedKind.Thumbnail, Sha256));
+        }
+
+        [Fact]
+        public void FindAll_OnceItWasChanged_SaysSo()
+        {
+            Assert.Empty(_store.FindAll(Sha256));
+            Put(DerivedKind.Thumbnail, Sha256, Made, "small");
+            Assert.Equal([DerivedKind.Thumbnail], _store.FindAll(Sha256).Keys);
+            Put(DerivedKind.Preview, Sha256, Failed, "large");
+            Assert.Equal(2, _store.FindAll(Sha256).Count);
+
+            _store.Delete(DerivedKind.Thumbnail, Sha256);
+            Assert.Equal([DerivedKind.Preview], _store.FindAll(Sha256).Keys);
+            _store.Delete(Sha256);
+            Assert.Empty(_store.FindAll(Sha256));
+        }
+
+        [Fact]
+        public void WhatCameOrWent_IsAChange()
+        {
+            Put(DerivedKind.Thumbnail, Sha256, Made, "small");
+            Assert.Equal([Sha256], _changes.Take());
+
+            _store.Put(Sha256, new KeptFile(DerivedKind.Thumbnail, Failed, SourcePath: null));
+            Assert.Equal([Sha256], _changes.Take());
+
+            Put(DerivedKind.Full, Sha256, Made, "full");
+            _changes.Take();
+            _store.Delete(DerivedKind.Full, Sha256);
+            Assert.Equal([Sha256], _changes.Take());
+
+            Put(DerivedKind.Agent, Sha256, Made, "agent");
+            _changes.Take();
+            _store.Delete(Sha256);
+            Assert.Equal([Sha256], _changes.Take());
+        }
+
+        [Fact]
+        public void WhatWasNeverThere_IsNoChange()
+        {
+            _store.Put(Sha256, new KeptFile(DerivedKind.Thumbnail, Failed, SourcePath: null));
+            _store.Delete(DerivedKind.Preview, Sha256);
+            _store.Delete(Sha256);
+
+            Assert.Empty(_changes.Take());
+        }
+
+        [Fact]
+        public void Put_ThatFailsAfterOne_IsAChange()
+        {
+            string source = Path.Combine(_root.Root.StagingPath, "small");
+            File.WriteAllText(source, "small");
+
+            Assert.ThrowsAny<IOException>(() => _store.Put(
+                Sha256, new KeptFile(DerivedKind.Thumbnail, Made, source), new KeptFile(DerivedKind.Preview, Made, Path.Combine(_root.Root.StagingPath, "gone"))));
+
+            Assert.Equal([Sha256], _changes.Take());
         }
 
         [Fact]
@@ -119,9 +189,13 @@ namespace ByteShelf.Server.Tests.Derived
             {
             }
 
+            Assert.NotEmpty(_store.FindAll(hashes[1]));
+            _changes.Take();
             int removed = _store.TrimFull();
 
             Assert.Equal(1, removed);
+            Assert.Empty(_store.FindAll(hashes[1]));
+            Assert.Contains(hashes[1], _changes.Take());
             Assert.Equal(new[] { hashes[0], hashes[2], hashes[3] }.Order(StringComparer.Ordinal), _store.EnumerateHashes(DerivedKind.Full).Order(StringComparer.Ordinal));
             Assert.Equal(0, _store.TrimFull());
         }
@@ -161,7 +235,7 @@ namespace ByteShelf.Server.Tests.Derived
         {
             string source = Path.Combine(_root.Root.StagingPath, Guid.NewGuid().ToString("N"));
             File.WriteAllText(source, text);
-            _store.Put(kind, sha256, entry, source);
+            _store.Put(sha256, new KeptFile(kind, entry, source));
         }
 
         // A sparse file, so it takes no disk.
@@ -173,7 +247,7 @@ namespace ByteShelf.Server.Tests.Derived
                 file.SetLength(bytes);
             }
 
-            _store.Put(DerivedKind.Full, sha256, Made, source);
+            _store.Put(sha256, new KeptFile(DerivedKind.Full, Made, source));
         }
 
         private List<string> AllFiles()

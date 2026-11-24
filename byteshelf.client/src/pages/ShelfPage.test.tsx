@@ -157,6 +157,26 @@ describe('the shelf page\'s rows', () => {
     return sent.filter((line) => line.startsWith(`GET /api/shelves/docs/entries?path=${encodeURIComponent(path)} `)).length;
   }
 
+  it('shows a file\'s thumbnail in its row, and none in one without', async () => {
+    vi.stubGlobal('isSecureContext', true);
+    vi.stubGlobal('IntersectionObserver', class {
+      private readonly seen: (entries: { isIntersecting: boolean }[]) => void;
+      constructor(seen: (entries: { isIntersecting: boolean }[]) => void) {
+        this.seen = seen;
+      }
+      observe() {
+        this.seen([{ isIntersecting: true }]);
+      }
+      disconnect() {}
+    });
+    rootFiles = [shelfFile('photo.jpg', { derived: { thumbnail: 'images-1' } }), shelfFile('b.txt')];
+    leave();
+    await renderAt('/shelves/docs');
+
+    await vi.waitFor(() => expect(row('photo.jpg')?.querySelector('img')?.getAttribute('src')).toContain('/api/open/docs/files/derived?id=photo.jpg&kind=thumbnail'));
+    expect(row('b.txt')?.querySelector('img')).toBeNull();
+  });
+
   it.each([['ctrlKey'], ['metaKey']])('selects every row on %s and A', (modifier) => {
     key(document, { key: 'a', [modifier]: true });
 

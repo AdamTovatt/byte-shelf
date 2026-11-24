@@ -14,7 +14,7 @@ namespace ByteShelf.Server.Tests.Derived
 
         public DerivedMakersTests()
         {
-            _store = new DerivedStore(_root.Root, new ContentsLocks(), TimeProvider.System);
+            _store = new DerivedStore(_root.Root, new ContentsLocks(), new DerivedChanges(), TimeProvider.System);
         }
 
         [Theory]

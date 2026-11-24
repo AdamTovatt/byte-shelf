@@ -329,8 +329,37 @@ namespace ByteShelfClient.Http
             return OpenContentAsync($"{_base}/trash/{deletionId:D}/content?id={fileId:D}", cancellationToken);
         }
 
+        public Task<DerivedFileContent> OpenDerivedAsync(EntryReference file, DerivedKind kind, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(file);
+            return OpenDerivedAsync($"{_base}/files/derived?{file.ToQuery()}", kind, cancellationToken);
+        }
+
+        public Task<DerivedFileContent> OpenDeletedDerivedAsync(Guid deletionId, Guid fileId, DerivedKind kind, CancellationToken cancellationToken = default)
+        {
+            return OpenDerivedAsync($"{_base}/trash/{deletionId:D}/derived?id={fileId:D}", kind, cancellationToken);
+        }
+
+        private Task<DerivedFileContent> OpenDerivedAsync(string url, DerivedKind kind, CancellationToken cancellationToken)
+        {
+            // Its ETag is no SHA-256 of these bytes to check them against.
+            return OpenAsync(
+                $"{url}&kind={kind}",
+                (response, body) => new DerivedFileContent(response.Content.Headers.ContentType?.ToString() ?? ContentTypes.Default, new ResponseStream(response, body, expectedSha256: null)),
+                cancellationToken);
+        }
+
         /// <summary>Opens the contents at <paramref name="url"/>, checked against the SHA-256 the server names as they are read.</summary>
-        private async Task<Stream> OpenContentAsync(string url, CancellationToken cancellationToken)
+        private Task<Stream> OpenContentAsync(string url, CancellationToken cancellationToken)
+        {
+            return OpenAsync<Stream>(
+                url,
+                (response, body) => new ResponseStream(response, body, response.StatusCode == HttpStatusCode.OK ? ETagOf(response) : null),
+                cancellationToken);
+        }
+
+        /// <summary>What <paramref name="open"/> makes of the answer at <paramref name="url"/> and its body, which it is to dispose.</summary>
+        private async Task<T> OpenAsync<T>(string url, Func<HttpResponseMessage, Stream, T> open, CancellationToken cancellationToken)
         {
             HttpResponseMessage response = await _connection.SendRawAsync(
                 () => new HttpRequestMessage(HttpMethod.Get, url),
@@ -339,8 +368,7 @@ namespace ByteShelfClient.Http
 
             try
             {
-                string? sha256 = response.StatusCode == HttpStatusCode.OK ? ETagOf(response) : null;
-                return new ResponseStream(response, await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false), sha256);
+                return open(response, await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false));
             }
             catch
             {

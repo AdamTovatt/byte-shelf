@@ -293,6 +293,12 @@ namespace ByteShelfClient.InMemory
             return Run<Stream>(cancellationToken, shelf => new MemoryStream(shelf.GetFile(file).Content, writable: false));
         }
 
+        public Task<DerivedFileContent> OpenDerivedAsync(EntryReference file, DerivedKind kind, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(file);
+            return Run<DerivedFileContent>(cancellationToken, shelf => throw NoDerived(shelf.GetFile(file), kind));
+        }
+
         public Task<ShelfFileRange> OpenReadRangeAsync(EntryReference file, long offset, long? length = null, string? expectedSha256 = null, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(file);
@@ -619,12 +625,23 @@ namespace ByteShelfClient.InMemory
 
         public Task<Stream> OpenDeletedReadAsync(Guid deletionId, Guid fileId, CancellationToken cancellationToken = default)
         {
-            return Run<Stream>(cancellationToken, shelf =>
-            {
-                FileNode file = shelf.Files.FirstOrDefault(candidate => candidate.Id == fileId && candidate.DeletionId == deletionId)
-                    ?? throw InMemoryErrors.NotFound($"Deletion {deletionId} in this shelf's trash holds no file {fileId}.");
-                return new MemoryStream(file.Content, writable: false);
-            });
+            return Run<Stream>(cancellationToken, shelf => new MemoryStream(DeletedFile(shelf, deletionId, fileId).Content, writable: false));
+        }
+
+        public Task<DerivedFileContent> OpenDeletedDerivedAsync(Guid deletionId, Guid fileId, DerivedKind kind, CancellationToken cancellationToken = default)
+        {
+            return Run<DerivedFileContent>(cancellationToken, shelf => throw NoDerived(DeletedFile(shelf, deletionId, fileId), kind));
+        }
+
+        private static FileNode DeletedFile(InMemoryShelf shelf, Guid deletionId, Guid fileId)
+        {
+            return shelf.Files.FirstOrDefault(candidate => candidate.Id == fileId && candidate.DeletionId == deletionId)
+                ?? throw InMemoryErrors.NotFound($"Deletion {deletionId} in this shelf's trash holds no file {fileId}.");
+        }
+
+        private static ByteShelfException NoDerived(FileNode file, DerivedKind kind)
+        {
+            return InMemoryErrors.NotFound($"The file {file.Id} has no {kind}: the in-memory client makes none.");
         }
 
         public Task RestoreAsync(Guid deletionId, CancellationToken cancellationToken = default)

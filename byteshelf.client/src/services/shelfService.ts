@@ -6,6 +6,9 @@ export type ShelfInfo = components['schemas']['ShelfInfo'];
 export type DirectoryListing = components['schemas']['DirectoryListing'];
 export type DirectoryTree = components['schemas']['DirectoryTree'];
 export type ShelfFile = components['schemas']['ShelfFile'];
+
+/** The kinds of files plugins make from a file's contents. */
+export type DerivedKind = keyof NonNullable<ShelfFile['derived']>;
 export type ShelfDirectory = components['schemas']['ShelfDirectory'];
 export type ListedDirectory = components['schemas']['ListedDirectory'];
 export type TrashEntry = components['schemas']['TrashEntry'];

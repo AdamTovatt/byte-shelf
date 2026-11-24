@@ -16,8 +16,8 @@ remove) or read-write.
   of them allows it (only reading ones on a replica). The server names each shelf with its access
   when the agent connects; a tool may leave shelf out only when the key has one. It cannot read or write the
   agent's own files: upload text or base64 (up to 256 KiB), read text of up to 256 KiB or a PNG,
-  JPEG, GIF or WebP image of up to 1 MiB (any other file stored as an image, up to 32 MiB, as a
-  preview at most 1568 pixels on its long side), and use share_file for a link to anything else, or
+  JPEG, GIF or WebP image of up to 1 MiB (any other file as a preview of it, where the server has a
+  plugin that makes one, as the MCP instructions say), and use share_file for a link to anything else, or
   create_upload_link for a link that stores one file sent to it with curl. Both answer the link's
   id: list_links shows the links that have not run out and revoke_link ends one sooner, so a file
   read once goes through a link made for a few minutes and revoked after. Add it to

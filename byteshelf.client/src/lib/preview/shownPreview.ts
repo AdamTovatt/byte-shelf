@@ -9,6 +9,10 @@ export interface ShownPreview {
   error: Error | null;
   /** Its place among the files beside it; null when it is previewed alone. */
   steps: Steps | null;
+  /** The file before it, null when there is none. */
+  previous: ReadableFile | null;
+  /** The file after it, null when there is none or it is not fetched yet. */
+  next: ReadableFile | null;
   onClose: () => void;
   /** Whether a locked file's password is asked for as it shows, rather than once Unlock is pressed. */
   asksPassword: boolean;

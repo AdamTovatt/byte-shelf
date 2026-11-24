@@ -42,16 +42,6 @@
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.3.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <!--
-      Scales a large image down to a preview /mcp's download_file can answer (Mcp/SkiaImagePreviews.cs;
-      MIT). SkiaSharp carries the Windows and macOS native libraries itself; Linux's come from
-      NoDependencies, which needs no fontconfig on the host since a preview draws no text. The
-      platforms kept are in Directory.Build.targets. Not ImageSharp, though fully managed: its package
-      checks at build time for a license key registered with Six Labors and fails a Release build
-      without one, a key every builder of ByteShelf, and updaemon's, would then need.
-    -->
-    <PackageReference Include="SkiaSharp" Version="4.153.2" />
-    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.153.2" />
-    <!--
       Read what a file's contents say about it (Metadata/MetadataReader.cs), fully managed and offline:
       MetadataExtractor (Apache-2.0, with XmpCore, BSD) for EXIF and QuickTime/MP4, PdfPig (Apache-2.0)
       for a PDF's title and pages. Only the server reads metadata, so neither ships in ByteShelfClient.

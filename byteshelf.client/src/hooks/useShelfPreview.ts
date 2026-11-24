@@ -90,6 +90,8 @@ export function useShelfPreview(shelf: string, shown: ShownFiles, reading: FileR
       previewed: file ? { file, reading } : null,
       error,
       steps,
+      previous: among?.previous ? { file: among.previous, reading } : null,
+      next: among?.next ? { file: among.next, reading } : null,
       onClose: close,
       asksPassword: wasOpened,
     },

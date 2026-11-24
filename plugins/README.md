@@ -32,7 +32,7 @@ It takes Node 24. `npm ci` in `byteshelf.client`, whose tools it uses, and in th
 and UI library; `npm run lint` in `byteshelf.client` covers the plugins too.
 
 A new one also needs its line under `extensions.known` in `ByteShelf.Server/updaemon.json`, which a
-server test asks for, so that updaemon installs it by its id alone. Its id may not read as the end of a
+server test asks for, so that updaemon 1.1 or later installs it by its id alone. Its id may not read as the end of a
 server's zip, as `linux-x64` does; the build refuses it. The build makes the web UI part alone: nothing
 here builds a server assembly.
 

@@ -47,12 +47,26 @@ namespace ByteShelf.Cli.Tests
         public void WithByteShelfTools_TheRegistrationBothServersUse_AddsTheCheck()
         {
             ServiceCollection services = new ServiceCollection();
-            services.AddMcpServer().WithByteShelfTools();
+            services.AddMcpServer().WithByteShelfTools(_ => ToolHost.Local);
             using ServiceProvider provider = services.BuildServiceProvider();
 
             McpServerOptions options = provider.GetRequiredService<IOptions<McpServerOptions>>().Value;
 
             Assert.Single(options.Filters.Request.CallToolFilters);
+        }
+
+        [Fact]
+        public void WithByteShelfTools_OnTheAgentsOwnMachine_SaysWhatDownloadFileDoesThere()
+        {
+            ServiceCollection services = new ServiceCollection();
+            services.AddMcpServer().WithByteShelfTools(_ => ToolHost.Local);
+            using ServiceProvider provider = services.BuildServiceProvider();
+
+            McpServerTool download = Assert.Single(
+                provider.GetRequiredService<IOptions<McpServerOptions>>().Value.ToolCollection!, tool => tool.ProtocolTool.Name == "download_file");
+
+            Assert.StartsWith("Reads a file from a shelf", download.ProtocolTool.Description, StringComparison.Ordinal);
+            Assert.EndsWith("Save any other file with localPath, and look at a larger image there.", download.ProtocolTool.Description, StringComparison.Ordinal);
         }
 
         private static Dictionary<string, JsonElement> Arguments(string json)

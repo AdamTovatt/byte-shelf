@@ -2,17 +2,28 @@ import createClient from 'openapi-fetch';
 import type { paths } from '../types/api';
 import { getFreshToken, renewAccessToken } from './authService';
 
+/** How long to wait before asking again when the server says to, but not for how many seconds. */
+const ASK_AGAIN_SECONDS = 5;
+
 /** A refusal from the server, with the machine-readable code from its error body when it gave one. */
 export class ApiError extends Error {
   public status: number;
   public code: string | null;
+  /** After how many seconds the server said to ask again; null when it did not. */
+  public askAgainSeconds: number | null;
 
-  constructor(message: string, status: number, code: string | null) {
+  constructor(message: string, status: number, code: string | null, askAgainSeconds: number | null = null) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.askAgainSeconds = askAgainSeconds;
   }
+}
+
+/** After how many seconds to ask again for what the server is still making; null when the error is another. The answer to a HEAD has no body to tell it by a code. */
+export function notReadyFor(error: unknown): number | null {
+  return error instanceof ApiError && error.status === 503 ? error.askAgainSeconds : null;
 }
 
 /** Whether the server refused because what was asked for is not there. */
@@ -97,7 +108,14 @@ export async function throwIfFailed(response: Response): Promise<void> {
 
 function toApiError(error: unknown, response: Response): ApiError {
   const body = typeof error === 'object' && error !== null ? (error as ErrorBody) : null;
-  return new ApiError(body?.message ?? `The server answered ${response.status} ${response.statusText}.`, response.status, body?.code ?? null);
+  return new ApiError(body?.message ?? `The server answered ${response.status} ${response.statusText}.`, response.status, body?.code ?? null, askAgainSecondsOf(response));
+}
+
+function askAgainSecondsOf(response: Response): number | null {
+  const header = response.headers.get('Retry-After');
+  if (header === null) return null;
+  // Not as a date, which a proxy may write it as.
+  return /^\d+$/.test(header) ? Number(header) : ASK_AGAIN_SECONDS;
 }
 
 export async function unwrapResponse<T>(promise: Promise<ApiFetchResult<T>>): Promise<T> {

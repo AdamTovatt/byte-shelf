@@ -8,7 +8,7 @@ example. The kinds are `ByteShelfCommon.DerivedKind`:
 | `thumbnail` | A small picture for listings | after an upload, and for files already stored |
 | `preview` | What a viewer shows until it has the contents | with the thumbnail, from one run |
 | `full` | The whole contents in a type a browser shows | when asked for |
-| `agent` | What an agent is shown | when asked for |
+| `agent` | What an agent is shown: a PNG, JPEG, GIF or WebP, as it is shown nothing else ([Mcp](../Mcp/Mcp.md)) | when asked for |
 
 A server without plugins that make them has none, and asking for one is a 404.
 
@@ -33,7 +33,7 @@ They are a cache: not replicated, not in backups, not counted in quota, not foun
 folder and they are made again, failures tried again too (with the server stopped: a run under way works in
 `derived/work`). What another version made, or failed to make, is made again.
 
-| Kind | The most one may take (`DerivedKinds.MaxBytesOf`) | Together |
+| Kind | The most one may take (`DerivedFileLimits.MaxBytesOf`) | Together |
 |---|---|---|
 | `thumbnail` | 1 MiB | no limit |
 | `preview` | 16 MiB | no limit |
@@ -67,6 +67,16 @@ One that is missing is made and waited for, 10 seconds at most; then it is a 503
 `Retry-After: 5` while making goes on, as it is when the run is stopped. 404 when nothing makes it, when it
 could not be made, and for an encrypted file, even when a plain file holds the same bytes. 500 when the
 plugin could not run, or what it made could not be written.
+
+Listings, trees, searches, a deletion's tree and a file's own record name the kinds there are of each file, with a
+word for each that changes when another is made in its place (`ShelfFile.Derived`, `DerivedListing`): so a
+client asks for none that has yet to be made. Naming them makes nothing. What is on disk of contents is read once,
+for at most 100,000 contents, and again once the server changes it (`KnownEntries`). One that came or went is told
+to open listings ([Invalidation](../Invalidation/Invalidation.md)).
+
+The web UI adds a query parameter `v` to the address an `<img>` loads one from, which the server does not read:
+what tells that one from any other at its place, so that the browser, which shows its copy for an hour, never
+shows another's.
 
 ## Removing them (`DerivedRemoval`)
 

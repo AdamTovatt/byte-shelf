@@ -16,7 +16,7 @@ namespace ByteShelfCommon
         /// <summary>The whole contents in a type a browser shows, made when asked for.</summary>
         Full,
 
-        /// <summary>What an agent is shown of the contents, made when asked for.</summary>
+        /// <summary>What an agent is shown of the contents, a PNG, JPEG, GIF or WebP of at most 1 MiB, made when asked for.</summary>
         Agent,
     }
 }

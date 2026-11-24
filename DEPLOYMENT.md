@@ -4,10 +4,9 @@ ByteShelf is installed and updated with updaemon 1.0 or later from this reposito
 `dotnet publish ByteShelf.Server` produces the executable with its `updaemon.json`, which tells
 updaemon how to run it and which settings it reads, and the web UI's build in `wwwroot/`. Publishing
 builds the web UI, so it needs Node.js and npm. The running server needs one writable folder, the
-root, and nothing else on disk. The publish carries SkiaSharp's native library, which `/mcp` makes
-image previews with, for Linux x64 and arm64 (glibc, no system libraries needed), macOS and Windows
-x64 (`Directory.Build.targets`). Elsewhere (musl, 32-bit arm, Windows on arm) the server runs, but
-`/mcp`'s `download_file` fails on an image it would preview.
+root, and nothing else on disk. It makes no pictures itself: thumbnails, previews and those `/mcp`
+shows agents come from plugins that make them ([Plugins](ByteShelf.Server/Plugins/Plugins.md)), and
+without one there are none.
 
 The server finds `wwwroot/` and `appsettings.json` beside its executable, whichever folder it is
 started from; `--contentRoot` and `ASPNETCORE_CONTENTROOT` are ignored.
@@ -115,7 +114,7 @@ contents again ([Metadata](ByteShelf.Server/Metadata/Metadata.md)).
 | `INITIAL_ADMIN_DISPLAY_NAME` | no | The first admin's display name; the email's local part otherwise. |
 | `BYTESHELF_RESTORE_WINDOW_DAYS` | no | How long a deletion can be restored before it is purged. Whole days, 30 by default, at most 3650. |
 | `BYTESHELF_REPLICATION_ALERT_MINUTES` | no | How long replication may go wrong before the admins are emailed (see [Replicas](#replicas)). Whole minutes, 60 by default; at least 10, twice the longest a replica waits between failed attempts, and at most 43200 (30 days). |
-| `BYTESHELF_PLUGINS` | no | The folder whose folders are plugins (see [Plugins](#plugins)). Unset, none are loaded. updaemon sets it, and refuses it as a setting. |
+| `BYTESHELF_PLUGINS` | no | The folder whose folders are plugins (see [Plugins](#plugins)). Unset, none are loaded. updaemon 1.1 or later sets it, and refuses it as a setting. |
 | `BYTESHELF_TRUSTED_PROXIES` | behind a proxy | Comma-separated IPs or CIDR ranges of the reverse proxies in front of the server. Their `X-Forwarded-For` and `X-Forwarded-Proto` are believed, so rate limits and the sign-in delay count each client rather than the proxy. Loopback is always trusted. |
 | `ASPNETCORE_URLS` | no | Where Kestrel listens. |
 
@@ -208,8 +207,7 @@ rate limit beside the MCP request itself.
 
 ## Plugins
 
-An updaemon that supports extensions installs a plugin as one of the server's and keeps it updated with
-it: `updaemon install byteshelf/<id>` for one released with the server, and with `--from`, such as
+updaemon 1.1 or later installs a plugin as one of the server's and keeps it updated with it: `updaemon install byteshelf/<id>` for one released with the server, and with `--from`, such as
 `--from github:<owner>/<repository>/<asset>`, for another. It sets `BYTESHELF_PLUGINS` itself, so a
 plugin built by hand ([from a checkout](plugins/README.md)) is for a server without updaemon: set the
 variable and put plugins into folders under the one it names.

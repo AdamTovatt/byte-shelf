@@ -59,7 +59,7 @@ those, which are the defaults whatever the environment sets (the root, the secre
 address, settings), on the email sender, which is the one that only logs, on what the machine
 configures (`appsettings.json`, `ASPNETCORE_*`), or on another plugin's registrations. It sees that
 one folder, so not another plugin with the same id. Its arguments, exit codes and what it may need
-are a contract with updaemon, which runs it before switching versions, as the server's user, with
+are a contract with updaemon 1.1 or later, which runs it before switching versions, as the server's user, with
 only `PATH` and `HOME`, from any folder. Of the server, only itself and the processes it starts for plugins
 ([Processes](Processes/Processes.md)) load them; `--schema-only`, `--migrate-only` and the root commands do not.
 A plugin's entry point is made and its registration run in each of those processes too, with the defaults
@@ -99,7 +99,8 @@ again by that version. **A reader keeps what it reads nowhere else**, where it w
 
 A plugin that makes derived files, such as thumbnails, adds one maker, `builder.AddMaker<TMaker>(...)`, with each
 kind it makes, at a version, from media types: an `IDerivedFileMaker`, made and run as a reader is, whose files
-the server keeps and serves ([Derived files](../Derived/Derived.md)). Why one could not run is in the server's
+the server keeps and serves ([Derived files](../Derived/Derived.md)). Its `agent` files are shown to agents only
+when they are a PNG, JPEG, GIF or WebP of at most 1 MiB ([Mcp](../Mcp/Mcp.md)). Why one could not run is in the server's
 log alone, and what it would have made is not there when asked for. A second maker, a kind twice, or a type
 that is none refuses the plugin. It too keeps what it reads and makes nowhere else.
 
@@ -143,7 +144,15 @@ A module's default export is `definePlugin({ viewers, fileActions, folderTypes }
   unavailable? }`. `extensions` count only for files stored without a type
   (`application/octet-stream`). The component, which may be a `lazy` one, gets the file's record and a
   content reader, which answers plain contents wherever they come from, until the preview closes or
-  moves on. A plugin's beats a built-in one for the same type; between two plugins the first id does.
+  moves on. It gets a reader of what plugins made from the file (`derived`, [Derived files](../Derived/Derived.md))
+  too: `has(kind)` says whether its record names one, so its URL is known at once, and `url(kind, signal)` answers
+  the URL an `<img>` loads it from, waiting while one its record does not name is made, or null when there is
+  none, as of an encrypted file. One its record names may have gone since: when its URL does not load,
+  `forget(kind)` has `url` ask the server, and wait.
+  `neighbours` are the files the arrow keys move to, the one before it and the one after, each with such a
+  reader, to load ahead what they will show: only files a viewer takes, none in the trash or of a file
+  previewed alone, and none after the last of those fetched so far.
+  A plugin's beats a built-in one for the same type; between two plugins the first id does.
   `unavailable` says why this browser cannot show the files, and the next viewer that takes them does.
 - **File actions** are items in the menus of live files: `{ id, label, icon?, showsFor, run }`.
   `showsFor` is asked as a menu is drawn. `run` gets the shelf, the file, its content reader and
@@ -213,7 +222,7 @@ a plugin built against it.
 
 An addition to the web UI's part raises nothing, and `--check-plugin`, which runs no module, sees nothing
 of it: on a server without it, a plugin that imports a new export fails as it loads, which the Settings
-page says, and one that uses a new member of a type there (`ContentReader`, `FolderContents`) loads
+page says, and one that uses a new member of a type there (`ViewerProps`, `ContentReader`, `FolderContents`) loads
 and fails in the viewer or action that does. A part of `definePlugin` that server does not know is not
 missed by anything: folders of a type show as plain ones. Its server part runs either way.
 

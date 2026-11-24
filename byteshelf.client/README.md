@@ -84,6 +84,8 @@ npm run codegen    # in a second terminal
   offers no clipboard (plain HTTP), the toast shows it to copy by hand. A shelf's settings show
   everyone a Links tab listing the share and upload links that have not run out (their own, or every one
   for someone who may change the shelf's files) and revoking them; only admins see the other tabs.
+  A file's row shows its thumbnail where its listing says a plugin made one (`components/FileThumbnail.tsx`,
+  loaded as the row comes into view), else its type's icon.
   A folder's rows select as in Finder (`hooks/useSelection.ts`): a click selects one, Cmd or Ctrl
   adds or takes one away, Shift selects a range, Space toggles the focused row, Cmd or Ctrl+A selects
   them all, and Escape or a click in empty space clears it; a double-click or Enter opens a row, a file in
@@ -101,7 +103,9 @@ npm run codegen    # in a second terminal
   the pages that follow until one holds a file a viewer takes); a file outside them, as after a reload of a
   search, is previewed alone. A preview whose file is gone closes with a toast. In the trash
   (`hooks/useTrashPreview.ts`) it is of the one file a file deletion took, by the deletion's id, without
-  neighbours; Open shows it there whatever its type, saying so of one no viewer takes.
+  neighbours; Open shows it there whatever its type, saying so of one no viewer takes. A viewer also gets what
+  plugins made from the file and from the two beside it (`lib/derived/derivedReader.ts`), which an `<img>`
+  loads by its address, or from a blob where the page cannot keep the session's cookie.
   - *Viewers* (`components/preview/viewers/`) are `{ id, mediaTypes, extensions, component, unavailable? }`,
     held by a registry that never changes (`lib/preview/viewerRegistry.ts`) and is read through
     `hooks/useViewers.ts` alone: the built-in ones, listed in `BUILT_IN_VIEWERS` (`viewers/index.ts`), and
@@ -202,7 +206,7 @@ npm run codegen    # in a second terminal
   (such as file actions) goes on from a listing to a viewer and back (`hooks/useShelfWork.ts`).
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and
   refetches what each event makes stale (`lib/invalidationMap.ts`), so a change made elsewhere shows up
-  within about a second. A test checks the map covers every resource the server publishes. The
+  within about a second, and a thumbnail within about 5. A test checks the map covers every resource the server publishes. The
   exceptions are the Replication page's status, polled every 5 seconds, as a replica's lag changes
   without anything being published, a promotion and a change of someone's role, which a shelf's `onReplica`
   and `permission` show once it is next read, and the plugins, which change only with a restart of the server,

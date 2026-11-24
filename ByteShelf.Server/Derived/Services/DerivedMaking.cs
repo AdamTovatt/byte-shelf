@@ -11,25 +11,13 @@ namespace ByteShelf.Server.Derived.Services
         private readonly Dictionary<JobKey, Job> _jobs = new Dictionary<JobKey, Job>();
 
         private readonly PluginProcesses _processes;
-        private readonly IServiceScopeFactory _scopeFactory;
-        private readonly DerivedMakers _makers;
-        private readonly DerivedStore _store;
-        private readonly ContentsLocks _locks;
+        private readonly MakerRuns _runs;
         private readonly ILogger<DerivedMaking> _logger;
 
-        public DerivedMaking(
-            PluginProcesses processes,
-            IServiceScopeFactory scopeFactory,
-            DerivedMakers makers,
-            DerivedStore store,
-            ContentsLocks locks,
-            ILogger<DerivedMaking> logger)
+        public DerivedMaking(PluginProcesses processes, MakerRuns runs, ILogger<DerivedMaking> logger)
         {
             _processes = processes;
-            _scopeFactory = scopeFactory;
-            _makers = makers;
-            _store = store;
-            _locks = locks;
+            _runs = runs;
             _logger = logger;
         }
 
@@ -61,7 +49,7 @@ namespace ByteShelf.Server.Derived.Services
         {
             try
             {
-                return await _processes.RunAsync(new MakerRun(key.Sha256, key.Group, plugin, _scopeFactory, _makers, _store, _locks), turn, CancellationToken.None);
+                return await _processes.RunAsync(_runs.Of(plugin, key.Sha256, key.Group), turn, CancellationToken.None);
             }
             catch (OperationCanceledException)
             {

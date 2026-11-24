@@ -23,17 +23,23 @@ namespace ByteShelf.Server.Derived.Services
         /// <summary>How many bytes <see cref="DerivedKind.Full"/> files may take together.</summary>
         internal const long MaxFullBytes = 2L * 1024 * 1024 * 1024;
 
+        private const int MaxKnown = 100_000;
+
         private const string EntrySuffix = ".json";
 
         private readonly RootFolder _root;
         private readonly TimeProvider _timeProvider;
         private readonly ContentsLocks _locks;
+        private readonly KnownEntries _known;
+        private readonly DerivedChanges _changes;
 
-        public DerivedStore(RootFolder root, ContentsLocks locks, TimeProvider timeProvider)
+        public DerivedStore(RootFolder root, ContentsLocks locks, DerivedChanges changes, TimeProvider timeProvider)
         {
-            _locks = locks;
             _root = root;
+            _locks = locks;
+            _changes = changes;
             _timeProvider = timeProvider;
+            _known = new KnownEntries(locks, MaxKnown);
         }
 
         public string GetPath(DerivedKind kind, string sha256)
@@ -41,20 +47,39 @@ namespace ByteShelf.Server.Derived.Services
             return ObjectStore.PathIn(FolderOf(kind), sha256);
         }
 
-        /// <summary>What is known of the derived file; null for nothing.</summary>
+        /// <summary>What is known of the derived file; null for nothing, also when that cannot be read.</summary>
         public DerivedEntry? Find(DerivedKind kind, string sha256)
         {
+            string path = GetPath(kind, sha256);
+
+            // Asked first, as an exception costs far more, and most files have none.
+            if (!File.Exists(path + EntrySuffix))
+            {
+                return null;
+            }
+
             try
             {
-                string path = GetPath(kind, sha256);
                 using FileStream file = File.OpenRead(path + EntrySuffix);
                 DerivedEntry? entry = JsonSerializer.Deserialize<DerivedEntry>(file, JsonDefaults.CamelCase);
                 return entry?.Made == null || File.Exists(path) ? entry : null;
             }
-            catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException or JsonException)
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
             {
                 return null;
             }
+        }
+
+        /// <summary>
+        /// What is known of the kinds derived from the contents, from memory once it has been read from disk. One
+        /// somebody empties the folder of may still be answered.
+        /// </summary>
+        public IReadOnlyDictionary<DerivedKind, DerivedEntry> FindAll(string sha256)
+        {
+            return _known.Get(sha256, () => DerivedKinds.All
+                .Select(kind => (Kind: kind, Entry: Find(kind, sha256)))
+                .Where(found => found.Entry != null)
+                .ToDictionary(found => found.Kind, found => found.Entry!));
         }
 
         /// <summary>Opens the derived file, which counts as using it; null when it is not there.</summary>
@@ -77,49 +102,22 @@ namespace ByteShelf.Server.Derived.Services
             }
         }
 
-        /// <summary>
-        /// Keeps the file at <paramref name="sourcePath"/> as the derived file, or that there is none when it is
-        /// null and <paramref name="entry"/> says making it failed. Hold the lock.
-        /// </summary>
-        public void Put(DerivedKind kind, string sha256, DerivedEntry entry, string? sourcePath)
+        /// <summary>Keeps what was made of the contents in one run. Hold the lock.</summary>
+        public void Put(string sha256, params IReadOnlyList<KeptFile> kept)
         {
-            string path = GetPath(kind, sha256);
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-
-            // The entry goes first and comes last, so one is there only beside the file it is about.
-            File.Delete(path + EntrySuffix);
-            if (sourcePath == null)
-            {
-                File.Delete(path);
-            }
-            else
-            {
-                File.Move(sourcePath, path, overwrite: true);
-                File.SetLastWriteTimeUtc(path, _timeProvider.GetUtcNow().UtcDateTime);
-            }
-
-            OwnerOnly.WriteThenRename(path + EntrySuffix, JsonSerializer.Serialize(entry, JsonDefaults.CamelCase));
+            Change(sha256, () => kept.Select(file => Put(sha256, file)).ToList().Contains(true));
         }
 
         /// <summary>Removes one derived file, or that making it failed. Hold the lock.</summary>
         public void Delete(DerivedKind kind, string sha256)
         {
-            string path = GetPath(kind, sha256);
-            if (Directory.Exists(Path.GetDirectoryName(path)))
-            {
-                File.Delete(path + EntrySuffix);
-                File.Delete(path + EntrySuffix + ".tmp");
-                File.Delete(path);
-            }
+            Change(sha256, () => Delete(sha256, kind));
         }
 
         /// <summary>Removes everything derived from the contents. Hold the lock.</summary>
         public void Delete(string sha256)
         {
-            foreach (DerivedKind kind in DerivedKinds.All)
-            {
-                Delete(kind, sha256);
-            }
+            Change(sha256, () => DerivedKinds.All.Select(kind => Delete(sha256, kind)).ToList().Contains(true));
         }
 
         /// <summary>The contents something of <paramref name="kind"/> is kept of, whole or left by a crash, each once.</summary>
@@ -176,6 +174,61 @@ namespace ByteShelf.Server.Derived.Services
             }
 
             return removed;
+        }
+
+        /// <summary>Changes the contents' derived files on disk, and has listings say so when it answers that one came or went, or fails, as after some.</summary>
+        private void Change(string sha256, Func<bool> change)
+        {
+            _known.Forget(sha256);
+            bool changed = true;
+            try
+            {
+                changed = change();
+            }
+            finally
+            {
+                if (changed)
+                {
+                    _changes.Add(sha256);
+                }
+            }
+        }
+
+        private bool Put(string sha256, KeptFile kept)
+        {
+            string path = GetPath(kept.Kind, sha256);
+            bool wasThere = File.Exists(path);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+            // The entry goes first and comes last, so one is there only beside the file it is about.
+            File.Delete(path + EntrySuffix);
+            if (kept.SourcePath == null)
+            {
+                File.Delete(path);
+            }
+            else
+            {
+                File.Move(kept.SourcePath, path, overwrite: true);
+                File.SetLastWriteTimeUtc(path, _timeProvider.GetUtcNow().UtcDateTime);
+            }
+
+            OwnerOnly.WriteThenRename(path + EntrySuffix, JsonSerializer.Serialize(kept.Entry, JsonDefaults.CamelCase));
+            return wasThere || kept.SourcePath != null;
+        }
+
+        private bool Delete(string sha256, DerivedKind kind)
+        {
+            string path = GetPath(kind, sha256);
+            if (!Directory.Exists(Path.GetDirectoryName(path)))
+            {
+                return false;
+            }
+
+            bool wasThere = File.Exists(path);
+            File.Delete(path + EntrySuffix);
+            File.Delete(path + EntrySuffix + ".tmp");
+            File.Delete(path);
+            return wasThere;
         }
 
         private string FolderOf(DerivedKind kind)

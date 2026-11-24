@@ -68,6 +68,12 @@ namespace ByteShelfClient
         public bool IsNotFound => Code == ErrorCodes.NotFound;
 
         /// <summary>
+        /// Whether what was asked for is still being made (<see cref="ErrorCodes.NotReady"/>): asked for again in a while,
+        /// it may be there.
+        /// </summary>
+        public bool IsNotReady => Code == ErrorCodes.NotReady;
+
+        /// <summary>
         /// Whether a successful answer's body was not ByteShelf's (<see cref="InvalidResponse"/>).
         /// </summary>
         public bool IsInvalidResponse => Code == InvalidResponse;

@@ -14,7 +14,10 @@ namespace ByteShelf.Server.Derived
             services.TryAddSingleton<IDerivedFilePlugins, NoDerivedFilePlugins>();
             services.AddSingleton<DerivedMakers>();
             services.AddSingleton<DerivedStore>();
+            services.AddSingleton<MakerRuns>();
             services.AddSingleton<DerivedMaking>();
+            services.AddSingleton<IDerivedListing, DerivedListing>();
+            services.AddSingleton<DerivedChanges>();
             services.AddSingleton<StoredContents>();
             services.AddScoped<IDerivedRemoval, DerivedRemoval>();
             services.AddScoped<IDerivedFileService, DerivedFileService>();

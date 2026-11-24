@@ -373,40 +373,6 @@ namespace ByteShelf.Server.Tests.Mcp
         }
 
         [Fact]
-        public async Task CallTool_DownloadALargeImage_AnswersAPreviewAndHowToFetchItWhole()
-        {
-            byte[] png = TestImages.PhotoLikePng(2400, 1600);
-            Assert.True(png.Length > ByteShelfMcpTools.MaxInlineImageBytes);
-            await StoreAsync("/a.png", png, "image/png");
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read));
-
-            CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/a.png" });
-
-            AssertSucceeded(read);
-            ImageContentBlock image = Assert.Single(read.Content.OfType<ImageContentBlock>());
-            Assert.Equal("image/jpeg", image.MimeType);
-            int height = (int)Math.Round(1600.0 * ImagePreview.LongSide / 2400);
-            Assert.Equal((ImagePreview.LongSide, height), TestImages.SizeOf(image.DecodedData.ToArray()));
-            Assert.Equal(
-                $"/a.png is a 2400×1600 image/png of {TextFormat.Size(png.Length)}; this is a {ImagePreview.LongSide}×{height} JPEG preview of it. "
-                + "For the whole file, make a link to it with share_file and fetch it from there, such as with curl.",
-                TextOf(read));
-        }
-
-        [Fact]
-        public async Task CallTool_DownloadASmallImageOfAKindModelsCannotTake_AnswersAPreview()
-        {
-            await StoreAsync("/scan.bmp", TestImages.Bmp(300, 200), "image/bmp");
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read));
-
-            CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/scan.bmp" });
-
-            AssertSucceeded(read);
-            Assert.Equal((300, 200), TestImages.SizeOf(Assert.Single(read.Content.OfType<ImageContentBlock>()).DecodedData.ToArray()));
-            Assert.StartsWith("/scan.bmp is a 300×200 image/bmp of", TextOf(read), StringComparison.Ordinal);
-        }
-
-        [Fact]
         public async Task CallTool_DownloadTextStoredAsAnImage_AnswersTheText()
         {
             const string svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\"/>";
@@ -421,44 +387,30 @@ namespace ByteShelf.Server.Tests.Mcp
         }
 
         [Fact]
-        public async Task CallTool_DownloadAnImageItCannotDecode_AnswersOnlyHowToFetchItWhole()
+        public async Task CallTool_DownloadAnImageOfAKindModelsCannotTakeWithoutAPlugin_SaysWhyAndHowToFetchIt()
         {
-            await StoreAsync("/a.heic", TestImages.HeicHeaderOnly(ByteShelfMcpTools.MaxInlineImageBytes + 1), "image/heic");
+            await StoreAsync("/a.heic", [0xff, 0xfe, 0x00], "image/heic");
             await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read));
 
             CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/a.heic" });
 
             Assert.Equal(true, read.IsError);
-            Assert.EndsWith("/a.heic (image/heic) is not an image these tools can make a preview of; make a link to it with share_file and fetch it from there, such as with curl.", TextOf(read), StringComparison.Ordinal);
-        }
-
-        [Fact]
-        public async Task CallTool_DownloadAnImageDecodingPastTheMemoryBudget_SaysSoAndHowToFetchItWhole()
-        {
-            byte[] png = TestImages.BlankRgbaPng(9000, 9000);
-            Assert.True(png.Length > ByteShelfMcpTools.MaxInlineImageBytes);
-            await StoreAsync("/huge.png", png, "image/png");
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read));
-
-            CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/huge.png" });
-
-            Assert.Equal(true, read.IsError);
-            Assert.EndsWith("/huge.png decodes to more pixels than a preview is made from here; make a link to it with share_file and fetch it from there, such as with curl.", TextOf(read), StringComparison.Ordinal);
-        }
-
-        [Fact]
-        public async Task CallTool_DownloadAnImageOverThePreviewCap_IsRefusedUnread()
-        {
-            await StoreAsync("/a.png", new byte[ImagePreview.MaxSourceBytes + 1], "image/png");
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read));
-
-            CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/a.png" });
-
-            Assert.Equal(true, read.IsError);
-            Assert.Contains(
-                $"/a.png is {TextFormat.Size(ImagePreview.MaxSourceBytes + 1)}, more than the {TextFormat.Size(ImagePreview.MaxSourceBytes)} answered here as an image or a preview of one;",
+            Assert.EndsWith(
+                "/a.heic is neither UTF-8 text nor a PNG, JPEG, GIF or WebP image, and this server has no plugin that makes a preview of image/heic; "
+                + "make a link to it with share_file and fetch it from there, such as with curl.",
                 TextOf(read),
                 StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Connect_WithoutAPluginThatMakesPreviews_SaysThereAreNone()
+        {
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read));
+
+            McpClientTool download = (await client.ListToolsAsync()).Single(tool => tool.Name == "download_file");
+
+            Assert.EndsWith("This server has no plugin that makes previews for agents, so any other file, an image too, comes only with why and where to get it.", download.Description, StringComparison.Ordinal);
+            Assert.Contains("This server has no plugin that makes previews for agents, so any other file, an image too, comes only with why", Regex.Replace(client.ServerInstructions!, @"\s+", " "), StringComparison.Ordinal);
         }
 
         [Fact]

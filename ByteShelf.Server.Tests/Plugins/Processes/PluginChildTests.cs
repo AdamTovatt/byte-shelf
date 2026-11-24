@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using ByteShelf.Plugins;
 using ByteShelf.Server.Derived.Models;
 using ByteShelf.Server.Derived.Services;
 using ByteShelf.Server.Plugins.Processes;
@@ -118,7 +119,7 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
             Frame answer = await RunAsync(process, "large thumbnail", DerivedKind.Thumbnail);
 
             Assert.Equal((FrameType.Answer, "[]"), (answer.Type, Encoding.UTF8.GetString(answer.Payload)));
-            Assert.Equal(DerivedKinds.MaxBytesOf(DerivedKind.Thumbnail), new FileInfo(Path.Combine(_folder, "thumbnail")).Length);
+            Assert.Equal(DerivedFileLimits.MaxBytesOf(DerivedKind.Thumbnail), new FileInfo(Path.Combine(_folder, "thumbnail")).Length);
             process.Kill();
         }
 

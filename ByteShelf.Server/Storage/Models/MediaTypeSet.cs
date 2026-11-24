@@ -13,6 +13,8 @@ namespace ByteShelf.Server.Storage.Models
             _patterns = patterns;
         }
 
+        public IReadOnlyList<MediaTypePattern> Patterns => _patterns;
+
         /// <summary>The set of <paramref name="patterns"/>, each a media type or a family of them, lowercase.</summary>
         /// <exception cref="ArgumentException">One is neither.</exception>
         public static MediaTypeSet Of(params IEnumerable<string> patterns)

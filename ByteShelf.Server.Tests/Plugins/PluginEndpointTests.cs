@@ -277,17 +277,22 @@ namespace ByteShelf.Server.Tests.Plugins
         public async Task AReaderThatCannotBeMade_IsLoggedAndLeavesWhatItWouldRead()
         {
             RecordingLogger<PluginMetadataReading> logger = new RecordingLogger<PluginMetadataReading>();
-            await using ServerTestHost host = await StartWithAnUnmadeReaderAsync(services => services.AddSingleton<ILogger<PluginMetadataReading>>(logger));
-            ShelfFile stored = await host.PutAsAdminAsync("docs", "/a.txt", "Ett äpple"u8.ToArray(), "text/plain");
+            PassLogger<PluginMetadataReadingWorker> passes = new PassLogger<PluginMetadataReadingWorker>();
+            await using ServerTestHost host = await StartWithAnUnmadeReaderAsync(services => services
+                .AddSingleton<ILogger<PluginMetadataReading>>(logger)
+                .AddSingleton<ILogger<PluginMetadataReadingWorker>>(passes));
+            await passes.Finished(1).WaitAsync(TestReadLimits.Real);
 
-            await host.Services.ReadPluginMetadataAsync();
+            // The server's own pass, so that no other logs or reads beside it.
+            ShelfFile stored = await host.PutAsAdminAsync("docs", "/a.txt", "Ett äpple"u8.ToArray(), "text/plain");
+            await passes.Finished(2).WaitAsync(TestReadLimits.Real);
 
             Assert.Equal(["healthy: Ett äpple"], await ReadWordsAsync(host, "/a.txt"));
             await using AsyncServiceScope scope = host.Services.CreateAsyncScope();
             IContentPluginMetadataRepository repository = scope.ServiceProvider.GetRequiredService<IContentPluginMetadataRepository>();
             Assert.Equal([stored.Sha256], await repository.GetUnreadAsync("reading", 1, MediaTypeSet.Of("text/plain"), null, 10));
-            Assert.Contains(
-                "The reader of reading could not run, and is tried again by the next pass: its reader could not be made: It was told to fail.", logger.Messages);
+            Assert.Equal(
+                ["The reader of reading could not run, and is tried again by the next pass: its reader could not be made: It was told to fail."], logger.Messages);
         }
 
         [Fact]

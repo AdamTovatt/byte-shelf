@@ -27,8 +27,8 @@ namespace ByteShelf.Server.Tests.TestUtilities
     /// <c>undeletable</c> (leaves a folder that cannot be removed, with no file of its own),
     /// <c>child crash &lt;path&gt;</c> and <c>child wait &lt;path&gt;</c> (starts a process that goes on, says its id at
     /// path + ".child", and crashes or waits) or <c>wait &lt;path&gt;</c> (says so at path + ".started", with its process
-    /// id, and goes on once there is a file at the path). Anything else, and those that go on, it makes into text
-    /// that says the kind, the contents and the maker.
+    /// id, and goes on once there is a file at the path). What starts with <c>picture</c> it makes into a picture for
+    /// agents. Anything else, and those that go on, it makes into text that says the kind, the contents and the maker.
     /// </summary>
     public sealed class TestMaker : IDerivedFileMaker
     {
@@ -160,7 +160,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
             switch (text.Split('\n')[0])
             {
                 case "large by path":
-                    await File.WriteAllBytesAsync("thumbnail", new byte[DerivedKinds.MaxBytesOf(DerivedKind.Thumbnail) + 1]);
+                    await File.WriteAllBytesAsync("thumbnail", new byte[DerivedFileLimits.MaxBytesOf(DerivedKind.Thumbnail) + 1]);
                     break;
                 case "linked":
                     File.Delete("thumbnail");
@@ -195,8 +195,14 @@ namespace ByteShelf.Server.Tests.TestUtilities
 
         private Task MakeAsync(IMadeFiles made, DerivedKind kind, string text)
         {
+            if (kind == DerivedKind.Agent && text.StartsWith("picture", StringComparison.Ordinal))
+            {
+                // As much of a JPEG as tells one.
+                return made.AddAsync(kind, MediaType, null, file => file.WriteAsync(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 }).AsTask());
+            }
+
             return kind == DerivedKind.Thumbnail && text == "large thumbnail"
-                ? AddAsync(made, kind, new string('x', (int)DerivedKinds.MaxBytesOf(kind)), "x")
+                ? AddAsync(made, kind, new string('x', (int)DerivedFileLimits.MaxBytesOf(kind)), "x")
                 : AddAsync(made, kind, Made(kind, text, _spec.Id, _spec.Kinds.First(spec => spec.Kind == kind).Version));
         }
 

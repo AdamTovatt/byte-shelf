@@ -5,7 +5,7 @@
 import { apiUrl, authorizedFetch, throwIfFailed } from './apiClient';
 import { hasFreshCookie } from './authService';
 import { fetchEncryptedFolder, type EncryptedFolder } from './encryptionService';
-import type { ShelfFile } from './shelfService';
+import type { DerivedKind, ShelfFile } from './shelfService';
 
 /**
  * Whether this page opens, saves and previews a file by its address, its token in the session's cookie.
@@ -44,8 +44,23 @@ export interface ContentSource {
    * download, so a caller that needs only the start stops it there.
    */
   open: (id: string, signal: AbortSignal) => Promise<ReadableStream<Uint8Array>>;
+  /** One of the files plugins made from the file. */
+  derived: (id: string, kind: DerivedKind) => DerivedSource;
   /** The encrypted folder whose password opens an encrypted file; null when the file has its own. */
   encryptedFolderOf: (file: ShelfFile) => Promise<EncryptedFolder | null>;
+}
+
+/** Where one of the files plugins made from a file is read from. */
+export interface DerivedSource {
+  /**
+   * Its address, where an element loads it, with the session's cookie, renewed first when it must be. Another
+   * `version` is another address, so that the browser, which shows its copy for an hour, never shows another's.
+   */
+  navigationUrl: (version: string) => Promise<string>;
+  /** What tells it from any other that was or will be at its place. */
+  version: (signal: AbortSignal) => Promise<string>;
+  /** Its bytes, with the session's token in the header. */
+  read: (signal: AbortSignal) => Promise<Blob>;
 }
 
 /** The shelf's live files. */
@@ -56,6 +71,10 @@ export function liveContent(shelf: string): ContentSource {
       return apiUrl('/api/open/{shelf}/content', { shelf }, contentQuery(id, download));
     },
     ...readsOf((id) => apiUrl('/api/shelves/{shelf}/content', { shelf }, contentQuery(id, false))),
+    derived: derivedOf(
+      (query) => apiUrl('/api/open/{shelf}/files/derived', { shelf }, query),
+      (query) => apiUrl('/api/shelves/{shelf}/files/derived', { shelf }, query),
+    ),
     encryptedFolderOf: (file) => fetchEncryptedFolder(shelf, file.path),
   };
 }
@@ -71,6 +90,10 @@ export function deletedContent(shelf: string, deletionId: string, encryptedBy: E
       return apiUrl('/api/open/{shelf}/trash/{deletionId}/content', { shelf, deletionId }, contentQuery(id, download));
     },
     ...readsOf((id) => apiUrl('/api/shelves/{shelf}/trash/{deletionId}/content', { shelf, deletionId }, contentQuery(id, false))),
+    derived: derivedOf(
+      (query) => apiUrl('/api/open/{shelf}/trash/{deletionId}/derived', { shelf, deletionId }, query),
+      (query) => apiUrl('/api/shelves/{shelf}/trash/{deletionId}/derived', { shelf, deletionId }, query),
+    ),
     encryptedFolderOf: () => Promise.resolve(encryptedBy),
   };
 }
@@ -88,6 +111,21 @@ function contentQuery(id: string, download: boolean): URLSearchParams {
   const query = new URLSearchParams({ id });
   if (download) query.set('download', 'true');
   return query;
+}
+
+/** What plugins made, opened at `openUrl` with a query that names it and fetched at `fetchUrl` with the same. */
+function derivedOf(openUrl: (query: URLSearchParams) => string, fetchUrl: (query: URLSearchParams) => string): ContentSource['derived'] {
+  return (id, kind) => {
+    const fetched = fetchUrl(new URLSearchParams({ id, kind }));
+    return {
+      navigationUrl: async (version) => {
+        await requireFreshCookie();
+        return openUrl(new URLSearchParams({ id, kind, v: version }));
+      },
+      version: async (signal) => (await fetchBytes(fetched, { method: 'HEAD', signal })).headers.get('ETag') ?? '',
+      read: async (signal) => (await fetchBytes(fetched, { signal })).blob(),
+    };
+  };
 }
 
 /** The reads of files served at `urlOf`, with the session's token in the header. */

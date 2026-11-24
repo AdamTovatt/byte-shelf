@@ -15,10 +15,10 @@ import {
   Textarea,
   cn,
   getErrorMessage,
-  getFileIcon,
   iconMap,
 } from '../ui';
 import { FileDetailsDialog } from './FileDetailsDialog';
+import { FileThumbnail } from './FileThumbnail';
 import { FolderIcon } from './FolderIcon';
 import { FormDialog } from './FormDialog';
 import { LoadError } from './LoadError';
@@ -43,6 +43,7 @@ import { openFile, opensInTab, saveFiles } from './fileOpening';
 import { FilePreview } from './preview/FilePreview';
 import { useShelfPreview } from '../hooks/useShelfPreview';
 import { isTypingTarget } from '../lib/keys';
+import type { ContentSource } from '../services/contentService';
 import { openable } from '../services/fileReading';
 import { showActionToast } from './actionToast';
 import { NameAndReason, NameLine } from './MiddleTruncatedName';
@@ -60,6 +61,7 @@ import { runOrToast } from '../lib/utils';
 import { useIsOverlayOpen } from '../ui/hooks/useOverlay';
 import { useSubmit } from '../hooks/useSubmit';
 import { directoryEntry, entrySizeBytes, nameOrCount, type DuplicateGroup, type DuplicateSearchResults, type Entry, type FileSearchResults, type ShelfFile } from '../services/shelfService';
+import { RowIcon } from './RowIcon';
 import { SearchOptions } from './SearchOptions';
 import { NO_SEARCH_FILTERS, isSearch, searchCriteria } from '../lib/searchFilters';
 
@@ -239,6 +241,7 @@ export function FolderListing({ shelf, path, work: { encryption, reading, fileAc
     const shown = (
       <EntryRow
         key={entry.value.id}
+        source={reading.source}
         entry={entry}
         label={options.label}
         selection={options.selectable ? {
@@ -522,6 +525,7 @@ interface RowSelection {
 }
 
 interface EntryRowProps {
+  source: ContentSource;
   entry: Entry;
   /** What the row is called: the name, unless a search shows the path from the folder. */
   label?: string;
@@ -552,7 +556,7 @@ interface EntryRowProps {
   onDelete: () => void;
 }
 
-function EntryRow({ entry, label, selection, opensIn, type, onOpen, onShowContents, onOpenInTab, onPrefetch, onDownload, onDescribe, onShowDetails, onCopyLink, onEncrypt, onRemoveEncryption, pluginItems, onRename, onMove, onDelete }: EntryRowProps) {
+function EntryRow({ source, entry, label, selection, opensIn, type, onOpen, onShowContents, onOpenInTab, onPrefetch, onDownload, onDescribe, onShowDetails, onCopyLink, onEncrypt, onRemoveEncryption, pluginItems, onRename, onMove, onDelete }: EntryRowProps) {
   const isFile = entry.kind === 'file';
   const name = entry.value.name;
   const selected = selection?.selected ?? false;
@@ -588,7 +592,9 @@ function EntryRow({ entry, label, selection, opensIn, type, onOpen, onShowConten
         aria-pressed={selection ? selected : undefined}
         className="flex min-w-0 flex-1 select-none items-center gap-3 rounded-lg px-2 py-2 text-left"
       >
-        {isFile ? <Icon icon={getFileIcon(name)} size={18} className="shrink-0 text-muted" /> : <FolderIcon type={type} size={18} className="shrink-0 text-muted" />}
+        {isFile
+          ? <FileThumbnail file={entry.value} source={source} />
+          : <RowIcon><FolderIcon type={type} size={18} className="text-muted" /></RowIcon>}
         <span className="min-w-0 truncate text-body-md text-fg">{label ?? name}</span>
         {entry.value.encrypted && <Icon icon={iconMap.lock} size={14} className="shrink-0 text-muted" aria-label="Encrypted" />}
         {isFile && (

@@ -34,7 +34,7 @@ namespace ByteShelf.Server.Derived.Services
                 throw new InvalidOperationException($"The kind {kind} is made already.");
             }
 
-            await using (Stream file = Open(Path.Combine(_folder, DerivedKinds.NameOf(kind)), DerivedKinds.MaxBytesOf(kind)))
+            await using (Stream file = Open(Path.Combine(_folder, DerivedKinds.NameOf(kind)), DerivedFileLimits.MaxBytesOf(kind)))
             {
                 await write(file);
             }

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { blobReader, sourceReader, type ContentReader } from '../lib/content/contentReader';
 import { FileContents, contentsKey, type FileContentsState } from '../lib/preview/fileContents';
 import { isBlobBacked } from '../services/contentService';
 import type { OpenableFile, ReadableFile } from '../services/fileReading';
+import { useMadeFor } from './useMadeFor';
 
 /** Where a previewed file's contents are, on the way to its viewer. */
 export type PreviewContents =
@@ -47,9 +48,7 @@ export function usePreviewContents(previewed: ReadableFile | null, asksPassword:
 /** The whole contents of what is previewed, open while it is; null for what is not blob-backed. */
 function useFileContents(previewed: ReadableFile | null, asksPassword: boolean): FileContents | null {
   const key = previewed && isBlobBacked(previewed.file) ? contentsKey(previewed.file) : null;
-  const [made, setMade] = useState<{ key: string | null; fileContents: FileContents | null }>({ key: null, fileContents: null });
-  if (made.key !== key) setMade({ key, fileContents: key === null ? null : new FileContents(previewed!) });
-  const { fileContents } = made;
+  const fileContents = useMadeFor(key === null ? null : [key], () => new FileContents(previewed!));
 
   useEffect(() => {
     if (previewed) fileContents?.update(previewed);

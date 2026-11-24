@@ -14,6 +14,11 @@ export function untilAborted<T>(work: Promise<T>, signal?: AbortSignal): Promise
   });
 }
 
+/** Waits `ms`, or until `signal` aborts, which it then fails as. */
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return untilAborted(new Promise((resolve) => setTimeout(resolve, ms)), signal);
+}
+
 /** What fails for want of a password nobody gave. */
 export function noPasswordGiven(): DOMException {
   return new DOMException('No password was given.', 'AbortError');

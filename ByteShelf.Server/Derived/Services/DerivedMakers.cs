@@ -1,4 +1,5 @@
 using ByteShelf.Server.Derived.Models;
+using ByteShelf.Server.Storage.Models;
 using ByteShelfCommon;
 
 namespace ByteShelf.Server.Derived.Services
@@ -23,9 +24,8 @@ namespace ByteShelf.Server.Derived.Services
         /// </summary>
         public KindMaker? For(DerivedKind kind, IReadOnlyCollection<string> mediaTypes)
         {
-            return _plugins.All
-                .SelectMany(plugin => plugin.Makes.Select(declaration => new KindMaker(plugin, declaration)))
-                .Where(maker => maker.Declaration.Kind == kind && mediaTypes.Any(maker.Declaration.MediaTypes.Includes))
+            return MakersOf(kind)
+                .Where(maker => mediaTypes.Any(maker.Declaration.MediaTypes.Includes))
                 .OrderBy(maker => mediaTypes.Any(maker.Declaration.MediaTypes.Names) ? 0 : 1)
                 .ThenBy(maker => maker.Plugin.Id, StringComparer.Ordinal)
                 .FirstOrDefault();
@@ -44,10 +44,29 @@ namespace ByteShelf.Server.Derived.Services
                 .ToList();
         }
 
-        /// <summary>Whether an installed plugin with the id <paramref name="pluginId"/> makes <paramref name="kind"/>.</summary>
+        /// <summary>Whether <paramref name="entry"/> is what an installed plugin made, or failed to make, at the version it makes <paramref name="kind"/> at.</summary>
+        public bool IsCurrent(DerivedKind kind, DerivedEntry entry)
+        {
+            return MakersOf(kind).Any(maker => maker.IsCurrent(entry));
+        }
+
+        /// <summary>Whether an installed plugin with the id <paramref name="pluginId"/> makes <paramref name="kind"/>, at any version.</summary>
         public bool Makes(DerivedKind kind, string pluginId)
         {
-            return _plugins.All.Any(plugin => plugin.Id == pluginId && plugin.Makes.Any(declaration => declaration.Kind == kind));
+            return MakersOf(kind).Any(maker => maker.Plugin.Id == pluginId);
+        }
+
+        /// <summary>The media types of the files installed plugins make <paramref name="kind"/> from.</summary>
+        public MediaTypeSet MediaTypesOf(DerivedKind kind)
+        {
+            return MediaTypeSet.Union(MakersOf(kind).Select(maker => maker.Declaration.MediaTypes));
+        }
+
+        private IEnumerable<KindMaker> MakersOf(DerivedKind kind)
+        {
+            return _plugins.All
+                .SelectMany(plugin => plugin.Makes.Select(declaration => new KindMaker(plugin, declaration)))
+                .Where(maker => maker.Declaration.Kind == kind);
         }
     }
 }

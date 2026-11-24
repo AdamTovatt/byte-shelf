@@ -20,7 +20,7 @@ namespace ByteShelf.Server.Derived.Controllers
                 derived.Contents,
                 derived.MediaType,
                 lastModified: null,
-                new EntityTagHeaderValue($"\"{DerivedKinds.NameOf(derived.Kind)}-{derived.Sha256}-{derived.Plugin}-{derived.Version}\""),
+                new EntityTagHeaderValue($"\"{DerivedKinds.NameOf(derived.Kind)}-{derived.Sha256}-{derived.Tag}\""),
                 enableRangeProcessing: true);
         }
     }

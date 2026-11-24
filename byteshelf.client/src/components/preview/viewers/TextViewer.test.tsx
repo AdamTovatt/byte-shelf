@@ -6,6 +6,7 @@ import { TextViewer } from './TextViewer';
 import { blobReader } from '../../../lib/content/contentReader';
 import { press, untilFound } from '../../../test/dom';
 import { shelfFile } from '../../../test/shelfFiles';
+import { viewerProps } from '../../../test/viewerProps';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -17,7 +18,7 @@ describe('the text viewer', () => {
 
   async function show(contents: string | Uint8Array<ArrayBuffer>, contentType = 'text/plain'): Promise<string> {
     const content = blobReader(new Blob([contents]));
-    await act(async () => root.render(<TextViewer file={shelfFile('a', { contentType })} content={content} />));
+    await act(async () => root.render(<TextViewer {...viewerProps(shelfFile('a', { contentType }), content)} />));
     return (await untilFound('pre')).textContent!;
   }
 
@@ -63,7 +64,7 @@ describe('the text viewer', () => {
   it('reads no more than it shows, and one byte to tell whether there is more', async () => {
     const range = vi.fn(async () => new Blob(['a']));
 
-    await act(async () => root.render(<TextViewer file={shelfFile('a')} content={{ ...blobReader(new Blob([])), range }} />));
+    await act(async () => root.render(<TextViewer {...viewerProps(shelfFile('a'), { ...blobReader(new Blob([])), range })} />));
 
     await untilFound('pre');
     expect(range.mock.calls).toEqual([[0, MIB + 1, expect.any(AbortSignal)]]);
@@ -72,7 +73,7 @@ describe('the text viewer', () => {
   it('says why the text could not be read, and shows it when Try again is pressed once it can be', async () => {
     const range = vi.fn(async () => new Blob(['the text'])).mockRejectedValueOnce(new Error('The server is unreachable.'));
 
-    await act(async () => root.render(<TextViewer file={shelfFile('a')} content={{ ...blobReader(new Blob([])), range }} />));
+    await act(async () => root.render(<TextViewer {...viewerProps(shelfFile('a'), { ...blobReader(new Blob([])), range })} />));
     await vi.waitFor(() => expect(container.textContent).toBe('The server is unreachable.Try again'));
     await press('Try again');
 

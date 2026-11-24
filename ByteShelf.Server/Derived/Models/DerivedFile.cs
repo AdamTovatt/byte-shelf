@@ -10,9 +10,8 @@ namespace ByteShelf.Server.Derived.Models
         /// <summary>The SHA-256 of the contents it was made from.</summary>
         public required string Sha256 { get; init; }
 
-        public required string Plugin { get; init; }
-
-        public required int Version { get; init; }
+        /// <summary>What made it and at which version (<see cref="DerivedEntry.Tag"/>).</summary>
+        public required string Tag { get; init; }
 
         public required string MediaType { get; init; }
 

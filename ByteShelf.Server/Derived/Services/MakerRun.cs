@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
+using ByteShelf.Plugins;
 using ByteShelf.Server.Derived.Models;
 using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Shared.Json;
@@ -72,10 +73,7 @@ namespace ByteShelf.Server.Derived.Services
                     return MakingOutcome.NothingToMake;
                 }
 
-                foreach (KindMaker maker in _missing)
-                {
-                    Keep(maker, made.FirstOrDefault(file => file.Kind == maker.Declaration.Kind), folder);
-                }
+                _store.Put(Sha256, _missing.Select(maker => ToKeep(maker, made.FirstOrDefault(file => file.Kind == maker.Declaration.Kind), folder)).ToList());
             }
 
             if (_group == MakingGroup.Full)
@@ -98,19 +96,19 @@ namespace ByteShelf.Server.Derived.Services
             }
         }
 
-        /// <summary>Keeps what was made of one kind, or that it could not be. Hold the lock.</summary>
-        private void Keep(KindMaker maker, MadeInFolder? made, WorkFolder folder)
+        /// <summary>What is kept of one kind: what was made, or that it could not be.</summary>
+        private KeptFile ToKeep(KindMaker maker, MadeInFolder? made, WorkFolder folder)
         {
             DerivedKind kind = maker.Declaration.Kind;
 
             // Whatever wrote it: a maker can leave a file there by its path, too.
             FileInfo file = new FileInfo(Path.Combine(folder.Path, DerivedKinds.NameOf(kind)));
-            bool mayBeKept = file is { Exists: true, LinkTarget: null } && file.Length <= DerivedKinds.MaxBytesOf(kind);
+            bool mayBeKept = file is { Exists: true, LinkTarget: null } && file.Length <= DerivedFileLimits.MaxBytesOf(kind);
             MadeInfo? info = made != null && MediaTypeHeaderValue.TryParse(made.MediaType, out _) && mayBeKept
                 ? new MadeInfo(made.MediaType, made.Original)
                 : null;
 
-            _store.Put(kind, Sha256, new DerivedEntry(_plugin.Id, maker.Declaration.Version, info), info == null ? null : file.FullName);
+            return new KeptFile(kind, new DerivedEntry(_plugin.Id, maker.Declaration.Version, info), info == null ? null : file.FullName);
         }
 
         private async Task<bool> AreHeldAsync()

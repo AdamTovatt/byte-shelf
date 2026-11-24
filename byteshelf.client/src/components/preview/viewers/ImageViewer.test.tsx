@@ -4,8 +4,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImageViewer } from './ImageViewer';
 import { blobReader, type ContentReader } from '../../../lib/content/contentReader';
-import type { ShelfFile } from '../../../services/shelfService';
 import { press, untilFound } from '../../../test/dom';
+import { viewerProps } from '../../../test/viewerProps';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -14,7 +14,7 @@ describe('the image viewer', () => {
   let container: HTMLDivElement;
 
   async function show(type: string, content: ContentReader = blobReader(new Blob(['<svg/>'], { type }))): Promise<HTMLImageElement> {
-    await act(async () => root.render(<ImageViewer file={{ name: 'a.svg' } as ShelfFile} content={content} />));
+    await act(async () => root.render(<ImageViewer {...viewerProps({ name: 'a.svg' }, content)} />));
     return untilFound<HTMLImageElement>('img');
   }
 
@@ -54,7 +54,7 @@ describe('the image viewer', () => {
     await vi.waitFor(() => expect(container.textContent).toBe('The server is unreachable.Try again'));
 
     const content = { ...blobReader(new Blob(['a'])), url: unreachable };
-    await act(async () => root.render(<ImageViewer key="second" file={{ name: 'a' } as ShelfFile} content={content} />));
+    await act(async () => root.render(<ImageViewer key="second" {...viewerProps({ name: 'a' }, content)} />));
     await vi.waitFor(() => expect(container.textContent).toBe('The server is unreachable.Try again'));
   });
 

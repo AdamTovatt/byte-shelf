@@ -5794,6 +5794,12 @@ export interface components {
                     [key: string]: components["schemas"]["PluginFieldValue"];
                 };
             } | null;
+            derived?: {
+                thumbnail?: string;
+                preview?: string;
+                full?: string;
+                agent?: string;
+            } | null;
         };
         ShelfInfo: {
             /** Format: uuid */

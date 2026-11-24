@@ -10,7 +10,7 @@ AOT-compatible.
 |---|---|
 | `ShelfInfo`, `ShelfPermission` | A shelf with its quota and usage, what the caller may do with its files, and whether the server is a replica. `ShelfPermission` is also what a key's grant gives. |
 | `CreateShelfRequest`, `UpdateShelfRequest` | Creates a shelf, and replaces its name and quota. |
-| `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps, description, whether its contents are encrypted (`Encrypted`), and in listings the values of the fields plugins declare for them (`PluginFields`). |
+| `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps, description, whether its contents are encrypted (`Encrypted`), and in listings the values of the fields plugins declare for them (`PluginFields`) and, as in its own record, which derived files there are (`Derived`). |
 | `SetDescriptionRequest`, `FileDescription` | Setting a file's description, and its rules. |
 | `FileCriteria` | Which of a shelf's files a search looks at: the directory, text, type, sizes, times, SHA-256, whether it has a description, and what the server read from the contents (taken times, a GPS position, durations, page counts) or plugins keep (`PluginFields`), checked by `NormalizeCriteria`. Both searches below take their criteria from it. |
 | `FileSearch`, `FileSearchResults` | The files that meet the criteria, a page at a time by path, and one page of them. |

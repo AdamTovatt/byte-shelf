@@ -49,7 +49,7 @@ namespace ByteShelf.Server.Storage.Services
         public async Task<ShelfFile> GetFileAsync(Shelf shelf, EntryReference reference)
         {
             FileRecord file = await _shelfTree.GetFileAsync(shelf.Id, reference);
-            return await _shelfTree.ToShelfFileAsync(file);
+            return _listedFiles.RecordOf(file, await _shelfTree.GetDirectoryPathAsync(file.DirectoryId));
         }
 
         /// <inheritdoc />

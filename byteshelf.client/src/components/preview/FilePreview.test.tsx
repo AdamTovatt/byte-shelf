@@ -39,6 +39,13 @@ function OwnedViewer() {
   return <p>of the plugin {usePluginId()}</p>;
 }
 
+/** Shows what plugins made from its file and from those beside it. */
+function DerivedViewer({ file, derived, neighbours }: ViewerProps) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => void derived.url('preview').then(setUrl), [derived]);
+  return <p>{`${file.id} at ${url}, beside ${neighbours.map((each) => `${each.file.id} ${each.derived.has('preview')}`).join(' and ')}`}</p>;
+}
+
 /** Brings the component of a viewer that loads it when it is first shown. */
 let loadLazy: (module: { default: ComponentType<ViewerProps> }) => void;
 
@@ -48,6 +55,7 @@ const WITH_PLUGINS = BUILT_IN_VIEWERS.with('test', [
   { id: 'broken', mediaTypes: ['x-test/broken'], extensions: [], component: BrokenViewer },
   { id: 'lazy', mediaTypes: ['x-test/lazy'], extensions: [], component: LazyViewer },
   { id: 'owned', mediaTypes: ['x-test/owned'], extensions: [], component: OwnedViewer },
+  { id: 'derived', mediaTypes: ['x-test/derived'], extensions: [], component: DerivedViewer },
 ]).with(null, [{ id: 'own', mediaTypes: ['x-test/own'], extensions: [], component: OwnedViewer }]);
 
 vi.mock('../../hooks/useViewers', () => ({ useViewers: () => WITH_PLUGINS }));
@@ -66,6 +74,7 @@ const source: ContentSource = {
   read: async () => new Blob(['whole']),
   readRange: async (id) => new Blob([`text of ${id}`]),
   open: async () => new Blob(['whole']).stream(),
+  derived: (id, kind) => ({ navigationUrl: async (version) => `/open/${id}/${kind}?v=${version}`, version: async () => '', read: async () => new Blob([]) }),
   encryptedFolderOf: async () => null,
 };
 
@@ -89,11 +98,15 @@ describe('the preview', () => {
     }, []);
     const beside = neighboursOf(files, shown.id);
     const move = (to: ShelfFile | null) => to && (() => setShown(to));
+    const reading: FileReading = { source, read: (each, signal) => read(each, signal), unlock: (each, signal) => unlock(each, signal) };
+    const readable = (file: ShelfFile | null | undefined) => file ? { file, reading } : null;
     return (
       <FilePreview
-        previewed={{ file: shown, reading: { source, read: (each, signal) => read(each, signal), unlock: (each, signal) => unlock(each, signal) } }}
+        previewed={{ file: shown, reading }}
         error={null}
         steps={beside && { ...beside, more: moreFound !== undefined, toPrevious: move(beside.previous), toNext: move(beside.next) ?? moreFound ?? null }}
+        previous={readable(beside?.previous)}
+        next={readable(beside?.next)}
         onClose={() => closed++}
         detailsOn={detailsOn}
         actions={actions}
@@ -159,6 +172,20 @@ describe('the preview', () => {
     expect(labelled('Next file')?.disabled).toBe(true);
     await key('ArrowLeft');
     await shows('text of b');
+  });
+
+  it('gives a viewer what plugins made from the file and from those beside it', async () => {
+    const derived = (id: string, kinds: ShelfFile['derived']) => shelfFile(id, { contentType: 'x-test/derived', derived: kinds });
+    const files = [derived('a', null), derived('b', { preview: 'p-1' }), derived('c', { preview: 'p-1' })];
+    await show(files[1], files);
+
+    await shows('b at /open/b/preview?v=b-p-1, beside a false and c true');
+    await key('ArrowRight');
+    await shows('c at /open/c/preview?v=c-p-1, beside b true');
+
+    // Each file's is its own.
+    await act(async () => change(derived('a', { preview: 'p-2' })));
+    await shows('a at /open/a/preview?v=a-p-2, beside b true');
   });
 
   it('leaves the arrow keys to a dialog over it, which Escape closes first', async () => {
@@ -252,7 +279,7 @@ describe('the preview', () => {
 
   it('says why a file\'s record could not be loaded', async () => {
     await act(async () => root.render(
-      <FilePreview previewed={null} error={new Error('The server is unreachable.')} steps={null} onClose={() => {}} asksPassword={false} />,
+      <FilePreview previewed={null} error={new Error('The server is unreachable.')} steps={null} previous={null} next={null} onClose={() => {}} asksPassword={false} />,
     ));
 
     expect(document.body.textContent).toContain('The server is unreachable.');

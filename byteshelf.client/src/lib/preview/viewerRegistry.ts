@@ -2,12 +2,24 @@ import type { ComponentType } from 'react';
 import type { ShelfFile } from '../../services/shelfService';
 import { UNTYPED, mediaTypeOf } from '../mediaTypes';
 import type { ContentReader } from '../content/contentReader';
+import type { DerivedReader } from '../derived/derivedReader';
 import { logFailureOnce } from '../logFailureOnce';
 
 /** What a viewer's component is given: the file's record and its contents, whatever they are read from. */
 export interface ViewerProps {
   file: ShelfFile;
   content: ContentReader;
+  /** What plugins made from its contents. */
+  derived: DerivedReader;
+  /** The files the arrow keys move to, whatever shows them: the previous one and the next, where there are any. */
+  neighbours: readonly Neighbour[];
+}
+
+/** A file beside the previewed one, whose viewer is not shown yet but may be soon. */
+export interface Neighbour {
+  file: ShelfFile;
+  /** What plugins made from its contents, to load ahead. */
+  derived: DerivedReader;
 }
 
 /** Shows files of some types in the preview. Types and extensions are compared whatever their case. */

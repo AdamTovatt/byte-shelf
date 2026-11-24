@@ -9,6 +9,7 @@ namespace ByteShelf.Server.Invalidation
             services.AddSingleton<IInvalidationBroadcaster, InMemoryInvalidationBroadcaster>();
             services.AddScoped<InvalidationAudience>();
             services.AddHostedService<ChangeLogInvalidationPublisher>();
+            services.AddHostedService<DerivedInvalidationPublisher>();
             return services;
         }
     }

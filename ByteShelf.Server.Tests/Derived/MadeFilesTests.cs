@@ -1,4 +1,5 @@
 using System.Text;
+using ByteShelf.Plugins;
 using ByteShelf.Server.Derived.Models;
 using ByteShelf.Server.Derived.Services;
 using ByteShelfCommon;
@@ -8,7 +9,7 @@ namespace ByteShelf.Server.Tests.Derived
     /// <summary>The streams a maker writes what it makes to.</summary>
     public sealed class MadeFilesTests : IDisposable
     {
-        private static readonly long MaxBytes = DerivedKinds.MaxBytesOf(DerivedKind.Thumbnail);
+        private static readonly long MaxBytes = DerivedFileLimits.MaxBytesOf(DerivedKind.Thumbnail);
 
         private readonly string _folder = Directory.CreateTempSubdirectory("byteshelf-made-").FullName;
         private readonly MadeFiles _made;

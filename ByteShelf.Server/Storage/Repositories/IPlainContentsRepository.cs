@@ -15,6 +15,9 @@ namespace ByteShelf.Server.Storage.Repositories
         /// </summary>
         Task<IReadOnlyList<(string Sha256, IReadOnlyList<string> MediaTypes)>> GetLiveAsync(MediaTypeSet mediaTypes, string? after, int limit, IDbSession? session = null);
 
+        /// <summary>The shelves with a live plain file that holds one of <paramref name="hashes"/>, each once.</summary>
+        Task<IReadOnlyList<Guid>> GetShelvesAsync(IReadOnlyCollection<string> hashes, IDbSession? session = null);
+
         /// <summary>Those of <paramref name="hashes"/> no plain file holds, live or in the trash.</summary>
         Task<IReadOnlyList<string>> GetUnheldAsync(IReadOnlyCollection<string> hashes, IDbSession? session = null);
     }

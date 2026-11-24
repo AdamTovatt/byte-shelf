@@ -112,8 +112,7 @@ namespace ByteShelf.Server.Derived.Services
                     {
                         Kind = kind,
                         Sha256 = sha256,
-                        Plugin = entry.Plugin,
-                        Version = entry.Version,
+                        Tag = entry.Tag,
                         MediaType = entry.Made.MediaType,
                         Contents = contents,
                     });

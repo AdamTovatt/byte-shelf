@@ -46,6 +46,21 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<IReadOnlyList<Guid>> GetShelvesAsync(IReadOnlyCollection<string> hashes, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string hashesJson = JsonSerializer.Serialize(hashes);
+                string query = $@"
+                    SELECT DISTINCT shelf_id FROM file
+                    WHERE sha256 IN (SELECT value FROM json_each(@{nameof(hashesJson)})) AND encrypted = 0 AND deleted_at IS NULL";
+
+                IEnumerable<Guid> shelves = await dbSession.Connection.QueryAsync<Guid>(query, new { hashesJson }, transaction: dbSession.Transaction);
+                return (IReadOnlyList<Guid>)shelves.ToList();
+            }, session);
+        }
+
+        /// <inheritdoc />
         public async Task<IReadOnlyList<string>> GetUnheldAsync(IReadOnlyCollection<string> hashes, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>
