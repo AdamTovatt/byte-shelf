@@ -372,6 +372,30 @@ SQLITE_TMPDIR="$BYTESHELF_ROOT" sqlite3 "$BYTESHELF_ROOT/byteshelf.db" 'VACUUM;'
 It writes two more copies of the database while it runs, one of them in a temporary folder, which
 `SQLITE_TMPDIR` puts inside the root, where no other user reaches it; the root's disk needs room for both.
 
+## Moving to another machine
+
+All an instance has is in its root, but for its settings and its plugins' code.
+
+1. Stop the server, and keep it from starting again, as two would go their own ways. updaemon starts a
+   stopped one again when it updates it; `updaemon remove byteshelf` ends that and leaves the root, but forgets
+   the settings, so note them first.
+2. Copy the whole root, modes kept, to a folder owned by the user the server will run as there: what is in
+   `keys/` only its owner can read. `staging/` holds uploads in progress, which go on there. A server that
+   stopped normally leaves no `byteshelf.db-wal`; one that was killed does, with changes that are not in
+   `byteshelf.db` yet, so copy it too. `derived/` may be left out: what is in it is made again.
+3. Install the server ([Installing](#installing)), in the same version or a newer one, with the settings
+   noted and `BYTESHELF_ROOT` naming the copy. Copy first: updaemon starts what it installs, which makes a new
+   root where there is none. Skip step 4 there: the users are in the root.
+4. Install the plugins. What they kept about files is in the root. A server that starts without those that made
+   what is in `derived/`, as it does with updaemon until they are installed, removes it.
+5. Have the address in `APP_BASE_URL` lead to the new machine, and set anew what names the old one, such as
+   `BYTESHELF_TRUSTED_PROXIES`.
+
+At the same `APP_BASE_URL`, sessions, shelf keys, passkeys and links go on working, and replicas go on from where
+they were. At another one, a link works only with the new address put into it, passkeys do not work, and
+replicas cannot follow: each keeps the URL it was paired with, and pairing it again takes a new root. A replica
+itself moves in the same way, to any address: its primary never calls it, and its pairing is in its root.
+
 ## Background work
 
 The server cleans up after itself: hourly it removes abandoned uploads, staging leftovers, the trash
