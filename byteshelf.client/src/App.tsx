@@ -12,6 +12,7 @@ import { ShelfSettingsPage } from './pages/ShelfSettingsPage';
 import { UsersPage } from './pages/UsersPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ReplicationPage } from './pages/ReplicationPage';
+import { CleanupBoundary } from './components/CleanupBoundary';
 import { NewVersionBanner } from './components/NewVersionBanner';
 import { StartupToast } from './components/StartupToast';
 import { AppShell } from './components/layout/AppShell';
@@ -35,7 +36,10 @@ function ProtectedRoute() {
 
   return (
     <AppShell>
-      <Outlet />
+      {/* As a page is left, so is what plugins draw in it. */}
+      <CleanupBoundary>
+        <Outlet />
+      </CleanupBoundary>
     </AppShell>
   );
 }

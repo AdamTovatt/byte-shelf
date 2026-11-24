@@ -3,17 +3,7 @@ import { FormDialog } from './FormDialog';
 import { PasswordInput } from './PasswordInput';
 import { useSubmit } from '../hooks/useSubmit';
 import { WrongPasswordError } from '../lib/encryption/age';
-
-/** What a password is asked for: one to unlock what is encrypted, or a new one to encrypt with. */
-export type PasswordRequest =
-  | {
-      kind: 'unlock';
-      /** What it unlocks, such as a folder's or a file's name. */
-      name: string;
-      /** Whether the password is the right one; a false keeps the dialog open saying so. */
-      verify: (password: string) => Promise<boolean>;
-    }
-  | { kind: 'new'; name: string };
+import type { PasswordRequest } from '../lib/encryption/askPassword';
 
 interface PasswordDialogProps {
   request: PasswordRequest;

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { StrictMode, act, lazy, useState, type ComponentType, type SVGProps } from 'react';
+import { StrictMode, act, lazy, useEffect, useState, type ComponentType, type SVGProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import toast from 'react-hot-toast';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ShelfPage } from './ShelfPage';
 import { DialogHost } from '../contexts/DialogHost';
+import { usePluginId } from '../contexts/PluginIdentity';
 import { MobileTopBarContext } from '../contexts/MobileTopBarContext';
 import { saveTokens } from '../services/authService';
 import { SHELF_ROUTE_PATTERNS } from '../lib/shelfPaths';
@@ -19,13 +20,12 @@ import type { ShelfFile } from '../services/shelfService';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { stubTabs } from '../test/browser';
 import { button, dialogTitles, labelled, press, shows, submitPassword, untilFound } from '../test/dom';
+import { FAST } from '../test/encryptedShelf';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
 import { pageHistory } from '../test/pageHistory';
 import { shelfDirectory, shelfFile } from '../test/shelfFiles';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
-const FAST = 10;
 
 interface Plugins {
   plugins: RunningPlugin[];
@@ -444,16 +444,19 @@ describe('a folder of a plugin\'s type', () => {
     await vi.waitFor(() => expect(row('beach.txt')).not.toBeNull());
     expect(searchField()).not.toBeNull();
     await act(async () => labelled('Pages of docs')!.click());
-    expect([button('Show as Album'), button('Unlock')]).toEqual([null, null]);
+    expect(button('Show as Album')).not.toBeNull();
   });
 
   describe('whose viewer threw', () => {
     let fails: boolean;
+    let drawn: number;
 
     beforeEach(async () => {
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
       fails = true;
+      drawn = 0;
       album((props) => {
+        drawn++;
         if (fails) throw new Error('It failed.');
         return <Album {...props} />;
       });
@@ -466,6 +469,34 @@ describe('a folder of a plugin\'s type', () => {
       await refetch();
 
       expect([row('beach.txt') !== null, viewer()]).toEqual([true, null]);
+    });
+
+    it('keeps its listing, asking for no password, as it is encrypted', async () => {
+      check = await createCheck('right', FAST);
+      folders.get('/Trip.album')!.files.push(shelfFile('late.txt', { path: '/Trip.album/late.txt' }));
+
+      await refetch();
+      // Shown by the listing that says the folder is encrypted.
+      await untilFound('[data-selectable-row] button[aria-label="late.txt"]');
+      await act(async () => {});
+
+      expect([row('beach.txt') !== null, viewer(), dialogTitles()]).toEqual([true, null, []]);
+    });
+
+    it('tries it again from the page\'s menu', async () => {
+      await chooseFrom('Pages of docs', 'Show as Album');
+
+      await vi.waitFor(() => expect(viewer()).not.toBeNull());
+    });
+
+    it('keeps its listing as it fails again', async () => {
+      fails = true;
+      const before = drawn;
+      await chooseFrom('Pages of docs', 'Show as Album');
+
+      await vi.waitFor(() => expect(row('beach.txt')).not.toBeNull());
+      expect(viewer()).toBeNull();
+      expect(drawn).toBeGreaterThan(before);
     });
 
     it('tries it again as it is opened again', async () => {
@@ -482,6 +513,78 @@ describe('a folder of a plugin\'s type', () => {
 
       await vi.waitFor(() => expect(viewer()).not.toBeNull());
       expect(given.folder.id).toBe('another');
+    });
+  });
+
+  describe('whose viewer throws as it goes', () => {
+    let fails: boolean;
+
+    beforeEach(async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      fails = true;
+      album((props) => {
+        useEffect(() => () => {
+          if (fails) throw new Error('It failed as it went.');
+        }, []);
+        return <Album {...props} />;
+      });
+      await renderAt('/shelves/docs/files/Trip.album');
+      await vi.waitFor(() => expect(viewer()).not.toBeNull());
+    });
+
+    // Nothing is above the page here, as the app is elsewhere.
+    afterEach(() => {
+      fails = false;
+    });
+
+    it('has its listing once its contents are asked for', async () => {
+      await chooseFrom('Pages of docs', 'Show contents');
+
+      await vi.waitFor(() => expect(row('beach.txt')).not.toBeNull());
+    });
+
+    it('asks for its password as it is encrypted, and shows in its viewer', async () => {
+      check = await createCheck('right', FAST);
+
+      await refetch();
+      await vi.waitFor(() => expect(dialogTitles()).toEqual(['Unlock Trip.album']));
+      await submitPassword('right');
+
+      await vi.waitFor(() => expect(viewer()).not.toBeNull());
+    });
+
+    it('asks for its password as that changes, and shows in its viewer as its encryption is removed', async () => {
+      rememberPassword(folderPasswordKey('docs', 'dir:/Trip.album'), 'right');
+      check = await createCheck('right', FAST);
+      await refetch();
+      await vi.waitFor(() => expect(client.isFetching()).toBe(0));
+      check = await createCheck('another', FAST);
+      await refetch();
+      await vi.waitFor(() => expect(dialogTitles()).toEqual(['Unlock Trip.album']));
+      await submitPassword('another');
+      await vi.waitFor(() => expect(viewer()).not.toBeNull());
+      const before = mounted;
+      check = null;
+
+      await refetch();
+
+      await vi.waitFor(() => expect(mounted).toBeGreaterThan(before));
+      await vi.waitFor(() => expect(viewer()).not.toBeNull());
+    });
+
+    it('gives way to the viewer of another folder that takes its place', async () => {
+      folders.get('/Trip.album')!.id = 'another';
+
+      await refetch();
+
+      await vi.waitFor(() => expect(given.folder.id).toBe('another'));
+      expect(viewer()).not.toBeNull();
+    });
+
+    it('gives way to another folder', async () => {
+      page.to('/shelves/docs/files/Trip.album/Deep.ALBUM');
+
+      await shows('deep.txt');
     });
   });
 
@@ -568,6 +671,13 @@ describe('a folder of a plugin\'s type', () => {
       await shows('beach.txt sea.txt');
 
       expect(given.canWrite).toBe(false);
+    });
+
+    it('is drawn as its plugin\'s, as what reads that plugin\'s documents is to be', async () => {
+      album(() => <p>of the plugin {usePluginId()}</p>);
+      await renderAt('/shelves/docs/files/Trip.album');
+
+      await shows('of the plugin a');
     });
 
     it('is given the same contents after a store', async () => {
@@ -803,11 +913,12 @@ describe('a folder of a plugin\'s type', () => {
       expect(viewer()).toBeNull();
     });
 
-    it('sends nothing the viewer stores once its encryption was removed, until it has other contents', async () => {
+    it('sends nothing the viewer stores once its encryption was removed, and shows it anew then', async () => {
       rememberPassword(folderPasswordKey('docs', 'dir:/Trip.album'), 'right');
       await renderAt('/shelves/docs/files/Trip.album');
       await vi.waitFor(() => expect(viewer()).not.toBeNull());
       const { contents } = given;
+      const before = mounted;
       check = null;
 
       await expect(contents.store('new.txt', new Blob(['new']))).rejects.toThrow('Trip.album is no longer encrypted as it was, or where it was.');
@@ -815,6 +926,7 @@ describe('a folder of a plugin\'s type', () => {
 
       await refetch();
       await vi.waitFor(() => expect(given.contents).not.toBe(contents));
+      expect(mounted).toBeGreaterThan(before);
       await act(async () => void await given.contents.store('new.txt', new Blob(['new'])));
       expect(sent.filter((line) => line.startsWith('PUT'))).toEqual(['PUT /api/shelves/docs/content?path=%2FTrip.album%2Fnew.txt&overwrite=true Bearer t']);
     });

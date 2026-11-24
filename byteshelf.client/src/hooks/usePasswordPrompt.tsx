@@ -1,12 +1,7 @@
 import { useCallback, useRef } from 'react';
-import { PasswordDialog, type PasswordRequest } from '../components/PasswordDialog';
+import { PasswordDialog } from '../components/PasswordDialog';
 import { useShowDialog } from '../contexts/DialogHost';
-
-/**
- * Asks for a password: null when cancelled, as `signal` cancels it, when another prompt took its place, or
- * when the page that asks is left.
- */
-export type AskPassword = (request: PasswordRequest, signal?: AbortSignal) => Promise<string | null>;
+import type { AskPassword } from '../lib/encryption/askPassword';
 
 /** The one password prompt of a page. */
 export function usePasswordPrompt(): AskPassword {

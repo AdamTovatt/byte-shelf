@@ -40,6 +40,6 @@ describe('a folder\'s type', () => {
     ['.album', undefined],
     ['reports', undefined],
   ])('is the first plugin\'s that has its suffix: %s, %s', (name, label) => {
-    expect(folderTypeOf(plugins, name)?.label).toBe(label);
+    expect(folderTypeOf(plugins, name)?.type.label).toBe(label);
   });
 });

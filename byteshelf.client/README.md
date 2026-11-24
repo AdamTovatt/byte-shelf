@@ -140,28 +140,29 @@ npm run codegen    # in a second terminal
   its path, for a deleted one the folder it was stored in, as the deletion's listing names it. The Trash
   page's Download, and its preview's Download and Open in new tab, go through it; a deleted folder downloads
   whole from the CLI or an agent.
-- **Encryption** (`hooks/useEncryption.tsx`, `hooks/usePasswordPrompt.tsx`, `lib/encryption/`): a file's or
-  folder's menu encrypts it with a password, typed twice and then a warning that a lost one cannot be
-  recovered; typage encrypts in the browser at age's work factor, about a second a file, and the file's
-  contents are swapped in place: it keeps its id, and the server's plain contents are gone at once, never to
-  the trash (a browser that showed them may keep them in its own cache). A file changed since it was read is
-  refused and left as it is. Inside an encrypted folder, a file is encrypted with the folder's password and
-  a folder cannot be encrypted on its own; files uploaded into one are encrypted with its password. A folder
-  holding a file encrypted with another password is refused before anything changes. Removing a folder's
-  encryption lets plain files in again and decrypts every file under it. A file that fails is named and the
-  rest go on; a folder's menu offers Encrypt or Remove encryption again while its files show the run
-  unfinished, and that finishes it. An encrypted file is read with the token and decrypted here, never
-  through a link, and shown in the preview; one no viewer takes, or opened in a tab, is shown from a local
-  blob: in a tab for images, PDFs, plain text, audio and video, saved for every other type, since a blob
-  runs as the app. Opening one asks for its password; reached by previous, next or a reload it shows Unlock
-  instead. A plugin's folder viewer stores a file (`StoreFile` in `services/fileStoring.ts`) encrypted with
-  its encrypted folder's password, or with that of the file it is stored over, and sends nothing to a folder
-  that is no longer where it was or encrypted as it was. Reading a file asks for no password and answers that it is locked; unlocking it asks, and answers
-  the contents (`Decryption` in `services/fileReading.ts`). A password is asked for once and kept in the
-  tab's `sessionStorage` (an encrypted folder's under the folder), taken out of any tab the app opens, and
-  forgotten on sign-in, as the session ends, and when the app starts with none (a tab the browser restores
-  after a sign-out). A plain folder's Remove encryption leaves out the files of an encrypted folder below
-  it, which has its own.
+- **Encryption** (`hooks/useEncryption.tsx`, `services/shelfPasswords.ts`, `hooks/usePasswordPrompt.tsx`,
+  `lib/encryption/`): a file's or folder's menu encrypts it with a password, typed twice and then a warning
+  that a lost one cannot be recovered; typage encrypts in the browser at age's work factor, about a second a
+  file, and the file's contents are swapped in place: it keeps its id, and the server's plain contents are
+  gone at once, never to the trash (a browser that showed them may keep them in its own cache). A file
+  changed since it was read is refused and left as it is. Inside an encrypted folder, a file is encrypted
+  with the folder's password and a folder cannot be encrypted on its own; files uploaded into one are
+  encrypted with its password. A folder holding a file encrypted with another password is refused before
+  anything changes. Removing a folder's encryption lets plain files in again and decrypts every file under
+  it. A file that fails is named and the rest go on; a folder's menu offers Encrypt or Remove encryption
+  again while its files show the run unfinished, and that finishes it. An encrypted file is read with the
+  token and decrypted here, never through a link, and shown in the preview; one no viewer takes, or opened
+  in a tab, is shown from a local blob: in a tab for images, PDFs, plain text, audio and video, saved for
+  every other type, since a blob runs as the app. Opening one asks for its password; reached by previous,
+  next or a reload it shows Unlock instead. A plugin's folder viewer stores a file
+  (`services/fileStoring.ts`) encrypted with its encrypted folder's password, or with that of the file it is
+  stored over, and sends nothing to a folder that is no longer where it was, or whose encryption was removed
+  or is now another folder's. Reading a file asks for no password and answers that it is locked; unlocking
+  it asks, and answers the contents (`Decryption` in `services/fileReading.ts`). A password is asked for
+  once and kept in the tab's `sessionStorage` (an encrypted folder's under the folder), taken out of any tab
+  the app opens, and forgotten on sign-in, as the session ends, and when the app starts with none (a tab the
+  browser restores after a sign-out). A plain folder's Remove encryption leaves out the files of an
+  encrypted folder below it, which has its own.
 - **Pages and layout:** a shelf's settings are tabs that are routes, `/shelves/:shelf/settings/:tab`
   (`SHELF_SETTINGS_TABS` in `lib/shelfPaths.ts` lists them; the page picks the tab from the route and
   sends any other to the first tab the user sees: General for an admin, Links for anyone else).
@@ -173,26 +174,28 @@ npm run codegen    # in a second terminal
   (`lib/plugins/pluginHost.ts`, followed with `hooks/usePluginHost.ts`), each failing alone. What they
   import as `@byteshelf/plugin` is `src/plugin/index.ts`; `build/sharedModules.ts` makes that and the
   packages plugins share an entry each of the build, named in `index.html`'s import map, and in the dev
-  server too. `build/buildPlugin.ts` builds the plugins in [plugins](../plugins/README.md). What they
-  may use is a promise: breaking what a release holds of it raises `PluginApi.Version` on the server
-  ([Plugins](../ByteShelf.Server/Plugins/Plugins.md), Versions). A plugin adds viewers to
-  the preview and actions to the menus of live files: in a listing, a search's results and the preview,
-  an encrypted file's too, whose password is asked for once the action reads it
-  (`hooks/useFileActions.tsx`), and reads and writes its documents about files with
-  `hooks/usePluginDocuments.ts`, for which its viewers and dialogs are drawn in a `PluginIdentity`. It may
-  also add folder types, found by a folder's name alone (`lib/plugins/folderTypes.ts`), whose viewers get the
-  folder's contents (`lib/plugins/folderContents.ts`). Each viewer, icon, menu item and dialog is drawn in an
-  error boundary.
+  server too. `build/buildPlugin.ts` builds the plugins in [plugins](../plugins/README.md). What they may
+  use is a promise: breaking what a release holds of it raises `PluginApi.Version` on the server
+  ([Plugins](../ByteShelf.Server/Plugins/Plugins.md), Versions). A plugin adds viewers to the preview and
+  actions to the menus of live files: in a listing, a search's results and the preview, an encrypted
+  file's too, whose password is asked for once the action reads it (`hooks/useFileActions.tsx`), and reads
+  and writes its documents about files with `hooks/usePluginDocuments.ts`, for which its viewers and
+  dialogs are drawn in a `PluginIdentity`. It may also add folder types, found by a folder's name alone
+  (`lib/plugins/folderTypes.ts`), whose viewers get the folder's contents
+  (`lib/plugins/folderContents.ts`). Each viewer, icon, menu item and dialog is drawn in an error
+  boundary. What throws as it goes is for the `CleanupBoundary` around the page, a folder in it, and the
+  dialogs shown by code.
 - **Folders of a plugin's type** (`hooks/useFolderView.ts`, `components/TypedFolder.tsx`) open in its viewer,
   which has everything under the breadcrumbs, in a column that fills the page; their rows have its icon. "Show
   contents", in the row's menu and the page's, shows the listing instead (`?view=contents`), whose menu offers
-  the viewer again ("Show as …"). A folder whose name may have a type waits for plugins still loading, at most 3
-  seconds once for each visit to a shelf. One whose plugin loads later keeps its listing, which then offers the
-  viewer too, and one whose viewer throws shows its listing; either opens in the viewer when it is next opened
-  from somewhere else. An encrypted one asks for its password as it opens (`hooks/useFolderLock.ts`);
-  cancelled, its listing shows, with Unlock. A file the viewer opens is previewed alone, and a file dropped on
-  it, which it does not take, is refused. What goes on with a shelf's files (uploads, file actions) goes on from
-  a listing to a viewer and back (`hooks/useShelfWork.ts`).
+  the viewer again ("Show as …"). A folder whose name may have a type waits for plugins still loading, at most
+  3 seconds once for each visit to a shelf. One whose plugin loads later keeps its listing, and one whose
+  viewer throws shows it; the listing then offers the viewer too, and the folder opens in it when it is next
+  opened from somewhere else. The viewer, its contents and its lock are of one folder at one path, encrypted
+  one way (`folderKey` in `services/openFolder.ts`). An encrypted one asks for its password as it opens
+  (`hooks/useFolderLock.ts`); cancelled, its listing shows, with Unlock. A file the viewer opens is previewed
+  alone, and a file dropped on it, which it does not take, is refused. What goes on with a shelf's files
+  (uploads, file actions) goes on from a listing to a viewer and back (`hooks/useShelfWork.ts`).
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and
   refetches what each event makes stale (`lib/invalidationMap.ts`), so a change made elsewhere shows up
   within about a second. A test checks the map covers every resource the server publishes. The

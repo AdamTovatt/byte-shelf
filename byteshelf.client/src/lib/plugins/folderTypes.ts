@@ -12,8 +12,14 @@ export function folderSuffixOf(name: string): string | null {
   return dot > 0 && FOLDER_SUFFIX.test(suffix) ? suffix : null;
 }
 
+/** A folder's type, and the plugin that has it. */
+export interface FoundFolderType {
+  pluginId: string;
+  type: FolderType;
+}
+
 /** The type of a folder called `name`, the first plugin's by id that has its suffix; null for a plain folder. */
-export function folderTypeOf(plugins: readonly RunningPlugin[], name: string): FolderType | null {
+export function folderTypeOf(plugins: readonly RunningPlugin[], name: string): FoundFolderType | null {
   const suffix = folderSuffixOf(name);
-  return plugins.flatMap(({ folderTypes }) => folderTypes).find((type) => type.suffix === suffix) ?? null;
+  return plugins.flatMap(({ id, folderTypes }) => folderTypes.map((type) => ({ pluginId: id, type }))).find(({ type }) => type.suffix === suffix) ?? null;
 }

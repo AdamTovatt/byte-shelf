@@ -1,5 +1,6 @@
 import type { FileReading } from '../../services/fileReading';
-import type { StoreFile, StoreFolder } from '../../services/fileStoring';
+import type { StoreFile } from '../../services/fileStoring';
+import type { OpenFolder } from '../../services/openFolder';
 import { deleteFile, fetchTree, moveFile, requireDirectoryAt, type ShelfFile } from '../../services/shelfService';
 import { lockableReader, type LockableReader } from '../content/lockableReader';
 import { eitherAborts, noPasswordGiven } from '../abort';
@@ -10,7 +11,7 @@ import type { FolderContents } from './folderType';
 /** What a folder's contents go through. */
 export interface FolderAccess {
   shelf: string;
-  folder: StoreFolder;
+  folder: OpenFolder;
   reading: FileReading;
   store: StoreFile;
   /** Told once something changed. */

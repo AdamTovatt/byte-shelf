@@ -2,7 +2,8 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { PasswordDialog, type PasswordRequest } from './PasswordDialog';
+import { PasswordDialog } from './PasswordDialog';
+import type { PasswordRequest } from '../lib/encryption/askPassword';
 import { button, fill, press } from '../test/dom';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

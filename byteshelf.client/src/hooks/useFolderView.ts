@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { folderSuffixOf, folderTypeOf } from '../lib/plugins/folderTypes';
+import { folderSuffixOf, folderTypeOf, type FoundFolderType } from '../lib/plugins/folderTypes';
 import type { FolderType } from '../lib/plugins/folderType';
 import { nameOf, shelfRoute, showsContents } from '../lib/shelfPaths';
 import { isNotFound } from '../services/apiClient';
-import type { StoreFolder } from '../services/fileStoring';
-import { useFolderLock, type AskFolderPassword } from './useFolderLock';
+import type { OpenFolder } from '../services/openFolder';
+import type { ShelfPasswords } from '../services/shelfPasswords';
+import { useFolderLock } from './useFolderLock';
 import { usePluginHost, usePluginsAwaited } from './usePluginHost';
 import { useListing } from './useShelfQueries';
 
@@ -14,23 +15,33 @@ export type WayToViewer =
   | { by: 'choice'; type: FolderType; show: () => void }
   | { by: 'password'; unlock: () => void };
 
+/** A folder in the viewer of its type. */
+export interface ViewedFolder extends FoundFolderType {
+  folder: OpenFolder;
+  /** To be told that the viewer failed, which leaves the listing. */
+  onFailed: () => void;
+}
+
 /** What a folder is shown as. */
 export type FolderView =
   /** `toViewer` is null when no viewer would show it. */
   | { as: 'listing'; toViewer: WayToViewer | null }
   /** Not known yet, or not unlocked. */
   | { as: 'opening' }
-  | { as: 'viewer'; type: FolderType; folder: StoreFolder };
+  | ({ as: 'viewer' } & ViewedFolder);
 
-/** A folder as it was opened, and the type it then had; undefined while that waits for plugins. */
+/** The opening of a folder. */
 interface Opened {
   path: string;
   asContents: boolean;
-  type: FolderType | null | undefined;
+  /** The type it then had; undefined while that waits for plugins. */
+  found: FoundFolderType | null | undefined;
+  /** The id of the folder whose viewer failed. */
+  failedOn: string | null;
 }
 
 /** What the folder at `path` is shown as: in the viewer of its type, once it is unlocked, unless its contents are asked for. */
-export function useFolderView(shelf: string, path: string, folderPassword: AskFolderPassword): FolderView {
+export function useFolderView(shelf: string, path: string, folderPassword: ShelfPasswords['folderPassword']): FolderView {
   const navigate = useNavigate();
   const { plugins } = usePluginHost();
   const awaitsPlugins = usePluginsAwaited();
@@ -38,34 +49,36 @@ export function useFolderView(shelf: string, path: string, folderPassword: AskFo
   const { data: listing, error, errorUpdateCount } = useListing(shelf, path);
 
   const name = nameOf(path);
-  const type = folderTypeOf(plugins, name);
+  const found = folderTypeOf(plugins, name);
   const asContents = showsContents(query);
   // A plugin still loading may have the type, or come first of two that do.
   const awaitsType = awaitsPlugins && folderSuffixOf(name) !== null;
 
-  // Kept until the folder is opened again: a plugin loaded later takes nothing the person is using from them.
+  // Kept until the folder is opened again: a plugin loaded later takes nothing the person is using from them,
+  // nor does a viewer that failed, whatever becomes of the folder's encryption.
   const [kept, setKept] = useState<Opened | null>(null);
-  const isKept = kept !== null && kept.path === path && kept.asContents === asContents && (kept.type !== undefined || awaitsType);
-  const opened = isKept ? kept : { path, asContents, type: awaitsType ? undefined : type };
+  const isKept = kept !== null && kept.path === path && kept.asContents === asContents && (kept.found !== undefined || awaitsType);
+  const opened = isKept ? kept : { path, asContents, found: awaitsType ? undefined : found, failedOn: null };
   if (!isKept) setKept(opened);
 
   function offering(show: () => void): FolderView {
-    return { as: 'listing', toViewer: type && { by: 'choice', type, show } };
+    return { as: 'listing', toViewer: found && { by: 'choice', type: found.type, show } };
   }
 
   /** What it is shown as once it is unlocked. */
   function unlocked(): FolderView {
     if (asContents) return offering(() => navigate(shelfRoute(shelf, path)));
-    if (opened.type === undefined) return { as: 'opening' };
-    if (opened.type === null) return offering(() => setKept({ ...opened, type }));
+    if (opened.found === undefined) return { as: 'opening' };
+    if (opened.found === null || (listing && opened.failedOn === listing.directory.id)) return offering(() => setKept({ ...opened, found, failedOn: null }));
     if (isNotFound(error)) return { as: 'listing', toViewer: null };
     // By whether it ever failed, as a listing that then shows asks again, and there is no error meanwhile.
     if (!listing) return errorUpdateCount > 0 ? { as: 'listing', toViewer: null } : { as: 'opening' };
-    return { as: 'viewer', type: opened.type, folder: { directory: listing.directory, encryptedBy: listing.encryptedBy ?? null } };
+    const folder = { directory: listing.directory, encryptedBy: listing.encryptedBy ?? null };
+    return { as: 'viewer', ...opened.found, folder, onFailed: () => setKept({ ...opened, failedOn: folder.directory.id }) };
   }
 
   const view = unlocked();
-  const { lock, unlock } = useFolderLock(path, view.as === 'viewer' ? view.folder.encryptedBy : null, folderPassword);
+  const { lock, unlock } = useFolderLock(view.as === 'viewer' ? view.folder : null, folderPassword);
   if (view.as !== 'viewer' || lock === 'unlocked') return view;
   return lock === 'opening' ? { as: 'opening' } : { as: 'listing', toViewer: { by: 'password', unlock } };
 }

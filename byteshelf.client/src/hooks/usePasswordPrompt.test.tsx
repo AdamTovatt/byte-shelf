@@ -2,7 +2,8 @@
 import { act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { usePasswordPrompt, type AskPassword } from './usePasswordPrompt';
+import { usePasswordPrompt } from './usePasswordPrompt';
+import type { AskPassword } from '../lib/encryption/askPassword';
 import { DialogHost } from '../contexts/DialogHost';
 import { dialogTitles, submitPassword } from '../test/dom';
 

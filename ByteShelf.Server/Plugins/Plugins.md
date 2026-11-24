@@ -144,36 +144,37 @@ A module's default export is `definePlugin({ viewers, fileActions, folderTypes }
   are first read. What `run` throws is shown to the person, but for an `AbortError`, which says they gave
   up, as at that prompt. As the person leaves the shelf's files, its dialogs close and a read fails with
   an `AbortError`; `run` is not stopped, but a dialog it shows after that never appears.
-- **Folder types** are folders whose names end in a dot and a suffix: `{ suffix, label, icon, component }`.
-  `suffix` is at least two lowercase letters and digits, matched whatever their case; a name that is only
-  the suffix (`.album`) is a plain folder, and the first plugin by id has a suffix two declare. They stay
-  ordinary folders to everything else, and have a listing in the web UI too, which is shown instead of a
-  viewer that throws, until the folder is next opened from somewhere else. An encrypted one's viewer shows once
-  the folder is unlocked. The component, which may be a `lazy` one, as the icon may, has everything under the
-  breadcrumbs, in a flex column that fills what the page, at least as tall as the window, has left there. It
-  has no padding; `PageLayout` gives it the app's. It is unmounted, losing what it holds unsaved, as the person
-  leaves the folder or shows its contents, as the folder is deleted, moved, renamed or encrypted, is given
-  another password, or another takes its place. It gets the shelf, the folder, whether the person may write,
-  and the folder's contents (`FolderContents`), which are others once the folder's encryption is removed:
-  listing what is below it, storing, moving and deleting files by their path in it, opening one as a listing
-  does, and reading one.
-  A read asks for no password, and of a file that is locked fails with a `LockedError`, until the viewer asks
-  to unlock it. Storing over a file moves the old one to the trash. What is stored in an encrypted folder is
-  encrypted with its password, and over a file with a password of its own with that one; nothing is sent once
-  the folder is no longer at its path or encrypted as it was.
+- **Folder types** are folders whose names end in a dot and a suffix: `{ suffix, label, icon, component
+  }`. `suffix` is at least two lowercase letters and digits, matched whatever their case; a name that is
+  only the suffix (`.album`) is a plain folder, and the first plugin by id has a suffix two declare. They
+  stay ordinary folders to everything else, and have a listing in the web UI too, which is shown instead
+  of a viewer that throws, and offers it again; it is tried again too as the folder is next opened. An
+  encrypted one's viewer shows once the folder is unlocked. The component, which may be a `lazy` one, as
+  the icon may, has everything under the breadcrumbs, in a flex column that fills what the page, at least
+  as tall as the window, has left there. It has no padding; `PageLayout` gives it the app's. It is
+  unmounted, losing what it holds unsaved, as the person leaves the folder or shows its contents, as the
+  folder is deleted, moved or renamed, as its encryption or its password changes, or another takes its
+  place. It gets the shelf, the folder, whether the person may write, and the folder's contents
+  (`FolderContents`), the same for as long as it is mounted: listing what is below it, storing, moving and
+  deleting files by their path in it, opening one as a listing does, and reading one. A read asks for no
+  password, and of a file that is locked fails with a `LockedError`, until the viewer asks to unlock it.
+  Storing over a file moves the old one to the trash. What is stored in an encrypted folder is encrypted
+  with its password, and over a file with a password of its own with that one; storing fails, sending
+  nothing, once the folder is no longer at its path, or its encryption was removed or is now another
+  folder's: what was to be encrypted is never sent plain.
 
 A plugin's module lives as long as the page does, which starts anew as the session ends: what it keeps
 in memory is never there for the next person to sign in. What it keeps in the browser's storage is,
 unless it removes it.
 
-In a viewer or a dialog of the plugin, `usePluginDocuments(file)` reads what it keeps about a live file: its
-document about the contents (`contents`, null for an encrypted file), and the one about the file (`file`)
-with its version, whose changes it follows. `useSetPluginDocument(file)` writes the latter as
-`{ document, expectedVersion }`: the whole of it, null to remove it, over the `fileVersion` the plugin read,
-null when there was none; another version there by now is an `ApiError` of status 409, and the documents are
-read again ([Metadata](../Metadata/Metadata.md)). Both know the plugin by what draws them, and throw
-elsewhere. **What was read from a file's plaintext must not go into the document about the file**, which is
-kept when the file is encrypted. For a file in the trash both fail.
+In a viewer, a folder type's too, or a dialog of the plugin, `usePluginDocuments(file)` reads what it keeps
+about a live file: its document about the contents (`contents`, null for an encrypted file), and the one
+about the file (`file`) with its version, whose changes it follows. `useSetPluginDocument(file)` writes the
+latter as `{ document, expectedVersion }`: the whole of it, null to remove it, over the `fileVersion` the
+plugin read, null when there was none; another version there by now is an `ApiError` of status 409, and the
+documents are read again ([Metadata](../Metadata/Metadata.md)). Both know the plugin by what draws them, and
+throw elsewhere. **What was read from a file's plaintext must not go into the document about the file**,
+which is kept when the file is encrypted. For a file in the trash both fail.
 
 Ids are apart within a plugin's viewers, and within its file actions, as suffixes are within its folder
 types. Every type is in `byteshelf.client/src/plugin/index.ts`.
