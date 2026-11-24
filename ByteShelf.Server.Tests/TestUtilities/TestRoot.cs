@@ -21,7 +21,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
         private TestRoot(RootFolder root)
         {
             Root = root;
-            DataSource = DataSources.Create(root.ConnectionString);
+            DataSource = root.Database.CreateDataSource();
             SessionFactory = new DbSessionFactory(DataSource);
         }
 
@@ -52,8 +52,6 @@ namespace ByteShelf.Server.Tests.TestUtilities
 
         private static string CreateTemplateDatabase()
         {
-            DatabaseTypeHandlers.RegisterAll();
-
             // One template per run; earlier runs' templates are left over only because nothing deletes
             // a template while the run still copies it.
             if (Directory.Exists(RootsPath))
@@ -65,12 +63,11 @@ namespace ByteShelf.Server.Tests.TestUtilities
             }
 
             RootFolder template = RootFolder.Open(Path.Combine(RootsPath, "template-" + Guid.NewGuid().ToString("N")));
-            DatabaseMigrator.RunMigrations(template.ConnectionString, NullLogger.Instance);
+            DatabaseMigrator.RunMigrations(template.Database, NullLogger.Instance);
 
             // Fold the write-ahead log into the file, so copying the file alone copies everything.
-            using (SqliteConnection connection = new SqliteConnection(template.ConnectionString))
+            using (SqliteConnection connection = template.Database.OpenConnection())
             {
-                connection.Open();
                 using SqliteCommand command = connection.CreateCommand();
                 command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
                 command.ExecuteNonQuery();

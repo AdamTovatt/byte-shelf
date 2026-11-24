@@ -223,7 +223,7 @@ namespace ByteShelf.Server
         {
             using ILoggerFactory startupLoggerFactory = CreateStartupLoggerFactory();
             ILogger<Program> startupLogger = startupLoggerFactory.CreateLogger<Program>();
-            DatabaseMigrator.RunMigrations(settings.Root.ConnectionString, startupLogger);
+            DatabaseMigrator.RunMigrations(settings.Root.Database, startupLogger);
 
             IMvcBuilder mvc = AddServerServices(builder.Services, settings);
             mvc.LoadPlugins(settings.PluginsPath, startupLogger);

@@ -334,6 +334,35 @@ after `--backup` is not given or `BYTESHELF_ROOT` is not set.
 A zip of a stopped server's root is a complete copy too. Restoring either onto a primary makes its
 replicas take a whole copy once they notice, which [Backup](ByteShelf.Server/Backup/Backup.md) explains.
 
+## Deleted data
+
+What is deleted from the database, or replaced in it, is overwritten with zeros in `byteshelf.db` (SQLite's
+`secure_delete`), on a primary and on its replicas, as it is deleted: what was read from a file goes as the
+file is encrypted in place, and a file's row once it is purged from the trash, while its name and
+description stay in the change log's entries until they are compacted ([Background work](#background-work)).
+This covers the database's rows and nothing else. It does not reach:
+
+- **`byteshelf.db-wal`**, the write-ahead log: the old bytes may stay there until SQLite writes over them
+  or the database is closed, as it is when the server is stopped normally.
+- **A row's earlier place**: when SQLite splits a full page it moves rows to another, and may leave a copy
+  of one in the first page's unused space until that is written over. Deleting the row clears only where it
+  is, so a few in ten thousand deleted rows leave such a copy.
+- **What was deleted without it**, by an earlier version of the server or by another program: the bytes
+  stay on pages SQLite has not used since.
+- The contents of deleted files under `objects/`, backups made earlier, and whatever the file system keeps
+  of files it removed or shortened.
+
+The second and third go when the database is rebuilt, which the server never does by itself, since it takes
+as long as the database is large. With the server stopped, as the user it runs as, with SQLite's own
+command-line tool:
+
+```bash
+SQLITE_TMPDIR="$BYTESHELF_ROOT" sqlite3 "$BYTESHELF_ROOT/byteshelf.db" 'VACUUM;'
+```
+
+It writes two more copies of the database while it runs, one of them in a temporary folder, which
+`SQLITE_TMPDIR` puts inside the root, where no other user reaches it; the root's disk needs room for both.
+
 ## Background work
 
 The server cleans up after itself: hourly it removes abandoned uploads, staging leftovers, the trash

@@ -46,11 +46,11 @@ namespace ByteShelf.Server.Tests.Access
         {
             await base.InitializeAsync();
             _old = RootFolder.Open(Path.Combine(AppContext.BaseDirectory, "test-roots", "v0013-" + Guid.NewGuid().ToString("N")));
-            TestMigrations.RunBefore("v0014", _old.ConnectionString);
-            await FillAsBeforeV0014Async(_old.ConnectionString);
+            TestMigrations.RunBefore("v0014", _old.Database);
+            await FillAsBeforeV0014Async(_old.Database);
 
             _migrationStarted = DateTimeOffset.UtcNow;
-            DatabaseMigrator.RunMigrations(_old.ConnectionString, NullLogger.Instance);
+            DatabaseMigrator.RunMigrations(_old.Database, NullLogger.Instance);
             _migrationEnded = DateTimeOffset.UtcNow;
         }
 
@@ -64,7 +64,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task Migrate_EachKey_BecomesOneGrantOnItsShelfUnderTheKeysId()
         {
-            IReadOnlyList<ShelfKeyGrant> grants = await ReadGrantsAsync(_old.ConnectionString);
+            IReadOnlyList<ShelfKeyGrant> grants = await ReadGrantsAsync(_old.Database);
 
             Assert.Equal(
                 new[] { Writer, Backup, Reader }.Select(key => (key.Id, key.Id, key.ShelfId, key.Permission, TestInstants.Now, TestInstants.Now)).OrderBy(grant => grant.Item1),
@@ -74,7 +74,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task Migrate_KeyTable_LosesItsShelfAndPermissionAndKeepsTheLinkAKeyMade()
         {
-            await using SqliteConnection connection = await OpenAsync(_old.ConnectionString);
+            await using SqliteConnection connection = await _old.Database.OpenConnectionAsync();
 
             Assert.Equal(new[] { "id", "name", "secret_sha256", "created_at" }, await ColumnsAsync(connection, "shelf_key"));
             Assert.Equal(3L, await ScalarAsync(connection, "SELECT COUNT(*) FROM shelf_key"));
@@ -84,7 +84,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task Migrate_ChangeLog_HoldsEveryKeyStateInTheNewShape()
         {
-            IReadOnlyList<ChangeLogEntry> entries = await ReadLogAsync(_old.ConnectionString);
+            IReadOnlyList<ChangeLogEntry> entries = await ReadLogAsync(_old.Database);
 
             List<ChangeLogEntry> keyStates = entries.Where(entry => entry.EntityType == ChangeEntityType.ShelfKey && entry.Payload != null).ToList();
 
@@ -104,13 +104,13 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task Migrate_ChangeLog_LogsEachGrantAfterTheEntriesThereDatedWhenItRan()
         {
-            IReadOnlyList<ChangeLogEntry> entries = await ReadLogAsync(_old.ConnectionString);
+            IReadOnlyList<ChangeLogEntry> entries = await ReadLogAsync(_old.Database);
 
             List<ChangeLogEntry> grantEntries = entries.Where(entry => entry.EntityType == ChangeEntityType.ShelfKeyGrant).ToList();
             long lastBefore = entries.Where(entry => entry.EntityType != ChangeEntityType.ShelfKeyGrant).Max(entry => entry.Sequence);
 
             Assert.Equal(
-                (await ReadGrantsAsync(_old.ConnectionString)).Select(Describe).OrderBy(grant => grant),
+                (await ReadGrantsAsync(_old.Database)).Select(Describe).OrderBy(grant => grant),
                 grantEntries.Select(entry => Describe(ChangePayload.Deserialize<ShelfKeyGrant>(entry.Payload!))).OrderBy(grant => grant));
             Assert.All(grantEntries, entry =>
             {
@@ -124,7 +124,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task Migrate_WholeCopyInProgress_HoldsItsKeyInTheNewShape()
         {
-            await using SqliteConnection connection = await OpenAsync(_old.ConnectionString);
+            await using SqliteConnection connection = await _old.Database.OpenConnectionAsync();
 
             string payload = (string)(await ScalarAsync(connection, "SELECT payload FROM replication_copy WHERE entity_type = 'shelf_key'"))!;
 
@@ -138,8 +138,8 @@ namespace ByteShelf.Server.Tests.Access
             await ReplayMigratedLogAsync();
 
             Assert.Equal(
-                (await ReadGrantsAsync(_old.ConnectionString)).Select(Describe).OrderBy(grant => grant),
-                (await ReadGrantsAsync(TestRoot.Root.ConnectionString)).Select(Describe).OrderBy(grant => grant));
+                (await ReadGrantsAsync(_old.Database)).Select(Describe).OrderBy(grant => grant),
+                (await ReadGrantsAsync(TestRoot.Root.Database)).Select(Describe).OrderBy(grant => grant));
             Assert.Null(await Services.GetRequiredService<IShelfKeyRepository>().GetByIdAsync(Deleted.Id));
         }
 
@@ -166,15 +166,15 @@ namespace ByteShelf.Server.Tests.Access
         private async Task ReplayMigratedLogAsync()
         {
             await using IDbTransactionSession session = await Services.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync();
-            await Services.GetRequiredService<ReplicaApplier>().ApplyAsync(await ReadLogAsync(_old.ConnectionString), session, new AppliedChanges());
+            await Services.GetRequiredService<ReplicaApplier>().ApplyAsync(await ReadLogAsync(_old.Database), session, new AppliedChanges());
             await session.CommitAsync();
         }
 
         /// <summary>Rows and log entries as the server wrote them before v0014.</summary>
-        private static async Task FillAsBeforeV0014Async(string connectionString)
+        private static async Task FillAsBeforeV0014Async(DatabaseFile database)
         {
             string now = StoredInstant.ToText(TestInstants.Now);
-            await using SqliteConnection connection = await OpenAsync(connectionString);
+            await using SqliteConnection connection = await database.OpenConnectionAsync();
 
             foreach ((Guid id, string name) in new[] { (Docs, "docs"), (Photos, "photos") })
             {
@@ -219,21 +219,21 @@ namespace ByteShelf.Server.Tests.Access
                 ("at", StoredInstant.ToText(TestInstants.Now)));
         }
 
-        private static async Task<IReadOnlyList<ChangeLogEntry>> ReadLogAsync(string connectionString)
+        private static async Task<IReadOnlyList<ChangeLogEntry>> ReadLogAsync(DatabaseFile database)
         {
-            await using System.Data.Common.DbDataSource dataSource = DataSources.Create(connectionString);
+            await using System.Data.Common.DbDataSource dataSource = database.CreateDataSource();
             ChangeLogRepository changeLog = new ChangeLogRepository(dataSource, new DbSessionFactory(dataSource));
             return await changeLog.GetAfterAsync(0, 1000);
         }
 
-        private static async Task<IReadOnlyList<ShelfKeyGrant>> ReadGrantsAsync(string connectionString)
+        private static async Task<IReadOnlyList<ShelfKeyGrant>> ReadGrantsAsync(DatabaseFile database)
         {
-            await using System.Data.Common.DbDataSource dataSource = DataSources.Create(connectionString);
+            await using System.Data.Common.DbDataSource dataSource = database.CreateDataSource();
             DbSessionFactory sessions = new DbSessionFactory(dataSource);
             ShelfKeyGrantRepository grants = new ShelfKeyGrantRepository(dataSource, sessions, new ChangeLogRepository(dataSource, sessions));
 
             // Every key the table holds a grant for, not only the keys the test made, so a stray grant shows.
-            await using SqliteConnection connection = await OpenAsync(connectionString);
+            await using SqliteConnection connection = await database.OpenConnectionAsync();
             List<ShelfKeyGrant> all = new List<ShelfKeyGrant>();
             foreach (string keyId in await StringsAsync(connection, "SELECT DISTINCT key_id FROM shelf_key_grant"))
             {
@@ -246,13 +246,6 @@ namespace ByteShelf.Server.Tests.Access
         private static string Describe(ShelfKeyGrant grant)
         {
             return $"{grant.Id:D} {grant.KeyId:D} {grant.ShelfId:D} {grant.Permission} {grant.CreatedAt.UtcTicks} {grant.UpdatedAt.UtcTicks}";
-        }
-
-        private static async Task<SqliteConnection> OpenAsync(string connectionString)
-        {
-            SqliteConnection connection = new SqliteConnection(connectionString);
-            await connection.OpenAsync();
-            return connection;
         }
 
         private static async Task ExecuteAsync(SqliteConnection connection, string sql, params (string Name, object? Value)[] parameters)

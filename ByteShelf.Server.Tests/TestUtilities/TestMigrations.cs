@@ -1,5 +1,5 @@
+using System.Data.Common;
 using ByteShelf.Server.Shared.Database;
-using DbUp;
 
 namespace ByteShelf.Server.Tests.TestUtilities
 {
@@ -7,17 +7,11 @@ namespace ByteShelf.Server.Tests.TestUtilities
     internal static class TestMigrations
     {
         /// <summary>Runs every migration before <paramref name="first"/>, as "v0014", on the database.</summary>
-        public static void RunBefore(string first, string connectionString)
+        public static void RunBefore(string first, DatabaseFile database)
         {
-            DbUp.Engine.DatabaseUpgradeResult result = DeployChanges.To
-                .SqliteDatabase(connectionString)
-                .WithScriptsEmbeddedInAssembly(
-                    typeof(DatabaseMigrator).Assembly,
-                    (string name) => name.Contains("Migrations") && name.EndsWith(".sql", StringComparison.Ordinal)
-                        && string.CompareOrdinal(name.Split('.')[^2], first) < 0)
-                .WithTransactionPerScript()
-                .LogToNowhere()
-                .Build()
+            using DbConnection connection = database.OpenConnection();
+            DbUp.Engine.DatabaseUpgradeResult result = DatabaseMigrator
+                .Upgrader(connection, name => string.CompareOrdinal(name.Split('.')[^2], first) < 0)
                 .PerformUpgrade();
 
             Assert.True(result.Successful, result.Error?.ToString());

@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Net;
 using System.Net.Http.Json;
 using ByteShelf.Server.Replication.Services;
@@ -5,7 +6,6 @@ using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ByteShelf.Server.Tests.Replication
@@ -121,7 +121,7 @@ namespace ByteShelf.Server.Tests.Replication
             Assert.Equal(RootCommand.Done, exitCode);
             RootFolder root = RootFolder.OpenExisting(folder);
             Assert.False(File.Exists(root.DatabasePath + "-wal"));
-            Assert.True(DatabaseMigrator.IsUpToDate(root.ConnectionString));
+            Assert.True(DatabaseMigrator.IsUpToDate(root.Database));
             RecordingLoggerFactory statusLogs = new RecordingLoggerFactory();
             Assert.Equal(RootCommand.Done, await RunAsync(folder, statusLogs, () => new Unreachable(), "--replication-status"));
             Assert.StartsWith($"A replica of {PrimaryUrl}", statusLogs.Messages[^1], StringComparison.Ordinal);
@@ -268,9 +268,8 @@ namespace ByteShelf.Server.Tests.Replication
 
             Assert.Equal(RootCommand.Done, promoted);
             Assert.Empty((await _pair.Replica.AdminClient.GetFromJsonAsync<List<ShelfInfo>>("/api/shelves"))!);
-            await using SqliteConnection connection = new SqliteConnection(_pair.Replica.TestRoot.Root.ConnectionString);
-            await connection.OpenAsync();
-            await using SqliteCommand count = connection.CreateCommand();
+            await using DbConnection connection = await _pair.Replica.TestRoot.DataSource.OpenConnectionAsync();
+            await using DbCommand count = connection.CreateCommand();
             count.CommandText = "SELECT COUNT(*) FROM replication_copy";
             Assert.Equal(0L, await count.ExecuteScalarAsync());
         }

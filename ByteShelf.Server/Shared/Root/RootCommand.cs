@@ -111,7 +111,7 @@ namespace ByteShelf.Server.Shared.Root
             {
                 // Not migrated here: the server may be running on this database, and an executable newer
                 // than the server would upgrade it under it.
-                if (!DatabaseMigrator.IsUpToDate(root.ConnectionString))
+                if (!DatabaseMigrator.IsUpToDate(root.Database))
                 {
                     logger.LogError("The database is from an older version of the server: start this version on it, or run ByteShelf.Server --migrate-only, first.");
                     return Failed;
@@ -124,7 +124,7 @@ namespace ByteShelf.Server.Shared.Root
             {
                 // Refusing anyone but the root's owner would need the folder's owner, which .NET does not
                 // expose; releasing the connections leaves no files owned by whoever ran this instead.
-                DataSources.Release(root.ConnectionString);
+                root.Database.Release();
             }
         }
 
@@ -159,15 +159,15 @@ namespace ByteShelf.Server.Shared.Root
 
             public void Remove()
             {
-                string databasePath = System.IO.Path.Combine(Path, RootFolder.DatabaseFileName);
-                DataSources.Release(RootFolder.ConnectionStringFor(databasePath));
+                RootFolder root = RootFolder.At(Path);
+                root.Database.Release();
                 if (!_folderWasThere)
                 {
                     Directory.Delete(Path, recursive: true);
                     return;
                 }
 
-                foreach (string file in new[] { databasePath, databasePath + "-wal", databasePath + "-shm" })
+                foreach (string file in new[] { root.DatabasePath, root.DatabasePath + "-wal", root.DatabasePath + "-shm" })
                 {
                     File.Delete(file);
                 }

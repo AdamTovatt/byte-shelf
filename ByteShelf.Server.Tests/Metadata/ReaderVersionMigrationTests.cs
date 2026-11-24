@@ -33,9 +33,9 @@ namespace ByteShelf.Server.Tests.Metadata
         {
             await base.InitializeAsync();
             _old = RootFolder.Open(Path.Combine(AppContext.BaseDirectory, "test-roots", "v0014-" + Guid.NewGuid().ToString("N")));
-            TestMigrations.RunBefore("v0015", _old.ConnectionString);
+            TestMigrations.RunBefore("v0015", _old.Database);
             await FillAsBeforeV0015Async();
-            DatabaseMigrator.RunMigrations(_old.ConnectionString, NullLogger.Instance);
+            DatabaseMigrator.RunMigrations(_old.Database, NullLogger.Instance);
         }
 
         public override async Task DisposeAsync()
@@ -48,7 +48,7 @@ namespace ByteShelf.Server.Tests.Metadata
         [Fact]
         public async Task Migrate_Row_IsVersionOnes()
         {
-            await using System.Data.Common.DbDataSource dataSource = DataSources.Create(_old.ConnectionString);
+            await using System.Data.Common.DbDataSource dataSource = _old.Database.CreateDataSource();
             DbSessionFactory sessions = new DbSessionFactory(dataSource);
 
             ObjectMetadata? row = await new ObjectMetadataRepository(dataSource, sessions, new ChangeLogRepository(dataSource, sessions)).GetBySha256Async(Photo);
@@ -70,7 +70,7 @@ namespace ByteShelf.Server.Tests.Metadata
         [Fact]
         public async Task Migrate_WholeCopyInProgress_HoldsItsReadingWithItsVersion()
         {
-            await using SqliteConnection connection = new SqliteConnection(_old.ConnectionString);
+            await using SqliteConnection connection = await _old.Database.OpenConnectionAsync();
 
             Assert.Equal(ShelfPayload(), await connection.ExecuteScalarAsync<string>("SELECT payload FROM replication_copy WHERE entity_type = 'shelf'"));
             AssertVersionOnes((await connection.ExecuteScalarAsync<string>("SELECT payload FROM replication_copy WHERE entity_type = 'object_metadata'"))!);
@@ -106,8 +106,7 @@ namespace ByteShelf.Server.Tests.Metadata
         /// <summary>A row, log entries and a whole copy in progress as the server wrote them before v0015.</summary>
         private async Task FillAsBeforeV0015Async()
         {
-            await using SqliteConnection connection = new SqliteConnection(_old.ConnectionString);
-            await connection.OpenAsync();
+            await using SqliteConnection connection = await _old.Database.OpenConnectionAsync();
             string now = StoredInstant.ToText(TestInstants.Now);
             await connection.ExecuteAsync(
                 "INSERT INTO object_metadata (id, sha256, read_at, camera, camera_fold) VALUES (@Id, @Photo, @now, 'Nikon', 'nikon')",
@@ -148,7 +147,7 @@ namespace ByteShelf.Server.Tests.Metadata
 
         private async Task<IReadOnlyList<ChangeLogEntry>> ReadLogAsync()
         {
-            await using System.Data.Common.DbDataSource dataSource = DataSources.Create(_old.ConnectionString);
+            await using System.Data.Common.DbDataSource dataSource = _old.Database.CreateDataSource();
             return await new ChangeLogRepository(dataSource, new DbSessionFactory(dataSource)).GetAfterAsync(0, 1000);
         }
     }

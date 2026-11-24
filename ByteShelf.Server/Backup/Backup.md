@@ -15,7 +15,9 @@ it never migrates the database or creates folders there, and it refuses a zip pa
    other files on that object were purged by the server, so they are purged from the snapshot through
    `FileRepository`, logged as the server logged them. What was read from contents that no plain file in
    the backup holds then goes too: their plaintext may be gone for having been encrypted. What
-   goes from the snapshot is overwritten in it (`secure_delete`), since the zip has its pages as they are.
+   goes from the snapshot is overwritten in it, as in any database the server opens (`DatabaseFile`),
+   since the zip holds the snapshot's pages as they are. `VACUUM INTO` copies none of the live database's
+   free pages.
 3. **The snapshot itself**, without uploads in progress (their staged bytes are not copied), as
    `byteshelf.db`, then every file in `keys/`.
 

@@ -13,7 +13,6 @@ using ByteShelf.Server.Storage.Repositories;
 using ByteShelf.Server.Storage.Services;
 using EasyReasy.Database;
 using EasyReasy.Database.Mapping;
-using Microsoft.Data.Sqlite;
 
 namespace ByteShelf.Server.Backup.Services
 {
@@ -71,8 +70,8 @@ namespace ByteShelf.Server.Backup.Services
                 await using (FileStream file = new FileStream(partialZip, OwnerOnly.Write(FileMode.CreateNew)))
                 using (ZipArchive zip = new ZipArchive(file, ZipArchiveMode.Create))
                 {
-                    await using (StorageDatabase live = new StorageDatabase(root.ConnectionString))
-                    await using (StorageDatabase snapshot = new StorageDatabase(RootFolder.ConnectionStringFor(snapshotPath, pooling: false)))
+                    await using (StorageDatabase live = new StorageDatabase(root.Database))
+                    await using (StorageDatabase snapshot = new StorageDatabase(new DatabaseFile(snapshotPath, pooling: false)))
                     {
                         CopiedObjects copied = await AddObjectsAsync(zip, root, snapshot, live, cancellationToken);
                         IReadOnlyList<SwappedFile> swapped = await AddSwappedObjectsAsync(zip, root, snapshot, live, copied, cancellationToken);
@@ -107,8 +106,7 @@ namespace ByteShelf.Server.Backup.Services
             {
             }
 
-            await using SqliteConnection live = new SqliteConnection(root.ConnectionString);
-            await live.OpenAsync();
+            await using DbConnection live = await root.Database.OpenConnectionAsync();
             await live.ExecuteAsync("VACUUM INTO @snapshotPath", new { snapshotPath });
         }
 
@@ -245,9 +243,6 @@ namespace ByteShelf.Server.Backup.Services
         {
             DateTimeOffset now = TimeProvider.System.GetUtcNow();
             await using IDbTransactionSession session = await snapshot.Sessions.CreateSessionWithTransactionAsync();
-
-            // What goes is overwritten too: the pages it was on go into the zip as they are.
-            await session.Connection.ExecuteAsync("PRAGMA secure_delete = ON", transaction: session.Transaction);
             foreach (Guid upload in await snapshot.Uploads.GetAllIdsAsync(session))
             {
                 await snapshot.Uploads.DeleteAsync(upload, session);
@@ -344,9 +339,9 @@ namespace ByteShelf.Server.Backup.Services
         {
             private readonly DbDataSource _dataSource;
 
-            public StorageDatabase(string connectionString)
+            public StorageDatabase(DatabaseFile database)
             {
-                _dataSource = DataSources.Create(connectionString);
+                _dataSource = database.CreateDataSource();
                 Sessions = new DbSessionFactory(_dataSource);
                 ChangeLogRepository changeLog = new ChangeLogRepository(_dataSource, Sessions);
                 PluginFieldValueRepository fieldValues = new PluginFieldValueRepository(_dataSource, Sessions, KnownPlugins.NotKnown);

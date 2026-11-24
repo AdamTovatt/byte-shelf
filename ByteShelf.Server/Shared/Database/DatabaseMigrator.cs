@@ -3,32 +3,30 @@ using System.Reflection;
 using ByteShelf.Server.Shared.Root;
 using DbUp;
 using DbUp.Engine;
-using Microsoft.Data.Sqlite;
+using DbUp.Sqlite.Helpers;
 
 namespace ByteShelf.Server.Shared.Database
 {
     public static class DatabaseMigrator
     {
         /// <summary>
-        /// Applies the embedded <c>Migrations/*.sql</c> scripts to the database behind
-        /// <paramref name="connectionString"/>, each in its own transaction, and puts the database in WAL
-        /// mode (a setting SQLite keeps in the file, so once is enough).
+        /// Applies the embedded <c>Migrations/*.sql</c> scripts to <paramref name="database"/>,
+        /// each in its own transaction, and puts it in WAL mode (a setting SQLite keeps in the file, so once
+        /// is enough).
         /// </summary>
-        public static void RunMigrations(string connectionString, ILogger logger)
+        public static void RunMigrations(DatabaseFile database, ILogger logger)
         {
-            DatabaseTypeHandlers.RegisterAll();
+            using DbConnection connection = database.OpenConnection();
 
-            DatabaseUpgradeResult result = Upgrader(connectionString).PerformUpgrade();
+            DatabaseUpgradeResult result = Upgrader(connection).PerformUpgrade();
 
             if (!result.Successful)
             {
                 throw new InvalidOperationException($"Error when performing database upgrade, failing on script: {result.ErrorScript?.Name ?? "(null)"} with error {result.Error}");
             }
 
-            using (SqliteConnection connection = new SqliteConnection(connectionString))
+            using (DbCommand command = connection.CreateCommand())
             {
-                connection.Open();
-                using DbCommand command = connection.CreateCommand();
                 command.CommandText = "PRAGMA journal_mode=WAL;";
                 command.ExecuteNonQuery();
             }
@@ -43,29 +41,30 @@ namespace ByteShelf.Server.Shared.Database
         public static RootFolder MigrateRoot(string rootPath, ILogger logger)
         {
             RootFolder root = RootFolder.Open(rootPath);
-            RunMigrations(root.ConnectionString, logger);
+            RunMigrations(root.Database, logger);
             return root;
         }
 
         /// <summary>
-        /// Whether every migration this build carries has run on the database behind
-        /// <paramref name="connectionString"/>, without changing it: for work beside a running server,
-        /// which must not upgrade the database under it.
+        /// Whether every migration this build carries has run on <paramref name="database"/>, without changing
+        /// it: for work beside a running server, which must not upgrade the database under it.
         /// </summary>
-        public static bool IsUpToDate(string connectionString)
+        public static bool IsUpToDate(DatabaseFile database)
         {
-            return !Upgrader(connectionString).IsUpgradeRequired();
+            using DbConnection connection = database.OpenConnection();
+            return !Upgrader(connection).IsUpgradeRequired();
         }
 
-        private static UpgradeEngine Upgrader(string connectionString)
+        /// <param name="only">Which of the scripts to run, every one by default; for tests to make a database as an earlier version left it.</param>
+        internal static UpgradeEngine Upgrader(DbConnection connection, Func<string, bool>? only = null)
         {
             return DeployChanges.To
-                .SqliteDatabase(connectionString)
+                .SqliteDatabase(new SharedConnection(connection))
                 .WithScriptsEmbeddedInAssembly(
                     Assembly.GetExecutingAssembly(),
                     (string scriptName) =>
                     {
-                        return scriptName.Contains("Migrations") && scriptName.Split('.').Last() == "sql";
+                        return scriptName.Contains("Migrations") && scriptName.Split('.').Last() == "sql" && (only == null || only(scriptName));
                     })
                 .WithTransactionPerScript()
                 .LogToNowhere()

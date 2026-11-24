@@ -90,7 +90,7 @@ dotnet run --project ByteShelf.Cli -- shelves
 
 ## Documentation
 
-- [DEPLOYMENT.md](DEPLOYMENT.md): installing, environment variables, reverse proxy, plugins, replicas, backups.
+- [DEPLOYMENT.md](DEPLOYMENT.md): installing, environment variables, reverse proxy, plugins, replicas, backups, deleted data.
 - Server domains: [Storage](ByteShelf.Server/Storage/Storage.md), [Shelves](ByteShelf.Server/Storage/Shelves.md),
   [Access](ByteShelf.Server/Access/Access.md), [Change log](ByteShelf.Server/ChangeLog/ChangeLog.md),
   [Users](ByteShelf.Server/Users/Users.md),
