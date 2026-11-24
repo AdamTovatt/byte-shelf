@@ -1,10 +1,10 @@
 import type { PluginView } from '../../services/pluginService';
-import { isPluginDefinition, type PluginDefinition } from '../../plugin/pluginDefinition';
+import { partsOf, type PluginParts } from './pluginDefinition';
 import { getErrorMessage } from '../../ui';
 
-export interface RunningPlugin {
+/** A loaded plugin and what it adds. */
+export interface RunningPlugin extends PluginParts {
   id: string;
-  definition: PluginDefinition;
 }
 
 export interface PluginHostState {
@@ -59,7 +59,7 @@ export class PluginHost {
       try {
         // The styles first seen are the plugin's own, so it is not there before its stylesheet is.
         const [module] = await Promise.all([this.transport.importModule(moduleUrl), stylesheet?.loaded]);
-        this.add({ id, definition: definitionIn(module) });
+        this.add({ id, ...partsOf(module.default) });
       } catch (caught) {
         stylesheet?.remove();
         console.error(`The plugin ${id} could not be loaded.`, caught);
@@ -76,11 +76,6 @@ export class PluginHost {
     this.current = next;
     for (const listener of this.listeners) listener();
   }
-}
-
-function definitionIn(module: { default?: unknown }): PluginDefinition {
-  if (!isPluginDefinition(module.default)) throw new Error('Its module has no default export made with definePlugin.');
-  return module.default;
 }
 
 /** Loads from the server by the page itself. */

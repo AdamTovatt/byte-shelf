@@ -12,7 +12,9 @@
     "codegen": "openapi-typescript http://localhost:5190/swagger/v1/swagger.json -o src/types/api.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "e2e:plugin": "npm ci --prefix ../plugins/markdown --prefer-offline --no-audit --no-fund && npm run build --prefix ../plugins/markdown",
+    "e2e:server": "npm run build && npm run e2e:plugin && dotnet run --project ../ByteShelf.Server --no-launch-profile"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

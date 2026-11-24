@@ -3,6 +3,8 @@
 // back what PublicKeyCredential.toJSON() writes. A browser without those three (before Safari 18.4,
 // Chrome 129 and Firefox 119) gets no passkey button, rather than conversion code of this page's own.
 
+import { isAbortError } from './abort';
+
 /** Whether this browser can make and use passkeys, with the JSON helpers the ceremonies go through. */
 export function passkeysSupported(): boolean {
   const credential = typeof window === 'undefined' ? undefined : window.PublicKeyCredential;
@@ -21,5 +23,5 @@ export async function passkeyAutofillSupported(): Promise<boolean> {
 
 /** Whether a ceremony ended because the person closed the prompt, or the page stopped it, rather than failed. */
 export function isCancelled(error: unknown): boolean {
-  return error instanceof DOMException && (error.name === 'NotAllowedError' || error.name === 'AbortError');
+  return isAbortError(error) || (error instanceof DOMException && error.name === 'NotAllowedError');
 }

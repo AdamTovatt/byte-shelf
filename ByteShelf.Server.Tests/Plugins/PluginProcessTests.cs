@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using ByteShelf.Plugins;
 using ByteShelf.Server.Tests.TestUtilities;
+using ByteShelfCommon;
 
 namespace ByteShelf.Server.Tests.Plugins
 {
@@ -23,6 +25,39 @@ namespace ByteShelf.Server.Tests.Plugins
             Assert.Equal((0, string.Empty), await CheckAsync([_plugins.AddServerPlugin("good")]));
             Assert.Equal((1, TestPlugins.FailingReason), await CheckAsync([_plugins.AddFailingServerPlugin("failing")]));
             Assert.Equal(2, (await CheckAsync([])).ExitCode);
+        }
+
+        [Fact]
+        public async Task CheckPlugin_APluginBuiltAgainstALaterContract_IsRefusedBeforeItRuns()
+        {
+            // Not in this process, where the test host settles for the contract it has.
+            System.Version contract = typeof(IByteShelfPlugin).Assembly.GetName().Version!;
+            System.Version later = new System.Version(contract.Major, contract.Minor + 1, 0, 0);
+
+            Assert.Equal((0, string.Empty), await CheckAsync([AddPluginAgainst(contract)]));
+            (int exitCode, string errors) = await CheckAsync([AddPluginAgainst(later)]);
+
+            Assert.Equal(1, exitCode);
+            Assert.StartsWith($"Its server assembly could not be loaded: Could not load file or assembly 'ByteShelf.Plugins, Version={later},", errors, StringComparison.Ordinal);
+            Assert.DoesNotContain('\n', errors);
+        }
+
+        [Fact]
+        public async Task CheckPlugin_APluginUsingALaterCommon_IsRefusedBeforeItRuns()
+        {
+            System.Version common = typeof(ShelfPath).Assembly.GetName().Version!;
+            System.Version later = new System.Version(common.Major, common.Minor + 1, 0, 0);
+            string folder = _plugins.Add("using-common", TestPlugins.Manifest("emitted", "Emitted.dll"));
+            EmittedPlugin.Write(Path.Combine(folder, "Emitted.dll"), assembly =>
+            {
+                assembly.AddThrowingEntry("It ran.");
+                assembly.AddUseOfCommon(later);
+            });
+
+            (int exitCode, string errors) = await CheckAsync([folder]);
+
+            Assert.Equal(1, exitCode);
+            Assert.StartsWith($"Its server assembly could not be loaded: Could not load file or assembly 'ByteShelfCommon, Version={later},", errors, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -84,6 +119,13 @@ namespace ByteShelf.Server.Tests.Plugins
         public void Dispose()
         {
             _plugins.Dispose();
+        }
+
+        private string AddPluginAgainst(System.Version contract)
+        {
+            string folder = _plugins.Add($"against-{contract}", TestPlugins.Manifest("emitted", "Emitted.dll"));
+            EmittedPlugin.Write(Path.Combine(folder, "Emitted.dll"), assembly => assembly.AddEntryAgainst(contract));
+            return folder;
         }
 
         private async Task<(int ExitCode, string Errors)> CheckAsync(IEnumerable<string> arguments, Action<IDictionary<string, string?>>? addEnvironment = null)

@@ -68,17 +68,17 @@ describe('building a plugin', () => {
     const run = () => spawnSync(process.execPath, [resolve('build/buildPlugin.ts')], { cwd: folder.path, encoding: 'utf8' });
     folder.write({
       'tsconfig.json': `{ "extends": "${resolve('../plugins/tsconfig.base.json')}", "include": ["src"], "exclude": [] }`,
-      'src/plugin.tsx': 'import { definePlugin, Card } from \'@byteshelf/plugin\'; export default definePlugin({ draw: () => <Card className="probe-flex">plugin</Card> });',
+      'src/plugin.tsx': 'import { definePlugin, Card } from \'@byteshelf/plugin\'; export default definePlugin({ viewers: [{ id: \'probe\', mediaTypes: [\'text/plain\'], extensions: [], component: ({ file }) => <Card className="probe-flex">{file.name}</Card> }] });',
     });
 
-    const { status, stderr } = run();
-    expect([status, stderr]).toEqual([0, '']);
+    const { status, stderr, stdout } = run();
+    expect([status, stderr], stdout).toEqual([0, '']);
     expect(folder.read('dist/ui/plugin.js')).toContain('from"@byteshelf/plugin"');
 
     folder.write({ 'src/Heavy.tsx': 'export const wrong: number = \'text\';' });
-    const { status: refused, stdout } = run();
-    expect(refused).toBe(1);
-    expect(stdout).toContain('src/Heavy.tsx');
+    const refused = run();
+    expect(refused.status).toBe(1);
+    expect(refused.stdout).toContain('src/Heavy.tsx');
   }, BUILD_MS);
 
   it('fails on a utility without the plugin\'s prefix, in its source', async () => {

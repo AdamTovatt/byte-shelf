@@ -33,7 +33,10 @@ import { useFoundFiles } from '../hooks/useFoundFiles';
 import { useFilePicker } from '../hooks/useFilePicker';
 import { MobileTopBarActions, MobileTopBarOverlay } from '../components/layout/MobileTopBar';
 import { useUploads } from '../hooks/useUploads';
+import { OverlayDepthContext } from '../ui/hooks/useOverlay';
 import { encryptionActions, useEncryption } from '../hooks/useEncryption';
+import { useFileActions } from '../hooks/useFileActions';
+import { FileActionItems } from '../components/FileActionItems';
 import { openFile, opensInTab, saveFiles } from '../components/fileOpening';
 import { PreviewOverPage } from '../components/preview/PreviewOverPage';
 import { useShelfPreview } from '../hooks/useShelfPreview';
@@ -69,6 +72,7 @@ export function ShelfPage() {
   const { decryption } = encryption;
   const reading = useMemo(() => fileReading(liveContent(shelf), decryption), [shelf, decryption]);
   const openableHere = (file: ShelfFile) => openable({ file, reading });
+  const { actions: fileActions, dialogs: actionDialogs } = useFileActions(shelf);
   const deleteEntry = useDeleteEntry(shelf);
   const restore = useRestoreDeletion(shelf);
   const createDownloadLink = useCreateDownloadLink(shelf);
@@ -109,7 +113,7 @@ export function ShelfPage() {
     if (files.length > 0) void upload(files);
   }
 
-  /** Opens a row: a folder by going into it, a file in the preview when a viewer takes it, else in a new tab. */
+  /** Opens a row: a folder by going into it, a file in the preview when a viewer shows it or one still loading may, else in a new tab. */
   function open(entry: Entry): void {
     if (entry.kind === 'directory') navigate(shelfRoute(shelf, entry.value.path));
     else if (preview.showsInPreview(entry.value)) preview.open(entry.value);
@@ -206,7 +210,7 @@ export function ShelfPage() {
   const shownFiles = !searching ? { files: listing?.files ?? [] } : filters.duplicates ? duplicateFiles : foundFiles;
   const preview = useShelfPreview(shelf, shownFiles, reading);
 
-  const dialogOpen = preview.isOpen || creatingDirectory || renaming !== null || moving !== null || describing !== null || detailing !== null;
+  const dialogOpen = preview.isOpen || actionDialogs !== null || creatingDirectory || renaming !== null || moving !== null || describing !== null || detailing !== null;
 
   // ⌘A or Ctrl+A selects every row, unless a field has the keys; Escape clears the selection. A
   // dialog keeps both for itself.
@@ -230,7 +234,7 @@ export function ShelfPage() {
     // A link would hand on only encrypted bytes, so an encrypted file has none. Only a listing's rows
     // know whether they are under an encrypted folder.
     const encrypted = entry.value.encrypted;
-    const actions = encryptionActions(entry, !options.selectable ? 'unknown' : listing?.encryptedBy ? 'encrypted' : 'plain');
+    const encrypting = encryptionActions(entry, !options.selectable ? 'unknown' : listing?.encryptedBy ? 'encrypted' : 'plain');
     const shown = (
       <EntryRow
         key={entry.value.id}
@@ -249,8 +253,9 @@ export function ShelfPage() {
         onDescribe={entry.kind === 'file' ? () => setDescribing(entry.value) : undefined}
         onShowDetails={entry.kind === 'file' ? () => setDetailing(entry.value) : undefined}
         onCopyLink={entry.kind === 'file' && !encrypted ? () => void copyLink(entry.value) : undefined}
-        onEncrypt={actions.encrypt ? () => void encryption.encrypt(entry) : undefined}
-        onRemoveEncryption={actions.removeEncryption ? () => void encryption.removeEncryption(entry) : undefined}
+        onEncrypt={encrypting.encrypt ? () => void encryption.encrypt(entry) : undefined}
+        onRemoveEncryption={encrypting.removeEncryption ? () => void encryption.removeEncryption(entry) : undefined}
+        pluginItems={entry.kind === 'file' && <FileActionItems actions={fileActions} target={openableHere(entry.value)} />}
         onRename={() => setRenaming(entry)}
         onMove={() => setMoving([entry])}
         onDelete={() => void remove([entry])}
@@ -413,7 +418,9 @@ export function ShelfPage() {
       {moving && <MoveDialog shelf={shelf} entries={moving} onClose={() => setMoving(null)} />}
       {describing && <DescriptionDialog shelf={shelf} file={describing} onClose={() => setDescribing(null)} />}
       {detailing && <FileDetailsDialog shelf={shelf} file={detailing} onClose={() => setDetailing(null)} />}
-      <PreviewOverPage preview={preview} detailsOn={shelf}>{encryption.dialog}</PreviewOverPage>
+      <PreviewOverPage preview={preview} detailsOn={shelf} actions={fileActions}>{encryption.dialog}</PreviewOverPage>
+      {/* Not inside the preview, though over it: as that closes they stay as they are. */}
+      <OverlayDepthContext.Provider value={preview.isOpen ? 1 : 0}>{actionDialogs}</OverlayDepthContext.Provider>
     </div>
   );
 }
@@ -530,12 +537,14 @@ interface EntryRowProps {
   onCopyLink?: () => void;
   onEncrypt?: () => void;
   onRemoveEncryption?: () => void;
+  /** For a file: what plugins add to its menu. */
+  pluginItems?: ReactNode;
   onRename: () => void;
   onMove: () => void;
   onDelete: () => void;
 }
 
-function EntryRow({ entry, label, selection, opensIn, onOpen, onOpenInTab, onPrefetch, onDownload, onDescribe, onShowDetails, onCopyLink, onEncrypt, onRemoveEncryption, onRename, onMove, onDelete }: EntryRowProps) {
+function EntryRow({ entry, label, selection, opensIn, onOpen, onOpenInTab, onPrefetch, onDownload, onDescribe, onShowDetails, onCopyLink, onEncrypt, onRemoveEncryption, pluginItems, onRename, onMove, onDelete }: EntryRowProps) {
   const isFile = entry.kind === 'file';
   const name = entry.value.name;
   const selected = selection?.selected ?? false;
@@ -588,6 +597,7 @@ function EntryRow({ entry, label, selection, opensIn, onOpen, onOpenInTab, onPre
         {onDescribe && <DropdownItem icon={<Icon icon={iconMap.edit} size={16} />} onClick={onDescribe}>Description</DropdownItem>}
         {onEncrypt && <DropdownItem icon={<Icon icon={iconMap.lock} size={16} />} onClick={onEncrypt}>Encrypt</DropdownItem>}
         {onRemoveEncryption && <DropdownItem icon={<Icon icon={iconMap.unlock} size={16} />} onClick={onRemoveEncryption}>Remove encryption</DropdownItem>}
+        {pluginItems}
         <DropdownItem icon={<Icon icon={iconMap.rename} size={16} />} onClick={onRename}>Rename</DropdownItem>
         <DropdownItem icon={<Icon icon={iconMap.move} size={16} />} onClick={onMove}>Move</DropdownItem>
         <DropdownItem icon={<Icon icon={iconMap.delete} size={16} />} variant="danger" onClick={onDelete}>Delete</DropdownItem>

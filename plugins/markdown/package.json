@@ -1,0 +1,14 @@
+{
+  "name": "byteshelf-plugin-markdown",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "build": "node ../../byteshelf.client/build/buildPlugin.ts",
+    "test": "node ../../byteshelf.client/build/testPlugin.ts"
+  },
+  "dependencies": {
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  }
+}

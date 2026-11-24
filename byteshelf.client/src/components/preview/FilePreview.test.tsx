@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
-import { act, useEffect, useState } from 'react';
+import { act, lazy, useEffect, useState, type ComponentType } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FilePreview } from './FilePreview';
 import { BUILT_IN_VIEWERS } from './viewers';
 import { neighboursOf } from '../../lib/preview/neighbours';
+import type { FileActions } from '../../hooks/useFileActions';
 import type { ViewerProps } from '../../lib/preview/viewerRegistry';
 import type { ContentSource } from '../../services/contentService';
 import type { FileReading } from '../../services/fileReading';
@@ -31,9 +32,22 @@ function BrokenViewer({ file }: ViewerProps): null {
   throw new Error(`Cannot show ${file.name}.`);
 }
 
-const WITH_BROKEN = BUILT_IN_VIEWERS.with('test', [{ id: 'broken', mediaTypes: ['x-test/broken'], extensions: [], component: BrokenViewer }]);
+/** Brings the component of a viewer that loads it when it is first shown. */
+let loadLazy: (module: { default: ComponentType<ViewerProps> }) => void;
 
-vi.mock('../../hooks/useViewers', () => ({ useViewers: () => WITH_BROKEN }));
+const LazyViewer = lazy(() => new Promise<{ default: ComponentType<ViewerProps> }>((resolve) => { loadLazy = resolve; }));
+
+const WITH_PLUGINS = BUILT_IN_VIEWERS.with('test', [
+  { id: 'broken', mediaTypes: ['x-test/broken'], extensions: [], component: BrokenViewer },
+  { id: 'lazy', mediaTypes: ['x-test/lazy'], extensions: [], component: LazyViewer },
+]);
+
+vi.mock('../../hooks/useViewers', () => ({ useViewers: () => WITH_PLUGINS }));
+
+/** Whether plugins still loading are waited for. */
+const plugins = vi.hoisted(() => ({ awaited: false }));
+
+vi.mock('../../hooks/usePluginHost', () => ({ usePluginsAwaited: () => plugins.awaited }));
 
 const LIMIT = 100 * 1024 * 1024;
 
@@ -56,6 +70,7 @@ describe('the preview', () => {
   let change: (file: ShelfFile) => void;
   let moreFound: (() => void) | undefined;
   let detailsOn: string | undefined;
+  let actions: FileActions | undefined;
 
   function Page({ files, first }: { files: ShelfFile[]; first: ShelfFile }) {
     const [shown, setShown] = useState(first);
@@ -71,6 +86,7 @@ describe('the preview', () => {
         steps={beside && { ...beside, more: moreFound !== undefined, toPrevious: move(beside.previous), toNext: move(beside.next) ?? moreFound ?? null }}
         onClose={() => closed++}
         detailsOn={detailsOn}
+        actions={actions}
         asksPassword={asksPassword}
       />
     );
@@ -94,6 +110,8 @@ describe('the preview', () => {
     asksPassword = false;
     moreFound = undefined;
     detailsOn = 'docs';
+    actions = undefined;
+    plugins.awaited = false;
     read = async () => new Blob(['read here'], { type: 'text/plain' });
     unlock = async () => null;
     root = createRoot(document.body.appendChild(document.createElement('div')));
@@ -254,6 +272,77 @@ describe('the preview', () => {
     expect(saved).toEqual(['/open/broken?download']);
     await key('ArrowRight');
     await shows('text of b');
+  });
+
+  it('loads a viewer\'s component as it is first shown', async () => {
+    await show(shelfFile('a', { contentType: 'x-test/lazy' }));
+    expect(document.querySelector('[role="status"]')).not.toBeNull();
+
+    await act(async () => loadLazy({ default: ({ file: { name } }) => <p>drawn late: {name}</p> }));
+
+    await shows('drawn late: a');
+  });
+
+  it('waits for plugins still loading before it shows a file', async () => {
+    plugins.awaited = true;
+    await show(shelfFile('a'));
+    expect(document.body.textContent).not.toContain('text of a');
+
+    plugins.awaited = false;
+    await act(async () => change(shelfFile('a')));
+    await shows('text of a');
+  });
+
+  it('waits for plugins still loading before it says that no viewer takes a file', async () => {
+    const zip = shelfFile('b.zip', { contentType: 'application/zip' });
+    plugins.awaited = true;
+    await show(zip);
+    expect(document.body.textContent).not.toContain('There is no preview');
+
+    plugins.awaited = false;
+    await act(async () => change({ ...zip }));
+    await shows('There is no preview of files of this type.');
+  });
+
+  it('has the plugins\' actions for a live file in a menu of their own, and none without any', async () => {
+    const run = vi.fn(async () => undefined);
+    const convert = { id: 'convert', label: 'Convert', showsFor: () => true, run: () => undefined };
+    actions = { actionsFor: ({ name }) => (name === 'a' ? [{ key: 'a convert', action: convert }] : []), run };
+    await show(shelfFile('a'), [shelfFile('a'), shelfFile('b')]);
+
+    await act(async () => labelled('More actions')!.click());
+    await press('Convert');
+    expect(run.mock.calls).toEqual([[convert, expect.objectContaining({ file: expect.objectContaining({ name: 'a' }), source })]]);
+
+    await key('ArrowRight');
+    await shows('text of b');
+    expect(labelled('More actions')).toBeNull();
+
+    actions = undefined;
+    await act(async () => change(shelfFile('a')));
+    await shows('text of a');
+    expect(labelled('More actions')).toBeNull();
+  });
+
+  it('gives an action the contents it is reading itself, which the action may give up', async () => {
+    const run = vi.fn<FileActions['run']>(async () => undefined);
+    actions = { actionsFor: () => [{ key: 'a convert', action: { id: 'convert', label: 'Convert', showsFor: () => true, run: () => undefined } }], run };
+    let bring: (contents: Blob) => void = () => undefined;
+    const reads = vi.fn(() => new Promise<Blob>((resolve) => { bring = resolve; }));
+    read = reads;
+    await show(shelfFile('a', { encrypted: true }));
+    await act(async () => labelled('More actions')!.click());
+    await press('Convert');
+    const [, target] = run.mock.calls[0];
+    const giving = new AbortController();
+    const given = target.readWhole(giving.signal);
+
+    giving.abort();
+    await expect(given).rejects.toMatchObject({ name: 'AbortError' });
+
+    await act(async () => bring(new Blob(['read here'])));
+    await shows('read here');
+    expect(reads).toHaveBeenCalledOnce();
   });
 
   it('says there is no preview of a type no viewer takes, and saves the file', async () => {

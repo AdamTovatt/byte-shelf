@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from 'react';
+import { act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import toast from 'react-hot-toast';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
@@ -9,6 +9,9 @@ import { ShelfPage } from './ShelfPage';
 import { saveTokens } from '../services/authService';
 import { SHELF_ROUTE_PATTERNS } from '../lib/shelfPaths';
 import { queryKeys } from '../lib/queryKeys';
+import type { RunningPlugin } from '../lib/plugins/pluginHost';
+import type { FileActionContext } from '../lib/plugins/fileAction';
+import { Modal } from '../ui';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { encryptBlob } from '../lib/encryption/age';
 import { removePdfViewer, restorePdfViewer, stubTabs } from '../test/browser';
@@ -16,6 +19,15 @@ import { button, labelled, press, shows, submitPassword, untilFound } from '../t
 import { inAnHour, json, stubServer } from '../test/fakeServer';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+/** The plugins there are, and whether they are all loaded. */
+const plugins = vi.hoisted(() => ({ state: { plugins: [] as RunningPlugin[], failures: new Map<string, string>() }, settled: true }));
+
+vi.mock('../hooks/usePluginHost', () => ({
+  usePluginHost: () => plugins.state,
+  usePluginsSettled: () => plugins.settled,
+  usePluginsAwaited: () => !plugins.settled,
+}));
 
 function directory(path: string) {
   return { id: `dir:${path}`, shelfId: 's', parentId: null, path, name: path.slice(path.lastIndexOf('/') + 1), createdAt: '2026-11-02T00:00:00Z', encrypted: false };
@@ -110,6 +122,8 @@ describe('the shelf page\'s rows', () => {
     recordFails = false;
     findNothing = false;
     stored = null;
+    plugins.state = { plugins: [], failures: new Map() };
+    plugins.settled = true;
     sent = stubServer(async (request) => {
       const url = new URL(request.url);
       if (url.pathname === '/api/shelves/docs/duplicates') return json(duplicates(url.searchParams.get('after')));
@@ -395,6 +409,147 @@ describe('the shelf page\'s rows', () => {
       expect(previewed()).toEqual(expected);
     });
   }
+
+  describe('with a plugin\'s file action', () => {
+    let ran: FileActionContext[];
+    let mounted: number;
+
+    function Choosing() {
+      useEffect(() => void mounted++, []);
+      return <input aria-label="Format" />;
+    }
+
+    beforeEach(async () => {
+      ran = [];
+      mounted = 0;
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      plugins.state = {
+        plugins: [{
+          id: 'a',
+          viewers: [],
+          fileActions: [{
+            id: 'broken', label: 'Broken', showsFor: () => true, run: () => undefined,
+            icon: () => { throw new Error('It cannot be drawn.'); },
+          }, {
+            id: 'convert', label: 'Convert', showsFor: ({ name }) => name !== 'b.txt',
+            run: (context) => {
+              ran.push(context);
+              context.showDialog((close) => <Modal isOpen title="Convert it" onClose={close}><Choosing /></Modal>);
+            },
+          }],
+        }],
+        failures: new Map(),
+      };
+      act(() => root.unmount());
+      await renderAt('/shelves/docs');
+      await vi.waitFor(() => expect(row('b.txt')).not.toBeNull());
+    });
+
+    /** Opens the menu labelled `menu`, which no other may have been before it: one that closes is slow to go. */
+    function openMenu(menu: string): void {
+      click(document.querySelector(`button[aria-label="${menu}"]`)!);
+    }
+
+    function dialogs(): (string | null)[] {
+      return Array.from(document.querySelectorAll('[role="dialog"] h2'), (title) => title.textContent);
+    }
+
+    it.each([['a.txt', true], ['b.txt', false], ['reports', false]])('offers it for the files it shows for, and no folder: %s, %s', (name, offered) => {
+      openMenu(`Actions for ${name}`);
+
+      expect(button('Rename')).not.toBeNull();
+      expect(button('Convert') !== null).toBe(offered);
+      // One that cannot be drawn is left out, alone.
+      expect(button('Broken')).toBeNull();
+    });
+
+    it('offers it for what a search found', async () => {
+      type(searchField(), 'notes');
+      await vi.waitFor(() => expect(container.querySelector('button[aria-label="Actions for c.txt"]')).not.toBeNull());
+
+      openMenu('Actions for c.txt');
+
+      expect(button('Convert')).not.toBeNull();
+    });
+
+    it('runs it on that file of the shelf, and its dialog keeps the page\'s keys', async () => {
+      openMenu('Actions for a.txt');
+      await press('Convert');
+
+      expect(ran.map(({ shelf, file: { name } }) => [shelf, name])).toEqual([['docs', 'a.txt']]);
+      expect(dialogs()).toEqual(['Convert it']);
+      key(document, { key: 'a', ctrlKey: true });
+      expect(selected()).toEqual([]);
+
+      key(document, { key: 'Escape' });
+      expect(dialogs()).toEqual([]);
+      key(document, { key: 'a', ctrlKey: true });
+      expect(selected()).toHaveLength(3);
+    });
+
+    it('offers it in the preview, where Escape closes its dialog first', async () => {
+      type(searchField(), 'notes');
+      await vi.waitFor(() => expect(container.querySelector('button[aria-label="Open c.txt"]')).not.toBeNull());
+      click(container.querySelector('button[aria-label="Open c.txt"]')!);
+      await previews({ name: 'c.txt', position: '1 of 1+' });
+      openMenu('More actions');
+      await press('Convert');
+      expect(ran.map(({ file: { name } }) => name)).toEqual(['c.txt']);
+      expect(dialogs()).toEqual(['c.txt', 'Convert it']);
+      // The preview dims the page already.
+      expect(Array.from(document.querySelectorAll('[data-testid="modal-backdrop"]'), ({ classList }) => classList.contains('bg-black/80'))).toEqual([true, false]);
+
+      key(document, { key: 'Escape' });
+      expect(dialogs()).toEqual(['c.txt']);
+    });
+
+    it('keeps its dialog as it is, with the focus, when the preview closes under it', async () => {
+      key(row('a.txt')!, { key: 'Enter' });
+      await previews({ name: 'a.txt', position: '1 of 2' });
+      openMenu('More actions');
+      await press('Convert');
+      const format = document.querySelector<HTMLInputElement>('input[aria-label="Format"]')!;
+      format.value = 'PNG';
+      act(() => format.focus());
+
+      goBack();
+
+      await vi.waitFor(() => expect(dialogs()).toEqual(['Convert it']));
+      expect(document.querySelector('input[aria-label="Format"]')).toBe(format);
+      expect(format.value).toBe('PNG');
+      expect(document.activeElement).toBe(format);
+      expect(mounted).toBe(1);
+      key(document, { key: 'Escape' });
+      expect(dialogs()).toEqual([]);
+    });
+  });
+
+  it('opens a file whose viewer is unavailable here in the preview while plugins are loading, which may show it', async () => {
+    removePdfViewer();
+    const tabs = stubTabs();
+    rootFiles = [{ ...file('a.pdf'), contentType: 'application/pdf' }];
+    plugins.settled = false;
+    await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
+    await vi.waitFor(() => expect(row('a.pdf')).not.toBeNull());
+
+    key(row('a.pdf')!, { key: 'Enter' });
+
+    await vi.waitFor(() => expect(previewed()?.name).toBe('a.pdf'));
+    expect(tabs).toEqual([]);
+  });
+
+  it('opens a file no viewer takes in the preview while plugins are loading, which may take it', async () => {
+    const tabs = stubTabs();
+    rootFiles = [{ ...file('a.zip'), contentType: 'application/zip' }];
+    plugins.settled = false;
+    await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
+    await vi.waitFor(() => expect(row('a.zip')).not.toBeNull());
+
+    key(row('a.zip')!, { key: 'Enter' });
+
+    await previews({ name: 'a.zip', position: undefined });
+    expect(tabs).toEqual([]);
+  });
 
   it('previews a file on Enter, in the URL, and Back closes it', async () => {
     key(row('b.txt')!, { key: 'Enter' });

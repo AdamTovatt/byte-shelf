@@ -30,7 +30,7 @@ npm ci
 npm run dev        # Vite on port 44903, forwarding /api, /plugins, /mcp, /llms.txt and /swagger to the server (ASPNETCORE_URLS, else :5190)
 npm run lint
 npm test           # Vitest
-npm run test:e2e   # Playwright: builds the UI, starts the server on a root of its own, runs e2e/
+npm run test:e2e   # Playwright: builds the UI and the Markdown plugin, starts the server on a root of its own, runs e2e/
 npm run build      # into dist/, which a published server serves
 ```
 
@@ -91,13 +91,15 @@ npm run codegen    # in a second terminal
   neighbours; Open shows it there whatever its type, saying so of one no viewer takes.
   - *Viewers* (`components/preview/viewers/`) are `{ id, mediaTypes, extensions, component, unavailable? }`,
     held by a registry that never changes (`lib/preview/viewerRegistry.ts`) and is read through
-    `hooks/useViewers.ts` alone. The built-in ones are listed in `BUILT_IN_VIEWERS` (`viewers/index.ts`);
-    `ViewerRegistry.with` answers a registry that holds a plugin's too. An exact type beats a family
-    (`image/*`), a plugin's viewer a built-in one, and the first plugin by id the next; extensions count
-    only for a file stored as `application/octet-stream`. Nothing is rendered as HTML: HTML shows as its
-    source, and SVG through an `<img>`, where its scripts do not run. Text shows its first 1 MiB, decoded as
-    a tab would; an image zooms with the wheel, a pinch or a double-click and moves with a drag.
-  - *Contents* reach a viewer through a `ContentReader` (`lib/preview/contentReader.ts`): `url()`, `blob()`
+    `hooks/useViewers.ts` alone: the built-in ones, listed in `BUILT_IN_VIEWERS` (`viewers/index.ts`), and
+    those of the plugins loaded so far. A preview waits for plugins still loading, at most 3 seconds
+    (`usePluginsAwaited`), and until they are loaded a file that no viewer shows in this browser opens in the
+    preview, not in a tab: one of theirs may. An exact type beats a family (`image/*`), a plugin's viewer a
+    built-in one, and the first plugin by id the next; extensions count only for a file stored as
+    `application/octet-stream`. The built-in ones render nothing as HTML: HTML shows as its source, and SVG
+    through an `<img>`, where its scripts do not run. Text shows its first 1 MiB, decoded as a tab would; an
+    image zooms with the wheel, a pinch or a double-click and moves with a drag.
+  - *Contents* reach a viewer through a `ContentReader` (`lib/content/contentReader.ts`): `url()`, `blob()`
     and `range()`, whatever they come from. A blob-backed file (`isBlobBacked`) is read whole into the page
     first (`lib/preview/fileContents.ts`), over 100 MiB only once Load, Download or Open in new tab is
     pressed, and let go as the preview moves on. It is read and unlocked once for the preview and for a
@@ -160,10 +162,13 @@ npm run codegen    # in a second terminal
   import as `@byteshelf/plugin` is `src/plugin/index.ts`; `build/sharedModules.ts` makes that and the
   packages plugins share an entry each of the build, named in `index.html`'s import map, and in the dev
   server too. `build/buildPlugin.ts` builds the plugins in [plugins](../plugins/README.md). What they
-  may use is a promise: breaking it raises `PluginApi.Version` on the server.
+  may use is a promise: breaking it raises `PluginApi.Version` on the server. A plugin adds viewers to
+  the preview and actions to the menus of live files: in a listing, a search's results and the preview,
+  an encrypted file's too, whose password is asked for once the action reads it
+  (`hooks/useFileActions.tsx`). Each viewer, menu item and dialog is drawn in an error boundary.
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and
   refetches what each event makes stale (`lib/invalidationMap.ts`), so a change made elsewhere shows up
   within about a second. A test checks the map covers every resource the server publishes. The
   exceptions are the Replication page's status, polled every 5 seconds, as a replica's lag changes
   without anything being published, and the plugins, which change only with a restart of the server:
-  they are read at sign-in, and again for Settings once that is stale.
+  they are read at sign-in, and again once that is stale as a shelf, a preview or Settings opens.

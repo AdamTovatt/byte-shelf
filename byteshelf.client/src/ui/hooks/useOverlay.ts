@@ -91,7 +91,7 @@ function keepTabWithin(element: HTMLElement, event: KeyboardEvent): void {
 /**
  * The page-level behaviour every overlay shares: the body does not scroll behind it, Escape dismisses
  * it, and, given its `element`, the focus goes into it as it opens, stays in it, and goes back to where
- * it was as it closes.
+ * it was as it closes, unless it went elsewhere meanwhile.
  *
  * **Escape reaches the topmost overlay only** — see {@link topmostToken} for what topmost means. The
  * handler is on the document, so every open overlay hears every Escape; what decides is that
@@ -155,7 +155,8 @@ export function useOverlay({ isOpen, onClose, onKeyDown, element }: UseOverlayOp
     const before = document.activeElement;
     element.current.focus();
     return () => {
-      if (before instanceof HTMLElement) before.focus();
+      // What had it here is gone. Anywhere else, as in an overlay that stays, it is left.
+      if (document.activeElement === document.body && before instanceof HTMLElement) before.focus();
     };
   }, [isOpen, element]);
 

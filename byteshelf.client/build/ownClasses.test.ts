@@ -4,7 +4,7 @@ import { classesInCss, classesInSource, unprefixedUtilities } from './ownClasses
 describe('a plugin\'s classes that are the app\'s', () => {
   it('are the app\'s utilities, whatever they hold', async () => {
     const utilities = ['flex', 'hover:hidden', 'md:w-[10px]', '2xl:flex', 'grid-cols-[1fr,2fr]', 'text-fg', 'container'];
-    const appOnly = ['bg-brand-gradient', 'animate-sidebar-slide-in'];
+    const appOnly = ['text-body-md', 'bg-brand-gradient', 'animate-sidebar-slide-in'];
     const own = ['markdown-flex', '2xl:markdown-flex', 'textLayer', 'flexible'];
 
     expect(await unprefixedUtilities([...own, ...utilities, ...appOnly])).toEqual([...utilities, ...appOnly]);

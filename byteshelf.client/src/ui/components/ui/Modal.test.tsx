@@ -55,6 +55,14 @@ describe('a dialog\'s focus', () => {
     expect(document.activeElement).toBe(element('behind'));
   });
 
+  it('stays where it went meanwhile, as into a dialog that stays, as it closes', async () => {
+    element('after').focus();
+
+    await show(false);
+
+    expect(document.activeElement).toBe(element('after'));
+  });
+
   it('goes around within it on Tab, either way', () => {
     element('only').focus();
     expect(tab().defaultPrevented).toBe(true);

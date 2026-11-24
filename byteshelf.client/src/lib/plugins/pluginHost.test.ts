@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
+import { lazy } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PluginHost, browserTransport, type PluginTransport } from './pluginHost';
-import { definePlugin } from '../../plugin/pluginDefinition';
+import { definePlugin } from './pluginDefinition';
 import type { PluginView } from '../../services/pluginService';
 
 function plugin(id: string, parts: Partial<PluginView> = {}): PluginView {
@@ -20,7 +21,7 @@ describe('the plugin host', () => {
     logged = [];
     vi.spyOn(console, 'error').mockImplementation((message: string) => void logged.push(message));
     transport = {
-      importModule: vi.fn<PluginTransport['importModule']>(async (url) => ({ default: definePlugin({ from: url }) })),
+      importModule: vi.fn<PluginTransport['importModule']>(async (url) => ({ default: definePlugin({ fileActions: [{ id: url, label: url, showsFor: () => true, run: () => undefined }] }) })),
       loadStylesheet: vi.fn<PluginTransport['loadStylesheet']>((url) => ({ loaded: Promise.resolve(), remove: () => void removed.push(url) })),
     };
     host = new PluginHost(transport);
@@ -33,9 +34,9 @@ describe('the plugin host', () => {
   it('loads each plugin with its stylesheet, in order of id', async () => {
     await host.load([plugin('b', { stylesheetUrl: '/plugins/b/hash/plugin.css' }), plugin('a')]);
 
-    expect(host.state().plugins).toEqual([
-      { id: 'a', definition: { from: '/plugins/a/hash/plugin.js' } },
-      { id: 'b', definition: { from: '/plugins/b/hash/plugin.js' } },
+    expect(host.state().plugins.map(({ id, viewers, fileActions }) => [id, viewers, fileActions.map((action) => action.id)])).toEqual([
+      ['a', [], ['/plugins/a/hash/plugin.js']],
+      ['b', [], ['/plugins/b/hash/plugin.js']],
     ]);
     expect(transport.loadStylesheet.mock.calls).toEqual([['/plugins/b/hash/plugin.css']]);
     expect(removed).toEqual([]);
@@ -102,6 +103,44 @@ describe('the plugin host', () => {
 
     expect(host.state().plugins).toEqual([]);
     expect([...host.state().failures]).toEqual([['a', 'Its module has no default export made with definePlugin.']]);
+  });
+
+  const viewer = { id: 'a', mediaTypes: ['text/plain'], extensions: ['.txt'], component: () => null };
+  const action = { id: 'a', label: 'Act', showsFor: () => true, run: () => undefined };
+  const lacking = (name: string) => `One of its ${name} lacks what each must have.`;
+
+  it.each<[string, object, string]>([
+    ['viewers that are no list', { viewers: {} }, 'Its viewers are not a list.'],
+    ['a missing viewer', { viewers: [viewer, undefined] }, lacking('viewers')],
+    ['a viewer without an id', { viewers: [{ ...viewer, id: undefined }] }, lacking('viewers')],
+    ['a viewer without types', { viewers: [{ ...viewer, mediaTypes: undefined }] }, lacking('viewers')],
+    ['a viewer of what is no type', { viewers: [{ ...viewer, mediaTypes: [1] }] }, lacking('viewers')],
+    ['a viewer without extensions', { viewers: [{ ...viewer, extensions: undefined }] }, lacking('viewers')],
+    ['a viewer without a component', { viewers: [{ ...viewer, component: undefined }] }, lacking('viewers')],
+    ['a viewer whose unavailable is no function', { viewers: [{ ...viewer, unavailable: 'no' }] }, lacking('viewers')],
+    ['two viewers of one id', { viewers: [viewer, { ...viewer }] }, 'Two of its viewers have the id a.'],
+    ['file actions that are no list', { fileActions: 1 }, 'Its fileActions are not a list.'],
+    ['a missing file action', { fileActions: [null] }, lacking('fileActions')],
+    ['a file action without a label', { fileActions: [{ ...action, label: undefined }] }, lacking('fileActions')],
+    ['a file action that cannot be asked whether it shows', { fileActions: [{ ...action, showsFor: undefined }] }, lacking('fileActions')],
+    ['a file action that cannot be run', { fileActions: [{ ...action, run: undefined }] }, lacking('fileActions')],
+    ['two file actions of one id', { fileActions: [action, { ...action }] }, 'Two of its fileActions have the id a.'],
+  ])('skips a plugin with %s, which the app would fail on as it draws', async (_, definition, reason) => {
+    transport.importModule.mockResolvedValue({ default: definePlugin(definition) });
+
+    await host.load([plugin('a')]);
+
+    expect(host.state().plugins).toEqual([]);
+    expect([...host.state().failures]).toEqual([['a', reason]]);
+  });
+
+  it('takes a viewer drawn by a component that is loaded when it is shown', async () => {
+    const component = lazy(async () => ({ default: () => null }));
+    transport.importModule.mockResolvedValue({ default: definePlugin({ viewers: [{ ...viewer, component }] }) });
+
+    await host.load([plugin('a')]);
+
+    expect(host.state().plugins.map(({ viewers }) => viewers[0].component)).toEqual([component]);
   });
 
   it('takes the stylesheet of a plugin that fails out of the page, though it has not loaded yet', async () => {

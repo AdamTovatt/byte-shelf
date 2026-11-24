@@ -51,10 +51,10 @@ export function deletedFile(shelf: string, { deletion, tree, encryptedBy }: Dele
 }
 
 /** A file's whole contents, its password asked for when it is locked; null when it was not given. */
-export async function unlockedContents({ read, unlock }: FileReading, file: ShelfFile): Promise<Blob | null> {
-  const contents = await read(file);
+export async function unlockedContents({ read, unlock }: FileReading, file: ShelfFile, signal?: AbortSignal): Promise<Blob | null> {
+  const contents = await read(file, signal);
   if (contents) return contents;
-  const unlocked = await unlock(file);
+  const unlocked = await unlock(file, signal);
   return unlocked && streamBlob(unlocked, file.contentType);
 }
 
@@ -62,11 +62,14 @@ export async function unlockedContents({ read, unlock }: FileReading, file: Shel
 export interface OpenableFile {
   file: ShelfFile;
   source: ContentSource;
-  /** Its whole contents, its password asked for when it is locked; null when it was not given. */
-  readWhole: () => Promise<Blob | null>;
+  /**
+   * Its whole contents, its password asked for when it is locked; null when it was not given. Once `signal`
+   * aborts they are no longer waited for, and no longer read unless something else wants them.
+   */
+  readWhole: (signal?: AbortSignal) => Promise<Blob | null>;
 }
 
 /** A file opened and saved from what reads it, its whole contents answered by `readWhole` when given. */
-export function openable({ file, reading }: ReadableFile, readWhole = () => unlockedContents(reading, file)): OpenableFile {
+export function openable({ file, reading }: ReadableFile, readWhole: OpenableFile['readWhole'] = (signal) => unlockedContents(reading, file, signal)): OpenableFile {
   return { file, source: reading.source, readWhole };
 }

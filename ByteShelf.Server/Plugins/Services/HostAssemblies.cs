@@ -5,9 +5,11 @@ using ByteShelfCommon;
 namespace ByteShelf.Server.Plugins.Services
 {
     /// <summary>
-    /// The assemblies every plugin gets from the server, whatever copy it brings: the contract and
-    /// <c>ByteShelfCommon</c>, whose types the two exchange, and the framework. Any other package the
-    /// server uses is not among them, so a plugin may bring its own version of it.
+    /// The assemblies every plugin gets from the server, whatever copy it brings: the contract and the
+    /// framework, whose types the two exchange, and <c>ByteShelfCommon</c>, whose rules for names, paths and
+    /// keys are then the server's own. A break in any raises <see cref="PluginApi.Version"/>, and a
+    /// plugin built against a later one than the server's is refused (<see cref="PluginLoader"/>). Any other
+    /// package the server uses is not among them, so a plugin may bring its own version of it.
     /// </summary>
     internal static class HostAssemblies
     {

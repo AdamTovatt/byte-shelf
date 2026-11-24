@@ -91,7 +91,7 @@ namespace ByteShelf.Server.Plugins.Services
             Attempt("Registering its services failed", () =>
             {
                 IByteShelfPlugin plugin = (IByteShelfPlugin)Activator.CreateInstance(entry)!;
-                plugin.ConfigureServices(registered);
+                plugin.Configure(new PluginBuilder(pluginId, registered));
                 return plugin;
             });
 
@@ -107,7 +107,15 @@ namespace ByteShelf.Server.Plugins.Services
 
         private static (Assembly Assembly, Type Entry) LoadAssembly(string pluginId, string path)
         {
-            Assembly assembly = new PluginLoadContext(pluginId, path).LoadFromAssemblyPath(path);
+            PluginLoadContext context = new PluginLoadContext(pluginId, path);
+            Assembly assembly = context.LoadFromAssemblyPath(path);
+
+            // The runtime would look for each only once code that uses it runs, and loads none older than is
+            // asked for: what a server lacks refuses the plugin here, before any of it has run.
+            foreach (AssemblyName shared in assembly.GetReferencedAssemblies().Where(reference => HostAssemblies.Contains(reference.Name)))
+            {
+                context.LoadFromAssemblyName(shared);
+            }
 
             // Every type, not only the public ones: the server looks through them all for controllers.
             List<Type> entries = assembly.GetTypes()
@@ -141,7 +149,13 @@ namespace ByteShelf.Server.Plugins.Services
             }
             catch (Exception exception)
             {
-                Exception cause = exception is TargetInvocationException { InnerException: { } inner } ? inner : exception;
+                // A TargetInvocationException says only that what it invoked threw, and a ReflectionTypeLoadException why, once for every type.
+                Exception cause = exception switch
+                {
+                    TargetInvocationException { InnerException: { } inner } => inner,
+                    ReflectionTypeLoadException { LoaderExceptions: [{ } first, ..] } => first,
+                    _ => exception,
+                };
                 throw new PluginRefusedException($"{failure}: {cause.Message}", cause);
             }
         }

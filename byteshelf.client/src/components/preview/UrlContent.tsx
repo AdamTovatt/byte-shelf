@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { useLoaded } from '../../hooks/useLoaded';
-import type { ContentReader } from '../../lib/preview/contentReader';
+import type { ContentReader } from '../../lib/content/contentReader';
 import { LoadedContent } from './LoadedContent';
 import { PreviewFailure } from './PreviewFailure';
 import { PreviewSpinner } from './PreviewSpinner';

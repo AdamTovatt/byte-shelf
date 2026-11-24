@@ -16,8 +16,9 @@ namespace ByteShelf.Server.Tests.Plugin
 
         private const string NeededFileName = "needed-service";
 
-        public void ConfigureServices(IServiceCollection services)
+        public void Configure(IPluginBuilder builder)
         {
+            IServiceCollection services = builder.Services;
             services.AddSingleton(new PluginGreeting(
                 typeof(VariableName).Assembly.GetName().Version!.ToString(),
                 typeof(ShelfPath).Assembly.Location));

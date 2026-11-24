@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
 import ts from 'typescript';
@@ -33,6 +35,9 @@ export function ownClassesOnly(): Plugin {
   };
 }
 
+// Utilities too: Tailwind leaves out those the app itself does not use.
+const typeRecipes = readFileSync(resolve(import.meta.dirname, '../src/ui/typography.css'), 'utf8');
+
 /**
  * Those of `classes` that are utilities of the app's, which have no prefix. The app's stylesheet has many
  * of them, so a plugin using one is styled by it or not as the app happens to, and a plugin shipping one
@@ -42,7 +47,7 @@ export async function unprefixedUtilities(classes: Iterable<string>): Promise<st
   const candidates = [...new Set(classes)];
   // `block` keeps Tailwind from warning that it found nothing, which is how it should be.
   const content = [{ raw: ['block', ...candidates].join(' '), extension: 'html' }];
-  const { root } = await postcss([tailwindcss({ ...appStyles, content })]).process('@tailwind components; @tailwind utilities;', { from: undefined });
+  const { root } = await postcss([tailwindcss({ ...appStyles, content })]).process(`@tailwind base; @tailwind components; @tailwind utilities; ${typeRecipes}`, { from: undefined });
 
   const generated = new Set(classesInCss(root.toString()));
   return candidates.filter((candidate) => generated.has(candidate));

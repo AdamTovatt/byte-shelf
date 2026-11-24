@@ -252,7 +252,7 @@ namespace ByteShelf.Server.Tests.Plugins
                 assembly.AddInternalTypeWithAMissingBase();
             });
 
-            Assert.StartsWith("Its server assembly could not be loaded: ", SkipReason(), StringComparison.Ordinal);
+            Assert.StartsWith("Its server assembly could not be loaded: Could not load file or assembly 'Missing,", SkipReason(), StringComparison.Ordinal);
         }
 
         [Theory]

@@ -20,6 +20,13 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  // A plugin's module (from plugins/), whose export is a definition, not a component.
+  {
+    files: ['*/src/plugin.tsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
   {
     files: ['src/contexts/*.tsx', 'src/ui/contexts/*.tsx'],
     rules: {

@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PluginsSection } from './PluginsSection';
 import { PluginHost } from '../lib/plugins/pluginHost';
-import { definePlugin } from '../plugin/pluginDefinition';
+import { definePlugin } from '../lib/plugins/pluginDefinition';
 import { saveTokens } from '../services/authService';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { inAnHour, json, stubServer } from '../test/fakeServer';

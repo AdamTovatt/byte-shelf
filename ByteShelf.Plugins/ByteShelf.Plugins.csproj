@@ -3,8 +3,16 @@
   <!--
     What a plugin's server assembly is written against (ByteShelf.Server/Plugins/Plugins.md). The server
     loads its own copy for every plugin, so a plugin references this without copying it to its output.
-    Its assembly version stays 1.0.0.0: what a plugin needs of the server is the api in its plugin.json.
+    Its assembly version is the plugin api and a minor one that every addition raises, so a server without
+    the addition refuses a plugin built against it, before running anything of it (PluginLoader). A break,
+    as a new member of IByteShelfPlugin without a default is, raises the api (PluginApi) and starts the
+    minor at 0.
+    PluginContractTests holds the two to what is here.
   -->
+  <PropertyGroup>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+  </PropertyGroup>
+
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>

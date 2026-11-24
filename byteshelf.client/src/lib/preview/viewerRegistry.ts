@@ -1,7 +1,8 @@
 import type { ComponentType } from 'react';
 import type { ShelfFile } from '../../services/shelfService';
 import { UNTYPED, mediaTypeOf } from '../mediaTypes';
-import type { ContentReader } from './contentReader';
+import type { ContentReader } from '../content/contentReader';
+import { logFailureOnce } from '../logFailureOnce';
 
 /** What a viewer's component is given: the file's record and its contents, whatever they are read from. */
 export interface ViewerProps {
@@ -66,11 +67,21 @@ export class ViewerRegistry {
 
     let first: ViewerMatch | null = null;
     for (const { viewer } of taking) {
-      const unavailable = viewer.unavailable?.() ?? null;
+      const unavailable = whyUnavailable(viewer);
       if (unavailable === null) return { viewer, unavailable };
       first ??= { viewer: null, unavailable };
     }
     return first;
+  }
+}
+
+/** Why a viewer is unavailable; one that cannot say, a plugin's that fails, is. */
+function whyUnavailable(viewer: Viewer): string | null {
+  try {
+    return viewer.unavailable?.() ?? null;
+  } catch (caught) {
+    logFailureOnce(viewer, `The viewer ${viewer.id} could not say whether it is available.`, caught);
+    return 'The viewer failed.';
   }
 }
 

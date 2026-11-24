@@ -55,19 +55,24 @@ only `PATH` and `HOME`, from any folder. Only the server itself loads plugins; `
 ## The server assembly
 
 It is written against `ByteShelf.Plugins` and holds one public class implementing
-`IByteShelfPlugin`, which registers services. It gets a copy of the server's service collection,
-taken over only once the plugin can be loaded, so one that fails leaves nothing registered and no
-controller behind. The exception is what a registration does to an object already registered:
-`AddHttpClient<T>` keeps the names of typed clients in one, so a typed client needs a class name no
-other plugin's has, and a failed plugin's stays taken until the server restarts. A copy rather than
-an empty collection, because the framework's own registrations (`AddHttpClient`, `AddLogging`) add
-to what is already there, and a second set beside the server's breaks or resets it. There is no
-access to shelves or files in the contract.
+`IByteShelfPlugin`, which registers what it adds through an `IPluginBuilder`: its services, in a
+copy of the server's collection, taken over only once the plugin can be loaded, so one that fails
+leaves nothing registered and no controller behind. The exception is what a registration does to an
+object already registered: `AddHttpClient<T>` keeps the names of typed clients in one, so a typed
+client needs a class name no other plugin's has, and a failed plugin's stays taken until the server
+restarts. A copy rather than an empty collection, because the framework's own registrations
+(`AddHttpClient`, `AddLogging`) add to what is already there, and a second set beside the server's
+breaks or resets it. There is no access to shelves or files in the contract.
+
+What the server shares with a plugin must be no older than the plugin was built against, or it is
+refused before any of it runs, as one for another api is. `ByteShelf.Plugins`' assembly version is the
+api and a minor, which every addition to it raises; `ByteShelfCommon`'s is its package's without the
+patch, so a plugin built against a later patch of it than the server's loads.
 
 Each plugin has an `AssemblyLoadContext` of its own (`PluginLoadContext`): its packages and native
 libraries come from its folder, so it may use another version of a package than the server does.
 `ByteShelf.Plugins`, `ByteShelfCommon` and the framework always come from the server
-(`HostAssemblies`), whatever the plugin brings, since their types cross between the two. So a plugin
+(`HostAssemblies`), whatever the plugin brings, so the two agree on their types and rules. A plugin
 references the first two without copying them (`Private="false" ExcludeAssets="runtime"`) and sets
 `EnableDynamicLoading`, as `ByteShelf.Server.Tests.Plugin` does.
 
@@ -90,9 +95,33 @@ server.
 
 The app asks for the list once someone is signed in and imports each plugin's module
 (`lib/plugins/pluginHost.ts`), showing it once its stylesheet is there too. One whose module or
-stylesheet fails, or whose default export is not made with `definePlugin`, adds nothing to the page
-and leaves no styles in it; the others are not affected, nor is its own server part, and admins see
-the reason on the Settings page. `index.html`'s import map
+stylesheet fails, whose default export is not made with `definePlugin`, or whose viewers or file
+actions lack what each must have (`partsOf` in `lib/plugins/pluginDefinition.ts`), adds nothing to
+the page and leaves no styles in it; the others are not affected, nor is its own server part, and
+admins see the reason on the Settings page. `index.html`'s import map
 (`byteshelf.client/build/sharedModules.ts`) has the browser resolve the modules plugins share with
-the app, so there is one React and one of each context. How plugins are built, and their styles kept
-apart from the app's, is in [plugins/README.md](../../plugins/README.md).
+the app, so there is one React and one of each context.
+
+A module's default export is `definePlugin({ viewers, fileActions })`, from `@byteshelf/plugin`:
+
+- **Viewers** show files in the preview, as the app's own do: `{ id, mediaTypes, extensions, component,
+  unavailable? }`. `extensions` count only for files stored without a type
+  (`application/octet-stream`). The component, which may be a `lazy` one, gets the file's record and a
+  content reader, which answers plain contents wherever they come from, until the preview closes or
+  moves on. A plugin's beats a built-in one for the same type; between two plugins the first id does.
+  `unavailable` says why this browser cannot show the files, and the next viewer that takes them does.
+- **File actions** are items in the menus of live files: `{ id, label, icon?, showsFor, run }`.
+  `showsFor` is asked as a menu is drawn. `run` gets the shelf, the file, its content reader and
+  `showDialog`, which shows a dialog of the plugin's until it calls the `close` it is given. The contents
+  can be read until `run` is done and no dialog is open; an encrypted file's ask for the password as they
+  are first read. What `run` throws is shown to the person, but for an `AbortError`, which says they gave
+  up, as at that prompt.
+
+Ids are apart within a plugin's viewers, and within its file actions. Every type is in
+`byteshelf.client/src/plugin/index.ts`. What is added there raises nothing: a plugin that imports what
+an older server's lacks fails in the browser alone, where the Settings page says so, and
+`--check-plugin`, which never runs a module, does not see it. A plugin released with the server has the
+server's version.
+
+How plugins are built, and their styles kept apart from the app's, is in
+[plugins/README.md](../../plugins/README.md).

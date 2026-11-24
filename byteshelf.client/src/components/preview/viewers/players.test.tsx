@@ -4,7 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AUDIO } from './audio';
 import { VIDEO } from './video';
-import { blobReader, type ContentReader } from '../../../lib/preview/contentReader';
+import { blobReader, type ContentReader } from '../../../lib/content/contentReader';
 import type { Viewer } from '../../../lib/preview/viewerRegistry';
 import type { ShelfFile } from '../../../services/shelfService';
 import { press, untilFound } from '../../../test/dom';
