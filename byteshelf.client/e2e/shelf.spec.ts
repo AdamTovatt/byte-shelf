@@ -1,13 +1,22 @@
 import { readFile } from 'node:fs/promises';
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test, type Browser, type BrowserContext, type Page, type Request } from '@playwright/test';
 import { ADMIN_EMAIL, ADMIN_PASSWORD } from './e2eConfig';
+import { quarteredImage, recordFrames, recordPlaces } from './frames';
 
 // What only a browser shows: signing in, a file uploaded in one tab appearing in another without a
 // reload (the server's live updates reaching the query cache), and a download through a link the
 // browser follows without a token.
 
+/** The contexts a test signed in with, closed as it ends: each holds a stream of live updates, of which the server lets one user have 10. */
+const signedIn: BrowserContext[] = [];
+test.afterEach(async () => {
+  await Promise.all(signedIn.splice(0).map((context) => context.close()));
+});
+
 async function signIn(browser: Browser): Promise<Page> {
-  const page = await (await browser.newContext({ acceptDownloads: true })).newPage();
+  const context = await browser.newContext({ acceptDownloads: true });
+  signedIn.push(context);
+  const page = await context.newPage();
   await page.goto('/login');
   await page.getByLabel('Email').fill(ADMIN_EMAIL);
   await page.getByLabel('Password').fill(ADMIN_PASSWORD);
@@ -260,4 +269,87 @@ test('a folder of a plugin\'s type opens in its viewer, and an encrypted one onc
   expect(kept).toMatchObject({ name: 'note-2.txt', encrypted: true });
   await expect(reader.getByRole('button', { name: 'Note 2' })).toBeVisible({ timeout: 30_000 });
   expect((await storedText(reader, `/api/shelves/folders/content?id=${kept.id}`)).startsWith('age-encryption.org/v1\n')).toBe(true);
+});
+
+/** The images a page asks for, by kind (`contents` for the file's own) and file: those asked for, those loaded and those ended. */
+interface ImageRequests {
+  asked: string[];
+  finished: string[];
+  ended: string[];
+}
+
+/** Records in `requests` the images `page` asks for from now on. */
+function recordImageRequests(page: Page): ImageRequests {
+  const requests: ImageRequests = { asked: [], finished: [], ended: [] };
+  const addTo = (named: string[]) => (request: Request) => {
+    const query = new URL(request.url()).searchParams;
+    if (request.resourceType() === 'image') named.push(`${query.get('kind') ?? 'contents'} of ${query.get('id')}`);
+  };
+  page.on('request', addTo(requests.asked));
+  page.on('requestfinished', addTo(requests.finished));
+  page.on('requestfailed', addTo(requests.ended));
+  return requests;
+}
+
+// What only a browser shows of an image: every frame it draws as the whole of it, slow to load, takes its
+// preview's place, and what is loaded of the images beside it and what ends as it is left.
+test('an image becomes sharp with no frame that is blank, partly drawn or moved, and its neighbour only has its preview loaded ahead', async ({ browser }) => {
+  test.slow();
+  const page = await signIn(browser);
+  await page.getByRole('button', { name: 'New shelf' }).click();
+  await page.getByLabel('Name').fill('photos');
+  await page.getByRole('button', { name: 'Create' }).click();
+  await expect(page).toHaveURL('/shelves/photos');
+  await upload(page, ['a.png', 'b.png'].map((name) => ({ name, mimeType: 'image/png', buffer: quarteredImage(2400, 1600) })));
+  const thumbnails = page.locator('img[src*="kind=thumbnail"]');
+  await expect(thumbnails, 'their thumbnails, made with their previews').toHaveCount(2, { timeout: 60_000 });
+  const [a, b] = await thumbnails.evaluateAll((images: HTMLImageElement[]) => images.map(({ src }) => new URL(src).searchParams.get('id')!));
+
+  const { asked, finished, ended } = recordImageRequests(page);
+  const network = await page.context().newCDPSession(page);
+  await network.send('Network.emulateNetworkConditions', { offline: false, latency: 20, downloadThroughput: 700_000, uploadThroughput: -1 });
+  // Room for all of an image, which is larger than its preview.
+  await page.setViewportSize({ width: 2800, height: 2000 });
+
+  await test.step('the whole takes the preview\'s place in every frame, whole, where the preview was, under its zoom', async () => {
+    const image = page.getByRole('dialog', { name: 'b.png' }).getByRole('img', { name: 'b.png' });
+    let places: Awaited<ReturnType<typeof recordPlaces>> | undefined;
+    const frames = await recordFrames(browser, page, async () => {
+      await page.getByRole('button', { name: 'b.png', exact: true }).dblclick();
+      await expect.poll(() => finished, 'the preview is loaded').toContain(`preview of ${b}`);
+      await expect.poll(() => asked, 'the whole is asked for once the preview is there').toContain(`contents of ${b}`);
+      const box = (await image.boundingBox())!;
+      const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+      await page.mouse.dblclick(x, y);
+      await page.mouse.down();
+      await page.mouse.move(x + 20, y + 15, { steps: 4 });
+      await page.mouse.up();
+      places = await recordPlaces(page, 'b.png');
+      expect(finished, 'the whole is still loading once the image is zoomed and moved').not.toContain(`contents of ${b}`);
+      await expect.poll(() => finished, { message: 'the whole is loaded', timeout: 30_000 }).toContain(`contents of ${b}`);
+      await expect(image, 'the whole is shown').toHaveAttribute('src', /\/content\?/);
+      // Frames it draws after, if it does.
+      await page.waitForTimeout(500);
+      return box;
+    });
+
+    const shown = frames.slice(frames.indexOf(true));
+    // At least the preview, the frame the whole is first seen in and some after: fewer would mean the browser
+    // recorded too few to tell.
+    expect(shown.length, 'frames recorded from the preview on').toBeGreaterThan(3);
+    expect(shown, 'frames from the preview on that show all of the image').not.toContain(false);
+    expect(await places!.jsonValue(), 'the places the image is seen in from the zoom on').toHaveLength(1);
+  });
+
+  await test.step('of the image beside it, only the preview was loaded ahead', async () => {
+    await expect.poll(() => finished, 'its preview is loaded').toContain(`preview of ${a}`);
+    expect(asked.filter((each) => each.endsWith(`of ${a}`)), 'what of it was asked for').toEqual([`preview of ${a}`]);
+  });
+
+  await test.step('a whole that is loading ends as its image is left', async () => {
+    await page.keyboard.press('ArrowLeft');
+    await expect.poll(() => asked, 'the whole of the image beside it is asked for once it is shown').toContain(`contents of ${a}`);
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(() => ended, 'the whole of the image left ends').toContain(`contents of ${a}`);
+  });
 });

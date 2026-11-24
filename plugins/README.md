@@ -9,8 +9,8 @@ assembly as `images`' is, against the two projects that one references.
 - `markdown`: shows `text/markdown`, and untyped files named `.md`, as they read or as their source. No
   HTML in one is shown and no image loaded (its alt text stands in); web links open in a new tab, and any
   other is plain text. A long one's first 128 KiB show as they read, and 1 MiB of its source.
-- `images`: makes thumbnails, previews and what agents see of images, HEIC included, and reads their size
-  ([README](images/README.md)).
+- `images`: makes thumbnails, previews and what agents see of images, HEIC included, and reads their size;
+  its viewer shows an image at once and sharp once the whole of it is there ([README](images/README.md)).
 
 ```
 plugins/<id>/

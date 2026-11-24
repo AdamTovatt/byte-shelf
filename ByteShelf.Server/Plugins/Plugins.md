@@ -154,6 +154,10 @@ A module's default export is `definePlugin({ viewers, fileActions, folderTypes }
   previewed alone, and none after the last of those fetched so far.
   A plugin's beats a built-in one for the same type; between two plugins the first id does.
   `unavailable` says why this browser cannot show the files, and the next viewer that takes them does.
+  `ImageViewer` is the app's own image viewer, for a file the plugin has nothing better for, and `useZoom`
+  zooms and moves an element of the plugin's as that viewer does, with the wheel, a pinch or a double-click and
+  a drag: it gives `frame`, to spread on a `div` that fills the space and centres what it holds, and `zoomed`,
+  the ref and transform of the element in it.
 - **File actions** are items in the menus of live files: `{ id, label, icon?, showsFor, run }`.
   `showsFor` is asked as a menu is drawn. `run` gets the shelf, the file, its content reader and
   `showDialog`, which shows a dialog of the plugin's until it calls the `close` it is given. The contents

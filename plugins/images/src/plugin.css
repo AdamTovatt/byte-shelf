@@ -1,0 +1,13 @@
+@tailwind components;
+@tailwind utilities;
+
+/* All there is to show an image in, whose size its box is fitted to. */
+.images-stage {
+  container-type: size;
+}
+
+/* An image of --images-width by --images-height pixels, no larger than that or than the stage. */
+.images-box {
+  width: min(var(--images-width) * 1px, 100cqw, 100cqh * var(--images-width) / var(--images-height));
+  aspect-ratio: var(--images-width) / var(--images-height);
+}

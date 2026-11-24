@@ -28,6 +28,17 @@ A file stored without an image type gets nothing, even when its name says it is 
 - At most 200 MiB and 120 megapixels, with 1 GiB of memory for pixels. What decodes an AVIF or a HEIC takes memory of
   its own beside that, so the largest of those fail.
 
+## In the preview
+
+Its viewer (`src/SharpeningViewer.tsx`) takes the files stored as `image/*`; an SVG, an encrypted image and one of
+which nothing was made are the app's own viewer's to show, or to say why it cannot. An image's box has its recorded
+size from the start, with its placeholder blurred in it, and keeps it. The thumbnail, if the listing names one, and
+the preview load together, and the sharper of those that are there shows, never one less sharp after it. The whole
+image loads behind them, unseen, the original or, of a type the browser does not show, `full`: once it is decoded
+(`decode()`), it takes their place in the same box, under the same zoom (`useZoom`). If it fails, the preview
+stays. Leaving the image ends what it was loading. Of the files beside it, the size and the preview are loaded ahead,
+never the whole. `byteshelf.client/e2e/shelf.spec.ts` records every frame of the swap.
+
 ## Colours
 
 An RGB profile of at most 64 KiB is kept, and an AVIF or a HEIC marked as Display P3 without one is given it. Anything

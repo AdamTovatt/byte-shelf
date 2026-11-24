@@ -147,6 +147,7 @@ it('promises plugins these, and taking away one a release holds raises PluginApi
       "IconComponent",
       "IconMapKey",
       "IconProps",
+      "ImageViewer",
       "Input",
       "InputProps",
       "InvalidationResource",
@@ -207,6 +208,7 @@ it('promises plugins these, and taking away one a release holds raises PluginApi
       "TooltipProps",
       "Viewer",
       "ViewerProps",
+      "Zoom",
       "authorizedFetch",
       "clamp",
       "cn",
@@ -216,6 +218,7 @@ it('promises plugins these, and taking away one a release holds raises PluginApi
       "getFileIcon",
       "iconMap",
       "invalidateResource",
+      "mediaTypeOf",
       "readText",
       "relativeTo",
       "throwIfFailed",
@@ -226,6 +229,7 @@ it('promises plugins these, and taking away one a release holds raises PluginApi
       "useSetPluginDocument",
       "useSidebarState",
       "useTheme",
+      "useZoom",
     ]
   `);
 });

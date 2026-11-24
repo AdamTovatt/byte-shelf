@@ -4,6 +4,7 @@
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
-    "build": "node ../../byteshelf.client/build/buildPlugin.ts"
+    "build": "node ../../byteshelf.client/build/buildPlugin.ts",
+    "test": "node ../../byteshelf.client/build/testPlugin.ts"
   }
 }

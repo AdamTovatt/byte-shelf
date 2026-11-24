@@ -35,11 +35,12 @@ npm ci
 npm run dev        # Vite on port 44903, forwarding /api, /plugins, /mcp, /llms.txt and /swagger to the server (ASPNETCORE_URLS, else :5190)
 npm run lint
 npm test           # Vitest
-npm run test:e2e   # Playwright: builds the UI and the Markdown plugin, adds e2e/albumPlugin, starts the server on a root of its own, runs e2e/
+npm run test:e2e   # Playwright: builds the UI and the plugins its config names, adds e2e/albumPlugin, starts the server on a root of its own, runs e2e/
 npm run build      # into dist/, which a published server serves
 ```
 
-Before the first `npm run test:e2e`, install its browser with `npx playwright install chromium`.
+Before the first `npm run test:e2e`, install its browser with `npx playwright install chromium`. The images
+plugin's server part, which it builds, needs the .NET SDK.
 
 `src/lib/encryption/interop.test.ts` checks typage (`age-encryption`) decrypts `dotnet.age`, an age
 file ByteShelfClient wrote, and matches `dotnet-check.txt`, a folder check it made; ByteShelfClient's
@@ -115,7 +116,8 @@ npm run codegen    # in a second terminal
     built-in one, and the first plugin by id the next; extensions count only for a file stored as
     `application/octet-stream`. The built-in ones render nothing as HTML: HTML shows as its source, and SVG
     through an `<img>`, where its scripts do not run. Text shows its first 1 MiB, decoded as a tab would; an
-    image zooms with the wheel, a pinch or a double-click and moves with a drag.
+    image zooms with the wheel, a pinch or a double-click and moves with a drag (`hooks/useZoom.ts`, which
+    plugins have too).
   - *Contents* reach a viewer through a `ContentReader` (`lib/content/contentReader.ts`): `url()`, `blob()`
     and `range()`, whatever they come from. A blob-backed file (`isBlobBacked`) is read whole into the page
     first (`lib/preview/fileContents.ts`), over 100 MiB only once Load, Download or Open in new tab is
