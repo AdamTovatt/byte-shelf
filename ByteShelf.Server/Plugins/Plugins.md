@@ -23,7 +23,7 @@ ui/...              whatever plugin.js loads
 |---|---|
 | `id` | Lowercase letters, digits and hyphens. What the plugin is called everywhere. The folder's name means nothing, and of two folders with one id neither is loaded. |
 | `name`, `version` | For people to read. |
-| `api` | `PluginApi.Version` of the servers it is for, one integer the server raises on any breaking change to what plugins may use. Another number is not loaded. |
+| `api` | `PluginApi.Version` of the servers it is for (see Versions). Another number is not loaded. |
 | `serverAssembly` | The path of its server assembly in the folder; left out when it has none. |
 
 Other fields are ignored.
@@ -65,9 +65,7 @@ restarts. A copy rather than an empty collection, because the framework's own re
 breaks or resets it. There is no access to shelves or files in the contract.
 
 What the server shares with a plugin must be no older than the plugin was built against, or it is
-refused before any of it runs, as one for another api is. `ByteShelf.Plugins`' assembly version is the
-api and a minor, which every addition to it raises; `ByteShelfCommon`'s is its package's without the
-patch, so a plugin built against a later patch of it than the server's loads.
+refused before any of it runs, as one for another api is.
 
 Each plugin has an `AssemblyLoadContext` of its own (`PluginLoadContext`): its packages and native
 libraries come from its folder, so it may use another version of a package than the server does.
@@ -115,13 +113,34 @@ A module's default export is `definePlugin({ viewers, fileActions })`, from `@by
   `showDialog`, which shows a dialog of the plugin's until it calls the `close` it is given. The contents
   can be read until `run` is done and no dialog is open; an encrypted file's ask for the password as they
   are first read. What `run` throws is shown to the person, but for an `AbortError`, which says they gave
-  up, as at that prompt.
+  up, as at that prompt. As the person leaves the shelf's files, its dialogs close and a read fails with
+  an `AbortError`; `run` is not stopped, but a dialog it shows after that never appears.
+
+A plugin's module lives as long as the page does, which starts anew as the session ends: what it keeps
+in memory is never there for the next person to sign in. What it keeps in the browser's storage is,
+unless it removes it.
 
 Ids are apart within a plugin's viewers, and within its file actions. Every type is in
-`byteshelf.client/src/plugin/index.ts`. What is added there raises nothing: a plugin that imports what
-an older server's lacks fails in the browser alone, where the Settings page says so, and
-`--check-plugin`, which never runs a module, does not see it. A plugin released with the server has the
-server's version.
+`byteshelf.client/src/plugin/index.ts`.
+
+## Versions
+
+`api` is one integer for all that plugins may use: the plugin folder, the assemblies they get from the
+server (`ByteShelf.Plugins`, `ByteShelfCommon` and the framework), and in the web UI the shared modules
+and `@byteshelf/plugin`, the types it exports, such as `ShelfFile`, included. It is raised on a breaking
+change to a released contract, one that a published release of the server holds; an addition, or a
+change to what no release holds, leaves it as it is. The server's HTTP API, which a plugin reaches with
+`authorizedFetch`, is no part of it but for those types: it changes with the server's releases.
+
+`ByteShelf.Plugins`' assembly version is the api and a minor, which an addition to a released contract
+raises and a new api starts at 0; `ByteShelfCommon`'s is its package's without the patch, so a plugin
+built against a later patch of it than the server's loads. A server without an addition to either refuses
+a plugin built against it.
+
+An addition to the web UI's part raises nothing, and `--check-plugin`, which runs no module, sees nothing
+of it: on a server without it, a plugin that imports a new export fails as it loads, which the Settings
+page says, and one that uses a new member of a type there (`ContentReader`, `FileActionContext`) loads
+and fails in the viewer or action that does. Its server part runs either way.
 
 How plugins are built, and their styles kept apart from the app's, is in
 [plugins/README.md](../../plugins/README.md).

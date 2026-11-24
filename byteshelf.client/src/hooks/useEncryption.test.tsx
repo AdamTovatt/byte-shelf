@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DialogHost } from '../contexts/DialogHost';
 import { encryptionActions, useEncryption } from './useEncryption';
 import { createCheck, decryptBlob, encryptBlob } from '../lib/encryption/age';
 import { folderPasswordKey, rememberPassword, rememberedPassword, filePasswordKey } from '../lib/encryption/passwords';
@@ -158,7 +159,7 @@ describe('encryption in the browser', () => {
 
   function Probe() {
     encryption = useEncryption('docs', FAST);
-    return <>{encryption.dialog}</>;
+    return null;
   }
 
   /** A file's contents, its password asked for when it is locked. */
@@ -190,7 +191,7 @@ describe('encryption in the browser', () => {
       if (filters?.queryKey?.[0] === 'shelfContents') shelf.events.push('refetch');
     });
     root = createRoot(document.body.appendChild(document.createElement('div')));
-    await act(async () => root.render(<QueryClientProvider client={client}><Probe /></QueryClientProvider>));
+    await act(async () => root.render(<QueryClientProvider client={client}><DialogHost><Probe /></DialogHost></QueryClientProvider>));
   });
 
   afterEach(() => {

@@ -112,8 +112,8 @@ describe('reading a file nothing shows', () => {
     expect(readWhole).toHaveBeenCalledOnce();
   });
 
-  it('gives what it had read to no one after it is closed', async () => {
-    const content = reader(true);
+  it.each([['an encrypted', true], ['a plain', false]])('gives %s one to no one after it is closed, also one it had read', async (_, encrypted) => {
+    const content = reader(encrypted);
     await content.blob();
 
     content.close();

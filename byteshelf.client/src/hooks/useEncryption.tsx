@@ -47,17 +47,17 @@ export function encryptionActions(entry: Entry, inside: 'encrypted' | 'plain' | 
 /**
  * Encrypted files on one shelf, in the browser: their passwords asked for once a tab and kept
  * (`passwords.ts`), their contents decrypted from the stored bytes (never through a link), and
- * encrypting or decrypting a file or a folder in place. `dialog` is the password prompt to render.
- * `workFactor` is what new files and folders are encrypted at; only tests lower it.
+ * encrypting or decrypting a file or a folder in place. `workFactor` is what new files and folders are
+ * encrypted at; only tests lower it.
  *
  * These jobs stay in one hook: they share the one prompt and the tab's kept passwords, which split
  * apart each would have to take as arguments.
  */
 export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
-  const { ask, dialog } = usePasswordPrompt();
+  const ask = usePasswordPrompt();
   const invalidate = useInvalidateShelf();
 
-  const operations = useMemo(() => {
+  return useMemo(() => {
     /**
      * The password kept under `key` while `opens` still accepts it, else one asked for that `opens`
      * accepts, then kept. Null when cancelled, as `signal` cancels it.
@@ -288,6 +288,4 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
 
     return { folderPassword, decryption, encrypt, removeEncryption };
   }, [shelf, workFactor, ask, invalidate]);
-
-  return { dialog, ...operations };
 }

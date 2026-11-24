@@ -5,12 +5,13 @@ import toast from 'react-hot-toast';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DialogHost } from '../contexts/DialogHost';
 import { TrashPage } from './TrashPage';
 import { queryKeys } from '../lib/queryKeys';
 import { saveTokens } from '../services/authService';
 import type { DeletionTree, ShelfFile, TrashEntry } from '../services/shelfService';
 import { encryptBlob } from '../lib/encryption/age';
-import { labelled, shows, submitPassword } from '../test/dom';
+import { dialogTitles, labelled, shows, submitPassword } from '../test/dom';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
 
@@ -55,6 +56,7 @@ describe('the trash page', () => {
   let sent: string[];
   let search: string;
   let goBack: () => void;
+  let goTo: (url: string) => void;
   let restored: boolean;
   /** The file the deletion took, its stored contents and the encrypted folder it was in. */
   let taken: ShelfFile;
@@ -66,6 +68,7 @@ describe('the trash page', () => {
     search = useLocation().search;
     const navigate = useNavigate();
     goBack = () => act(() => navigate(-1));
+    goTo = (url) => act(() => navigate(url));
     return null;
   }
 
@@ -102,7 +105,7 @@ describe('the trash page', () => {
     await act(async () => root.render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={[url]}>
-          <Routes><Route path="/shelves/:shelf/trash" element={<TrashPage />} /></Routes>
+          <DialogHost><Routes><Route path="/shelves/:shelf/trash" element={<TrashPage />} /></Routes></DialogHost>
           <Location />
         </MemoryRouter>
       </QueryClientProvider>,
@@ -204,6 +207,17 @@ describe('the trash page', () => {
     expect(sent.filter((request) => request.includes('/content') || request.includes('/encryption'))).toEqual(
       sent.filter((request) => request.startsWith('GET /api/shelves/docs/trash/del-file/content?id=file-1 ')),
     );
+  });
+
+  it('takes its prompt back as another shelf\'s trash is opened', async () => {
+    taken = { ...file, encrypted: true, path: '/vault/a.txt' };
+    encryptedBy = { directory: { ...fileDeletion.tree.directory, id: 'vault', path: '/vault', name: 'vault', encrypted: true }, check: '' };
+    await act(async () => labelled('Download /a.txt')!.click());
+    await vi.waitFor(() => expect(dialogTitles()).toEqual(['Unlock vault']));
+
+    goTo('/shelves/other/trash');
+
+    await vi.waitFor(() => expect(dialogTitles()).toEqual([]));
   });
 
   it('does not ask again for a deletion that is not there', async () => {

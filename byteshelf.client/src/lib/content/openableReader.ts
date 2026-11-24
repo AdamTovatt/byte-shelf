@@ -5,16 +5,15 @@ import { blobReader, sourceReader, type ClosableReader } from './contentReader';
 
 /**
  * Reads a file that nothing shows yet: a blob-backed one's whole contents once they are asked for, its
- * password then too, failing with an `AbortError` when none is given. They are read once for all that asks,
- * until it is closed, which is for good.
+ * password then too, failing with an `AbortError` when none is given. They are read once for all that asks.
+ * Closing it is for good.
  */
 export function openableReader({ file, source, readWhole }: OpenableFile): ClosableReader {
-  if (!isBlobBacked(file)) return sourceReader(file.id, source);
-
   const closing = new AbortController();
   let opening: Promise<ClosableReader> | null = null;
 
   async function open(): Promise<ClosableReader> {
+    if (!isBlobBacked(file)) return sourceReader(file.id, source);
     const whole = await readWhole(closing.signal);
     if (!whole) throw new DOMException('No password was given.', 'AbortError');
     return blobReader(whole);

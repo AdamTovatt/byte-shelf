@@ -3,13 +3,16 @@ import { act, lazy, useState, type ComponentType, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import toast from 'react-hot-toast';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DialogHost } from '../contexts/DialogHost';
 import { useFileActions, type FileActions } from './useFileActions';
+import { usePasswordPrompt, type AskPassword } from './usePasswordPrompt';
+import { Modal } from '../ui';
 import type { PluginHostState } from '../lib/plugins/pluginHost';
 import type { FileAction, FileActionContext } from '../lib/plugins/fileAction';
 import type { ContentSource } from '../services/contentService';
 import type { OpenableFile } from '../services/fileReading';
 import type { ShelfFile } from '../services/shelfService';
-import { button, press } from '../test/dom';
+import { button, dialogTitles, field, press } from '../test/dom';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -21,18 +24,24 @@ const file = { id: 'f', name: 'secret.txt', encrypted: true } as ShelfFile;
 describe('running a file action', () => {
   let root: Root;
   let actions: FileActions;
-  let dialogs: ReactNode;
+  let ask: AskPassword;
   let target: OpenableFile;
   let errors: unknown[];
 
   function Page() {
-    ({ actions, dialogs } = useFileActions('docs'));
+    actions = useFileActions('docs');
+    ask = usePasswordPrompt();
     const [presses, setPresses] = useState(0);
-    return <><button onClick={() => setPresses(presses + 1)}>Pressed {presses}</button>{dialogs}</>;
+    return <button onClick={() => setPresses(presses + 1)}>Pressed {presses}</button>;
   }
 
   function action(run: FileAction['run']): FileAction {
     return { id: 'act', label: 'Act', showsFor: () => true, run };
+  }
+
+  /** Leaves the page, but not what holds its dialogs. */
+  function leave(): Promise<void> {
+    return act(async () => root.render(<DialogHost>{null}</DialogHost>));
   }
 
   /** Runs `run` as an action, answering once it is done and its dialogs are closed. */
@@ -44,10 +53,6 @@ describe('running a file action', () => {
     return { done };
   }
 
-  function dialogTitles(): (string | null)[] {
-    return Array.from(document.querySelectorAll('[role="dialog"] h2'), (title) => title.textContent);
-  }
-
   beforeEach(() => {
     host.state = { plugins: [{ id: 'a', viewers: [], fileActions: [action(() => undefined)] }], failures: new Map() } satisfies PluginHostState;
     target = { file, source: {} as ContentSource, readWhole: async () => new Blob(['plain']) };
@@ -57,7 +62,7 @@ describe('running a file action', () => {
       return '';
     });
     root = createRoot(document.body.appendChild(document.createElement('div')));
-    act(() => root.render(<Page />));
+    act(() => root.render(<DialogHost><Page /></DialogHost>));
   });
 
   afterEach(() => {
@@ -125,7 +130,7 @@ describe('running a file action', () => {
     await press('Close blob:made');
     await done;
 
-    expect(dialogs).toBeNull();
+    expect(button('Close blob:made')).toBeNull();
     await vi.waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:made'));
   });
 
@@ -164,6 +169,25 @@ describe('running a file action', () => {
     expect(dialogTitles()).toEqual([]);
   });
 
+  it('keeps a dialog that loads under the password prompt asked for meanwhile, which keeps the focus', async () => {
+    let bring: (module: { default: ComponentType }) => void = () => undefined;
+    const Late = lazy(() => new Promise<{ default: ComponentType }>((resolve) => { bring = resolve; }));
+    await runs(({ showDialog }) => showDialog(() => <Late />));
+    await act(async () => {
+      void ask({ kind: 'unlock', name: 'a', verify: async () => true });
+    });
+    const prompt = document.activeElement;
+    expect(prompt).toBe(field('Password'));
+
+    await act(async () => bring({ default: () => <Modal isOpen title="Late" onClose={() => undefined}><Modal isOpen title="Inside" onClose={() => undefined}>It</Modal></Modal> }));
+
+    expect(dialogTitles()).toEqual(['Late', 'Inside', 'Unlock a']);
+    expect(document.activeElement).toBe(prompt);
+    await press('Cancel');
+    expect(dialogTitles()).toEqual(['Late', 'Inside']);
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Inside');
+  });
+
   function Broken(): never {
     throw new Error('It threw.');
   }
@@ -194,10 +218,26 @@ describe('running a file action', () => {
     expect(button('The other')).not.toBeNull();
   });
 
-  it('lets go of the contents as the page is left', async () => {
+  it('lets go of the contents of an action still at it as the page is left', async () => {
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:made');
     const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
-    await runs(async ({ content, showDialog }) => {
+    let read = false;
+    await runs(async ({ content }) => {
+      await content.url();
+      read = true;
+      await new Promise(() => undefined);
+    });
+    await vi.waitFor(() => expect(read).toBe(true));
+
+    await leave();
+
+    await vi.waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:made'));
+  });
+
+  it('lets go of the contents, and closes its dialog, as the page is left', async () => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:made');
+    const revoke = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const { done } = await runs(async ({ content, showDialog }) => {
       await content.url();
       showDialog(() => <p>open</p>);
     });
@@ -206,9 +246,10 @@ describe('running a file action', () => {
       expect(document.body.textContent).toContain('open');
     });
 
-    act(() => root.unmount());
-    root = createRoot(document.body.appendChild(document.createElement('div')));
+    await leave();
 
+    expect(document.body.textContent).not.toContain('open');
+    await done;
     await vi.waitFor(() => expect(revoke).toHaveBeenCalledWith('blob:made'));
   });
 });

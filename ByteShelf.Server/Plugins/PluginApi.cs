@@ -4,11 +4,9 @@ namespace ByteShelf.Server.Plugins
     public static class PluginApi
     {
         /// <summary>
-        /// Raised on any breaking change to what plugins may use: the plugin folder, the assemblies they get
-        /// from the server (<c>ByteShelf.Plugins</c>, <c>ByteShelfCommon</c> and the framework), and in the
-        /// web UI the shared modules and <c>@byteshelf/plugin</c>. A plugin whose <c>plugin.json</c> names
-        /// another number is not loaded. What is only added to <c>ByteShelf.Plugins</c> raises the minor of
-        /// its assembly version, whose major is this; what is added to <c>ByteShelfCommon</c>, the minor of its own.
+        /// The <c>api</c> a plugin's <c>plugin.json</c> must name to be loaded, and the major of
+        /// <c>ByteShelf.Plugins</c>' assembly version. What it covers, and when it is raised, is in Plugins.md,
+        /// Versions.
         /// </summary>
         public const int Version = 1;
     }

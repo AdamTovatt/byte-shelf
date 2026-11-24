@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { PluginDialog, type PluginDialogProps } from '../components/PluginDialog';
+import { useCallback } from 'react';
+import { PluginDialog } from '../components/PluginDialog';
+import { useShowDialog } from '../contexts/DialogHost';
 import { fileActionsFor, type OfferedAction } from '../lib/plugins/fileActions';
 import type { ClosableReader } from '../lib/content/contentReader';
 import { openableReader } from '../lib/content/openableReader';
 import { isAbortError } from '../lib/abort';
 import { runOrToast } from '../lib/utils';
+import type { DrawDialog } from '../lib/drawDialog';
 import type { FileAction } from '../lib/plugins/fileAction';
 import type { OpenableFile } from '../services/fileReading';
 import type { ShelfFile } from '../services/shelfService';
+import { useClosedWhenGone } from './useClosedWhenGone';
 import { usePluginHost } from './usePluginHost';
 
 /** The plugins' file actions on one shelf. */
@@ -17,37 +20,21 @@ export interface FileActions {
   run: (action: FileAction, target: OpenableFile) => Promise<void>;
 }
 
-interface ShownDialog extends PluginDialogProps {
-  id: number;
-}
-
-/** The plugins' actions for the live files of a shelf, and the dialogs of those run here, to render; null when they show none. */
-export function useFileActions(shelf: string): { actions: FileActions; dialogs: ReactNode } {
+/** The plugins' actions for the live files of a shelf. */
+export function useFileActions(shelf: string): FileActions {
   const { plugins } = usePluginHost();
-  const [dialogs, setDialogs] = useState<readonly ShownDialog[]>([]);
-  const dialogCount = useRef(0);
+  const show = useShowDialog();
 
-  // Closed with the page, whose dialogs go without being closed.
-  const reading = useRef(new Set<ClosableReader>());
-  useEffect(() => {
-    const readers = reading.current;
-    return () => readers.forEach((reader) => reader.close());
-  }, []);
+  // Closed with the page, also while an action is still at it.
+  const reading = useClosedWhenGone<ClosableReader>();
 
   const run = useCallback(async (action: FileAction, target: OpenableFile): Promise<void> => {
     const content = openableReader(target);
-    reading.current.add(content);
+    reading.add(content);
     const closing: Promise<void>[] = [];
 
-    function showDialog(render: PluginDialogProps['render']): void {
-      closing.push(new Promise((resolve) => {
-        const id = ++dialogCount.current;
-        function close(): void {
-          setDialogs((shown) => shown.filter((each) => each.id !== id));
-          resolve();
-        }
-        setDialogs((shown) => [...shown, { id, title: action.label, render, close }]);
-      }));
+    function showDialog(draw: DrawDialog): void {
+      closing.push(show((close) => <PluginDialog title={action.label} draw={draw} close={close} />).closed);
     }
 
     await runOrToast(async () => {
@@ -61,12 +48,9 @@ export function useFileActions(shelf: string): { actions: FileActions; dialogs: 
 
     // One may show another before it closes.
     for (let closed = closing.shift(); closed; closed = closing.shift()) await closed;
-    reading.current.delete(content);
+    reading.delete(content);
     content.close();
-  }, [shelf]);
+  }, [shelf, show, reading]);
 
-  return {
-    actions: { actionsFor: (file) => fileActionsFor(plugins, file), run },
-    dialogs: dialogs.length === 0 ? null : dialogs.map(({ id, ...dialog }) => <PluginDialog key={id} {...dialog} />),
-  };
+  return { actionsFor: (file) => fileActionsFor(plugins, file), run };
 }

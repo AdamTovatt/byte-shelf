@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { DialogHost } from './contexts/DialogHost';
 import { LoginPage } from './pages/LoginPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
@@ -12,6 +13,7 @@ import { UsersPage } from './pages/UsersPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ReplicationPage } from './pages/ReplicationPage';
 import { NewVersionBanner } from './components/NewVersionBanner';
+import { StartupToast } from './components/StartupToast';
 import { AppShell } from './components/layout/AppShell';
 import { useInvalidationStream } from './hooks/useInvalidationStream';
 import { useLoadPlugins } from './hooks/usePluginHost';
@@ -82,7 +84,10 @@ function App() {
           // so a name beside an action such as Undo keeps a useful part; a phone keeps 350px.
           toastOptions={{ className: '!bg-panel !text-fg !border !border-border !text-body-md !shadow-brand-lg [overflow-wrap:anywhere] [&>[role=status]]:min-w-0 sm:!max-w-[32rem]' }}
         />
-        <AppRoutes />
+        <StartupToast />
+        <DialogHost>
+          <AppRoutes />
+        </DialogHost>
       </AuthProvider>
     </BrowserRouter>
   );

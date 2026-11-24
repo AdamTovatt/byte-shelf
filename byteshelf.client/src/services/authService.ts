@@ -1,6 +1,5 @@
 import type { AuthResponse } from './authTypes';
 import { AUTH_PATHS } from './authPaths';
-import { ROUTES } from '../lib/routes';
 
 // The session lives in localStorage, shared by every tab. A refresh token works once, and reusing a
 // spent one ends every session in its family, so renewals run one at a time across tabs (Web Locks)
@@ -68,10 +67,19 @@ export function isSessionStorageKey(key: string | null): boolean {
   return key === null || key === REFRESH_TOKEN_STORAGE_KEY;
 }
 
-export function redirectToLoginIfNeeded(): void {
-  if (window.location.pathname !== ROUTES.LOGIN) {
-    window.location.href = ROUTES.LOGIN;
-  }
+const endListeners = new Set<() => void>();
+
+/**
+ * Tells `listener` whenever a request of this page finds that there is no session, as when the server ended
+ * it; answers how to stop. Another tab ending it is a storage event ({@link isSessionStorageKey}).
+ */
+export function onSessionEnded(listener: () => void): () => void {
+  endListeners.add(listener);
+  return () => endListeners.delete(listener);
+}
+
+function tellSessionEnded(): void {
+  endListeners.forEach((listener) => listener());
 }
 
 function isDue(): boolean {
@@ -101,8 +109,8 @@ function withRenewLock<T>(work: () => Promise<T>): Promise<T> {
 
 /**
  * Answers an access token newer than `staleToken`: one another request or tab renewed to when it
- * is not due itself, else a renewed one. Null when the session has ended (it is then forgotten) or
- * the server cannot be reached.
+ * is not due itself, else a renewed one. Null when the session has ended (it is then forgotten, and
+ * {@link onSessionEnded} told) or the server cannot be reached.
  */
 export function renewAccessToken(staleToken: string | null): Promise<string | null> {
   return withRenewLock(async () => {
@@ -113,6 +121,7 @@ export function renewAccessToken(staleToken: string | null): Promise<string | nu
 
     const refreshToken = getRefreshToken();
     if (!refreshToken) {
+      tellSessionEnded();
       return null;
     }
 
@@ -129,6 +138,7 @@ export function renewAccessToken(staleToken: string | null): Promise<string | nu
 
     if (response.status === 400 || response.status === 401) {
       clearTokens();
+      tellSessionEnded();
       return null;
     }
 
@@ -176,6 +186,8 @@ export async function signOut(): Promise<void> {
   try {
     await fetch(AUTH_PATHS.LOGOUT, {
       method: 'POST',
+      // Another request may find the session gone meanwhile, and the page start anew for it.
+      keepalive: true,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken }),
     });

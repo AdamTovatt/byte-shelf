@@ -1,5 +1,6 @@
 // What plugins import as `@byteshelf/plugin`: the UI library, and what of the app they may use. All of it
-// is what a plugin's `api` promises (PluginApi.cs): taking anything away raises it (index.test.ts).
+// is what a plugin's `api` promises: taking away anything a release holds raises it (Plugins.md, Versions;
+// index.test.ts).
 
 export * from '../ui';
 export { definePlugin, type PluginDefinition } from '../lib/plugins/pluginDefinition';

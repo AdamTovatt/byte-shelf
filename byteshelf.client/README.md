@@ -17,11 +17,15 @@ the server's plugins, and why one was skipped or its part in the web UI failed.
 
 `src/ui` is the UI library: buttons, fields, cards, dialogs, menus, page layout and the sidebar, with
 the colour, type and icon systems and the Tailwind preset they need. A dialog takes the focus, keeps Tab
-in it and gives the focus back. It was copied from the house
-component library, trimmed to what ByteShelf uses; pages import from `src/ui`. `src/components` holds
-what the library lacks: app-specific pieces (the form dialog, the password dialog, the quota field)
-and a few generic ones written for this app (`CardList`, `MiddleTruncatedName`). The file picker is a
-hook, `hooks/useFilePicker.tsx`.
+in it and gives the focus back; of several, the last to open is on top and has the keys, and the lowest
+dims the page (`ui/hooks/useOverlay.ts`). It was copied from the house component library, trimmed to
+what ByteShelf uses; pages import from `src/ui`. `src/components` holds what the library lacks:
+app-specific pieces (the form dialog, the password dialog, the quota field) and a few generic ones
+written for this app (`CardList`, `MiddleTruncatedName`). The file picker is a hook,
+`hooks/useFilePicker.tsx`. A dialog that code shows, rather than a page's own state, such as a password
+prompt or a file action's, is held by `contexts/DialogHost.tsx`, apart from the pages, so one stays as
+it is while the preview under it opens or closes, but for the preview's own prompt, which goes with it.
+All close as the shelf or page they were shown on is left.
 
 ## Working on it
 
@@ -57,7 +61,11 @@ npm run codegen    # in a second terminal
 - **The session** is kept in `localStorage`, shared by every tab. A refresh token works once, so
   renewals run one at a time across tabs (the Web Locks API), and each first takes up a token another
   tab renewed to. Signing out ends the session on the server too. The access token also rides in an
-  `HttpOnly` cookie on `/api/open` only, which the server sets and clears; the app never reads it.
+  `HttpOnly` cookie on `/api/open` only, which the server sets and clears; the app never reads it. A page
+  whose session ends, by signing out here or in another tab or as a request finds that the server ended
+  it, or is another user's once it looks, starts anew (`contexts/AuthContext.tsx`), holding nothing it
+  decrypted, or a plugin kept in memory, for whoever signs in next. `lib/startupToast.ts` leaves a toast
+  for the page it starts.
 - **Passkeys:** the sign-in page has a passkey button and, where the browser offers it, the saved
   passkeys as suggestions in the email field (`hooks/usePasskeySignIn.ts`), asking the server for a
   new ceremony before the one offered runs out. Settings adds, renames and removes them
@@ -146,10 +154,9 @@ npm run codegen    # in a second terminal
   instead. Reading a file asks for no password and answers that it is locked; unlocking it asks, and answers
   the contents (`Decryption` in `services/fileReading.ts`). A password is asked for once and kept in the
   tab's `sessionStorage` (an encrypted folder's under the folder), taken out of any tab the app opens, and
-  forgotten on sign-in and sign-out, and when the app starts with no session (a tab the browser restores
-  after a sign-out); a page that finds another user signed in from another tab starts anew, holding nothing
-  it decrypted for the one before. A plain folder's Remove encryption leaves out the files of an encrypted
-  folder below it, which has its own.
+  forgotten on sign-in, as the session ends, and when the app starts with none (a tab the browser restores
+  after a sign-out). A plain folder's Remove encryption leaves out the files of an encrypted folder below
+  it, which has its own.
 - **Pages and layout:** a shelf's settings are tabs that are routes, `/shelves/:shelf/settings/:tab`
   (`SHELF_SETTINGS_TABS` in `lib/shelfPaths.ts` lists them; the page picks the tab from the route and
   sends any other to the first tab the user sees: General for an admin, Links for anyone else).
@@ -162,7 +169,8 @@ npm run codegen    # in a second terminal
   import as `@byteshelf/plugin` is `src/plugin/index.ts`; `build/sharedModules.ts` makes that and the
   packages plugins share an entry each of the build, named in `index.html`'s import map, and in the dev
   server too. `build/buildPlugin.ts` builds the plugins in [plugins](../plugins/README.md). What they
-  may use is a promise: breaking it raises `PluginApi.Version` on the server. A plugin adds viewers to
+  may use is a promise: breaking what a release holds of it raises `PluginApi.Version` on the server
+  ([Plugins](../ByteShelf.Server/Plugins/Plugins.md), Versions). A plugin adds viewers to
   the preview and actions to the menus of live files: in a listing, a search's results and the preview,
   an encrypted file's too, whose password is asked for once the action reads it
   (`hooks/useFileActions.tsx`). Each viewer, menu item and dialog is drawn in an error boundary.

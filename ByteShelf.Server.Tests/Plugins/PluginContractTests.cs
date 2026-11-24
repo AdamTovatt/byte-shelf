@@ -13,8 +13,8 @@ namespace ByteShelf.Server.Tests.Plugins
         private static readonly Assembly Contract = typeof(IByteShelfPlugin).Assembly;
 
         /// <summary>
-        /// An addition raises the minor of <c>AssemblyVersion</c> in ByteShelf.Plugins.csproj, and a break raises
-        /// <see cref="PluginApi.Version"/> and its major: change the version here with the lines below it.
+        /// Changed with the lines here: the version, <c>AssemblyVersion</c> in ByteShelf.Plugins.csproj, when the
+        /// contract had been released without the change (Plugins.md, Versions).
         /// </summary>
         [Fact]
         public void Contract_IsWhatItsVersionSays()

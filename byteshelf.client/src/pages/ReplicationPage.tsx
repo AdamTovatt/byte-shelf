@@ -10,6 +10,7 @@ import { useCreatePairingCode, usePairWithPrimary, usePromote, useRemoveReplica,
 import { useSubmit } from '../hooks/useSubmit';
 import { formatTime } from '../lib/format';
 import { describeReplica, describeSource } from '../lib/replication';
+import { leaveStartupToast } from '../lib/startupToast';
 import type { PairingCodeResponse, ReplicaInfo, ReplicationSourceInfo } from '../services/replicationService';
 
 /**
@@ -113,7 +114,7 @@ function PairDialog({ onClose }: { onClose: () => void }) {
   function start(): Promise<void> {
     return submit(() => pair.mutateAsync({ code: code.trim(), name: name.trim() }), () => {
       // This server's users are about to be the primary's, this account included.
-      toast.success('Paired. Sign in with your account on the primary once the copy is in.');
+      leaveStartupToast('Paired. Sign in with your account on the primary once the copy is in.');
       void logout();
     });
   }

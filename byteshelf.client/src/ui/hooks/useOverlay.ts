@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, type RefObject } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 
 interface UseOverlayOptions {
   isOpen: boolean;
@@ -9,65 +9,120 @@ interface UseOverlayOptions {
   element?: RefObject<HTMLElement | null>;
 }
 
+/** Where an overlay is among those open. */
+export interface OverlayPlace {
+  /** What encloses the overlay's own content, for it to provide to that through {@link EnclosingOverlaysContext}. */
+  enclosing: readonly symbol[];
+  /** Whether no other is under it, so that its backdrop is the one that dims the page. */
+  dimsPage: boolean;
+  /** How many are on top of it, which it is drawn under. */
+  above: number;
+}
+
 /** What Tab stops at, where it is drawn. */
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe, video[controls], audio[controls], [tabindex]:not([tabindex="-1"])';
 
 /**
- * How many overlays enclose the subtree being rendered — 0 on the page itself, 1 inside a dialog, 2
- * inside a confirmation raised from that dialog.
+ * The overlays that enclose the subtree being rendered, outermost first: none on the page itself.
  *
  * Exported so an overlay component can scope its own children; `Modal` is the only one that does.
- * A component that renders an overlay's content without providing this leaves anything nested in it
- * registering at its own depth, which reads as a sibling.
  */
-export const OverlayDepthContext = createContext(0);
+export const EnclosingOverlaysContext = createContext<readonly symbol[]>([]);
+
+/**
+ * The place of a dialog whose overlay may be swapped for another, as one that loads is for the one loaded:
+ * the next to open in it, with no other of it open, goes where the first one was, under what has opened
+ * over it since.
+ */
+export interface OverlaySlot {
+  openCount: number;
+  /** Null until one has opened in it. */
+  order: number | null;
+}
+
+/** The slot of the dialog being rendered: none for an overlay that a page opens itself. */
+export const OverlaySlotContext = createContext<OverlaySlot | null>(null);
 
 interface OpenOverlay {
   token: symbol;
-  depth: number;
+  enclosing: readonly symbol[];
+  onKeyDown: (event: KeyboardEvent) => void;
+  /** When it opened, by which the open ones are sorted: its slot's, when another was open in that before. */
+  order: number;
 }
 
 /**
- * Every overlay open right now.
+ * Every overlay open right now, in the order they opened: the last is on top, drawn over the others, and
+ * Escape is its.
  *
  * Module-level because it is a fact about the page rather than about a component: two overlays that
- * know nothing of each other still have to agree on which of them Escape belongs to, and on who is
- * allowed to give the page its scrollbar back. Both of those were decided per-overlay before, and
- * both were wrong the moment a second one opened — a confirmation inside a dialog closed the dialog
- * too, and cancelling that confirmation unlocked the body while the dialog was still covering it.
+ * know nothing of each other have to agree on which of them Escape belongs to, on which dims the page,
+ * and on who may give the page its scrollbar back.
  *
- * A `Symbol` per registration rather than an identifier a caller supplies: nothing outside this file
- * can name an entry, so nothing can remove somebody else's.
+ * A `Symbol` per overlay rather than an identifier a caller supplies: nothing outside this file can name
+ * an entry, so nothing can remove somebody else's.
  */
 const openOverlays: OpenOverlay[] = [];
 
+/** The order of the last overlay to open on top. */
+let lastOrder = 0;
+
+/** Told as an overlay opens or closes. */
+const listeners = new Set<() => void>();
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** Whether any overlay is open, which then has the keys. */
+export function useIsOverlayOpen(): boolean {
+  return useSyncExternalStore(subscribe, () => openOverlays.length > 0);
+}
+
+/** How many overlays are on top of the one of `token`, and whether none is under it; null while it is not open. */
+function placeOf(token: symbol): Omit<OverlayPlace, 'enclosing'> | null {
+  const index = openOverlays.findIndex((overlay) => overlay.token === token);
+  return index === -1 ? null : { above: openOverlays.length - 1 - index, dimsPage: index === 0 };
+}
+
+// One listener for them all, so that a key is the one overlay's that is on top as it is pressed, and not
+// also the next one's, on top once that has closed.
+function handleKeyDown(event: KeyboardEvent): void {
+  openOverlays.at(-1)?.onKeyDown(event);
+}
+
 /**
- * Which overlay an Escape belongs to: the deepest one, and among equals the one that opened last.
- *
- * **Depth rather than registration order, because registration order inverts for a genuinely nested
- * pair**. React flushes effects child-first, so a confirmation inside a
- * dialog that both become open in the SAME commit registers inner-then-outer, and a stack reading
- * its own last entry would hand Escape to the outer one — the defect this hook exists to fix,
- * surviving in the one arrangement nobody had arranged. Depth comes from the React tree through
- * {@link OverlayDepthContext}, which is decided by where a component is rendered rather than by when
- * its effect ran, so it is the same answer whichever commit the two opened in.
- *
- * **Ties go to the last registered**, which is what two independent page-level overlays want: they
- * are not nested, so the one that opened most recently is the one on top.
- *
- * DOM containment would not answer this. A modal portals into `document.body`, so a dialog and the
- * confirmation it raised are siblings in the document however deeply one is nested in the other.
+ * Puts an overlay on top, or back in its slot's place, and answers how to take it away. Opening order is
+ * told by when its effect ran, except within one commit, whose effects React runs child-first: an overlay
+ * goes under those it encloses, which can only have opened with it. Where they are in the document would
+ * not tell, as an overlay and the confirmation it raised both portal into `document.body`.
  */
-function topmostToken(): symbol | undefined {
-  let topmost: OpenOverlay | undefined;
-
-  for (const overlay of openOverlays) {
-    if (topmost === undefined || overlay.depth >= topmost.depth) {
-      topmost = overlay;
-    }
+function open({ token, enclosing, onKeyDown }: Omit<OpenOverlay, 'order'>, slot: OverlaySlot | null): () => void {
+  const inside = openOverlays.find((other) => other.enclosing.includes(token));
+  const kept = slot?.openCount === 0 ? slot.order : null;
+  const overlay: OpenOverlay = { token, enclosing, onKeyDown, order: inside?.order ?? kept ?? ++lastOrder };
+  const over = openOverlays.findIndex((other) => other === inside || other.order > overlay.order);
+  openOverlays.splice(over === -1 ? openOverlays.length : over, 0, overlay);
+  if (slot) {
+    slot.openCount++;
+    slot.order ??= overlay.order;
   }
+  if (openOverlays.length === 1) {
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', handleKeyDown);
+  }
+  listeners.forEach((listener) => listener());
 
-  return topmost?.token;
+  return () => {
+    openOverlays.splice(openOverlays.indexOf(overlay), 1);
+    if (slot) slot.openCount--;
+    if (openOverlays.length === 0) {
+      document.body.style.overflow = '';
+      document.removeEventListener('keydown', handleKeyDown);
+    }
+    listeners.forEach((listener) => listener());
+  };
 }
 
 /**
@@ -90,75 +145,83 @@ function keepTabWithin(element: HTMLElement, event: KeyboardEvent): void {
 
 /**
  * The page-level behaviour every overlay shares: the body does not scroll behind it, Escape dismisses
- * it, and, given its `element`, the focus goes into it as it opens, stays in it, and goes back to where
- * it was as it closes, unless it went elsewhere meanwhile.
+ * it, and, given its `element`, the focus goes into it once it is on top, stays in it, and goes back to
+ * where it was before it opened as it closes, unless it went elsewhere meanwhile.
  *
- * **Escape reaches the topmost overlay only** — see {@link topmostToken} for what topmost means. The
- * handler is on the document, so every open overlay hears every Escape; what decides is that
- * function. A non-dismissible overlay still takes its turn at the top and simply does nothing with
- * it — which is the point, since an Escape it refuses must not fall through to the surface
- * underneath.
+ * **Escape reaches the topmost overlay only** — see {@link openOverlays}. A
+ * non-dismissible overlay still takes its turn at the top and simply does nothing with it — which is the
+ * point, since an Escape it refuses must not fall through to the surface underneath.
  *
  * **The scroll lock is released by the last one out, not by the first.** `overflow` is set while any
  * overlay is open and cleared only when the stack empties, so an inner overlay closing cannot hand
  * the page back its scrollbar while an outer one is still covering it.
- *
- * @returns the depth an overlay rendered INSIDE this one has. An overlay component must provide it
- * to its own children through {@link OverlayDepthContext}, or a nested overlay registers as this
- * one's sibling and the two contend for Escape by mount order again.
  */
-export function useOverlay({ isOpen, onClose, onKeyDown, element }: UseOverlayOptions): number {
-  const depth = useContext(OverlayDepthContext) + 1;
+export function useOverlay({ isOpen, onClose, onKeyDown, element }: UseOverlayOptions): OverlayPlace {
+  const [token] = useState(() => Symbol('overlay'));
+  const enclosing = useContext(EnclosingOverlaysContext);
+  const slot = useContext(OverlaySlotContext);
+  const [above, setAbove] = useState(0);
+  const [dimsPage, setDimsPage] = useState(true);
 
-  // `onClose` is read through a ref so the effect below depends on `isOpen` alone. It is a fresh
-  // function on most renders — `Modal` derives it from `dismissible` inline — and if it were a
-  // dependency, an ordinary re-render of an OUTER overlay would tear its registration down and push
-  // it back on top of the stack, stealing Escape from the overlay it opened.
+  // Read through refs so the effect below depends on `isOpen` alone: each is a fresh function on most
+  // renders — `Modal` derives `onClose` from `dismissible` inline — and if one were a dependency, an
+  // ordinary re-render of an OUTER overlay would take it away and put it back on top, stealing Escape
+  // from the overlay it opened.
   const onCloseRef = useRef(onClose);
   const onKeyDownRef = useRef(onKeyDown);
-  useEffect(() => {
+  const enclosingRef = useRef(enclosing);
+  const tookFocus = useRef(false);
+  useLayoutEffect(() => {
     onCloseRef.current = onClose;
     onKeyDownRef.current = onKeyDown;
+    enclosingRef.current = enclosing;
   });
 
-  useEffect(() => {
+  // Its place is told before it is painted, so that of two that open at once one is drawn over the other,
+  // and one dims the page.
+  useLayoutEffect(() => {
     if (!isOpen) return;
-
-    const token = Symbol('overlay');
-    openOverlays.push({ token, depth });
-    document.body.style.overflow = 'hidden';
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (topmostToken() !== token) return;
-
-      if (event.key === 'Escape') onCloseRef.current();
-      else if (event.key === 'Tab' && element?.current) keepTabWithin(element.current, event);
-      else onKeyDownRef.current?.(event);
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-
+    const unsubscribe = subscribe(() => {
+      const place = placeOf(token);
+      if (!place) return;
+      setAbove(place.above);
+      setDimsPage(place.dimsPage);
+    });
+    const close = open({
+      token,
+      enclosing: enclosingRef.current,
+      onKeyDown: (event) => {
+        if (event.key === 'Escape') onCloseRef.current();
+        else if (event.key === 'Tab' && element?.current) keepTabWithin(element.current, event);
+        else onKeyDownRef.current?.(event);
+      },
+    }, slot);
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
-
-      const index = openOverlays.findIndex((overlay) => overlay.token === token);
-      if (index !== -1) openOverlays.splice(index, 1);
-
-      if (openOverlays.length === 0) {
-        document.body.style.overflow = '';
-      }
+      unsubscribe();
+      close();
     };
-  }, [isOpen, depth, element]);
+  }, [isOpen, token, element, slot]);
 
   useEffect(() => {
-    if (!isOpen || !element?.current) return;
+    if (!isOpen || !element) return;
     const before = document.activeElement;
-    element.current.focus();
     return () => {
+      tookFocus.current = false;
       // What had it here is gone. Anywhere else, as in an overlay that stays, it is left.
       if (document.activeElement === document.body && before instanceof HTMLElement) before.focus();
     };
   }, [isOpen, element]);
 
-  return depth;
+  // Once, also when it opened under another, which had the focus.
+  useEffect(() => {
+    if (!isOpen || tookFocus.current || placeOf(token)?.above !== 0) return;
+    tookFocus.current = true;
+    element?.current?.focus();
+  }, [isOpen, above, token, element]);
+
+  return {
+    enclosing: useMemo(() => [...enclosing, token], [enclosing, token]),
+    dimsPage,
+    above,
+  };
 }

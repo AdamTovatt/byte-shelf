@@ -16,7 +16,7 @@ beforeAll(() => {
 }, 30_000);
 
 // Generated from the server's, so a change there changes what plugins are given.
-it('promises plugins this of a file, and changing it but for more raises PluginApi.Version', () => {
+it('promises plugins this of a file, and changing what a release holds of it, but for more, raises PluginApi.Version', () => {
   const file = checker.getDeclaredTypeOfSymbol(checker.getAliasedSymbol(exported.find(({ name }) => name === 'ShelfFile')!));
   const properties = file.getProperties().map((property) => `${property.name}${property.flags & ts.SymbolFlags.Optional ? '?' : ''}: ${checker.typeToString(checker.getTypeOfSymbol(property))}`);
 
@@ -38,7 +38,7 @@ it('promises plugins this of a file, and changing it but for more raises PluginA
   `);
 });
 
-it('promises plugins these, and taking one away raises PluginApi.Version', () => {
+it('promises plugins these, and taking away one a release holds raises PluginApi.Version', () => {
   expect(exported.map(({ name }) => name).sort()).toMatchInlineSnapshot(`
     [
       "ActionRow",

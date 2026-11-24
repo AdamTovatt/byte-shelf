@@ -23,15 +23,13 @@ interface FilePreviewProps extends ShownPreview {
   detailsOn?: string;
   /** The plugins' actions, for a file that is live. */
   actions?: FileActions;
-  /** Dialogs over the preview, such as a password prompt. */
-  children?: ReactNode;
 }
 
 /**
  * A file over its page, in the viewer that takes its type: its name, where it stands among the files
  * beside it (the arrow keys move between them), and saving it, opening it in a tab and its details.
  */
-export function FilePreview({ previewed, error, steps, onClose, detailsOn, actions, asksPassword, children }: FilePreviewProps) {
+export function FilePreview({ previewed, error, steps, onClose, detailsOn, actions, asksPassword }: FilePreviewProps) {
   const [detailing, setDetailing] = useState(false);
   const viewers = useViewers();
   const awaitsPlugins = usePluginsAwaited();
@@ -72,7 +70,6 @@ export function FilePreview({ previewed, error, steps, onClose, detailsOn, actio
         {target ? shown(target) : error ? <PreviewMessage message={getErrorMessage(error, 'Could not load the file.')} /> : <PreviewSpinner />}
         {steps && <div className="flex justify-center border-t border-border py-1 sm:hidden"><StepButtons steps={steps} /></div>}
       </div>
-      {children}
       {file && detailing && detailsOn !== undefined && <FileDetailsDialog shelf={detailsOn} file={file} onClose={() => setDetailing(false)} />}
     </Modal>
   );

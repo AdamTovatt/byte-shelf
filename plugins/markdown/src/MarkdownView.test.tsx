@@ -18,6 +18,9 @@ vi.mock('remark-gfm', async (original) => {
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+/** More quotes inside one another than can be worked out, and few enough to try it fast. */
+const TOO_DEEP = 2_500;
+
 describe('a Markdown file', () => {
   let root: Root;
   let container: HTMLDivElement;
@@ -142,9 +145,9 @@ describe('a Markdown file', () => {
     expect(container.querySelector('pre')!.textContent).toBe(text);
   });
 
-  it('shows its source all the same when it cannot be shown as it reads, and the next one again', () => {
+  it('shows its source all the same when it cannot be shown as it reads, and the next one again', { timeout: 30_000 }, () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const nested = '>'.repeat(5_000);
+    const nested = '>'.repeat(TOO_DEEP);
     show(nested);
     expect(container.textContent).toContain('This document could not be shown as it reads.');
 

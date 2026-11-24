@@ -8,7 +8,7 @@ import { LoadError } from '../components/LoadError';
 import { NameLine } from '../components/MiddleTruncatedName';
 import { ShelfHeader } from '../components/ShelfHeader';
 import { saveFiles } from '../components/fileOpening';
-import { PreviewOverPage } from '../components/preview/PreviewOverPage';
+import { FilePreview } from '../components/preview/FilePreview';
 import { useEncryption } from '../hooks/useEncryption';
 import { useTrashPreview } from '../hooks/useTrashPreview';
 import { useEmptyTrash, useRestoreDeletion, useTrash } from '../hooks/useShelfQueries';
@@ -24,7 +24,12 @@ import { fetchDeletion, type TrashEntry } from '../services/shelfService';
  * and saved without restoring it, here as on a replica, where a file purged on the primary may still be.
  */
 export function TrashPage() {
+  // As on the files page, nothing begun on one shelf goes on over another.
   const shelf = useParams().shelf!;
+  return <TrashOf key={shelf} shelf={shelf} />;
+}
+
+function TrashOf({ shelf }: { shelf: string }) {
   const { data: trash, isLoading, error } = useTrash(shelf);
   const restore = useRestoreDeletion(shelf);
   const encryption = useEncryption(shelf);
@@ -98,7 +103,7 @@ export function TrashPage() {
       )}
 
       {emptying && <EmptyTrashDialog shelf={shelf} onClose={() => setEmptying(false)} />}
-      <PreviewOverPage preview={preview}>{encryption.dialog}</PreviewOverPage>
+      {preview.isOpen && <FilePreview {...preview.shown} />}
     </PageLayout>
   );
 }

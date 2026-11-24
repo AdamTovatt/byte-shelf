@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
 import type { ContentReader } from '../content/contentReader';
+import type { DrawDialog } from '../drawDialog';
 import type { ShelfFile } from '../../services/shelfService';
 import type { IconComponent } from '../../ui';
 
@@ -9,16 +9,17 @@ export interface FileActionContext {
   shelf: string;
   file: ShelfFile;
   /**
-   * The file's contents, until the action is done and no dialog of it is open. Reading an encrypted file
-   * asks for its password, and fails with an `AbortError` when none is given.
+   * The file's contents, until the action is done and no dialog of it is open, or the person leaves the
+   * shelf's files; a read fails with an `AbortError` after that. Reading an encrypted file asks for its
+   * password, and fails with one too when none is given.
    */
   content: ContentReader;
   /**
    * Shows a dialog of the plugin's own, such as a `Modal`, until it calls `close` or the person leaves the
-   * shelf; a `lazy` component in it loads as it is shown. One dialog may show another: before it closes
+   * shelf's files, after which none is shown; a `lazy` component in it loads as it is shown. One dialog may show another: before it closes
    * itself, when that one is to read the contents too.
    */
-  showDialog: (dialog: (close: () => void) => ReactNode) => void;
+  showDialog: (draw: DrawDialog) => void;
 }
 
 /** An item of a live file's menu: in a listing, in search results and in the preview. */
