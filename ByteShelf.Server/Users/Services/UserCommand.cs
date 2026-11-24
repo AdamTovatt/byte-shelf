@@ -1,7 +1,5 @@
-using ByteShelf.Server.Email;
 using ByteShelf.Server.Replication;
 using ByteShelf.Server.Replication.Services;
-using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Users.Exceptions;
@@ -89,7 +87,7 @@ namespace ByteShelf.Server.Users.Services
             services.AddLogging();
 
             // No link or email leaves a user command: a reset link is never made here.
-            Program.AddDomainServices(services, ServerSettings.On(root));
+            Program.AddDomainServices(services, ServerSettings.Open(root));
             services.AddReplicationState();
             return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         }

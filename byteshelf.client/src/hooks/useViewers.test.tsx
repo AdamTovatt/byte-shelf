@@ -8,6 +8,7 @@ import { PluginHost } from '../lib/plugins/pluginHost';
 import type { Viewer, ViewerRegistry } from '../lib/preview/viewerRegistry';
 import { definePlugin } from '../lib/plugins/pluginDefinition';
 import type { ShelfFile } from '../services/shelfService';
+import { pluginView } from '../test/plugins';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -42,7 +43,7 @@ describe('the viewers', () => {
   }
 
   function load(id: string): Promise<void> {
-    return act(() => host.load([{ id, name: id, version: '1', moduleUrl: `/${id}.js`, stylesheetUrl: null }]));
+    return act(() => host.load([pluginView(id, { moduleUrl: `/${id}.js` })]));
   }
 
   function picked(contentType: string): string | undefined {

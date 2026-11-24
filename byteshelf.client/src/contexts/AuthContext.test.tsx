@@ -23,7 +23,7 @@ function heard(): void {
 
 const key = folderPasswordKey('docs', 'folder-1');
 
-describe('kept passwords and the session', () => {
+describe('what the page holds of a session', () => {
   let root: Root;
   let client: QueryClient;
   let auth: ReturnType<typeof useAuth>;

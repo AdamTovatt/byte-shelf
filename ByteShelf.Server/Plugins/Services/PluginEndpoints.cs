@@ -1,5 +1,3 @@
-using Microsoft.AspNetCore.Routing;
-
 namespace ByteShelf.Server.Plugins.Services
 {
     /// <summary>The endpoints controllers become when the server starts, where a bad route or action shows.</summary>

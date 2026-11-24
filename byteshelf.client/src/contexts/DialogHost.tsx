@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
 import { OverlaySlotContext, type OverlaySlot } from '../ui/hooks/useOverlay';
 import { useClosedWhenGone } from '../hooks/useClosedWhenGone';
 import type { DrawDialog } from '../lib/drawDialog';
@@ -62,20 +62,13 @@ export function useShowDialog(): ShowDialog {
   const show = useContext(ShowContext);
   if (!show) throw new Error('useShowDialog must be used within a DialogHost');
 
-  const open = useClosedWhenGone<ShownDialog>();
-  const isGone = useRef(false);
-  useEffect(() => {
-    isGone.current = false;
-    return () => {
-      isGone.current = true;
-    };
-  }, []);
-
+  const heldRef = useClosedWhenGone<ShownDialog>();
   return useCallback<ShowDialog>((draw) => {
-    if (isGone.current) return { close: () => undefined, closed: Promise.resolve() };
+    const { open, isGone } = heldRef.current;
+    if (isGone) return { close: () => undefined, closed: Promise.resolve() };
     const dialog = show(draw);
     open.add(dialog);
     void dialog.closed.then(() => open.delete(dialog));
     return dialog;
-  }, [show, open]);
+  }, [show, heldRef]);
 }

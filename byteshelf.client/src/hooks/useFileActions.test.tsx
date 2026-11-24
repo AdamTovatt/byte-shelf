@@ -146,7 +146,9 @@ describe('running a file action', () => {
     await vi.waitFor(() => act(async () => expect(button('First')).not.toBeNull()));
 
     await press('First');
-    await act(() => new Promise((resolve) => { setTimeout(resolve, 20); }));
+    expect(button('Second')).not.toBeNull();
+    // All that follows the first closing is done in promises, which are all run by the next timer.
+    await act(() => new Promise((resolve) => { setTimeout(resolve); }));
     expect(revoke).not.toHaveBeenCalled();
 
     await press('Second');

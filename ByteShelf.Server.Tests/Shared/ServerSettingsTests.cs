@@ -1,9 +1,15 @@
+using System.Net;
 using ByteShelf.Server.Email;
+using ByteShelf.Server.Email.Services;
 using ByteShelf.Server.Replication.Services;
+using ByteShelf.Server.Shared;
 using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Users.Models;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 namespace ByteShelf.Server.Tests.Shared
 {
@@ -53,11 +59,31 @@ namespace ByteShelf.Server.Tests.Shared
         }
 
         [Fact]
-        public async Task On_HoldsNothingOfTheEnvironments()
+        public async Task AddServerServices_GivesEverySettingToItsServices()
+        {
+            await using TestRoot root = TestRoot.Create();
+            ServerSettings settings = ServerSettings.FromEnvironment(root.Root, HostEnvironments.Named(Environments.Production));
+            WebApplicationBuilder builder = Program.CreateBuilder([]);
+
+            Program.AddServerServices(builder.Services, settings);
+
+            await using ServiceProvider services = builder.Services.BuildServiceProvider();
+            Assert.Same(settings.PublicAddress, services.GetRequiredService<PublicAddress>());
+            Assert.IsType<PostmarkEmailSender>(services.GetRequiredService<IEmailSender>());
+            Assert.Same(settings.Email, services.GetRequiredService<PostmarkEmail>());
+            Assert.Same(settings.Storage, services.GetRequiredService<StorageOptions>());
+            Assert.Equal(settings.Replication.AlertAfter, services.GetRequiredService<ReplicationOptions>().AlertAfter);
+            Assert.Equal(settings.Replication.PublicUrl, services.GetRequiredService<ReplicationOptions>().PublicUrl);
+            Assert.Same(settings.InitialAdmin, services.GetRequiredService<InitialAdminSettings>());
+            Assert.Contains(IPAddress.Parse("10.0.0.1"), services.GetRequiredService<IOptions<ForwardedHeadersOptions>>().Value.KnownProxies);
+        }
+
+        [Fact]
+        public async Task Open_HoldsNothingOfTheEnvironments()
         {
             await using TestRoot root = TestRoot.Create();
 
-            ServerSettings settings = ServerSettings.On(root.Root);
+            ServerSettings settings = ServerSettings.Open(root.Root);
 
             Assert.Null(settings.PublicAddress.Configured);
             Assert.Same(EmailOptions.None, settings.Email);
@@ -69,11 +95,11 @@ namespace ByteShelf.Server.Tests.Shared
         }
 
         [Fact]
-        public async Task On_ARootAgain_SignsWithTheSecretItHas()
+        public async Task Open_ARootAgain_SignsWithTheSecretItHas()
         {
             await using TestRoot root = TestRoot.Create();
 
-            Assert.Equal(ServerSettings.On(root.Root).JwtSecret, ServerSettings.On(root.Root).JwtSecret);
+            Assert.Equal(ServerSettings.Open(root.Root).JwtSecret, ServerSettings.Open(root.Root).JwtSecret);
         }
 
         public void Dispose()

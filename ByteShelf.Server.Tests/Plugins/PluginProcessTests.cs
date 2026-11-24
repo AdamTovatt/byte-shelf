@@ -61,6 +61,19 @@ namespace ByteShelf.Server.Tests.Plugins
         }
 
         [Fact]
+        public async Task CheckPlugin_APluginWhoseOwnAssemblyUsesALaterCommon_IsRefusedBeforeItRuns()
+        {
+            System.Version common = typeof(ShelfPath).Assembly.GetName().Version!;
+            System.Version later = new System.Version(common.Major, common.Minor + 1, 0, 0);
+
+            Assert.Equal((0, string.Empty), await CheckAsync([AddPluginWhoseHelperUses(common)]));
+            (int exitCode, string errors) = await CheckAsync([AddPluginWhoseHelperUses(later)]);
+
+            Assert.Equal(1, exitCode);
+            Assert.StartsWith($"Its server assembly could not be loaded: Could not load file or assembly 'ByteShelfCommon, Version={later},", errors, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public async Task CheckPlugin_MakesNothingWhereItIsStarted()
         {
             Assert.Equal((0, string.Empty), await CheckAsync([_plugins.AddServerPlugin("good")]));
@@ -125,6 +138,24 @@ namespace ByteShelf.Server.Tests.Plugins
         {
             string folder = _plugins.Add($"against-{contract}", TestPlugins.Manifest("emitted", "Emitted.dll"));
             EmittedPlugin.Write(Path.Combine(folder, "Emitted.dll"), assembly => assembly.AddEntryAgainst(contract));
+            return folder;
+        }
+
+        /// <summary>Makes a plugin whose assembly uses one of its own, which uses one more, which uses <paramref name="common"/>.</summary>
+        private string AddPluginWhoseHelperUses(System.Version common)
+        {
+            string folder = _plugins.Add($"helper-of-{common}", TestPlugins.Manifest("emitted", "Emitted.dll"));
+            EmittedPlugin.Write(Path.Combine(folder, "Emitted.dll"), assembly =>
+            {
+                assembly.AddEntry("Entry");
+                assembly.AddUseOf("Helper", new System.Version(1, 0, 0, 0));
+            });
+            EmittedPlugin.Write(Path.Combine(folder, "Helper.dll"), assembly => assembly.AddUseOf("Inner", new System.Version(1, 0, 0, 0)));
+            EmittedPlugin.Write(Path.Combine(folder, "Inner.dll"), assembly =>
+            {
+                assembly.AddUseOfCommon(common);
+                assembly.AddUseOf("Helper", new System.Version(1, 0, 0, 0));
+            });
             return folder;
         }
 

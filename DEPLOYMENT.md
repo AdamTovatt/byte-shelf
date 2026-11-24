@@ -175,7 +175,9 @@ credential, are outside the limits.
 - Leave framing and loading to the page itself: a proxy that adds `X-Frame-Options: DENY` or
   `frame-ancestors 'none'` to what is under `/api/open` (`SAMEORIGIN` and `'self'` work), or a
   `Content-Security-Policy` that does not allow frames and media from `'self'` and `blob:`, and images
-  from those and `data:`, breaks the web UI's previews.
+  from those and `data:`, breaks the web UI's previews. One that does not allow inline scripts
+  (`script-src 'self' 'unsafe-inline'`) stops every plugin's part in the web UI: the import map they need
+  is one, and changes with every release, so a hash of it does not last.
 - Passkeys need the browser to reach the server at `APP_BASE_URL`'s host, over HTTPS (or plain HTTP
   to localhost): a passkey is made for that host and works on no other.
 - Allow long request lines: a path of up to 4096 characters travels in the query string,
@@ -196,15 +198,16 @@ rate limit beside the MCP request itself.
 An updaemon that supports extensions installs a plugin as one of the server's and keeps it updated with
 it: `updaemon install byteshelf/<id>` for one released with the server, and with `--from`, such as
 `--from github:<owner>/<repository>/<asset>`, for another. It sets `BYTESHELF_PLUGINS` itself, so a
-plugin built by hand is for a server without updaemon: set the variable and put plugins into folders
-under the one it names.
+plugin built by hand ([from a checkout](plugins/README.md)) is for a server without updaemon: set the
+variable and put plugins into folders under the one it names.
 
 A plugin is a folder that adds to the web UI, the server, or both
 ([Plugins](ByteShelf.Server/Plugins/Plugins.md)). The server loads every folder directly under the
 one `BYTESHELF_PLUGINS` names when it starts; adding or removing one takes a restart. Never change a
 plugin's files under a running server: browsers keep them for good at an address made when it started.
 Stop it first, or put a new folder in the old one's place and restart. Keep the folder of plugins
-outside the root, so backups hold no code.
+outside the root, so backups hold no code. Plugins are neither backed up nor copied to replicas: each
+server has those installed on it.
 
 **A plugin runs with full trust, and there is no sandbox.** In the web UI it can do what the
 signed-in user can and reads what the page holds, the session and unlocked passwords included; on the
@@ -213,17 +216,19 @@ server it can do what the server can. Install only what you trust that far, at y
 A plugin the server cannot load is skipped and logged, and admins see it with the reason on the
 Settings page; the server starts without it. `ByteShelf.Server --check-plugin <folder>` says
 beforehand whether this server would load the plugin in a folder: exit code 0 if it would, 1 if not,
-with the reason, 2 for wrong arguments. It starts nothing, needs no root and reads no settings. What
-it cannot tell is in [Plugins](ByteShelf.Server/Plugins/Plugins.md#loading-plugindiscovery-pluginloader):
-above all, whether the plugin works once running. One whose services break the server as it is built
-or started stops it from starting.
+with the reason, 2 for wrong arguments. It starts nothing, needs no root and goes by none of the
+settings above. What it cannot tell is in
+[Plugins](ByteShelf.Server/Plugins/Plugins.md#loading-plugindiscovery-pluginloader): above all, whether
+the plugin works once running. One whose services break the server as it is built or started stops it
+from starting.
 
 ## Replicas
 
 A replica is a second server, installed the same way with a root of its own, that keeps a whole copy
-of the primary and follows it ([Replication](ByteShelf.Server/Replication/Replication.md)). It needs to
-reach the primary's `APP_BASE_URL`, which must be the address the primary answers at (the replica
-follows no redirects); nothing needs to reach the replica but its own admins and readers.
+of the primary, but for its [plugins](#plugins), and follows it
+([Replication](ByteShelf.Server/Replication/Replication.md)). It needs to reach the primary's
+`APP_BASE_URL`, which must be the address the primary answers at (the replica follows no redirects);
+nothing needs to reach the replica but its own admins and readers.
 
 1. Start the replica on a new, empty root with its own first admin (step 4 of
    [Installing](#installing)), and create no shelves on it. Not
@@ -305,9 +310,9 @@ BYTESHELF_ROOT=/srv/byteshelf ./ByteShelf.Server --backup /backups/byteshelf-202
 ```
 
 This writes a consistent zip ([Backup](ByteShelf.Server/Backup/Backup.md)): the database as of one
-moment, the objects its files point at, and `keys/`. Unzipped, it is a root a server starts from.
-The zip is readable by its owner only, since it holds password hashes and the server's secrets. It
-must be written outside the root, to a folder with room for both the zip and a copy of the database,
+moment, the objects its files point at, and `keys/`; no [plugins](#plugins). Unzipped, it is a root a
+server starts from. The zip is readable by its owner only, since it holds password hashes and the
+server's secrets. It must be written outside the root, to a folder with room for both the zip and a copy of the database,
 which is written beside it while the backup runs. Exit code 0 means it was written; 1 that it failed
 and wrote nothing, such as for a damaged object or a root without a database; 2 that the zip's path
 after `--backup` is not given or `BYTESHELF_ROOT` is not set.

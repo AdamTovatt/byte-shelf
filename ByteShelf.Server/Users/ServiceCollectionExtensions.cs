@@ -1,4 +1,3 @@
-using ByteShelf.Server.Email.Services;
 using ByteShelf.Server.Replication;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Auth;

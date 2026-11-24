@@ -2,11 +2,8 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 using ByteShelf.Plugins;
-using ByteShelf.Server.Email;
 using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Plugins.Services;
-using ByteShelf.Server.Shared;
-using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using EasyReasy.EnvironmentVariables;
@@ -55,6 +52,31 @@ namespace ByteShelf.Server.Tests.Plugins
                 catalog.Skipped.Select(plugin => (plugin.Folder, plugin.Reason)));
         }
 
+        [UnixFact]
+        public void LoadAll_AFolderAndALinkToIt_LoadItOnce()
+        {
+            _plugins.Add("images-1.0", TestPlugins.Manifest("images"));
+            Directory.CreateSymbolicLink(Path.Combine(_plugins.Path, "images"), "images-1.0");
+
+            PluginCatalog catalog = LoadAll();
+
+            Assert.Equal("images", Assert.Single(catalog.Loaded).Manifest.Id);
+            Assert.Empty(catalog.Skipped);
+        }
+
+        [UnixFact]
+        public void LoadAll_TwoLinksToOneFolder_LoadItOnce()
+        {
+            TestPlugins.Write(_plugins.InHome("images"), "plugin.json", TestPlugins.Manifest("images"));
+            Directory.CreateSymbolicLink(Path.Combine(_plugins.Path, "one"), _plugins.InHome("images"));
+            Directory.CreateSymbolicLink(Path.Combine(_plugins.Path, "two"), _plugins.InHome("images"));
+
+            PluginCatalog catalog = LoadAll();
+
+            Assert.Equal("images", Assert.Single(catalog.Loaded).Manifest.Id);
+            Assert.Empty(catalog.Skipped);
+        }
+
         [Fact]
         public void LoadAll_AManifestWithAProblem_IsSkippedAndLogged()
         {
@@ -65,16 +87,22 @@ namespace ByteShelf.Server.Tests.Plugins
 
             SkippedPlugin skipped = Assert.Single(catalog.Skipped);
             Assert.Equal((folder, "images", "Test images", "1.2.3"), (skipped.Folder, skipped.Id, skipped.Name, skipped.Version));
-            Assert.Single(catalog.Loaded);
+            Assert.Equal("markdown", Assert.Single(catalog.Loaded).Manifest.Id);
             Assert.Contains(_logger.Messages, message => message.Contains(folder, StringComparison.Ordinal) && message.Contains(skipped.Reason, StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void LoadAll_APluginWithoutAModule_HasNoUi()
+        {
+            _plugins.Add("markdown", TestPlugins.Manifest("markdown"));
+
+            Assert.Null(Assert.Single(LoadAll().Loaded).Ui);
         }
 
         [Fact]
         public void LoadAll_OneTree_HasTheSameUiHashUntilAFileChangesItsNameOrContents()
         {
             string folder = _plugins.Add("markdown", TestPlugins.Manifest("markdown"));
-            Assert.Null(Assert.Single(LoadAll().Loaded).Ui);
-
             TestPlugins.Write(folder, "ui/plugin.js", "code");
             TestPlugins.Write(folder, "ui/chunks/a", "more");
             PluginUi ui = LoadUi();
@@ -107,11 +135,9 @@ namespace ByteShelf.Server.Tests.Plugins
         public void LoadAll_AServerAssembly_RegistersItsServicesAndControllers()
         {
             _plugins.AddServerPlugin("server");
-            int before = _services.Count;
 
             Assert.Single(LoadAll().Loaded);
 
-            Assert.True(_services.Count > before);
             Assert.Contains(_services, descriptor => descriptor.ServiceType.Name == "PluginGreeting");
             Assert.Contains(_parts.ApplicationParts, part => part.Name == "ByteShelf.Server.Tests.Plugin");
         }

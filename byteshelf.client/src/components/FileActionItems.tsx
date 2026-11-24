@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Dropdown, DropdownItem, Icon, IconButton, iconMap } from '../ui';
 import type { FileActions } from '../hooks/useFileActions';
 import type { OpenableFile } from '../services/fileReading';
-import type { OfferedAction } from '../lib/plugins/fileActions';
+import type { OfferedAction } from '../lib/plugins/offeredActions';
 import { ErrorBoundary } from './ErrorBoundary';
 
 interface FileActionsProps {

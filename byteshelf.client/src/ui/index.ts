@@ -1,5 +1,6 @@
 // The UI library: buttons, fields, cards and rows, dialogs, menus, page layout and the sidebar, with
-// the colour, type and icon systems they are drawn with. Pages import from here.
+// the colour, type and icon systems they are drawn with. Pages import from here. Plugins have all of it
+// (src/plugin), so what only the app is to use, such as useIsOverlayOpen, is imported from its own file.
 
 export { ActionRow, type ActionRowProps } from './components/ui/ActionRow';
 export { Avatar, type AvatarProps } from './components/ui/Avatar';

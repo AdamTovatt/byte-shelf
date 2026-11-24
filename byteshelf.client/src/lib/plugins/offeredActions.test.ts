@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fileActionsFor } from './fileActions';
+import { fileActionsFor } from './offeredActions';
 import type { RunningPlugin } from './pluginHost';
 import type { FileAction } from './fileAction';
 import type { ShelfFile } from '../../services/shelfService';

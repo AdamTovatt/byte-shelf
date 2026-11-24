@@ -92,6 +92,7 @@ namespace ByteShelf.Server.Tests.Plugins
             string root = host.Services.GetRequiredService<IPluginCatalog>().Loaded.Single().Ui!.RequestPath;
 
             // As it is written, since a Uri collapses the dots before it is sent.
+            Assert.Equal(StatusCodes.Status200OK, (await host.SendRawAsync($"{root}/plugin.js")).Response.StatusCode);
             HttpContext answer = await host.SendRawAsync(path.Replace("{root}", root, StringComparison.Ordinal));
 
             Assert.Equal(StatusCodes.Status404NotFound, answer.Response.StatusCode);
@@ -150,8 +151,11 @@ namespace ByteShelf.Server.Tests.Plugins
         {
             _plugins.AddServerPlugin("server");
             await using ServerTestHost host = await ServerTestHost.StartAsync(pluginsPath: _plugins.Path);
+            await host.CreateShelfAsync("docs");
+            using HttpClient key = await host.CreateKeyClientAsync("docs", ShelfKeyPermission.ReadWrite);
 
             Assert.Equal(HttpStatusCode.Unauthorized, (await host.AnonymousClient.GetAsync("/api/plugins/server/api/shelves")).StatusCode);
+            Assert.Equal(HttpStatusCode.Unauthorized, (await key.GetAsync("/api/plugins/server/api/shelves")).StatusCode);
             Assert.Equal("guarded", await host.MemberClient.GetStringAsync("/api/plugins/server/api/shelves"));
         }
 

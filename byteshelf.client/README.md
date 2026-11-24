@@ -19,7 +19,8 @@ the server's plugins, and why one was skipped or its part in the web UI failed.
 the colour, type and icon systems and the Tailwind preset they need. A dialog takes the focus, keeps Tab
 in it and gives the focus back; of several, the last to open is on top and has the keys, and the lowest
 dims the page (`ui/hooks/useOverlay.ts`). It was copied from the house component library, trimmed to
-what ByteShelf uses; pages import from `src/ui`. `src/components` holds what the library lacks:
+what ByteShelf uses; pages import from `src/ui`, and what plugins are not to have of it, as they have
+all that exports, from its own file. `src/components` holds what the library lacks:
 app-specific pieces (the form dialog, the password dialog, the quota field) and a few generic ones
 written for this app (`CardList`, `MiddleTruncatedName`). The file picker is a hook,
 `hooks/useFilePicker.tsx`. A dialog that code shows, rather than a page's own state, such as a password
@@ -82,8 +83,8 @@ npm run codegen    # in a second terminal
   A folder's rows select as in Finder (`hooks/useSelection.ts`): a click selects one, Cmd or Ctrl
   adds or takes one away, Shift selects a range, Space toggles the focused row, Cmd or Ctrl+A selects
   them all, and Escape or a click in empty space clears it; a double-click or Enter opens a row, a file in
-  the preview when a viewer takes it and this browser can show it there, and else in a new tab. While
-  any are selected, a bar over the search row (the top bar, on a phone) downloads, moves or deletes
+  the preview when a viewer takes it and this browser can show it there, or a plugin still loading may, and
+  else in a new tab. While any are selected, a bar over the search row (the top bar, on a phone) downloads, moves or deletes
   them. A selection belongs to its folder, and a row that leaves the list leaves it for good.
   A row, or the selection it is in, moves by dragging it onto a folder's row or breadcrumb crumb
   (`hooks/useEntryDragAndDrop.ts`, dnd-kit on pointer events, so it never meets the browser's own

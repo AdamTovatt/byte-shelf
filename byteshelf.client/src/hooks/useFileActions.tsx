@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { PluginDialog } from '../components/PluginDialog';
 import { useShowDialog } from '../contexts/DialogHost';
-import { fileActionsFor, type OfferedAction } from '../lib/plugins/fileActions';
+import { fileActionsFor, type OfferedAction } from '../lib/plugins/offeredActions';
 import type { ClosableReader } from '../lib/content/contentReader';
 import { openableReader } from '../lib/content/openableReader';
 import { isAbortError } from '../lib/abort';
@@ -26,11 +26,11 @@ export function useFileActions(shelf: string): FileActions {
   const show = useShowDialog();
 
   // Closed with the page, also while an action is still at it.
-  const reading = useClosedWhenGone<ClosableReader>();
+  const readingRef = useClosedWhenGone<ClosableReader>();
 
   const run = useCallback(async (action: FileAction, target: OpenableFile): Promise<void> => {
     const content = openableReader(target);
-    reading.add(content);
+    readingRef.current.open.add(content);
     const closing: Promise<void>[] = [];
 
     function showDialog(draw: DrawDialog): void {
@@ -48,9 +48,9 @@ export function useFileActions(shelf: string): FileActions {
 
     // One may show another before it closes.
     for (let closed = closing.shift(); closed; closed = closing.shift()) await closed;
-    reading.delete(content);
+    readingRef.current.open.delete(content);
     content.close();
-  }, [shelf, show, reading]);
+  }, [shelf, show, readingRef]);
 
   return { actionsFor: (file) => fileActionsFor(plugins, file), run };
 }

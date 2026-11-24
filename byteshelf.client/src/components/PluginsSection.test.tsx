@@ -1,14 +1,16 @@
 // @vitest-environment happy-dom
-import { act } from 'react';
+import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PluginsSection } from './PluginsSection';
+import { usePlugins } from '../hooks/usePlugins';
 import { PluginHost } from '../lib/plugins/pluginHost';
 import { definePlugin } from '../lib/plugins/pluginDefinition';
 import { saveTokens } from '../services/authService';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
+import { pluginView } from '../test/plugins';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -26,11 +28,11 @@ describe('the plugins in settings', () => {
   let sent: string[];
   let host: PluginHost;
 
-  /** Shows the section on a server answering the plugins with `answer`. */
-  async function show(answer: () => Response): Promise<void> {
+  /** Shows the section, `beside` after it, on a server answering the plugins with `answer`. */
+  async function show(answer: () => Response, beside?: ReactNode): Promise<void> {
     sent = stubServer(async () => answer());
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    await act(async () => root.render(<QueryClientProvider client={client}><PluginsSection /></QueryClientProvider>));
+    await act(async () => root.render(<QueryClientProvider client={client}><PluginsSection />{beside}</QueryClientProvider>));
     await vi.waitFor(() => expect(client.isFetching()).toBe(0));
     expect(sent).toEqual(['GET /api/plugins Bearer t']);
   }
@@ -61,18 +63,22 @@ describe('the plugins in settings', () => {
   });
 
   it('is not there on a server without plugins', async () => {
-    await show(() => json({ plugins: [], skipped: [] }));
+    // Drawn from the same answer, so once it is, so is the section.
+    function Answered() {
+      return usePlugins().data && <p>Answered</p>;
+    }
+    await show(() => json({ plugins: [], skipped: [] }), <Answered />);
 
-    // Long enough for an answer to have been drawn, as the other tests wait for one.
-    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
-    expect(document.body.textContent).toBe('');
+    await shows('Answered');
+    expect(document.body.textContent).toBe('Answered');
   });
 
   it('lists each plugin with its version, and each skipped one with the reason', async () => {
     await show(() => json({
-      plugins: [{ id: 'markdown', name: 'Markdown', version: '2.4.0', moduleUrl: null, stylesheetUrl: null }],
+      plugins: [pluginView('markdown', { name: 'Markdown', version: '2.4.0', moduleUrl: null })],
       skipped: [
         { folder: '/plugins/images', id: 'images', name: 'Images', version: '3.0.0', reason: 'It is for plugin api 2.' },
+        { folder: '/plugins/nameless', id: 'nameless', name: null, version: null, reason: 'It has no name.' },
         { folder: '/plugins/nothing', id: null, name: null, version: null, reason: 'It has no plugin.json.' },
       ],
     }));
@@ -82,13 +88,13 @@ describe('the plugins in settings', () => {
     await shows('Images');
     await shows('Version 3.0.0 · /plugins/images');
     await shows('Skipped: It is for plugin api 2.');
-    await shows('/plugins/nothing');
-    await shows('Skipped: It has no plugin.json.');
+    await shows('nameless/plugins/namelessSkipped: It has no name.');
+    await shows('Unknown plugin/plugins/nothingSkipped: It has no plugin.json.');
   });
 
   it('says why a plugin\'s part in the web UI failed, beside that plugin alone', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const plugins = ['broken', 'healthy'].map((id) => ({ id, name: id, version: '1.0.0', moduleUrl: `/plugins/${id}/hash/plugin.js`, stylesheetUrl: null }));
+    const plugins = ['broken', 'healthy'].map((id) => pluginView(id, { version: '1.0.0' }));
     await act(() => host.load(plugins));
 
     await show(() => json({ plugins, skipped: [] }));

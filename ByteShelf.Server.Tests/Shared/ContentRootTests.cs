@@ -1,7 +1,5 @@
-using ByteShelf.Server.Email;
 using ByteShelf.Server.Tests.TestUtilities;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 
 namespace ByteShelf.Server.Tests.Shared
@@ -22,7 +20,7 @@ namespace ByteShelf.Server.Tests.Shared
             {
                 await using WebApplication app = Program.BuildApplication(
                     Program.CreateBuilder(["--environment", "Development"]),
-                    ServerSettings.On(root.Root),
+                    ServerSettings.Open(root.Root),
                     builder => builder.WebHost.UseTestServer());
 
                 Assert.Equal(

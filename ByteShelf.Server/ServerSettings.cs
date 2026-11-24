@@ -47,8 +47,8 @@ namespace ByteShelf.Server
 
         public ReplicationOptions Replication => new ReplicationOptions { PublicUrl = PublicAddress.Absolute.AbsoluteUri, AlertAfter = ReplicationAlertAfter };
 
-        /// <summary>The instance at <paramref name="root"/>, with the secret it has or is now given, and nothing set.</summary>
-        public static ServerSettings On(RootFolder root)
+        /// <summary>The instance at <paramref name="root"/>, where the secret it lacks is made, and nothing set.</summary>
+        public static ServerSettings Open(RootFolder root)
         {
             return new ServerSettings(root, RootKeyMaterial.GetOrCreateJwtSecret(root));
         }
@@ -63,7 +63,7 @@ namespace ByteShelf.Server
         /// <exception cref="InvalidOperationException">A setting is missing or holds what it may not.</exception>
         public static ServerSettings FromEnvironment(RootFolder root, IHostEnvironment environment)
         {
-            return On(root) with
+            return Open(root) with
             {
                 PublicAddress = PublicAddress.Resolve(EnvironmentVariables.AppBaseUrl.GetValueOrDefault(), environment),
                 Email = EmailOptions.FromEnvironment(),

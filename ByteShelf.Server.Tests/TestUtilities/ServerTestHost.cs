@@ -1,15 +1,11 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
-using ByteShelf.Server.Email;
 using ByteShelf.Server.Mcp;
 using ByteShelf.Server.Shared;
-using ByteShelf.Server.Shared.Auth;
-using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Services;
 using ByteShelfCommon;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
@@ -142,7 +138,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
             // Development, which checks the registrations as the container is built.
             WebApplication app = Program.BuildApplication(
                 Program.CreateBuilder(["--environment", "Development"]),
-                ServerSettings.On(root.Root) with { PluginsPath = pluginsPath },
+                ServerSettings.Open(root.Root) with { PluginsPath = pluginsPath },
                 builder =>
                 {
                     builder.WebHost.UseTestServer();

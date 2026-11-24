@@ -2,7 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace ByteShelf.Plugins
 {
-    /// <summary>Takes what a plugin adds to the server, which knows the plugin by it.</summary>
+    /// <summary>Takes what a plugin adds to the server.</summary>
     public interface IPluginBuilder
     {
         /// <summary>

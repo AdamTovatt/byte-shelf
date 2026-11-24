@@ -1,5 +1,4 @@
 using System.Text;
-using ByteShelf.Server.Email;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Users.Services;
 using ByteShelfClient;
@@ -29,7 +28,7 @@ namespace ByteShelf.Server.Tests.Client
             _root = TestRoot.Create();
             _app = Program.BuildApplication(
                 Program.CreateBuilder(["--environment", "Development"]),
-                ServerSettings.On(_root.Root),
+                ServerSettings.Open(_root.Root),
                 builder =>
                 {
                     // Loopback only, on a port of the system's choosing.

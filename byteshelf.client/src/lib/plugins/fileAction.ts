@@ -16,8 +16,8 @@ export interface FileActionContext {
   content: ContentReader;
   /**
    * Shows a dialog of the plugin's own, such as a `Modal`, until it calls `close` or the person leaves the
-   * shelf's files, after which none is shown; a `lazy` component in it loads as it is shown. One dialog may show another: before it closes
-   * itself, when that one is to read the contents too.
+   * shelf's files, after which none is shown; a `lazy` component in it loads as it is shown. One dialog may
+   * show another: before it closes itself, when that one is to read the contents too.
    */
   showDialog: (draw: DrawDialog) => void;
 }

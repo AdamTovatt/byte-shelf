@@ -125,6 +125,16 @@ describe('the session', () => {
       expect(localStorage.getItem('byteshelf_auth_token')).toBeNull();
     });
 
+    it('ends it on the server also when the page starts anew meanwhile', async () => {
+      saveTokens({ token: 'first', expiresAt: inAnHour(), refreshToken: 'refresh-1' });
+      const fetched = vi.fn(async () => new Response(null, { status: 204 }));
+      vi.stubGlobal('fetch', fetched);
+
+      await signOut();
+
+      expect(fetched).toHaveBeenCalledWith('/api/auth/logout', expect.objectContaining({ keepalive: true }));
+    });
+
     it('forgets the session even when the server cannot be reached', async () => {
       saveTokens({ token: 'first', expiresAt: inAnHour(), refreshToken: 'refresh-1' });
       answer = () => Promise.reject(new TypeError('Failed to fetch'));

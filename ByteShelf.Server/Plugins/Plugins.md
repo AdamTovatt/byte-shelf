@@ -21,7 +21,7 @@ ui/...              whatever plugin.js loads
 
 | Field | Meaning |
 |---|---|
-| `id` | Lowercase letters, digits and hyphens. What the plugin is called everywhere. The folder's name means nothing, and of two folders with one id neither is loaded. |
+| `id` | Lowercase letters, digits and hyphens. What the plugin is called everywhere. The folder's name means nothing, and of two folders with one id neither is loaded; two entries that lead to one folder are one plugin. |
 | `name`, `version` | For people to read. |
 | `api` | `PluginApi.Version` of the servers it is for (see Versions). Another number is not loaded. |
 | `serverAssembly` | The path of its server assembly in the folder; left out when it has none. |
@@ -65,7 +65,8 @@ restarts. A copy rather than an empty collection, because the framework's own re
 breaks or resets it. There is no access to shelves or files in the contract.
 
 What the server shares with a plugin must be no older than the plugin was built against, or it is
-refused before any of it runs, as one for another api is.
+refused before any of it runs, as one for another api is. That goes for its server assembly and for
+those in its folder that the assembly's references lead to, not for one it loads by name.
 
 Each plugin has an `AssemblyLoadContext` of its own (`PluginLoadContext`): its packages and native
 libraries come from its folder, so it may use another version of a package than the server does.

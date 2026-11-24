@@ -1,5 +1,4 @@
 using ByteShelf.Server.Plugins.Models;
-using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Root;
 
 namespace ByteShelf.Server.Plugins.Services
@@ -8,8 +7,8 @@ namespace ByteShelf.Server.Plugins.Services
     /// <c>ByteShelf.Server --check-plugin &lt;folder&gt;</c>: whether this server would load the plugin in a
     /// folder, for updaemon to ask before it switches versions. It loads the plugin as the server does,
     /// among the server's own registrations, which are thrown away, so it starts nothing, needs no root and
-    /// reads no settings, whatever the environment holds. Where it can still answer differently is in
-    /// Plugins.md. Its arguments, exit codes and what it may need are a contract with updaemon
+    /// goes by none of the server's settings (<see cref="EnvironmentVariables"/>). Where it can still answer
+    /// differently is in Plugins.md. Its arguments, exit codes and what it may need are a contract with updaemon
     /// (<c>check</c> in updaemon.json).
     /// </summary>
     public static class PluginCheckCommand

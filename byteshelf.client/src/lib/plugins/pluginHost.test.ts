@@ -3,11 +3,7 @@ import { lazy } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PluginHost, browserTransport, type PluginTransport } from './pluginHost';
 import { definePlugin } from './pluginDefinition';
-import type { PluginView } from '../../services/pluginService';
-
-function plugin(id: string, parts: Partial<PluginView> = {}): PluginView {
-  return { id, name: id, version: '1', moduleUrl: `/plugins/${id}/hash/plugin.js`, stylesheetUrl: null, ...parts };
-}
+import { pluginView } from '../../test/plugins';
 
 describe('the plugin host', () => {
   let transport: { importModule: ReturnType<typeof vi.fn<PluginTransport['importModule']>>; loadStylesheet: ReturnType<typeof vi.fn<PluginTransport['loadStylesheet']>> };
@@ -32,7 +28,7 @@ describe('the plugin host', () => {
   });
 
   it('loads each plugin with its stylesheet, in order of id', async () => {
-    await host.load([plugin('b', { stylesheetUrl: '/plugins/b/hash/plugin.css' }), plugin('a')]);
+    await host.load([pluginView('b', { stylesheetUrl: '/plugins/b/hash/plugin.css' }), pluginView('a')]);
 
     expect(host.state().plugins.map(({ id, viewers, fileActions }) => [id, viewers, fileActions.map((action) => action.id)])).toEqual([
       ['a', [], ['/plugins/a/hash/plugin.js']],
@@ -44,15 +40,15 @@ describe('the plugin host', () => {
   });
 
   it('leaves out a plugin that has no part in the web UI', async () => {
-    await host.load([plugin('server-only', { moduleUrl: null })]);
+    await host.load([pluginView('server-only', { moduleUrl: null })]);
 
     expect(host.state().plugins).toEqual([]);
     expect(transport.importModule).not.toHaveBeenCalled();
   });
 
   it('loads each once, whatever it is asked for again', async () => {
-    await Promise.all([host.load([plugin('a')]), host.load([plugin('a')])]);
-    await host.load([plugin('a', { moduleUrl: '/plugins/a/other/plugin.js' }), plugin('b')]);
+    await Promise.all([host.load([pluginView('a')]), host.load([pluginView('a')])]);
+    await host.load([pluginView('a', { moduleUrl: '/plugins/a/other/plugin.js' }), pluginView('b')]);
 
     expect(transport.importModule.mock.calls).toEqual([['/plugins/a/hash/plugin.js'], ['/plugins/b/hash/plugin.js']]);
   });
@@ -61,7 +57,7 @@ describe('the plugin host', () => {
     let styled = (): void => undefined;
     transport.loadStylesheet.mockReturnValue({ loaded: new Promise((resolve) => { styled = resolve; }), remove: () => undefined });
 
-    const loading = host.load([plugin('a', { stylesheetUrl: '/a.css' })]);
+    const loading = host.load([pluginView('a', { stylesheetUrl: '/a.css' })]);
     await Promise.resolve();
     await Promise.resolve();
     expect(host.state().plugins).toEqual([]);
@@ -79,7 +75,7 @@ describe('the plugin host', () => {
     });
     transport.loadStylesheet.mockReturnValue({ loaded: Promise.reject(new Error('Its stylesheet could not be loaded.')), remove: () => undefined });
 
-    await host.load([plugin('throws'), plugin('throws-text'), plugin('unstyled', { stylesheetUrl: '/unstyled.css' }), plugin('good')]);
+    await host.load([pluginView('throws'), pluginView('throws-text'), pluginView('unstyled', { stylesheetUrl: '/unstyled.css' }), pluginView('good')]);
 
     expect(host.state().plugins.map(({ id }) => id)).toEqual(['good']);
     expect([...host.state().failures].sort()).toEqual([
@@ -99,7 +95,7 @@ describe('the plugin host', () => {
   ])('skips a plugin whose module exports %s', async (_, module) => {
     transport.importModule.mockResolvedValue(module);
 
-    await host.load([plugin('a')]);
+    await host.load([pluginView('a')]);
 
     expect(host.state().plugins).toEqual([]);
     expect([...host.state().failures]).toEqual([['a', 'Its module has no default export made with definePlugin.']]);
@@ -128,7 +124,7 @@ describe('the plugin host', () => {
   ])('skips a plugin with %s, which the app would fail on as it draws', async (_, definition, reason) => {
     transport.importModule.mockResolvedValue({ default: definePlugin(definition) });
 
-    await host.load([plugin('a')]);
+    await host.load([pluginView('a')]);
 
     expect(host.state().plugins).toEqual([]);
     expect([...host.state().failures]).toEqual([['a', reason]]);
@@ -138,7 +134,7 @@ describe('the plugin host', () => {
     const component = lazy(async () => ({ default: () => null }));
     transport.importModule.mockResolvedValue({ default: definePlugin({ viewers: [{ ...viewer, component }] }) });
 
-    await host.load([plugin('a')]);
+    await host.load([pluginView('a')]);
 
     expect(host.state().plugins.map(({ viewers }) => viewers[0].component)).toEqual([component]);
   });
@@ -147,7 +143,7 @@ describe('the plugin host', () => {
     transport.importModule.mockRejectedValue(new Error('It threw.'));
     transport.loadStylesheet.mockImplementation((url) => ({ loaded: new Promise(() => undefined), remove: () => void removed.push(url) }));
 
-    await host.load([plugin('a', { stylesheetUrl: '/a.css' })]);
+    await host.load([pluginView('a', { stylesheetUrl: '/a.css' })]);
 
     expect(removed).toEqual(['/a.css']);
   });
@@ -157,9 +153,9 @@ describe('the plugin host', () => {
     const stop = host.subscribe(() => seen.push(host.state().plugins.map(({ id }) => id)));
     const before = host.state();
 
-    await host.load([plugin('a')]);
+    await host.load([pluginView('a')]);
     stop();
-    await host.load([plugin('b')]);
+    await host.load([pluginView('b')]);
 
     expect(seen).toEqual([['a']]);
     expect(before.plugins).toEqual([]);

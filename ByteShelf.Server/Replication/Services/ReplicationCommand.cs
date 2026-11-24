@@ -1,4 +1,3 @@
-using ByteShelf.Server.Email;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Shared.Root;
@@ -99,7 +98,7 @@ namespace ByteShelf.Server.Replication.Services
             services.AddLogging();
 
             // No email leaves a replication command.
-            ServerSettings settings = ServerSettings.On(root) with { PublicAddress = address };
+            ServerSettings settings = ServerSettings.Open(root) with { PublicAddress = address };
             Program.AddDomainServices(services, settings);
             services.AddReplicationPairing(settings.Replication);
             configureServices?.Invoke(services);

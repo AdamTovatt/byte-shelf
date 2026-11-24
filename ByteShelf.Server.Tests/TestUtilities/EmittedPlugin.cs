@@ -20,8 +20,9 @@ namespace ByteShelf.Server.Tests.TestUtilities
 
         public static void Write(string path, Action<EmittedPlugin> add)
         {
-            PersistedAssemblyBuilder assembly = new PersistedAssemblyBuilder(new AssemblyName("Emitted"), typeof(object).Assembly);
-            add(new EmittedPlugin(assembly.DefineDynamicModule("Emitted")));
+            string name = Path.GetFileNameWithoutExtension(path);
+            PersistedAssemblyBuilder assembly = new PersistedAssemblyBuilder(new AssemblyName(name) { Version = new System.Version(1, 0, 0, 0) }, typeof(object).Assembly);
+            add(new EmittedPlugin(assembly.DefineDynamicModule(name)));
             assembly.Save(path);
         }
 
@@ -76,13 +77,19 @@ namespace ByteShelf.Server.Tests.TestUtilities
         /// <summary>A method, which nothing calls, that uses <paramref name="version"/> of <c>ByteShelfCommon</c>.</summary>
         public void AddUseOfCommon(System.Version version)
         {
-            PersistedAssemblyBuilder common = new PersistedAssemblyBuilder(new AssemblyName(typeof(ShelfPath).Assembly.GetName().Name!) { Version = version }, typeof(object).Assembly);
-            TypeBuilder used = common.DefineDynamicModule("Common").DefineType("Added", TypeAttributes.Public);
-            used.CreateType();
+            AddUseOf(typeof(ShelfPath).Assembly.GetName().Name!, version);
+        }
 
-            TypeBuilder type = _module.DefineType("Using", TypeAttributes.NotPublic);
+        /// <summary>A method, which nothing calls, that uses <paramref name="version"/> of the assembly <paramref name="name"/>.</summary>
+        public void AddUseOf(string name, System.Version version)
+        {
+            PersistedAssemblyBuilder used = new PersistedAssemblyBuilder(new AssemblyName(name) { Version = version }, typeof(object).Assembly);
+            TypeBuilder added = used.DefineDynamicModule(name).DefineType("Added", TypeAttributes.Public);
+            added.CreateType();
+
+            TypeBuilder type = _module.DefineType($"Using{name}", TypeAttributes.NotPublic);
             ILGenerator body = type.DefineMethod("Use", MethodAttributes.Public, typeof(void), Type.EmptyTypes).GetILGenerator();
-            body.Emit(OpCodes.Ldtoken, used);
+            body.Emit(OpCodes.Ldtoken, added);
             body.Emit(OpCodes.Pop);
             body.Emit(OpCodes.Ret);
             type.CreateType();

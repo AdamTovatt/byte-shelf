@@ -2,7 +2,9 @@
 
 Each folder is one plugin, released with the server as `byteshelf-<id>.zip` and at its version. What a
 plugin is, and how the server and the web UI load it, is in
-[Plugins](../ByteShelf.Server/Plugins/Plugins.md).
+[Plugins](../ByteShelf.Server/Plugins/Plugins.md). Nothing is published to build one elsewhere: any other
+plugin is built from a checkout of this repository too, its web UI part as these are and its server
+assembly as `ByteShelf.Server.Tests.Plugin` is, against the two projects that one references.
 
 - `markdown`: shows `text/markdown`, and untyped files named `.md`, as they read or as their source. No
   HTML in one is shown and no image loaded (its alt text stands in); web links open in a new tab, and any

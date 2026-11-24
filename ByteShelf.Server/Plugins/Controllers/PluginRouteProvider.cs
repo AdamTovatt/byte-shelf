@@ -2,7 +2,6 @@ using ByteShelf.Server.Plugins.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Controllers;
-using Microsoft.AspNetCore.Mvc.Routing;
 
 namespace ByteShelf.Server.Plugins.Controllers
 {

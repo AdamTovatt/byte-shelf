@@ -13,18 +13,20 @@ namespace ByteShelf.Server.Plugins.Services
     {
         /// <summary>
         /// Loads the plugins of <paramref name="candidates"/>, in order of id, as <see cref="Load"/> does.
-        /// One that cannot be loaded is logged and skipped.
+        /// One that cannot be loaded is logged and skipped, as are those that share an id.
         /// </summary>
         public static PluginCatalog LoadAll(IReadOnlyList<PluginCandidate> candidates, IServiceCollection services, ApplicationPartManager parts, ILogger logger)
         {
             List<LoadedPlugin> loaded = new List<LoadedPlugin>();
             List<SkippedPlugin> skipped = new List<SkippedPlugin>();
 
+            ILookup<string?, PluginCandidate> byId = candidates.ToLookup(candidate => candidate.Id);
+
             foreach (PluginCandidate candidate in candidates.OrderBy(candidate => candidate.Id, StringComparer.Ordinal))
             {
                 try
                 {
-                    PluginCandidate? other = candidate.Id == null ? null : candidates.FirstOrDefault(each => each != candidate && each.Id == candidate.Id);
+                    PluginCandidate? other = candidate.Id == null ? null : byId[candidate.Id].FirstOrDefault(each => each.Folder != candidate.Folder);
                     if (other != null)
                     {
                         throw new PluginRefusedException($"The plugin in {other.Folder} has the id {candidate.Id} too.");
@@ -91,16 +93,11 @@ namespace ByteShelf.Server.Plugins.Services
             Attempt("Registering its services failed", () =>
             {
                 IByteShelfPlugin plugin = (IByteShelfPlugin)Activator.CreateInstance(entry)!;
-                plugin.Configure(new PluginBuilder(pluginId, registered));
-                return plugin;
+                plugin.Configure(new PluginBuilder(registered));
             });
 
             parts.ApplicationParts.Add(new AssemblyPart(assembly));
-            Attempt("Its controllers could not be built", () =>
-            {
-                PluginEndpoints.Try(registered);
-                return parts;
-            });
+            Attempt("Its controllers could not be built", () => PluginEndpoints.Try(registered));
 
             return registered;
         }
@@ -112,7 +109,7 @@ namespace ByteShelf.Server.Plugins.Services
 
             // The runtime would look for each only once code that uses it runs, and loads none older than is
             // asked for: what a server lacks refuses the plugin here, before any of it has run.
-            foreach (AssemblyName shared in assembly.GetReferencedAssemblies().Where(reference => HostAssemblies.Contains(reference.Name)))
+            foreach (AssemblyName shared in context.SharedReferencesFrom(path))
             {
                 context.LoadFromAssemblyName(shared);
             }
@@ -134,6 +131,15 @@ namespace ByteShelf.Server.Plugins.Services
             {
                 items.Add(item);
             }
+        }
+
+        private static void Attempt(string failure, Action step)
+        {
+            Attempt<object?>(failure, () =>
+            {
+                step();
+                return null;
+            });
         }
 
         /// <summary>Runs <paramref name="step"/>, whose failure, whatever it is, is the plugin's.</summary>

@@ -10,6 +10,7 @@ import { queryKeys } from '../lib/queryKeys';
 import { saveTokens } from '../services/authService';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
+import { pluginView } from '../test/plugins';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -43,7 +44,6 @@ function Waiting() {
 
 describe('loading plugins into the page', () => {
   let root: Root;
-  let sent: string[];
   let client: QueryClient;
   let importModule: ReturnType<typeof vi.fn<PluginTransport['importModule']>>;
 
@@ -54,7 +54,7 @@ describe('loading plugins into the page', () => {
     localStorage.clear();
     installFakeWebLocks();
     saveTokens({ token: 't', expiresAt: inAnHour(), refreshToken: 'r' });
-    sent = stubServer(async () => json({ plugins: [{ id: 'late', name: 'Late', version: '1', moduleUrl: '/plugins/late/hash/plugin.js', stylesheetUrl: null }], skipped: null }));
+    stubServer(async () => json({ plugins: [pluginView('late')], skipped: null }));
     root = createRoot(document.body.appendChild(document.createElement('div')));
   });
 
@@ -70,8 +70,8 @@ describe('loading plugins into the page', () => {
 
   it('asks for none while signed out, and shows those that arrive once signed in', async () => {
     await show(false);
-    await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
-    expect(sent).toEqual([]);
+    // Not even begun, so there is no request to wait for.
+    expect(client.getQueryState(queryKeys.plugins.list)).toMatchObject({ status: 'pending', fetchStatus: 'idle' });
 
     await show(true);
     await vi.waitFor(() => expect(document.body.textContent).toBe('late'));
@@ -89,7 +89,7 @@ describe('loading plugins into the page', () => {
       client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       stubServer(async () => {
         await new Promise<void>((resolve) => { answer = resolve; });
-        return failPlugins ? json({ message: 'Down.' }, 500) : json({ plugins: [{ id: 'late', name: 'Late', version: '1', moduleUrl: '/late.js', stylesheetUrl: null }, { id: 'server', name: 'Server', version: '1', moduleUrl: null, stylesheetUrl: null }], skipped: null });
+        return failPlugins ? json({ message: 'Down.' }, 500) : json({ plugins: [pluginView('late'), pluginView('server', { moduleUrl: null })], skipped: null });
       });
     });
 
@@ -143,7 +143,7 @@ describe('loading plugins into the page', () => {
       expect(await after(100)).toBe('settled late');
 
       importModule.mockReturnValue(new Promise(() => undefined));
-      act(() => client.setQueryData(queryKeys.plugins.list, { plugins: [{ id: 'late', name: 'Late', version: '1', moduleUrl: '/late.js', stylesheetUrl: null }, { id: 'later', name: 'Later', version: '1', moduleUrl: '/later.js', stylesheetUrl: null }], skipped: null }));
+      act(() => client.setQueryData(queryKeys.plugins.list, { plugins: [pluginView('late'), pluginView('later')], skipped: null }));
 
       expect(await after(0)).toBe('loading late');
       expect(drawn).not.toContain('loading awaited late');
