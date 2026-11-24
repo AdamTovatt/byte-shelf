@@ -9,6 +9,7 @@ import {
   deleteFile,
   deleteShelf,
   emptyTrash,
+  fetchDeletion,
   fetchFile,
   fetchFileMetadata,
   fetchListing,
@@ -119,8 +120,23 @@ export function useFile(shelf: string, id: string | null, listed?: ShelfFile) {
     queryFn: () => fetchFile(shelf, id!),
     enabled: id !== null,
     placeholderData: listed,
-    retry: (failures, error) => failures < 1 && !isNotFound(error),
+    retry: unlessNotThere,
   });
+}
+
+/** What a deletion took, refetched as the shelf changes; one restored or purged fails with the server's 404. Idle while `deletionId` is null. */
+export function useDeletion(shelf: string, deletionId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.shelfContents.deletion(shelf, deletionId ?? ''),
+    queryFn: () => fetchDeletion(shelf, deletionId!),
+    enabled: deletionId !== null,
+    retry: unlessNotThere,
+  });
+}
+
+/** Asks once more, as for any query, unless the server said it is not there. */
+function unlessNotThere(failures: number, error: Error): boolean {
+  return failures < 1 && !isNotFound(error);
 }
 
 /**

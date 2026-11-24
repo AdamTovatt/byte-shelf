@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHECK_TEXT, WrongPasswordError, checkMatches, createCheck, decryptBlob, decryptBlobWith, encryptBlob, opensWith } from './age';
+import { CHECK_TEXT, WrongPasswordError, checkMatches, createCheck, decryptBlob, decryptStreamWith, encryptBlob, opensWith } from './age';
 
 // What these tests encrypt with: age's default takes about a second a file.
 const FAST = 10;
@@ -30,7 +30,7 @@ describe('age encryption', () => {
     const encrypted = await encryptBlob(new Blob(['a']), 'right', 'text/plain', FAST);
 
     await expect(decryptBlob(encrypted, 'wrong', 'text/plain')).rejects.toBeInstanceOf(WrongPasswordError);
-    expect(await decryptBlobWith(encrypted, 'wrong', 'text/plain')).toBeNull();
+    expect(await decryptStreamWith(encrypted.stream(), 'wrong', 'text/plain')).toBeNull();
     expect(await opensWith(encrypted.stream(), 'right')).toBe(true);
     expect(await opensWith(encrypted.stream(), 'wrong')).toBe(false);
   });

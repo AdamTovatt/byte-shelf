@@ -77,6 +77,28 @@ describe('the preview in the URL', () => {
     expect([location, preview.id]).toEqual(['/page?tab=1', null]);
   });
 
+  it('knows what was opened here from what was moved on to, gone back to or reloaded', () => {
+    expect(preview.wasOpened()).toBe(false);
+    act(() => preview.open('a'));
+    expect(preview.wasOpened()).toBe(true);
+
+    act(() => preview.moveTo('b'));
+    expect(preview.wasOpened()).toBe(false);
+    act(() => preview.moveTo('a'));
+    expect(preview.wasOpened()).toBe(false);
+
+    act(() => preview.open('c'));
+    expect(preview.wasOpened()).toBe(true);
+    act(() => preview.close());
+    expect(preview.wasOpened()).toBe(false);
+    act(() => navigate(1));
+    expect([preview.id, preview.wasOpened()]).toEqual(['c', false]);
+
+    act(() => root.unmount());
+    start(['/page?preview=c']);
+    expect(preview.wasOpened()).toBe(false);
+  });
+
   it('closes one after another in the history', () => {
     act(() => preview.open('a'));
     act(() => navigate({ search: 'tab=1&preview=b' }, { state: { previewOpenedHere: true } }));

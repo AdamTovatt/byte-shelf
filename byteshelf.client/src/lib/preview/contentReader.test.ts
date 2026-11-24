@@ -2,12 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { saveTokens } from '../../services/authService';
 import { deletedContent, liveContent } from '../../services/contentService';
-import type { DeletionTree } from '../../services/shelfService';
 import { installFakeWebLocks } from '../../test/fakeWebLocks';
 import { inAnHour, stubServer } from '../../test/fakeServer';
 import { blobReader, sourceReader } from './contentReader';
-
-const deletion = { deletion: { deletionId: 'del' } } as DeletionTree;
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -23,7 +20,7 @@ describe('a file read by its address', () => {
 
   it('is loaded by an element from where a tab opens it, live or from the trash', async () => {
     expect(await sourceReader('f', liveContent('docs')).url()).toBe('/api/open/docs/content?id=f');
-    expect(await sourceReader('f', deletedContent('docs', deletion)).url()).toBe('/api/open/docs/trash/del/content?id=f');
+    expect(await sourceReader('f', deletedContent('docs', 'del', null)).url()).toBe('/api/open/docs/trash/del/content?id=f');
   });
 
   it('is read whole, and in part, with the token', async () => {
@@ -44,7 +41,7 @@ describe('a file read by its address', () => {
   it('is read in part from the trash, with the token', async () => {
     const sent = stubServer(async () => new Response('a', { status: 206 }));
 
-    await sourceReader('f', deletedContent('docs', deletion)).range(0, 1);
+    await sourceReader('f', deletedContent('docs', 'del', null)).range(0, 1);
 
     expect(sent).toEqual(['GET /api/shelves/docs/trash/del/content?id=f Bearer t']);
   });

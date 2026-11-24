@@ -1,27 +1,19 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
 import { cn } from '../../../ui';
-import { useLoaded } from '../../../hooks/useLoaded';
 import { FITTED, movedBy, toggledAt, zoomedAt, type ImageView, type Point, type Size } from '../../../lib/preview/imageZoom';
 import type { ViewerProps } from '../../../lib/preview/viewerRegistry';
-import { LoadedContent } from '../LoadedContent';
-import { PreviewMessage } from '../PreviewMessage';
+import { UrlContent } from '../UrlContent';
 
 /**
  * An image fitted to the preview: the wheel, a pinch or a double-click zooms, a drag moves it. Always an
  * `<img>`, where an SVG's scripts do not run.
  */
 export function ImageViewer({ file, content }: ViewerProps) {
-  const url = useLoaded(content, (signal) => content.url(signal));
-  const [notShown, setNotShown] = useState(false);
-
-  if (notShown) return <NotShown content={content} />;
-  return <LoadedContent loaded={url}>{(src) => <ZoomableImage src={src} name={file.name} onError={() => setNotShown(true)} />}</LoadedContent>;
-}
-
-/** Why an image did not show: its contents could not be read, or else the browser cannot decode them. */
-function NotShown({ content }: Pick<ViewerProps, 'content'>) {
-  const read = useLoaded(content, (signal) => content.range(0, 1, signal));
-  return <LoadedContent loaded={read}>{() => <PreviewMessage message="This browser cannot show this image." />}</LoadedContent>;
+  return (
+    <UrlContent content={content} cannotShow="This browser cannot show this image.">
+      {(src, onError) => <ZoomableImage src={src} name={file.name} onError={() => onError('cannotShow')} />}
+    </UrlContent>
+  );
 }
 
 function ZoomableImage({ src, name, onError }: { src: string; name: string; onError: () => void }) {

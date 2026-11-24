@@ -1,7 +1,7 @@
 import { openTabWithoutPasswords } from '../lib/encryption/passwords';
 import { saveBlob, saveFrom, showBlob, showsInTab } from '../lib/localBlobs';
 import { runOrToast } from '../lib/utils';
-import { isBlobBacked, type FileReading } from '../services/contentService';
+import { isBlobBacked, unlockedContents, type FileReading } from '../services/contentService';
 import type { ShelfFile } from '../services/shelfService';
 import { showActionToast } from './actionToast';
 import { NameLine } from './MiddleTruncatedName';
@@ -24,7 +24,9 @@ export function opensInTab(file: ShelfFile): boolean {
  * opened from its contents read into the page, shown in a tab only when its type is one a tab may show
  * (`showBlob`), and saved otherwise.
  */
-export function fileOpening({ source, contents }: FileReading): FileOpening {
+export function fileOpening(reading: FileReading): FileOpening {
+  const { source } = reading;
+
   /**
    * Opens a file in a new tab. The tab is opened before anything is awaited, while the click still
    * counts as the user's, or the browser would block it as a popup; a blocked tab saves the file.
@@ -49,7 +51,7 @@ export function fileOpening({ source, contents }: FileReading): FileOpening {
    */
   async function openFromBlob(file: ShelfFile): Promise<void> {
     await runOrToast(async () => {
-      const blob = await contents(file);
+      const blob = await unlockedContents(reading, file);
       if (!blob || showBlob(blob, file.name)) return;
       showActionToast({
         message: <NameLine name={file.name} after={file.encrypted ? ' is unlocked' : ' is ready'} />,
@@ -68,7 +70,7 @@ export function fileOpening({ source, contents }: FileReading): FileOpening {
     await runOrToast(async () => {
       for (const file of files) {
         if (isBlobBacked(file)) {
-          const blob = await contents(file);
+          const blob = await unlockedContents(reading, file);
           if (blob) saveBlob(blob, file.name);
         } else {
           saveFrom(await source.navigationUrl(file.id, true), '');

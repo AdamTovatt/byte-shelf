@@ -77,6 +77,17 @@ describe('a load', () => {
     expect(loads[0].signal.aborted).toBe(true);
   });
 
+  it('is not run again by a reload answered for a key before', async () => {
+    await show('a');
+    const { reload } = loaded;
+    await show('b');
+    await act(async () => loads[1].resolve('B'));
+
+    await act(async () => reload());
+
+    expect([loads.length, state()]).toEqual([2, 'B']);
+  });
+
   it('runs again when reloaded, loading until that ends', async () => {
     await show('a');
     await act(async () => loads[0].reject(new Error('no a')));

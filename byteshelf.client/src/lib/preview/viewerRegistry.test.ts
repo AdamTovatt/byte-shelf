@@ -12,8 +12,7 @@ function file(contentType: string, name = 'a.bin'): ShelfFile {
 
 /** The viewer picked among those registered, by each one's plugin. */
 function picked(registered: [string | null, Viewer][], shown: ShelfFile): string | null {
-  const registry = new ViewerRegistry();
-  for (const [plugin, each] of registered) registry.register(plugin, [each]);
+  const registry = registered.reduce((before, [plugin, each]) => before.with(plugin, [each]), ViewerRegistry.EMPTY);
   return registry.viewerFor(shown)?.id ?? null;
 }
 
@@ -25,6 +24,19 @@ describe('the viewer a file is shown with', () => {
     expect(picked(registered, file('image/png'))).toBe('image');
     expect(picked(registered, file('imagery/png'))).toBeNull();
     expect(picked(registered, file('application/zip'))).toBeNull();
+  });
+
+  it('compares a plugin\'s types and extensions whatever their case', () => {
+    expect(picked([['a', viewer('raw', ['Image/X-Raw'], ['.MD'])]], file('image/x-raw'))).toBe('raw');
+    expect(picked([['a', viewer('raw', [], ['.MD'])]], file('application/octet-stream', 'README.md'))).toBe('raw');
+  });
+
+  it('is picked by a registry that holds more, while the one it came from stays as it was', () => {
+    const before = ViewerRegistry.EMPTY;
+    const after = before.with(null, [viewer('image', ['image/*'])]);
+
+    expect(after.viewerFor(file('image/png'))?.id).toBe('image');
+    expect(before.viewerFor(file('image/png'))).toBeNull();
   });
 
   it('is found by the name\'s extension only for a file stored without a type', () => {

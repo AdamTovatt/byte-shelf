@@ -9,7 +9,7 @@ export interface ViewerProps {
   content: ContentReader;
 }
 
-/** Shows files of some types in the preview. */
+/** Shows files of some types in the preview. Types and extensions are compared whatever their case. */
 export interface Viewer {
   id: string;
   /** The media types it takes, without parameters; one may be a family, such as `image/*`. */
@@ -22,23 +22,38 @@ export interface Viewer {
 /** How closely a viewer takes a file: not at all, by its type's family, or by its type or extension. */
 const MATCH = { none: 0, family: 1, exact: 2 } as const;
 
+/** A viewer, the types and extensions it takes as files' are compared, and the plugin it came with, null for a built-in one. */
+interface Registered {
+  viewer: Viewer;
+  mediaTypes: readonly string[];
+  extensions: readonly string[];
+  pluginId: string | null;
+}
+
 /**
- * The viewers the preview shows files with, and which one shows a file: the one that takes its exact
- * type (or, untyped, its extension) before one that takes its type's family, then a plugin's before a
- * built-in one, then the plugin whose id comes first.
+ * The viewers the preview shows files with, and which one shows a file: the one that takes its exact type
+ * (or, untyped, its extension) before one that takes its type's family, then a plugin's before a built-in
+ * one, then the plugin whose id comes first. One registry never changes; another holds more.
  */
 export class ViewerRegistry {
-  private readonly registered: { viewer: Viewer; pluginId: string | null }[] = [];
+  static readonly EMPTY = new ViewerRegistry([]);
 
-  /** Adds the viewers of the plugin `pluginId`, or the built-in ones for null. */
-  register(pluginId: string | null, viewers: readonly Viewer[]): void {
-    this.registered.push(...viewers.map((viewer) => ({ viewer, pluginId })));
+  private readonly registered: readonly Registered[];
+
+  private constructor(registered: readonly Registered[]) {
+    this.registered = registered;
+  }
+
+  /** This registry with the viewers of the plugin `pluginId`, or the built-in ones for null, as well. */
+  with(pluginId: string | null, viewers: readonly Viewer[]): ViewerRegistry {
+    const added = viewers.map((viewer) => ({ viewer, mediaTypes: viewer.mediaTypes.map(folded), extensions: viewer.extensions.map(folded), pluginId }));
+    return new ViewerRegistry([...this.registered, ...added]);
   }
 
   /** The viewer that shows `file`; null when none takes it. */
   viewerFor(file: ShelfFile): Viewer | null {
     const taking = this.registered
-      .map((each) => ({ ...each, match: matchOf(each.viewer, file) }))
+      .map((each) => ({ ...each, match: matchOf(each, file) }))
       .filter((each) => each.match !== MATCH.none);
     // The sort is stable, so between a plugin's own viewers the first it registered wins.
     taking.sort((one, other) => other.match - one.match || byPlugin(one.pluginId, other.pluginId));
@@ -46,12 +61,16 @@ export class ViewerRegistry {
   }
 }
 
-function matchOf(viewer: Viewer, file: ShelfFile): number {
+function folded(text: string): string {
+  return text.toLowerCase();
+}
+
+function matchOf({ mediaTypes, extensions }: Registered, file: ShelfFile): number {
   const type = mediaTypeOf(file.contentType);
-  const name = file.name.toLowerCase();
-  if (type === UNTYPED && viewer.extensions.some((extension) => name.endsWith(extension))) return MATCH.exact;
-  if (viewer.mediaTypes.includes(type)) return MATCH.exact;
-  return viewer.mediaTypes.includes(`${type.split('/')[0]}/*`) ? MATCH.family : MATCH.none;
+  const name = folded(file.name);
+  if (type === UNTYPED && extensions.some((extension) => name.endsWith(extension))) return MATCH.exact;
+  if (mediaTypes.includes(type)) return MATCH.exact;
+  return mediaTypes.includes(`${type.split('/')[0]}/*`) ? MATCH.family : MATCH.none;
 }
 
 function byPlugin(one: string | null, other: string | null): number {

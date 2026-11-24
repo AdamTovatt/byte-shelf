@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef } from 'react';
-import { viewers } from '../components/preview/viewers';
-import { neighboursOf, type Neighbours } from '../lib/preview/neighbours';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { whyNotInPage } from '../components/preview/viewers/inPage';
+import { neighboursOf, type Steps } from '../lib/preview/neighbours';
 import { isNotFound } from '../services/apiClient';
+import type { FileReading, ReadFile } from '../services/contentService';
 import type { ShelfFile } from '../services/shelfService';
 import { useCloseWhenGone, usePreviewParam } from './usePreviewParam';
 import { useFile } from './useShelfQueries';
+import { useViewers } from './useViewers';
 
 /** The files a shelf page shows, which its preview goes through. */
 export interface ShownFiles {
@@ -15,26 +17,28 @@ export interface ShownFiles {
 
 export interface ShelfPreview {
   isOpen: boolean;
-  /** Whether a file opens in the preview: a viewer takes it. */
-  takes: (file: ShelfFile) => boolean;
+  /** Whether a file opens in the preview: a viewer takes it, and this browser shows it in the page. */
+  showsInPreview: (file: ShelfFile) => boolean;
   open: (file: ShelfFile) => void;
   /** What the preview shows while it is open. */
   shown: {
-    file: ShelfFile | undefined;
+    previewed: ReadFile | null;
     error: Error | null;
-    neighbours: Neighbours | null;
-    onMoveTo: (file: ShelfFile) => void;
-    onMoveFurther?: () => void;
+    steps: Steps | null;
     onClose: () => void;
+    asksPassword: () => boolean;
   };
 }
 
-/** The preview over a shelf's page, of one of the files `shown` there or, alone, of any other live one. */
-export function useShelfPreview(shelf: string, shown: ShownFiles): ShelfPreview {
-  const { id, open, moveTo, close } = usePreviewParam();
+/** The preview over a shelf's page, of one of the files `shown` there or, alone, of any other live one, read by `reading`. */
+export function useShelfPreview(shelf: string, shown: ShownFiles, reading: FileReading): ShelfPreview {
+  const { id, open, moveTo, close, wasOpened } = usePreviewParam();
   const listed = shown.files.find((file) => file.id === id);
   const { data: file, error, isFetching } = useFile(shelf, id, listed);
-  const previewable = useMemo(() => shown.files.filter(takes), [shown.files]);
+
+  const viewers = useViewers();
+  const takes = useCallback((each: ShelfFile) => viewers.viewerFor(each) !== null, [viewers]);
+  const previewable = useMemo(() => shown.files.filter(takes), [shown.files, takes]);
 
   // A file that was gone is asked for again as it is back: gone only once that has been answered.
   const gone = isNotFound(error) && !isFetching;
@@ -52,22 +56,28 @@ export function useShelfPreview(shelf: string, shown: ShownFiles): ShelfPreview 
   }
 
   const { fetchMore } = shown;
-  const neighbours = id === null ? null : neighboursOf(previewable, id);
+  const among = id === null ? null : neighboursOf(previewable, id);
+  const steps: Steps | null = among && {
+    position: among.position,
+    count: among.count,
+    more: fetchMore !== undefined,
+    toPrevious: among.previous && (() => moveTo(among.previous!.id)),
+    toNext: among.next ? () => moveTo(among.next!.id) : fetchMore ? () => void moveFurther(fetchMore) : null,
+  };
+
   return {
     isOpen: id !== null && !gone,
-    takes,
+    showsInPreview: (each) => {
+      const viewer = viewers.viewerFor(each);
+      return viewer !== null && whyNotInPage(viewer) === null;
+    },
     open: (opened) => open(opened.id),
     shown: {
-      file,
+      previewed: file ? { file, reading } : null,
       error,
-      neighbours,
-      onMoveTo: (next) => moveTo(next.id),
-      onMoveFurther: neighbours && fetchMore ? () => void moveFurther(fetchMore) : undefined,
+      steps,
       onClose: close,
+      asksPassword: wasOpened,
     },
   };
-}
-
-function takes(file: ShelfFile): boolean {
-  return viewers.viewerFor(file) !== null;
 }

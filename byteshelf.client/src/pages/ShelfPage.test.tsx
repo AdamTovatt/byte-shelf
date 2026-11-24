@@ -10,6 +10,9 @@ import { saveTokens } from '../services/authService';
 import { SHELF_ROUTE_PATTERNS } from '../lib/shelfPaths';
 import { queryKeys } from '../lib/queryKeys';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
+import { encryptBlob } from '../lib/encryption/age';
+import { removePdfViewer, restorePdfViewer, stubTabs } from '../test/browser';
+import { button, press, submitPassword } from '../test/dom';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -54,6 +57,9 @@ function duplicates(after: string | null) {
 let searchFails: boolean;
 let secondPageType: string;
 
+/** An encrypted file's stored contents; null answers a plain one's. */
+let stored: Blob | null;
+
 /** Whether both searches find nothing; a test sets it to see what an empty search says. */
 let findNothing: boolean;
 
@@ -90,12 +96,14 @@ describe('the shelf page\'s rows', () => {
     searchFails = false;
     secondPageType = 'text/plain';
     findNothing = false;
+    stored = null;
     sent = stubServer(async (request) => {
       const url = new URL(request.url);
       if (url.pathname === '/api/shelves/docs/duplicates') return json(duplicates(url.searchParams.get('after')));
       if (url.pathname === '/api/shelves/docs/search' && searchFails && url.searchParams.has('after')) return json({ message: 'Down.' }, 500);
       if (url.pathname === '/api/shelves/docs/search') return json(searched(url.searchParams.get('after')));
-      if (url.pathname === '/api/shelves/docs/content') return new Response('the contents', { status: 206 });
+      if (url.pathname === '/api/shelves/docs/directories/encryption') return json({ encryptedBy: null });
+      if (url.pathname === '/api/shelves/docs/content') return stored ? new Response(stored) : new Response('the contents', { status: 206 });
       if (url.pathname === '/api/shelves/docs/files') {
         const found = [...rootFiles, ...elsewhere].find((each) => each.id === url.searchParams.get('id'));
         return found ? json(found) : json({ message: 'There is no such file.', code: 'not_found' }, 404);
@@ -130,6 +138,7 @@ describe('the shelf page\'s rows', () => {
     document.body.innerHTML = '';
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    restorePdfViewer();
   });
 
   function row(name: string): HTMLButtonElement | null {
@@ -407,16 +416,13 @@ describe('the shelf page\'s rows', () => {
     await previews({ name: 'a.txt', position: '1 of 2' });
     key(document, { key: 'ArrowRight' });
     await previews({ name: 'b.txt', position: '2 of 2' });
+    key(document, { key: 'ArrowLeft' });
+    await previews({ name: 'a.txt', position: '1 of 2' });
   });
 
   it('opens a file no viewer takes in a tab, as its menu opens any file', async () => {
     vi.stubGlobal('isSecureContext', true);
-    const tabs: { location: { href: string } }[] = [];
-    vi.spyOn(window, 'open').mockImplementation(() => {
-      const tab = { location: { href: '' }, sessionStorage: {}, close: () => {} };
-      tabs.push(tab);
-      return tab as unknown as Window;
-    });
+    const tabs = stubTabs();
     rootFiles = [file('a.txt'), { ...file('a.zip'), contentType: 'application/zip' }];
     await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
     await vi.waitFor(() => expect(row('a.zip')).not.toBeNull());
@@ -516,6 +522,104 @@ describe('the shelf page\'s rows', () => {
 
     await previews(null);
     expect(location).toBe('/shelves/docs');
+  });
+
+  describe('of an encrypted file', () => {
+    beforeEach(async () => {
+      sessionStorage.clear();
+      rootFiles = [file('a.txt'), { ...file('b.txt'), encrypted: true }];
+      act(() => root.unmount());
+      await renderAt('/shelves/docs');
+      await vi.waitFor(() => expect(row('b.txt')).not.toBeNull());
+    });
+
+    /** Waits for the preview to show the encrypted file locked, or asking for its password. */
+    function locked(asking: boolean): Promise<void> {
+      return vi.waitFor(async () => {
+        await act(async () => {});
+        expect(button('Unlock')).not.toBeNull();
+        expect(document.querySelector('form') !== null).toBe(asking);
+      });
+    }
+
+    it('asks for its password as it is opened, and no more once that is cancelled', async () => {
+      key(row('b.txt')!, { key: 'Enter' });
+      await locked(true);
+
+      await press('Cancel');
+      await locked(false);
+      expect(previewed()).toEqual({ name: 'b.txt', position: '2 of 2' });
+      await press('Unlock');
+      await locked(true);
+    });
+
+    it('shows it locked when it is moved on to or the page reloaded, asking nothing', async () => {
+      key(row('a.txt')!, { key: 'Enter' });
+      await previews({ name: 'a.txt', position: '1 of 2' });
+      key(document, { key: 'ArrowRight' });
+      await previews({ name: 'b.txt', position: '2 of 2' });
+      await locked(false);
+
+      act(() => root.unmount());
+      await renderAt('/shelves/docs?preview=file%3Ab.txt');
+      await previews({ name: 'b.txt', position: '2 of 2' });
+      await locked(false);
+      expect(requests('GET /api/shelves/docs/content')).toHaveLength(1);
+    });
+
+    it('is saved, and shown, by Download of one too large to show unasked, with one prompt for both', async () => {
+      stored = await encryptBlob(new Blob(['the secret']), 'pw', 'text/plain', 10);
+      rootFiles = [file('a.txt'), { ...file('b.txt'), encrypted: true, sizeBytes: 100 * 1024 * 1024 + 1 }];
+      act(() => root.unmount());
+      await renderAt('/shelves/docs');
+      await vi.waitFor(() => expect(row('b.txt')).not.toBeNull());
+      const saved: string[] = [];
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        saved.push(this.download);
+      });
+      key(row('b.txt')!, { key: 'Enter' });
+      await previews({ name: 'b.txt', position: '2 of 2' });
+
+      click(document.querySelector('[role="dialog"] button[aria-label="Download"]')!);
+      await vi.waitFor(() => expect(document.querySelector('form')).not.toBeNull());
+      await submitPassword('pw');
+
+      await vi.waitFor(async () => {
+        await act(async () => {});
+        expect(saved).toEqual(['b.txt']);
+      });
+      await vi.waitFor(() => expect(document.body.textContent).toContain('the secret'));
+      expect(document.querySelector('form')).toBeNull();
+    });
+
+    it('takes its prompt back as Back closes the preview', async () => {
+      key(row('b.txt')!, { key: 'Enter' });
+      await locked(true);
+
+      goBack();
+
+      await previews(null);
+      expect(document.querySelector('form')).toBeNull();
+    });
+  });
+
+  it('opens a PDF in a tab where the browser has no viewer of its own for one, and still goes past it', async () => {
+    vi.stubGlobal('isSecureContext', true);
+    removePdfViewer();
+    const tabs = stubTabs();
+    rootFiles = [file('a.txt'), { ...file('b.pdf'), contentType: 'application/pdf' }];
+    await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
+    await vi.waitFor(() => expect(row('b.pdf')).not.toBeNull());
+
+    key(row('b.pdf')!, { key: 'Enter' });
+    await vi.waitFor(() => expect(tabs.map((tab) => tab.location.href)).toEqual(['/api/open/docs/content?id=file%3Ab.pdf']));
+    expect(row('b.pdf')!.title).toContain('new tab');
+    expect(row('a.txt')!.title).not.toContain('new tab');
+    expect(previewed()).toBeNull();
+    key(row('a.txt')!, { key: 'Enter' });
+    await previews({ name: 'a.txt', position: '1 of 2' });
+    key(document, { key: 'ArrowRight' });
+    await previews({ name: 'b.pdf', position: '2 of 2' });
   });
 
   it('closes the preview of a file that is gone, with a toast, and keeps that of one moved elsewhere', async () => {

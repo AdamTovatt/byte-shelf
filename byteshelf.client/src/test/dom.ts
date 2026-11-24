@@ -39,3 +39,9 @@ export async function press(name: string): Promise<void> {
   if (!found) throw new Error(`No button ${name}.`);
   await act(async () => found.click());
 }
+
+/** Types `password` into the one password prompt shown, and submits it. */
+export async function submitPassword(password: string): Promise<void> {
+  fill('Password', password);
+  await act(async () => document.querySelector('form')!.requestSubmit());
+}

@@ -19,7 +19,8 @@ Shelves themselves are in [Shelves.md](../Storage/Shelves.md), users in [Users.m
   never on the user endpoints.
 
 A signed-in user's access token comes in the `Authorization` header, or, under `/api/open` only, in
-a cookie for a browser's plain navigation ([Storage](../Storage/Storage.md#opening-in-a-browser-authsetupcookietokenpath));
+a cookie for what a browser loads by itself: a navigation, or an image, a player or a frame of the web UI
+([Storage](../Storage/Storage.md#opening-in-a-browser-authsetupcookietokenpath));
 either way the same access applies.
 
 A request carrying a key acts as the key, even with a user's token beside it. A key that does not

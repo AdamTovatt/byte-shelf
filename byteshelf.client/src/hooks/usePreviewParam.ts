@@ -20,6 +20,8 @@ export interface PreviewParam {
   /** Moves an open preview on to another, which Back closes all the same. */
   moveTo: (id: string) => void;
   close: () => void;
+  /** Whether what is previewed was opened here, rather than moved on to, gone back to or reloaded. */
+  wasOpened: () => boolean;
 }
 
 /** The preview in the page's URL (`?preview=<id>`), so a reload keeps it. */
@@ -32,15 +34,19 @@ export function usePreviewParam(): PreviewParam {
   // Going back is not at once, so a second close of the same history entry before it would leave the
   // page behind the preview.
   const closing = useRef<string | null>(null);
+  // What was opened here last, while it is still previewed.
+  const opened = useRef<string | null>(null);
   useEffect(() => {
     if (id === null) closing.current = null;
+    if (id !== opened.current) opened.current = null;
   }, [id]);
 
   const moveTo = useCallback((next: string) => navigate({ search: withPreview(search, next) }, { replace: true, state }), [navigate, search, state]);
 
-  const open = useCallback((opened: string) => {
-    if (id === null) navigate({ search: withPreview(search, opened) }, { state: OPENED_HERE });
-    else moveTo(opened);
+  const open = useCallback((next: string) => {
+    opened.current = next;
+    if (id === null) navigate({ search: withPreview(search, next) }, { state: OPENED_HERE });
+    else moveTo(next);
   }, [id, navigate, search, moveTo]);
 
   const close = useCallback(() => {
@@ -50,7 +56,9 @@ export function usePreviewParam(): PreviewParam {
     else navigate({ search: withPreview(search, null) }, { replace: true });
   }, [key, navigate, search, state]);
 
-  return { id, open, moveTo, close };
+  const wasOpened = useCallback(() => id !== null && opened.current === id, [id]);
+
+  return { id, open, moveTo, close, wasOpened };
 }
 
 /** Closes a preview, saying so, once what it shows is gone. */

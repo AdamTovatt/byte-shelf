@@ -66,12 +66,23 @@ describe('a blob an element of the page loads', () => {
   });
 
   // "Open image in new tab" on a blob: URL would run an SVG's scripts as the app; on a data: URL it cannot.
-  it.each(['image/svg+xml', 'image/svg+xml; charset=utf-8', 'text/html', 'application/xhtml+xml', 'image/heic', ''])('has a data: URL for %s', async (type) => {
+  it.each(['image/svg+xml', 'Image/SVG+XML; charset=utf-8', 'text/html', 'application/xhtml+xml', 'application/xml; charset=utf-8', 'application/json', 'model/gltf+json', 'image/heic'])('has a data: URL for %s', async (type) => {
     const created = vi.spyOn(URL, 'createObjectURL');
 
     const { url } = await elementUrl(new Blob(['<svg/>'], { type }));
 
     expect(url).toMatch(/^data:/);
     expect(created).not.toHaveBeenCalled();
+  });
+
+  // As large as they get, which a data: URL of does not load; a tab saves untyped bytes rather than run them.
+  it.each(['model/gltf-binary', 'application/javascript', 'font/woff2', 'multipart/x-mixed-replace', ''])('has a blob: URL of untyped bytes for %s', async (type) => {
+    const created = vi.spyOn(URL, 'createObjectURL');
+
+    const { url } = await elementUrl(new Blob(['bytes'], { type }));
+
+    expect(url).toMatch(/^blob:/);
+    const [loaded] = created.mock.calls[0] as [Blob];
+    expect([loaded.type, await loaded.text()]).toEqual(['application/octet-stream', 'bytes']);
   });
 });

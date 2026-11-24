@@ -17,7 +17,7 @@ namespace ByteShelf.Server.Storage.Controllers
     [Route("api/shelves/{shelf}/trash")]
     public class TrashController : ShelfControllerBase
     {
-        /// <summary>The deleted contents route where the token may come in a cookie, for a browser's plain navigation.</summary>
+        /// <summary>The deleted contents route where the token may come in a cookie, for what a browser loads by itself (<see cref="AuthSetup.CookieTokenPath"/>).</summary>
         private const string OpenDeletedContentRoute = AuthSetup.CookieTokenPath + "/{shelf}/trash/{deletionId:guid}/content";
 
         private readonly ITrashService _trashService;
@@ -56,7 +56,7 @@ namespace ByteShelf.Server.Storage.Controllers
         /// <summary>
         /// Streams the contents of a file a deletion removed, <c>id</c> naming it, as a live file's are sent
         /// (<see cref="FileContentResponse"/>); an encrypted file's are its age bytes. Also served under
-        /// <see cref="AuthSetup.CookieTokenPath"/>, as a live file's are, for the web UI's plain navigation.
+        /// <see cref="AuthSetup.CookieTokenPath"/>, as a live file's are, for the web UI to open, save and preview.
         /// </summary>
         [HttpGet("{deletionId:guid}/content")]
         [HttpHead("{deletionId:guid}/content")]

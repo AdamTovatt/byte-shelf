@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fileOpening, opensInTab, type FileOpening } from './fileOpening';
 import { saveTokens } from '../services/authService';
 import { deletedContent, fileReading, liveContent, type ContentSource } from '../services/contentService';
-import type { DeletionTree, ShelfFile } from '../services/shelfService';
+import type { ShelfFile } from '../services/shelfService';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
 import { textOf } from '../test/dom';
@@ -53,15 +53,6 @@ function file(encrypted = false, id = 'f'): ShelfFile {
   return { id, shelfId: 's', directoryId: 'd', path: `/${id}.txt`, name: `${id}.txt`, contentType: 'text/plain', sizeBytes: 12, sha256: 'x', createdAt: '', updatedAt: '', description: null, encrypted };
 }
 
-/** Deletion `deletionId`, which took `file()`. */
-function deletion(deletionId: string): DeletionTree {
-  const root = { id: 'd', shelfId: 's', parentId: null, path: '/', name: '', createdAt: '', encrypted: false };
-  return {
-    deletion: { deletionId, kind: 'file', entryId: 'f', path: '/f.txt', deletedAt: '', purgesAt: '', fileCount: 1, sizeBytes: 12 },
-    tree: { directory: root, directories: [], files: [file()] },
-  };
-}
-
 describe('opening and saving files', () => {
   let opening: FileOpening;
   let errors: string[];
@@ -96,10 +87,14 @@ describe('opening and saving files', () => {
   });
 
   function openingFrom(source: ContentSource): FileOpening {
-    return fileOpening(fileReading(source, async (encrypted) => {
-      if (promptCancelled) return null;
-      decrypted.push(encrypted.id);
-      return new Blob(['secret'], { type: encrypted.contentType });
+    let unlocked = false;
+    return fileOpening(fileReading(source, {
+      read: async (encrypted) => {
+        if (!unlocked) return null;
+        decrypted.push(encrypted.id);
+        return new Blob(['secret'], { type: encrypted.contentType });
+      },
+      unlock: async () => (unlocked = !promptCancelled),
     }));
   }
 
@@ -130,7 +125,7 @@ describe('opening and saving files', () => {
     it('saves a file from the trash by navigating to its deletion, as a live file is saved', async () => {
       stubServer(async () => json({}));
 
-      await openingFrom(deletedContent('docs', deletion('del'))).save([file()]);
+      await openingFrom(deletedContent('docs', 'del', null)).save([file()]);
 
       expect(blobs.savedFrom).toEqual(['/api/open/docs/trash/del/content?id=f&download=true']);
     });
@@ -260,7 +255,7 @@ describe('opening and saving files', () => {
     it('saves a file from the trash from its contents read here from its deletion', async () => {
       const sent = stubServer(async () => new Response('the contents', { headers: { 'Content-Type': 'text/plain' } }));
 
-      await openingFrom(deletedContent('docs', deletion('del'))).save([file()]);
+      await openingFrom(deletedContent('docs', 'del', null)).save([file()]);
 
       expect(sent).toEqual(['GET /api/shelves/docs/trash/del/content?id=f Bearer first']);
       expect(blobs.saved).toEqual(['f.txt']);

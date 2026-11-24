@@ -2,13 +2,15 @@
 import { act, useEffect, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FilePreview } from './FilePreview';
-import { viewers } from './viewers';
+import { BUILT_IN_VIEWERS } from './viewers';
 import { neighboursOf } from '../../lib/preview/neighbours';
 import type { ViewerProps } from '../../lib/preview/viewerRegistry';
-import type { ContentSource } from '../../services/contentService';
+import type { ContentSource, FileReading } from '../../services/contentService';
 import type { ShelfFile } from '../../services/shelfService';
+import { removePdfViewer, restorePdfViewer, stubTabs } from '../../test/browser';
 import { press } from '../../test/dom';
 import { json, stubServer } from '../../test/fakeServer';
 
@@ -28,7 +30,9 @@ function BrokenViewer({ file }: ViewerProps): null {
   throw new Error(`Cannot show ${file.name}.`);
 }
 
-viewers.register(null, [{ id: 'broken', mediaTypes: ['x-test/broken'], extensions: [], component: BrokenViewer }]);
+const WITH_BROKEN = BUILT_IN_VIEWERS.with('test', [{ id: 'broken', mediaTypes: ['x-test/broken'], extensions: [], component: BrokenViewer }]);
+
+vi.mock('../../hooks/useViewers', () => ({ useViewers: () => WITH_BROKEN }));
 
 function file(name: string, changed: Partial<ShelfFile> = {}): ShelfFile {
   return {
@@ -41,12 +45,15 @@ const source: ContentSource = {
   navigationUrl: async (id, download) => `/open/${id}${download ? '?download' : ''}`,
   read: async () => new Blob(['whole']),
   readRange: async (id) => new Blob([`text of ${id}`]),
+  open: async () => new Blob(['whole']).stream(),
   encryptedFolderOf: async () => null,
 };
 
 describe('the preview', () => {
   let root: Root;
-  let contents: (file: ShelfFile, signal?: AbortSignal) => Promise<Blob | null>;
+  let read: FileReading['read'];
+  let unlock: FileReading['unlock'];
+  let asksPassword: boolean;
   let closed: number;
 
   /** Shows another record of the file previewed, as the page does once the shelf has changed. */
@@ -59,16 +66,16 @@ describe('the preview', () => {
     useEffect(() => {
       change = setShown;
     }, []);
+    const beside = neighboursOf(files, shown.id);
+    const move = (to: ShelfFile | null) => to && (() => setShown(to));
     return (
       <FilePreview
-        file={shown}
+        previewed={{ file: shown, reading: { source, read: (each, signal) => read(each, signal), unlock: (each, signal) => unlock(each, signal) } }}
         error={null}
-        reading={{ source, contents: (each, signal) => contents(each, signal) }}
-        neighbours={neighboursOf(files, shown.id)}
-        onMoveTo={setShown}
-        onMoveFurther={moreFound}
+        steps={beside && { ...beside, more: moreFound !== undefined, toPrevious: move(beside.previous), toNext: move(beside.next) ?? moreFound ?? null }}
         onClose={() => closed++}
         detailsOn={detailsOn}
+        asksPassword={() => asksPassword}
       />
     );
   }
@@ -97,9 +104,11 @@ describe('the preview', () => {
     vi.stubGlobal('isSecureContext', true);
     saved.length = 0;
     closed = 0;
+    asksPassword = false;
     moreFound = undefined;
     detailsOn = 'docs';
-    contents = async () => new Blob(['read here'], { type: 'text/plain' });
+    read = async () => new Blob(['read here'], { type: 'text/plain' });
+    unlock = async () => false;
     root = createRoot(document.body.appendChild(document.createElement('div')));
   });
 
@@ -208,7 +217,7 @@ describe('the preview', () => {
 
   it('says why a file\'s record could not be loaded', async () => {
     await act(async () => root.render(
-      <FilePreview file={undefined} error={new Error('The server is unreachable.')} reading={{ source, contents }} neighbours={null} onMoveTo={() => {}} onClose={() => {}} />,
+      <FilePreview previewed={null} error={new Error('The server is unreachable.')} steps={null} onClose={() => {}} asksPassword={() => false} />,
     ));
 
     expect(document.body.textContent).toContain('The server is unreachable.');
@@ -254,12 +263,70 @@ describe('the preview', () => {
     await shows('text of <b>page</b>');
   });
 
+  describe('of a PDF', () => {
+    const pdf = file('a.pdf', { contentType: 'application/pdf' });
+
+    afterEach(restorePdfViewer);
+
+    it('shows it in a frame, by its address', async () => {
+      await show(pdf);
+
+      const frame = await vi.waitFor(() => {
+        const found = document.querySelector('iframe');
+        expect(found).not.toBeNull();
+        return found!;
+      });
+      expect([frame.getAttribute('src'), frame.title]).toEqual(['/open/a.pdf', 'a.pdf']);
+    });
+
+    it('says the browser has no viewer of its own for one, offering a tab and Download', async () => {
+      removePdfViewer();
+      const tabs = stubTabs();
+
+      await show(pdf);
+
+      await shows('This browser does not show a PDF inside a page.');
+      expect(document.querySelector('iframe')).toBeNull();
+      await press('Open in new tab');
+      await vi.waitFor(() => expect(tabs.map((tab) => tab.location.href)).toEqual(['/open/a.pdf']));
+      await press('Download');
+      expect(saved).toEqual(['/open/a.pdf?download']);
+    });
+
+    it('shows an encrypted one in a frame, from its contents read here', async () => {
+      read = async () => new Blob(['%PDF'], { type: 'application/pdf' });
+
+      await show({ ...pdf, encrypted: true });
+
+      await vi.waitFor(() => expect(document.querySelector('iframe')?.src).toMatch(/^blob:/));
+    });
+
+    it('reads nothing of an encrypted one the browser does not show', async () => {
+      removePdfViewer();
+      const reads = vi.fn(read);
+      read = reads;
+
+      await show({ ...pdf, encrypted: true });
+
+      await shows('This browser does not show a PDF inside a page.');
+      expect(reads).not.toHaveBeenCalled();
+    });
+
+    it('says why it has no address', async () => {
+      vi.spyOn(source, 'navigationUrl').mockRejectedValue(new Error('The session has ended.'));
+
+      await show(pdf);
+
+      await shows('The session has ended.');
+    });
+  });
+
   describe('of a blob-backed file', () => {
     beforeEach(() => vi.stubGlobal('isSecureContext', false));
 
     it('reads its contents here, and saves those rather than reading it again', async () => {
       const reads = vi.fn(async () => new Blob(['read here'], { type: 'text/plain' }));
-      contents = reads;
+      read = reads;
       await show(file('a'));
       await shows('read here');
 
@@ -271,21 +338,25 @@ describe('the preview', () => {
 
     it('reads one over 100 MiB only once asked', async () => {
       const reads = vi.fn(async () => new Blob(['read here'], { type: 'text/plain' }));
-      contents = reads;
-      await show(file('a', { sizeBytes: 100 * 1024 * 1024 + 1 }));
+      read = reads;
+      const large = (name: string) => file(name, { sizeBytes: 100 * 1024 * 1024 + 1 });
+      await show(large('a'), [large('a'), large('b')]);
       await shows('is read into the browser to show it.');
       expect(reads).not.toHaveBeenCalled();
 
       await press('Load');
 
       await shows('read here');
+      await key('ArrowRight');
+      await shows('is read into the browser to show it.');
+      expect(reads).toHaveBeenCalledTimes(1);
     });
 
     it('stops reading as it moves on', async () => {
       let signal: AbortSignal | undefined;
-      contents = async (each, given) => {
+      read = async (each, aborts) => {
         if (each.id !== 'a') return new Blob(['read here'], { type: 'text/plain' });
-        signal = given;
+        signal = aborts;
         return new Promise(() => {});
       };
       await show(file('a'), [file('a'), file('b')]);
@@ -299,7 +370,7 @@ describe('the preview', () => {
 
     it('says why it could not be read, and reads it again when asked', async () => {
       let reachable = false;
-      contents = async () => {
+      read = async () => {
         if (!reachable) throw new Error('The server is unreachable.');
         return new Blob(['read here'], { type: 'text/plain' });
       };
@@ -314,7 +385,7 @@ describe('the preview', () => {
 
     it('reads nothing of a type no viewer takes', async () => {
       const reads = vi.fn(async () => new Blob(['a']));
-      contents = reads;
+      read = reads;
 
       await show(file('a.zip', { contentType: 'application/zip' }));
 
@@ -325,7 +396,7 @@ describe('the preview', () => {
     it('lets go of what it read as it moves on, and as it closes', async () => {
       const revoked = vi.spyOn(URL, 'revokeObjectURL');
       const picture = (name: string) => file(name, { contentType: 'image/png' });
-      contents = async () => new Blob(['a'], { type: 'image/png' });
+      read = async () => new Blob(['a'], { type: 'image/png' });
       const image = () => document.querySelector('img')?.src;
       await show(picture('a'), [picture('a'), picture('b')]);
       const first = await vi.waitFor(() => {
@@ -342,31 +413,154 @@ describe('the preview', () => {
       await vi.waitFor(() => expect(revoked.mock.calls).toEqual([[first], [second]]));
     });
 
-    it('unlocks an encrypted file by where it is now', async () => {
-      const paths: string[] = [];
-      contents = async (each) => {
-        paths.push(each.path);
-        return null;
-      };
-      await show(file('a', { encrypted: true }));
-      await shows('This file is encrypted.');
+    describe('and locked', () => {
+      const locked = file('a', { encrypted: true });
+      let unlocked: boolean;
+      let asks: { path: string; signal?: AbortSignal; answer: (given: boolean) => void }[];
 
-      await act(async () => change(file('a', { encrypted: true, path: '/moved/a' })));
-      await press('Unlock');
+      beforeEach(() => {
+        unlocked = false;
+        asks = [];
+        read = async (each) => (unlocked || !each.encrypted ? new Blob([`secret of ${each.id}`], { type: 'text/plain' }) : null);
+        unlock = (each, signal) => new Promise((resolve) => {
+          asks.push({
+            path: each.path,
+            signal,
+            answer: (given) => {
+              unlocked = given;
+              resolve(given);
+            },
+          });
+        });
+      });
 
-      expect(paths).toEqual(['/a', '/moved/a']);
+      it('is unlocked once asked, by where it is now', async () => {
+        await show(locked);
+        await shows('This file is encrypted.');
+        expect(asks).toEqual([]);
+
+        await act(async () => change({ ...locked, path: '/moved/a' }));
+        await press('Unlock');
+        await act(async () => asks[0].answer(true));
+
+        await shows('secret of a');
+        expect(asks.map(({ path }) => path)).toEqual(['/moved/a']);
+      });
+
+      it('has its password asked for once as it shows when told to, and stays locked when that is cancelled', async () => {
+        asksPassword = true;
+        await show(locked);
+        await shows('This file is encrypted.');
+        expect(asks).toHaveLength(1);
+
+        await act(async () => asks[0].answer(false));
+        expect(asks).toHaveLength(1);
+        await press('Unlock');
+        await act(async () => asks[1].answer(true));
+
+        await shows('secret of a');
+      });
+
+      it('has its prompt taken back as it moves on', async () => {
+        await show(locked, [locked, file('b')]);
+        await shows('This file is encrypted.');
+        await press('Unlock');
+        expect(asks[0].signal?.aborted).toBe(false);
+
+        await key('ArrowRight');
+
+        expect(asks[0].signal?.aborted).toBe(true);
+        await shows('secret of b');
+      });
+
+      it('shows once Download has unlocked it, read once', async () => {
+        const reads = vi.fn(read);
+        read = reads;
+        await show(locked);
+        await shows('This file is encrypted.');
+
+        await act(async () => labelled('Download')!.click());
+        await vi.waitFor(() => expect(asks).toHaveLength(1));
+        reads.mockClear();
+        await act(async () => asks[0].answer(true));
+
+        await shows('secret of a');
+        await vi.waitFor(() => expect(saved).toEqual(['a']));
+        expect(reads).toHaveBeenCalledTimes(1);
+      });
+
+      it('says why unlocking it failed', async () => {
+        const errors: string[] = [];
+        vi.spyOn(toast, 'error').mockImplementation((message) => {
+          errors.push(String(message));
+          return '';
+        });
+        unlock = async () => {
+          throw new Error('The server is unreachable.');
+        };
+        await show(locked);
+        await shows('This file is encrypted.');
+
+        await press('Unlock');
+
+        expect(errors).toEqual(['The server is unreachable.']);
+        await shows('This file is encrypted.');
+      });
     });
 
-    it('offers Unlock on an encrypted file no password was given for', async () => {
-      let password = false;
-      contents = async () => (password ? new Blob(['secret'], { type: 'text/plain' }) : null);
-      await show(file('a', { encrypted: true }));
-      await shows('This file is encrypted.');
+    it.each([
+      ['a Download while it is read', file('a'), () => {}],
+      ['a Download that starts reading it', file('a', { sizeBytes: 100 * 1024 * 1024 + 1 }), () => shows('is read into the browser to show it.')],
+    ])('is read once for the preview and %s', async (_when, shown, untilShown) => {
+      let answer: (contents: Blob) => void = () => {};
+      const reads = vi.fn(() => new Promise<Blob>((resolve) => (answer = resolve)));
+      read = reads;
+      await show(shown);
+      await untilShown();
 
-      password = true;
-      await press('Unlock');
+      await act(async () => labelled('Download')!.click());
+      await act(async () => answer(new Blob(['a read'], { type: 'text/plain' })));
 
-      await shows('secret');
+      await shows('a read');
+      await vi.waitFor(() => expect(saved).toEqual(['a']));
+      expect(reads).toHaveBeenCalledTimes(1);
+    });
+
+    it('is read again by a Download once reading it failed, and then shows', async () => {
+      let reachable = false;
+      const reads = vi.fn(async () => {
+        if (!reachable) throw new Error('The server is unreachable.');
+        return new Blob(['read here'], { type: 'text/plain' });
+      });
+      read = reads;
+      await show(file('a'));
+      await shows('The server is unreachable.');
+
+      reachable = true;
+      await act(async () => labelled('Download')!.click());
+
+      await shows('read here');
+      expect(saved).toEqual(['a']);
+      expect(reads).toHaveBeenCalledTimes(2);
+    });
+
+    it('goes on being saved as the preview moves on', async () => {
+      let answer: (contents: Blob) => void = () => {};
+      let signal: AbortSignal | undefined;
+      read = (each, aborts) => {
+        if (each.id !== 'a') return Promise.resolve(new Blob(['read here'], { type: 'text/plain' }));
+        signal = aborts;
+        return new Promise((resolve) => (answer = resolve));
+      };
+      await show(file('a'), [file('a'), file('b')]);
+      await act(async () => labelled('Download')!.click());
+
+      await key('ArrowRight');
+      await shows('read here');
+      expect(signal?.aborted).toBe(false);
+      await act(async () => answer(new Blob(['a'])));
+
+      await vi.waitFor(() => expect(saved).toEqual(['a']));
     });
   });
 });

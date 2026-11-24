@@ -13,6 +13,12 @@ const KEEP_MS = 5 * 60 * 1000;
  */
 const SHOWN_TYPES = [/^image\/(png|jpeg|gif|webp|avif|bmp)$/, /^application\/pdf$/, /^text\/plain$/, /^audio\//, /^video\//];
 
+/**
+ * The types an element shows only when it is told them, rather than by the bytes: those of SHOWN_TYPES
+ * aside, a browser could run some of these as the app.
+ */
+const SHOWN_BY_TYPE = [/^image\//, /^text\//, /[/+]xml$/, /[/+]json$/];
+
 /** Whether a blob of `type` is shown in a tab rather than saved. */
 export function showsInTab(type: string): boolean {
   return SHOWN_TYPES.some((pattern) => pattern.test(mediaTypeOf(type)));
@@ -27,14 +33,15 @@ export interface ElementUrl {
 /**
  * A URL an element of this page (an image, a player, a frame) loads `blob` from. The browser's own menu
  * can open what an element shows in a tab, so a blob of a type a tab must not show there gets a data:
- * URL, which never runs as the app. One without a type of its own is only ever saved by a tab.
+ * URL, which never runs as the app, when its type is needed to show it; any other is loaded as untyped
+ * bytes, which a tab only saves (a data: URL of something large, such as a model, fails).
  */
 export async function elementUrl(blob: Blob): Promise<ElementUrl> {
-  if (showsInTab(blob.type) || mediaTypeOf(blob.type) === UNTYPED) {
-    const url = URL.createObjectURL(blob);
-    return { url, release: () => URL.revokeObjectURL(url) };
-  }
-  return { url: await dataUrl(blob), release: () => {} };
+  const type = mediaTypeOf(blob.type);
+  const shown = showsInTab(type);
+  if (!shown && SHOWN_BY_TYPE.some((pattern) => pattern.test(type))) return { url: await dataUrl(blob), release: () => {} };
+  const url = URL.createObjectURL(shown ? blob : blob.slice(0, blob.size, UNTYPED));
+  return { url, release: () => URL.revokeObjectURL(url) };
 }
 
 function dataUrl(blob: Blob): Promise<string> {

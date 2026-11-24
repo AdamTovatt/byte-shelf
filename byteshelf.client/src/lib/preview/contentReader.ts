@@ -19,7 +19,11 @@ export interface ClosableReader extends ContentReader {
   close: () => void;
 }
 
-/** Reads a file that is not blob-backed, its id `id`, from `source`, by its address or with the session's token. */
+/**
+ * Reads a file that is not blob-backed, its id `id`, from `source`, by its address or with the session's
+ * token. The address answers the same contents for good: a store over the file makes one of another id, and
+ * contents are swapped in place only as encryption starts or ends, where one side is blob-backed.
+ */
 export function sourceReader(id: string, source: ContentSource): ClosableReader {
   let reading = new AbortController();
   const until = (signal?: AbortSignal) => (signal ? AbortSignal.any([signal, reading.signal]) : reading.signal);

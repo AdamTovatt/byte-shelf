@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ShelfFile } from '../../../services/shelfService';
-import { viewers } from '.';
+import { BUILT_IN_VIEWERS } from '.';
 
 function viewerOf(contentType: string, name = 'a.bin'): string | null {
-  return viewers.viewerFor({ name, contentType } as ShelfFile)?.id ?? null;
+  return BUILT_IN_VIEWERS.viewerFor({ name, contentType } as ShelfFile)?.id ?? null;
 }
 
 describe('the built-in viewers', () => {
@@ -11,6 +11,9 @@ describe('the built-in viewers', () => {
     ['image/png', 'image'],
     ['image/svg+xml', 'image'],
     ['image/heic', 'image'],
+    ['video/mp4', 'video'],
+    ['audio/mpeg', 'audio'],
+    ['application/pdf', 'pdf'],
     ['text/plain; charset=utf-8', 'text'],
     ['text/html', 'text'],
     ['text/markdown', 'text'],
@@ -25,13 +28,16 @@ describe('the built-in viewers', () => {
     expect(viewerOf(contentType)).toBe(viewer);
   });
 
-  // A browser shows an SVG only by its type, which an untyped one does not have.
+  // A browser shows an SVG or a PDF only by its type, which an untyped one does not have.
   it.each([
     ['a.PNG', 'image'],
     ['a.heic', 'image'],
     ['notes.md', 'text'],
     ['main.rs', 'text'],
+    ['a.mp4', 'video'],
+    ['a.mp3', 'audio'],
     ['a.svg', null],
+    ['a.pdf', null],
     ['a.bin', null],
   ])('show an untyped %s as %s', (name, viewer) => {
     expect(viewerOf('application/octet-stream', name)).toBe(viewer);

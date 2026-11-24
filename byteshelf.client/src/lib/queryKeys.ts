@@ -19,6 +19,7 @@ export const queryKeys = {
     root: ['shelfContents'] as const,
     listing: (shelf: string, path: string) => ['shelfContents', shelf, 'listing', path] as const,
     file: (shelf: string, id: string) => ['shelfContents', shelf, 'file', id] as const,
+    deletion: (shelf: string, deletionId: string) => ['shelfContents', shelf, 'deletion', deletionId] as const,
     trash: (shelf: string) => ['shelfContents', shelf, 'trash'] as const,
     search: (shelf: string, under: string, criteria: SearchCriteria) => ['shelfContents', shelf, 'search', under, criteria] as const,
     duplicates: (shelf: string, under: string, criteria: SearchCriteria) => ['shelfContents', shelf, 'duplicates', under, criteria] as const,

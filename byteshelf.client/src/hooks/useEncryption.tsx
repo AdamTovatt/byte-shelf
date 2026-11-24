@@ -1,10 +1,9 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useMemo } from 'react';
 import toast from 'react-hot-toast';
 import { getErrorMessage } from '../ui';
-import { PasswordDialog, type PasswordRequest } from '../components/PasswordDialog';
 import { NameAndReason, NameLine } from '../components/MiddleTruncatedName';
 import { runOrToastNamed } from '../components/nameToasts';
-import { DEFAULT_WORK_FACTOR, checkMatches, createCheck, decryptBlob, decryptBlobWith, encryptBlob, opensWith } from '../lib/encryption/age';
+import { DEFAULT_WORK_FACTOR, checkMatches, createCheck, decryptBlob, decryptStreamWith, encryptBlob, opensWith } from '../lib/encryption/age';
 import { filePasswordKey, folderPasswordKey, forgetPassword, rememberPassword, rememberedPassword } from '../lib/encryption/passwords';
 import {
   encryptDirectory,
@@ -15,8 +14,9 @@ import {
   treeUnder,
   type EncryptedFolder,
 } from '../services/encryptionService';
-import { liveContent, openContent, type ContentSource } from '../services/contentService';
+import { fileReading, liveContent, unlockedContents, type ContentSource, type Decryption } from '../services/contentService';
 import type { Entry, ShelfDirectory, ShelfFile } from '../services/shelfService';
+import { usePasswordPrompt } from './usePasswordPrompt';
 import { useInvalidateShelf } from './useShelfQueries';
 
 /** What a row's menu offers for encryption. */
@@ -41,13 +41,6 @@ export function encryptionActions(entry: Entry, inside: 'encrypted' | 'plain' | 
     : { encrypt: true, removeEncryption: entry.encryptedFileCount > 0 };
 }
 
-interface Pending {
-  /** Tells one prompt from the next, even for the same name. */
-  id: number;
-  request: PasswordRequest;
-  resolve: (password: string | null) => void;
-}
-
 /**
  * Encrypted files on one shelf, in the browser: their passwords asked for once a tab and kept
  * (`passwords.ts`), their contents decrypted from the stored bytes (never through a link), and
@@ -58,44 +51,22 @@ interface Pending {
  * apart each would have to take as arguments.
  */
 export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
-  const [pending, setPending] = useState<Pending | null>(null);
-  const prompts = useRef(0);
+  const { ask, dialog } = usePasswordPrompt();
   const invalidate = useInvalidateShelf();
-
-  const ask = useCallback(
-    (request: PasswordRequest) => new Promise<string | null>((resolve) => setPending({ id: ++prompts.current, request, resolve })),
-    [],
-  );
-
-  // Closes only its own prompt: a password check still running when its prompt was cancelled ends
-  // after another prompt may have opened, and must leave that one open.
-  function settle(settled: Pending, password: string | null): void {
-    setPending((current) => (current === settled ? null : current));
-    settled.resolve(password);
-  }
-
-  const dialog: ReactNode = pending && (
-    <PasswordDialog
-      key={pending.id}
-      request={pending.request}
-      onDone={(password) => settle(pending, password)}
-      onCancel={() => settle(pending, null)}
-    />
-  );
 
   const operations = useMemo(() => {
     /**
      * The password kept under `key` while `opens` still accepts it, else one asked for that `opens`
-     * accepts, then kept. Null when cancelled.
+     * accepts, then kept. Null when cancelled, as `signal` cancels it.
      */
-    async function unlock(key: string, name: string, opens: (password: string) => Promise<boolean>): Promise<string | null> {
+    async function unlock(key: string, name: string, opens: (password: string) => Promise<boolean>, signal?: AbortSignal): Promise<string | null> {
       const kept = rememberedPassword(key);
       if (kept !== null) {
         if (await opens(kept)) return kept;
         forgetPassword(key);
       }
 
-      const password = await ask({ kind: 'unlock', name, verify: opens });
+      const password = await ask({ kind: 'unlock', name, verify: opens }, signal);
       if (password !== null) rememberPassword(key, password);
       return password;
     }
@@ -105,25 +76,39 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
       return unlock(folderPasswordKey(shelf, folder.directory.id), folder.directory.name, (given) => checkMatches(folder.check, given));
     }
 
-    /**
-     * An encrypted file's contents read from `source`, decrypted with its folder's password or its
-     * own, asked for when this tab has none that opens it. Null when cancelled.
-     */
-    async function contents(file: ShelfFile, source: ContentSource, signal?: AbortSignal): Promise<Blob | null> {
-      const [stored, folder] = await Promise.all([source.read(file.id, signal), source.encryptedFolderOf(file)]);
-      let plain: Blob | null = null;
-      const password = await unlock(filePasswordKey(shelf, folder?.directory.id, file.id), folder?.directory.name ?? file.name, async (given) => {
-        plain = await decryptBlobWith(stored, given, file.contentType);
-        return plain !== null;
-      });
-      return password === null ? null : plain;
+    /** An encrypted file's contents, with the password kept for its folder or for it, and that password asked for. */
+    const decryption: Decryption = {
+      read: async (file, source, signal) => {
+        const { key } = await passwordOf(file, source);
+        // Nothing is read of a file with no password kept, and no more than its header with a stale one.
+        const kept = rememberedPassword(key);
+        if (kept === null) return null;
+        const plain = await withStored(file, source, (stored) => decryptStreamWith(stored, kept, file.contentType), signal);
+        if (plain === null) forgetPassword(key);
+        return plain;
+      },
+      unlock: async (file, source, signal) => {
+        const { key, name } = await passwordOf(file, source);
+        return (await unlock(key, name, (given) => fileOpensWith(file, source, given), signal)) !== null;
+      },
+    };
+
+    /** What an encrypted file's password is kept under, and what it is the password of: its folder, or itself. */
+    async function passwordOf(file: ShelfFile, source: ContentSource): Promise<{ key: string; name: string }> {
+      const folder = await source.encryptedFolderOf(file);
+      return { key: filePasswordKey(shelf, folder?.directory.id, file.id), name: folder?.directory.name ?? file.name };
     }
 
     /** Whether `password` opens a stored encrypted file, downloading only as far as its header. */
-    async function fileOpensWith(file: ShelfFile, password: string): Promise<boolean> {
+    function fileOpensWith(file: ShelfFile, source: ContentSource, password: string): Promise<boolean> {
+      return withStored(file, source, (stored) => opensWith(stored, password));
+    }
+
+    /** What `consume` answers of a file's stored bytes; what it did not read is not downloaded. */
+    async function withStored<T>(file: ShelfFile, source: ContentSource, consume: (stored: ReadableStream<Uint8Array>) => Promise<T>, signal?: AbortSignal): Promise<T> {
       const reading = new AbortController();
       try {
-        return await opensWith(await openContent(shelf, file.id, reading.signal), password);
+        return await consume(await source.open(file.id, signal ? AbortSignal.any([signal, reading.signal]) : reading.signal));
       } finally {
         reading.abort();
       }
@@ -178,7 +163,7 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
       // longer be decrypted with a password of its own.
       const others: string[] = [];
       for (const file of (await filesUnder(shelf, directory.path)).filter((each) => each.encrypted)) {
-        if (!(await fileOpensWith(file, password))) others.push(file.name);
+        if (!(await fileOpensWith(file, liveContent(shelf), password))) others.push(file.name);
       }
       if (others.length > 0) throw new Error(`${others.join(', ')} ${others.length === 1 ? 'is' : 'are'} encrypted with another password. Remove that encryption first.`);
 
@@ -204,7 +189,7 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
       const { name } = entry.value;
       await runOrToastNamed(async () => {
         if (entry.kind === 'file') {
-          const plain = await contents(entry.value, liveContent(shelf));
+          const plain = await unlockedContents(fileReading(liveContent(shelf), decryption), entry.value);
           if (plain === null) return;
           await inPlace('Removing encryption from', name, 'Remove encryption', [entry.value], (file) => replaceContent(shelf, file, plain, false));
           return;
@@ -243,7 +228,7 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
       const encrypted = await encryptedFilesOf(directory);
       return unlock(folderPasswordKey(shelf, directory.id), directory.name, async (given) => {
         for (const file of encrypted) {
-          if (await fileOpensWith(file, given)) return true;
+          if (await fileOpensWith(file, liveContent(shelf), given)) return true;
         }
         return false;
       });
@@ -280,7 +265,7 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
       );
     }
 
-    return { folderPassword, contents, encrypt, removeEncryption };
+    return { folderPassword, decryption, encrypt, removeEncryption };
   }, [shelf, workFactor, ask, invalidate]);
 
   return { dialog, ...operations };

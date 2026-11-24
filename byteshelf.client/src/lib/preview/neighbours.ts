@@ -9,6 +9,16 @@ export interface Neighbours {
   next: ShelfFile | null;
 }
 
+/** A previewed file's place among the files beside it, and the moves to those before and after it. */
+export interface Steps {
+  position: number;
+  count: number;
+  /** Whether more files follow the ones counted. */
+  more: boolean;
+  toPrevious: (() => void) | null;
+  toNext: (() => void) | null;
+}
+
 /** Where the file `id` stands among `files`; null when it is not one of them. */
 export function neighboursOf(files: readonly ShelfFile[], id: string): Neighbours | null {
   const index = files.findIndex((file) => file.id === id);

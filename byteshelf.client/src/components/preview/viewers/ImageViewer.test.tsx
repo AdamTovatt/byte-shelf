@@ -52,7 +52,7 @@ describe('the image viewer', () => {
     };
     const image = await show('image/png', { ...blobReader(new Blob(['a'])), range: unreachable });
     await act(async () => void image.dispatchEvent(new Event('error')));
-    await vi.waitFor(() => expect(container.textContent).toBe('The server is unreachable.'));
+    await vi.waitFor(() => expect(container.textContent).toBe('The server is unreachable.Try again'));
 
     const content = { ...blobReader(new Blob(['a'])), url: unreachable };
     await act(async () => root.render(<ImageViewer key="second" file={{ name: 'a' } as ShelfFile} content={content} />));

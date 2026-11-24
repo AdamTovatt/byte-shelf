@@ -8,9 +8,11 @@ import { LoadError } from '../components/LoadError';
 import { NameLine } from '../components/MiddleTruncatedName';
 import { ShelfHeader } from '../components/ShelfHeader';
 import { fileOpening } from '../components/fileOpening';
+import { FilePreview } from '../components/preview/FilePreview';
 import { useEncryption } from '../hooks/useEncryption';
+import { useTrashPreview } from '../hooks/useTrashPreview';
 import { useEmptyTrash, useRestoreDeletion, useTrash } from '../hooks/useShelfQueries';
-import { deletedContent, fileReading } from '../services/contentService';
+import { deletedFile } from '../services/contentService';
 import { formatBytes, formatDate } from '../lib/format';
 import { nameOf } from '../lib/shelfPaths';
 import { runOrToast } from '../lib/utils';
@@ -18,14 +20,15 @@ import { useSubmit } from '../hooks/useSubmit';
 import { fetchDeletion, type TrashEntry } from '../services/shelfService';
 
 /**
- * What was deleted from a shelf and can still be restored, newest first. A deleted file can be saved
- * without restoring it, here as on a replica, where a file purged on the primary may still be.
+ * What was deleted from a shelf and can still be restored, newest first. A deleted file can be previewed
+ * and saved without restoring it, here as on a replica, where a file purged on the primary may still be.
  */
 export function TrashPage() {
   const shelf = useParams().shelf!;
   const { data: trash, isLoading, error } = useTrash(shelf);
   const restore = useRestoreDeletion(shelf);
   const encryption = useEncryption(shelf);
+  const preview = useTrashPreview(shelf, encryption.decryption);
   const [emptying, setEmptying] = useState(false);
 
   function onRestore(entry: TrashEntry): Promise<void> {
@@ -38,10 +41,9 @@ export function TrashPage() {
   /** Saves the file a file deletion took, as the files page saves a live one. */
   function onDownload(entry: TrashEntry): Promise<void> {
     return runOrToast(async () => {
-      const deletion = await fetchDeletion(shelf, entry.deletionId);
-      const file = deletion.tree.files.find((taken) => taken.id === entry.entryId);
-      if (!file) throw new Error(`${entry.path} is no longer in the trash.`);
-      await fileOpening(fileReading(deletedContent(shelf, deletion), encryption.contents)).save([file]);
+      const taken = deletedFile(shelf, await fetchDeletion(shelf, entry.deletionId), encryption.decryption);
+      if (!taken) throw new Error(`${entry.path} is no longer in the trash.`);
+      await fileOpening(taken.reading).save([taken.file]);
     }, 'Could not save the file');
   }
 
@@ -65,7 +67,9 @@ export function TrashPage() {
               <div key={entry.deletionId} className="flex items-center gap-3 px-4 py-3">
                 <Icon icon={entry.kind === 'directory' ? iconMap.folder : getFileIcon(nameOf(entry.path))} size={18} className="shrink-0 text-muted" />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-body-md text-fg">{entry.path}</div>
+                  {entry.kind === 'file'
+                    ? <button type="button" onClick={() => preview.open(entry.deletionId)} className="block max-w-full truncate rounded text-left text-body-md text-fg hover:underline">{entry.path}</button>
+                    : <div className="truncate text-body-md text-fg">{entry.path}</div>}
                   <div className="flex items-center gap-1 text-body-sm text-muted">
                     <span>{describeDeletion(entry)}</span>
                     {entry.kind === 'directory' && <FolderDownloadMark />}
@@ -74,9 +78,14 @@ export function TrashPage() {
                 {/* Stacked on a phone, so the path and its details keep the row's width. */}
                 <div className="flex shrink-0 flex-col items-stretch gap-2 sm:flex-row">
                   {entry.kind === 'file' && (
-                    <Button size="sm" variant="secondary" icon={<Icon icon={iconMap.download} size={14} />} onClick={() => void onDownload(entry)} aria-label={`Download ${entry.path}`}>
-                      Download
-                    </Button>
+                    <>
+                      <Button size="sm" variant="secondary" icon={<Icon icon={iconMap.view} size={14} />} onClick={() => preview.open(entry.deletionId)} aria-label={`Open ${entry.path}`}>
+                        Open
+                      </Button>
+                      <Button size="sm" variant="secondary" icon={<Icon icon={iconMap.download} size={14} />} onClick={() => void onDownload(entry)} aria-label={`Download ${entry.path}`}>
+                        Download
+                      </Button>
+                    </>
                   )}
                   <Button size="sm" variant="secondary" icon={<Icon icon={iconMap.restore} size={14} />} onClick={() => void onRestore(entry)} aria-label={`Restore ${entry.path}`}>
                     Restore
@@ -89,7 +98,7 @@ export function TrashPage() {
       )}
 
       {emptying && <EmptyTrashDialog shelf={shelf} onClose={() => setEmptying(false)} />}
-      {encryption.dialog}
+      {preview.isOpen ? <FilePreview {...preview.shown} steps={null}>{encryption.dialog}</FilePreview> : encryption.dialog}
     </PageLayout>
   );
 }

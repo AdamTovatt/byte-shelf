@@ -32,17 +32,24 @@ export async function encryptBlob(plain: Blob, password: string, type: string, w
 
 /** The contents of the age file `encrypted`, typed `type`. */
 export async function decryptBlob(encrypted: Blob, password: string, type: string): Promise<Blob> {
-  return asBlob(await openStream(encrypted.stream(), password), type);
+  return decryptStream(encrypted.stream(), password, type);
 }
 
-/** As {@link decryptBlob}, or null when `password` does not open it. */
-export async function decryptBlobWith(encrypted: Blob, password: string, type: string): Promise<Blob | null> {
+/**
+ * The contents of the age file `encrypted`, typed `type`, or null when `password` does not open it: only
+ * its header is read then.
+ */
+export async function decryptStreamWith(encrypted: ReadableStream<Uint8Array>, password: string, type: string): Promise<Blob | null> {
   try {
-    return await decryptBlob(encrypted, password, type);
+    return await decryptStream(encrypted, password, type);
   } catch (caught) {
     if (caught instanceof WrongPasswordError) return null;
     throw caught;
   }
+}
+
+async function decryptStream(encrypted: ReadableStream<Uint8Array>, password: string, type: string): Promise<Blob> {
+  return asBlob(await openStream(encrypted, password), type);
 }
 
 function encrypterFor(password: string, workFactor: number): Encrypter {

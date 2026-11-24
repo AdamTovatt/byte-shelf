@@ -65,8 +65,8 @@ export function ShelfPage() {
   const { data: listing, isLoading, error } = useListing(shelf, path);
   const uploads = useUploads(shelf);
   const encryption = useEncryption(shelf);
-  const { contents: decrypted } = encryption;
-  const reading = useMemo(() => fileReading(liveContent(shelf), decrypted), [shelf, decrypted]);
+  const { decryption } = encryption;
+  const reading = useMemo(() => fileReading(liveContent(shelf), decryption), [shelf, decryption]);
   const opening = fileOpening(reading);
   const deleteEntry = useDeleteEntry(shelf);
   const restore = useRestoreDeletion(shelf);
@@ -111,7 +111,7 @@ export function ShelfPage() {
   /** Opens a row: a folder by going into it, a file in the preview when a viewer takes it, else in a new tab. */
   function open(entry: Entry): void {
     if (entry.kind === 'directory') navigate(shelfRoute(shelf, entry.value.path));
-    else if (preview.takes(entry.value)) preview.open(entry.value);
+    else if (preview.showsInPreview(entry.value)) preview.open(entry.value);
     else void opening.open(entry.value);
   }
 
@@ -204,7 +204,7 @@ export function ShelfPage() {
     if (!searching) return listing?.files ?? [];
     return filters.duplicates ? duplicatesIn(duplicates.data) : foundIn(found.data);
   }, [searching, filters.duplicates, listing, duplicates.data, found.data]);
-  const preview = useShelfPreview(shelf, { files: filesShown, fetchMore: fetchMoreFiles() });
+  const preview = useShelfPreview(shelf, { files: filesShown, fetchMore: fetchMoreFiles() }, reading);
 
   /** Fetches the search's next page for the preview; undefined when none follows. */
   function fetchMoreFiles(): ShownFiles['fetchMore'] {
@@ -249,7 +249,7 @@ export function ShelfPage() {
           onSelectClick: (modifiers) => selection.handleSelectClick(entry.value.id, modifiers),
           onToggle: () => selection.toggle(entry.value.id),
         } : undefined}
-        opensIn={entry.kind === 'file' && preview.takes(entry.value) ? 'preview' : 'tab'}
+        opensIn={entry.kind === 'file' && preview.showsInPreview(entry.value) ? 'preview' : 'tab'}
         onOpen={() => open(entry)}
         onOpenInTab={entry.kind === 'file' && opensInTab(entry.value) ? () => void opening.open(entry.value) : undefined}
         onPrefetch={entry.kind === 'directory' ? () => prefetchListing(entry.value.path) : undefined}
@@ -421,8 +421,9 @@ export function ShelfPage() {
       {moving && <MoveDialog shelf={shelf} entries={moving} onClose={() => setMoving(null)} />}
       {describing && <DescriptionDialog shelf={shelf} file={describing} onClose={() => setDescribing(null)} />}
       {detailing && <FileDetailsDialog shelf={shelf} file={detailing} onClose={() => setDetailing(null)} />}
-      {preview.isOpen && <FilePreview {...preview.shown} reading={reading} detailsOn={shelf} />}
-      {encryption.dialog}
+      {preview.isOpen
+        ? <FilePreview {...preview.shown} detailsOn={shelf}>{encryption.dialog}</FilePreview>
+        : encryption.dialog}
     </div>
   );
 }

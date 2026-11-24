@@ -104,11 +104,12 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
-        public async Task GetOpenContent_MayBeCachedOnlyByTheBrowserThatAsked()
+        public async Task GetOpenContent_MayBeCachedOnlyByTheBrowserThatAsked_WhichAsksAgainBeforeUsingIt()
         {
             HttpResponseMessage response = await SendWithCookieAsync(HttpMethod.Get, OpenUri(), (await SignInAsync(ServerTestHost.AdminEmail)).Cookie);
 
             Assert.True(response.Headers.CacheControl?.Private);
+            Assert.True(response.Headers.CacheControl?.NoCache);
         }
 
         [Fact]
