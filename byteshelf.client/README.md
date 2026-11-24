@@ -155,14 +155,12 @@ npm run codegen    # in a second terminal
   in a tab, is shown from a local blob: in a tab for images, PDFs, plain text, audio and video, saved for
   every other type, since a blob runs as the app. Opening one asks for its password; reached by previous,
   next or a reload it shows Unlock instead. A plugin's folder viewer stores a file
-  (`services/fileStoring.ts`) encrypted with its encrypted folder's password, or with that of the file it is
-  stored over, and sends nothing to a folder that is no longer where it was, or whose encryption was removed
-  or is now another folder's. Reading a file asks for no password and answers that it is locked; unlocking
-  it asks, and answers the contents (`Decryption` in `services/fileReading.ts`). A password is asked for
-  once and kept in the tab's `sessionStorage` (an encrypted folder's under the folder), taken out of any tab
-  the app opens, and forgotten on sign-in, as the session ends, and when the app starts with none (a tab the
-  browser restores after a sign-out). A plain folder's Remove encryption leaves out the files of an
-  encrypted folder below it, which has its own.
+  encrypted or plain as `StoreFile` (`services/fileStoring.ts`) says. Reading a file asks for no password and
+  answers that it is locked; unlocking it asks, and answers the contents (`Decryption` in
+  `services/fileReading.ts`). A password is asked for once and kept in the tab's `sessionStorage` (an
+  encrypted folder's under the folder), taken out of any tab the app opens, and forgotten on sign-in, as the
+  session ends, and when the app starts with none (a tab the browser restores after a sign-out). A plain
+  folder's Remove encryption leaves out the files of an encrypted folder below it, which has its own.
 - **Pages and layout:** a shelf's settings are tabs that are routes, `/shelves/:shelf/settings/:tab`
   (`SHELF_SETTINGS_TABS` in `lib/shelfPaths.ts` lists them; the page picks the tab from the route and
   sends any other to the first tab the user sees: General for an admin, Links for anyone else).
@@ -181,7 +179,7 @@ npm run codegen    # in a second terminal
   file's too, whose password is asked for once the action reads it (`hooks/useFileActions.tsx`), and reads
   and writes its documents about files with `hooks/usePluginDocuments.ts`, for which its viewers and
   dialogs are drawn in a `PluginIdentity`. It may also add folder types, found by a folder's name alone
-  (`lib/plugins/folderTypes.ts`), whose viewers get the folder's contents
+  (`lib/plugins/folderTypeLookup.ts`), whose viewers get the folder's contents
   (`lib/plugins/folderContents.ts`). Each viewer, icon, menu item and dialog is drawn in an error
   boundary. What throws as it goes is for the `CleanupBoundary` around the page, a folder in it, and the
   dialogs shown by code.
@@ -192,7 +190,7 @@ npm run codegen    # in a second terminal
   3 seconds once for each visit to a shelf. One whose plugin loads later keeps its listing, and one whose
   viewer throws shows it; the listing then offers the viewer too, and the folder opens in it when it is next
   opened from somewhere else. The viewer, its contents and its lock are of one folder at one path, encrypted
-  one way (`folderKey` in `services/openFolder.ts`). An encrypted one asks for its password as it opens
+  one way (`folderKey` in `lib/openFolder.ts`). An encrypted one asks for its password as it opens
   (`hooks/useFolderLock.ts`); cancelled, its listing shows, with Unlock. A file the viewer opens is previewed
   alone, and a file dropped on it, which it does not take, is refused. What goes on with a shelf's files
   (uploads, file actions) goes on from a listing to a viewer and back (`hooks/useShelfWork.ts`).

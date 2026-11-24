@@ -1,6 +1,6 @@
 import type { FileReading } from '../../services/fileReading';
 import type { StoreFile } from '../../services/fileStoring';
-import type { OpenFolder } from '../../services/openFolder';
+import type { OpenFolder } from '../openFolder';
 import { deleteFile, fetchTree, moveFile, requireDirectoryAt, type ShelfFile } from '../../services/shelfService';
 import { lockableReader, type LockableReader } from '../content/lockableReader';
 import { eitherAborts, noPasswordGiven } from '../abort';

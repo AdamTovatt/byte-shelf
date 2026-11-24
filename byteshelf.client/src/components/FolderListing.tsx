@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
@@ -18,8 +18,8 @@ import {
   getFileIcon,
   iconMap,
 } from '../ui';
-import { ErrorBoundary } from './ErrorBoundary';
 import { FileDetailsDialog } from './FileDetailsDialog';
+import { FolderIcon } from './FolderIcon';
 import { FormDialog } from './FormDialog';
 import { LoadError } from './LoadError';
 import { PagedResults } from './PagedResults';
@@ -51,8 +51,8 @@ import { DraggableEntryRow, DroppableCrumb, EntryDragPreview } from './EntryDrag
 import { useEntryDragAndDrop } from '../hooks/useEntryDragAndDrop';
 import { formatBytes, formatTime } from '../lib/format';
 import type { FolderType } from '../lib/plugins/folderType';
-import { folderTypeOf } from '../lib/plugins/folderTypes';
-import { folderContentsRoute, joinPath, parentPath, relativeTo, shelfRoute } from '../lib/shelfPaths';
+import { folderTypeOf } from '../lib/plugins/folderTypeLookup';
+import { folderListingRoute, joinPath, parentPath, relativeTo, shelfRoute } from '../lib/shelfPaths';
 import { copyWhenReady } from '../lib/clipboard';
 import { runOrToast } from '../lib/utils';
 import { useIsOverlayOpen } from '../ui/hooks/useOverlay';
@@ -249,7 +249,7 @@ export function FolderListing({ shelf, path, work: { passwords, encryption, read
         opensIn={entry.kind === 'file' && preview.showsInPreview(entry.value) ? 'preview' : 'tab'}
         type={type}
         onOpen={() => open(entry)}
-        onShowContents={type ? () => navigate(folderContentsRoute(shelf, entry.value.path)) : undefined}
+        onShowContents={type ? () => navigate(folderListingRoute(shelf, entry.value.path)) : undefined}
         onOpenInTab={entry.kind === 'file' && opensInTab(entry.value) ? () => void openFile(openableHere(entry.value)) : undefined}
         onPrefetch={entry.kind === 'directory' ? () => prefetchListing(entry.value.path) : undefined}
         onDownload={entry.kind === 'file' ? () => void saveFiles([openableHere(entry.value)]) : undefined}
@@ -612,17 +612,6 @@ function EntryRow({ entry, label, selection, opensIn, type, onOpen, onShowConten
         <DropdownItem icon={<Icon icon={iconMap.delete} size={16} />} variant="danger" onClick={onDelete}>Delete</DropdownItem>
       </Dropdown>
     </div>
-  );
-}
-
-/** A folder's icon: its type's, or a plain one's, as while the type's loads or when it cannot be drawn. */
-function FolderIcon({ type, size, className }: { type: FolderType | null; size: number; className?: string }) {
-  const plain = <Icon icon={iconMap.folder} size={size} className={className} />;
-  if (!type) return plain;
-  return (
-    <ErrorBoundary key={type.suffix} fallback={plain}>
-      <Suspense fallback={plain}><Icon icon={type.icon} size={size} className={className} /></Suspense>
-    </ErrorBoundary>
   );
 }
 

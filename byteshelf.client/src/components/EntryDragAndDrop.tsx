@@ -2,7 +2,10 @@ import type { ReactNode } from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { Icon, cn, getFileIcon, iconMap } from '../ui';
 import { nameOrCount, type Entry } from '../services/shelfService';
+import { usePluginHost } from '../hooks/usePluginHost';
 import { folderDropId } from '../lib/dropTargets';
+import { folderTypeOf } from '../lib/plugins/folderTypeLookup';
+import { FolderIcon } from './FolderIcon';
 
 // Moving rows by dragging them: a row drags, a folder row or a folder's breadcrumb crumb takes the
 // drop. dnd-kit works on pointer events, so it never meets the browser's own drag events that
@@ -40,11 +43,14 @@ export function DroppableCrumb({ folderPath, disabled, children }: { folderPath:
 
 /** What follows the pointer while dragging: the one entry's icon and name, or how many there are. */
 export function EntryDragPreview({ entries }: { entries: Entry[] }) {
+  const { plugins } = usePluginHost();
   const single = entries.length === 1 ? entries[0] : null;
-  const icon = single ? (single.kind === 'directory' ? iconMap.folder : getFileIcon(single.value.name)) : iconMap.file;
+  const icon = { size: 18, className: 'shrink-0 text-muted' };
   return (
     <div className="flex max-w-xs items-center gap-2 rounded-lg border border-border bg-panel px-3 py-1.5 text-body-md text-fg shadow-lg">
-      <Icon icon={icon} size={18} className="shrink-0 text-muted" />
+      {single?.kind === 'directory'
+        ? <FolderIcon type={folderTypeOf(plugins, single.value.name)?.type ?? null} {...icon} />
+        : <Icon icon={single ? getFileIcon(single.value.name) : iconMap.file} {...icon} />}
       <span className="truncate">{nameOrCount(entries)}</span>
     </div>
   );

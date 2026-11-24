@@ -101,6 +101,31 @@ describe('dialogs shown by code', () => {
     expect(names()).toEqual([]);
   });
 
+  it('leave the others there as one throws as it closes, though they would too', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    // Without StrictMode, where they would as they are drawn too.
+    act(() => root.render(<DialogHost><Page /></DialogHost>));
+    let drawn = 0;
+    function Failing({ name, close }: { name: string; close: () => void }) {
+      useEffect(() => {
+        drawn++;
+        return () => {
+          // Not for ever, which would be tried for as long.
+          if (drawn < 50) throw new Error('It failed as it went.');
+        };
+      }, []);
+      return <button onClick={close}>{name}</button>;
+    }
+    act(() => void show((close) => <Failing name="First" close={close} />));
+    act(() => void show((close) => <Failing name="Second" close={close} />));
+
+    await press('First');
+
+    expect(names()).toEqual(['Second']);
+    expect(drawn).toBe(3);
+    drawn = 50;
+  });
+
   it('close as the page that showed them is left, which shows no more', async () => {
     const { closed } = showButton('First');
 

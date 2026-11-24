@@ -1,25 +1,20 @@
 // @vitest-environment happy-dom
 import { act, useEffect } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
 import toast from 'react-hot-toast';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DialogHost } from '../contexts/DialogHost';
-import { ShelfPage } from './ShelfPage';
-import { saveTokens } from '../services/authService';
-import { SHELF_ROUTE_PATTERNS } from '../lib/shelfPaths';
 import { queryKeys } from '../lib/queryKeys';
 import type { RunningPlugin } from '../lib/plugins/pluginHost';
 import type { FileActionContext } from '../lib/plugins/fileAction';
+import type { ShelfFile } from '../services/shelfService';
 import { Modal } from '../ui';
-import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { encryptBlob } from '../lib/encryption/age';
 import { removePdfViewer, restorePdfViewer, stubTabs } from '../test/browser';
 import { button, dialogTitles, dimmingTitles, field, fill, labelled, press, shows, submitPassword, untilFound } from '../test/dom';
-import { inAnHour, json, stubServer } from '../test/fakeServer';
-import { pageHistory } from '../test/pageHistory';
-import { shelfDirectory } from '../test/shelfFiles';
+import { json, stubServer } from '../test/fakeServer';
+import type { pageHistory } from '../test/pageHistory';
+import { shelfDirectory, shelfFile } from '../test/shelfFiles';
+import { renderShelfPage, row, signIn } from '../test/shelfPage';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -32,20 +27,13 @@ vi.mock('../hooks/usePluginHost', () => ({
   usePluginsAwaited: () => !plugins.settled,
 }));
 
-function file(name: string) {
-  return {
-    id: `file:${name}`, shelfId: 's', directoryId: 'dir:/', path: `/${name}`, name, contentType: 'text/plain',
-    sizeBytes: 1, sha256: '', createdAt: '2026-11-02T00:00:00Z', updatedAt: '2026-11-02T00:00:00Z', encrypted: false,
-  };
-}
-
 const LIMIT = 100 * 1024 * 1024;
 
 /** The files in the shelf's root; a test adds to it to change what the next listing answers. */
-let rootFiles: ReturnType<typeof file>[];
+let rootFiles: ShelfFile[];
 
 /** The files a search found that are not in the root; a test adds to it. */
-let elsewhere: ReturnType<typeof file>[];
+let elsewhere: ShelfFile[];
 
 function listing(path: string) {
   return path === '/'
@@ -55,7 +43,7 @@ function listing(path: string) {
 
 /** A group of `name` in the root and a copy of it in /reports. */
 function duplicateGroup(name: string, sha256: string) {
-  return { sha256, sizeBytes: 1, repeatedBytes: 1, files: [file(name), { ...file(name), id: `file:copy-${name}`, path: `/reports/${name}` }] };
+  return { sha256, sizeBytes: 1, repeatedBytes: 1, files: [shelfFile(name), shelfFile(name, { id: `copy-${name}`, path: `/reports/${name}` })] };
 }
 
 /** What the search for duplicates answers: a page with a.txt's group, then, after its cursor, one with b.txt's. */
@@ -86,24 +74,22 @@ let findNothing: boolean;
 /** What search answers: a page with /reports/c.txt, then, after its cursor, one with /reports/d.txt, and, when there is a third, one with /reports/e.txt. */
 function searched(after: string | null) {
   if (findNothing) return { files: [], nextCursor: null };
-  if (after === null) return { files: [{ ...file('c.txt'), path: '/reports/c.txt' }], nextCursor: 'next' };
-  if (after === 'third') return { files: [{ ...file('e.txt'), path: '/reports/e.txt' }], nextCursor: null };
-  return { files: [{ ...file('d.txt'), path: '/reports/d.txt', contentType: secondPageType }], nextCursor: hasThirdPage ? 'third' : null };
+  if (after === null) return { files: [shelfFile('c.txt', { path: '/reports/c.txt' })], nextCursor: 'next' };
+  if (after === 'third') return { files: [shelfFile('e.txt', { path: '/reports/e.txt' })], nextCursor: null };
+  return { files: [shelfFile('d.txt', { path: '/reports/d.txt', contentType: secondPageType })], nextCursor: hasThirdPage ? 'third' : null };
 }
 
 describe('the shelf page\'s rows', () => {
-  let root: Root;
+  let leave: () => void;
   let container: HTMLDivElement;
   let client: QueryClient;
   let sent: string[];
   let page: ReturnType<typeof pageHistory>;
 
   beforeEach(async () => {
-    localStorage.clear();
-    installFakeWebLocks();
-    saveTokens({ token: 't', expiresAt: inAnHour(), refreshToken: 'r' });
-    rootFiles = [file('a.txt'), file('b.txt')];
-    elsewhere = [...['c.txt', 'd.txt', 'e.txt'].map((name) => ({ ...file(name), path: `/reports/${name}` })), duplicateGroup('a.txt', '').files[1]];
+    signIn();
+    rootFiles = [shelfFile('a.txt'), shelfFile('b.txt')];
+    elsewhere = [...['c.txt', 'd.txt', 'e.txt'].map((name) => shelfFile(name, { path: `/reports/${name}` })), duplicateGroup('a.txt', '').files[1]];
     searchFails = false;
     secondPageType = 'text/plain';
     hasThirdPage = false;
@@ -134,42 +120,21 @@ describe('the shelf page\'s rows', () => {
       if (url.pathname === '/api/shelves/docs/files/metadata') return json({ readable: false, readAt: null });
       return url.pathname === '/api/shelves/docs/entries' ? json(listing(url.searchParams.get('path')!)) : json({ message: 'Not here.' }, 404);
     });
-    container = document.body.appendChild(document.createElement('div'));
     await renderAt('/shelves/docs');
     await vi.waitFor(() => expect(row('b.txt')).not.toBeNull());
   });
 
   /** Opens the page at `url` in a tab of its own: no history and nothing cached. */
   async function renderAt(url: string): Promise<void> {
-    root = createRoot(container);
-    page = pageHistory();
-    client = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0 } } });
-    await act(async () => root.render(
-      <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={[url]}>
-          <DialogHost>
-            <Routes>
-              <Route path={SHELF_ROUTE_PATTERNS.shelf} element={<ShelfPage />} />
-              <Route path={SHELF_ROUTE_PATTERNS.files} element={<ShelfPage />} />
-            </Routes>
-          </DialogHost>
-          <page.Follow />
-        </MemoryRouter>
-      </QueryClientProvider>,
-    ));
+    ({ container, client, page, leave } = await renderShelfPage(url));
   }
 
   afterEach(() => {
-    act(() => root.unmount());
-    document.body.innerHTML = '';
+    leave();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     restorePdfViewer();
   });
-
-  function row(name: string): HTMLButtonElement | null {
-    return container.querySelector<HTMLButtonElement>(`[data-selectable-row] button[aria-label="${name}"]`);
-  }
 
   /** The rows selected, by name. */
   function selected(): string[] {
@@ -386,7 +351,7 @@ describe('the shelf page\'s rows', () => {
 
     await vi.waitFor(() => expect(document.body.textContent).toContain('The server does not read files of this type.'));
     expect(document.body.textContent).toContain('Details of a.txt');
-    expect(sent).toContain('GET /api/shelves/docs/files/metadata?id=file%3Aa.txt Bearer t');
+    expect(sent).toContain('GET /api/shelves/docs/files/metadata?id=a.txt Bearer t');
   });
 
   /** The name of the file previewed, and where it says it stands; null when nothing is previewed. */
@@ -434,7 +399,7 @@ describe('the shelf page\'s rows', () => {
         }],
         failures: new Map(),
       };
-      act(() => root.unmount());
+      leave();
       await renderAt('/shelves/docs');
       await vi.waitFor(() => expect(row('b.txt')).not.toBeNull());
     });
@@ -542,7 +507,7 @@ describe('the shelf page\'s rows', () => {
   it('opens a file whose viewer is unavailable here in the preview while plugins are loading, which may show it', async () => {
     removePdfViewer();
     const tabs = stubTabs();
-    rootFiles = [{ ...file('a.pdf'), contentType: 'application/pdf' }];
+    rootFiles = [shelfFile('a.pdf', { contentType: 'application/pdf' })];
     plugins.settled = false;
     await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
     await vi.waitFor(() => expect(row('a.pdf')).not.toBeNull());
@@ -555,7 +520,7 @@ describe('the shelf page\'s rows', () => {
 
   it('opens a file no viewer takes in the preview while plugins are loading, which may take it', async () => {
     const tabs = stubTabs();
-    rootFiles = [{ ...file('a.zip'), contentType: 'application/zip' }];
+    rootFiles = [shelfFile('a.zip', { contentType: 'application/zip' })];
     plugins.settled = false;
     await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
     await vi.waitFor(() => expect(row('a.zip')).not.toBeNull());
@@ -569,7 +534,7 @@ describe('the shelf page\'s rows', () => {
   it('previews a file on Enter, in the URL, and Back closes it', async () => {
     key(row('b.txt')!, { key: 'Enter' });
     await previews({ name: 'b.txt', position: '2 of 2' });
-    expect(page.url).toBe('/shelves/docs?preview=file%3Ab.txt');
+    expect(page.url).toBe('/shelves/docs?preview=b.txt');
 
     page.back();
     await previews(null);
@@ -588,7 +553,7 @@ describe('the shelf page\'s rows', () => {
 
     key(document, { key: 'ArrowRight' });
     await previews({ name: 'b.txt', position: '2 of 2' });
-    expect(page.url).toBe('/shelves/docs?preview=file%3Ab.txt');
+    expect(page.url).toBe('/shelves/docs?preview=b.txt');
     key(document, { key: 'Escape' });
 
     await previews(null);
@@ -597,7 +562,7 @@ describe('the shelf page\'s rows', () => {
   });
 
   it('goes only through the files a viewer takes', async () => {
-    rootFiles = [file('a.txt'), { ...file('a.zip'), contentType: 'application/zip' }, file('b.txt')];
+    rootFiles = [shelfFile('a.txt'), shelfFile('a.zip', { contentType: 'application/zip' }), shelfFile('b.txt')];
     await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
     await vi.waitFor(() => expect(row('a.zip')).not.toBeNull());
 
@@ -612,15 +577,15 @@ describe('the shelf page\'s rows', () => {
   it('opens a file no viewer takes in a tab, as its menu opens any file', async () => {
     vi.stubGlobal('isSecureContext', true);
     const tabs = stubTabs();
-    rootFiles = [file('a.txt'), { ...file('a.zip'), contentType: 'application/zip' }];
+    rootFiles = [shelfFile('a.txt'), shelfFile('a.zip', { contentType: 'application/zip' })];
     await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
     await vi.waitFor(() => expect(row('a.zip')).not.toBeNull());
 
     key(row('a.zip')!, { key: 'Enter' });
-    await vi.waitFor(() => expect(tabs.map((tab) => tab.location.href)).toEqual(['/api/open/docs/content?id=file%3Aa.zip']));
+    await vi.waitFor(() => expect(tabs.map((tab) => tab.location.href)).toEqual(['/api/open/docs/content?id=a.zip']));
     click(container.querySelector('button[aria-label="Actions for a.txt"]')!);
     click(Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Open in new tab')!);
-    await vi.waitFor(() => expect(tabs.map((tab) => tab.location.href)).toContain('/api/open/docs/content?id=file%3Aa.txt'));
+    await vi.waitFor(() => expect(tabs.map((tab) => tab.location.href)).toContain('/api/open/docs/content?id=a.txt'));
     expect(previewed()).toBeNull();
   });
 
@@ -722,7 +687,7 @@ describe('the shelf page\'s rows', () => {
 
   it('offers Open in new tab only for what a tab shows', async () => {
     vi.stubGlobal('isSecureContext', false);
-    rootFiles = [file('a.txt'), { ...file('a.svg'), contentType: 'image/svg+xml' }];
+    rootFiles = [shelfFile('a.txt'), shelfFile('a.svg', { contentType: 'image/svg+xml' })];
     await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
     await vi.waitFor(() => expect(row('a.svg')).not.toBeNull());
     const items = (name: string) => {
@@ -738,16 +703,16 @@ describe('the shelf page\'s rows', () => {
     ['a file of the folder among the others', 'a.txt', '1 of 2'],
     ['one elsewhere alone', 'c.txt', undefined],
   ])('keeps the preview of %s on a reload', async (_which, name, position) => {
-    act(() => root.unmount());
+    leave();
 
-    await renderAt(`/shelves/docs?preview=file%3A${name}`);
+    await renderAt(`/shelves/docs?preview=${name}`);
 
     await previews({ name, position });
   });
 
   it('closes one a link opened by staying on the page', async () => {
-    act(() => root.unmount());
-    await renderAt('/shelves/docs?preview=file%3Aa.txt');
+    leave();
+    await renderAt('/shelves/docs?preview=a.txt');
     await previews({ name: 'a.txt', position: '1 of 2' });
 
     key(document, { key: 'Escape' });
@@ -775,10 +740,10 @@ describe('the shelf page\'s rows', () => {
   });
 
   it('asks again for a record that failed to load', async () => {
-    act(() => root.unmount());
+    leave();
     recordFails = true;
 
-    await renderAt('/shelves/docs?preview=file%3Ac.txt');
+    await renderAt('/shelves/docs?preview=c.txt');
 
     await previews({ name: 'c.txt', position: undefined });
   });
@@ -789,7 +754,7 @@ describe('the shelf page\'s rows', () => {
   ])('shows a file %s since it was previewed as it is listed now, not as it was', async (_how, encrypted, shown) => {
     sessionStorage.clear();
     const change = async (to: boolean) => {
-      rootFiles = [file('a.txt'), { ...file('b.txt'), encrypted: to }];
+      rootFiles = [shelfFile('a.txt'), shelfFile('b.txt', { encrypted: to })];
       await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
     };
     await change(encrypted);
@@ -811,8 +776,8 @@ describe('the shelf page\'s rows', () => {
   describe('of an encrypted file', () => {
     beforeEach(async () => {
       sessionStorage.clear();
-      rootFiles = [file('a.txt'), { ...file('b.txt'), encrypted: true }];
-      act(() => root.unmount());
+      rootFiles = [shelfFile('a.txt'), shelfFile('b.txt', { encrypted: true })];
+      leave();
       await renderAt('/shelves/docs');
       await vi.waitFor(() => expect(row('b.txt')).not.toBeNull());
     });
@@ -856,8 +821,8 @@ describe('the shelf page\'s rows', () => {
       await previews({ name: 'b.txt', position: '2 of 2' });
       await locked(false);
 
-      act(() => root.unmount());
-      await renderAt('/shelves/docs?preview=file%3Ab.txt');
+      leave();
+      await renderAt('/shelves/docs?preview=b.txt');
       await previews({ name: 'b.txt', position: '2 of 2' });
       await locked(false);
       expect(requests('GET /api/shelves/docs/content')).toHaveLength(1);
@@ -866,8 +831,8 @@ describe('the shelf page\'s rows', () => {
     /** Presses Download in the preview of one too large to show unasked, which asks for its password; answers what is saved. */
     async function downloadLarge(): Promise<string[]> {
       stored = await encryptBlob(new Blob(['the secret']), 'pw', 'text/plain', 10);
-      rootFiles = [file('a.txt'), { ...file('b.txt'), encrypted: true, sizeBytes: LIMIT + 1 }];
-      act(() => root.unmount());
+      rootFiles = [shelfFile('a.txt'), shelfFile('b.txt', { encrypted: true, sizeBytes: LIMIT + 1 })];
+      leave();
       await renderAt('/shelves/docs');
       await vi.waitFor(() => expect(row('b.txt')).not.toBeNull());
       const saved: string[] = [];
@@ -929,7 +894,7 @@ describe('the shelf page\'s rows', () => {
         }],
         failures: new Map(),
       };
-      act(() => root.unmount());
+      leave();
       await renderAt('/shelves/docs');
       await vi.waitFor(() => expect(row('b.txt')).not.toBeNull());
       click(document.querySelector('button[aria-label="Actions for b.txt"]')!);
@@ -957,12 +922,12 @@ describe('the shelf page\'s rows', () => {
     vi.stubGlobal('isSecureContext', true);
     removePdfViewer();
     const tabs = stubTabs();
-    rootFiles = [file('a.txt'), { ...file('b.pdf'), contentType: 'application/pdf' }];
+    rootFiles = [shelfFile('a.txt'), shelfFile('b.pdf', { contentType: 'application/pdf' })];
     await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
     await vi.waitFor(() => expect(row('b.pdf')).not.toBeNull());
 
     key(row('b.pdf')!, { key: 'Enter' });
-    await vi.waitFor(() => expect(tabs.map((tab) => tab.location.href)).toEqual(['/api/open/docs/content?id=file%3Ab.pdf']));
+    await vi.waitFor(() => expect(tabs.map((tab) => tab.location.href)).toEqual(['/api/open/docs/content?id=b.pdf']));
     expect(row('b.pdf')!.title).toContain('new tab');
     expect(row('a.txt')!.title).not.toContain('new tab');
     expect(previewed()).toBeNull();
@@ -1009,11 +974,11 @@ describe('the shelf page\'s rows', () => {
   });
 
   it('does not ask again for a record that is not there', async () => {
-    const asked = () => requests('GET /api/shelves/docs/files?id=file%3Anone ').length;
+    const asked = () => requests('GET /api/shelves/docs/files?id=none ').length;
     vi.spyOn(toast, 'error').mockReturnValue('');
-    act(() => root.unmount());
+    leave();
 
-    await renderAt('/shelves/docs?preview=file%3Anone');
+    await renderAt('/shelves/docs?preview=none');
 
     await previews(null);
     expect(asked()).toBe(1);
@@ -1022,7 +987,7 @@ describe('the shelf page\'s rows', () => {
   it('fetches the first subfolders ahead as a folder opens, and not again as its listing is refetched', async () => {
     await vi.waitFor(() => expect(listingRequests('/reports')).toBe(1));
 
-    rootFiles = [...rootFiles, file('c.txt')];
+    rootFiles = [...rootFiles, shelfFile('c.txt')];
     await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
     await vi.waitFor(() => expect(row('c.txt')).not.toBeNull());
 

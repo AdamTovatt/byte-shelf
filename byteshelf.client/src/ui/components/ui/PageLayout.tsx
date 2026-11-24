@@ -9,13 +9,15 @@ import { PAGE_CONTENT_WIDTH } from './pageWidth';
  * - `spacious` (`p-8 md:p-12 lg:p-16`) — the top-level destinations: dashboard, search, the
  *   template / pipeline / checklist lists, the organization pages.
  * - `compact` (`p-4`) — a page that wants its content close to the frame.
+ * - `header` (`standard` with nothing below) — the top of a page whose content has a padding of its own.
  */
-export type PagePadding = 'standard' | 'spacious' | 'compact';
+export type PagePadding = 'standard' | 'spacious' | 'compact' | 'header';
 
 const PADDING_CLASS: Record<PagePadding, string> = {
   standard: 'p-6 md:p-8',
   spacious: 'p-8 md:p-12 lg:p-16',
   compact: 'p-4',
+  header: 'px-6 pt-6 md:px-8 md:pt-8',
 };
 
 export interface PageLayoutProps {

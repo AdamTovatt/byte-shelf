@@ -1,7 +1,7 @@
 import { matchRoutes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import {
-  folderContentsRoute,
+  folderListingRoute,
   joinPath,
   nameOf,
   parentPath,
@@ -13,7 +13,7 @@ import {
   shelfRoute,
   shelfSettingsRoute,
   shelfViewRoute,
-  showsContents,
+  asksForListing,
   type ShelfView,
 } from './shelfPaths';
 
@@ -31,11 +31,11 @@ describe('shelf paths', () => {
   });
 
   it('asks for a folder\'s contents at the folder\'s own route, which another view does not', () => {
-    const { pathname, searchParams } = new URL(folderContentsRoute('my docs', '/Trip #1.album'), 'http://shelf.test');
+    const { pathname, searchParams } = new URL(folderListingRoute('my docs', '/Trip #1.album'), 'http://shelf.test');
 
     expect(pathname).toBe(shelfRoute('my docs', '/Trip #1.album'));
-    expect(showsContents(searchParams)).toBe(true);
-    expect(['', '?view=', '?view=other', '?preview=contents'].map((query) => showsContents(new URLSearchParams(query)))).toEqual([false, false, false, false]);
+    expect(asksForListing(searchParams)).toBe(true);
+    expect(['', '?view=', '?view=other', '?preview=contents'].map((query) => asksForListing(new URLSearchParams(query)))).toEqual([false, false, false, false]);
   });
 
   it('takes a path apart into its parent and name', () => {

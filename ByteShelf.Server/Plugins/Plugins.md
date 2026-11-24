@@ -155,13 +155,23 @@ A module's default export is `definePlugin({ viewers, fileActions, folderTypes }
   unmounted, losing what it holds unsaved, as the person leaves the folder or shows its contents, as the
   folder is deleted, moved or renamed, as its encryption or its password changes, or another takes its
   place. It gets the shelf, the folder, whether the person may write, and the folder's contents
-  (`FolderContents`), the same for as long as it is mounted: listing what is below it, storing, moving and
-  deleting files by their path in it, opening one as a listing does, and reading one. A read asks for no
-  password, and of a file that is locked fails with a `LockedError`, until the viewer asks to unlock it.
-  Storing over a file moves the old one to the trash. What is stored in an encrypted folder is encrypted
-  with its password, and over a file with a password of its own with that one; storing fails, sending
-  nothing, once the folder is no longer at its path, or its encryption was removed or is now another
-  folder's: what was to be encrypted is never sent plain.
+  (`FolderContents`), the same for as long as it is mounted: listing what is below it, storing and moving
+  files to paths in it, and, of the files it lists, deleting one, reading one, and opening one in the
+  preview, alone, or in a tab when nothing previews it. A read asks for no password, and of a file that is
+  locked fails with a `LockedError`, until the viewer asks to unlock it. A query whose key starts with
+  `queryKey` is asked again as anything on the shelf changes; **what is read of a file must not go into a
+  query**, which keeps its answer after the viewer is gone, but through `useLoaded`. A file dropped on the
+  viewer is refused unless it calls `preventDefault` on the `dragover` and the `drop`.
+  `byteshelf.client/e2e/albumPlugin/ui/plugin.js` is a small one, whole.
+
+A file a folder's viewer stores over moves to the trash. What is stored in an encrypted folder is encrypted
+with its password, and over a file with a password of its own with that one, which is asked for when none
+kept opens it; with none given, storing fails with an `AbortError`. It fails, sending nothing, once the
+folder is no longer at its path, or its encryption was removed or is now another folder's: what was to be
+encrypted there is never sent plain. Anything else is stored plain, so **what was made from a file with a
+password of its own must not be stored in a plain folder**, but over a file with that password: a smaller
+copy of an encrypted picture would be a plain one. Nor does encrypting a file touch the copies made of it
+before; encrypting the folder does.
 
 A plugin's module lives as long as the page does, which starts anew as the session ends: what it keeps
 in memory is never there for the next person to sign in. What it keeps in the browser's storage is,
@@ -195,8 +205,9 @@ a plugin built against it.
 
 An addition to the web UI's part raises nothing, and `--check-plugin`, which runs no module, sees nothing
 of it: on a server without it, a plugin that imports a new export fails as it loads, which the Settings
-page says, and one that uses a new member of a type there (`ContentReader`, `FileActionContext`) loads
-and fails in the viewer or action that does. Its server part runs either way.
+page says, and one that uses a new member of a type there (`ContentReader`, `FolderContents`) loads
+and fails in the viewer or action that does. A part of `definePlugin` that server does not know is not
+missed by anything: folders of a type show as plain ones. Its server part runs either way.
 
 How plugins are built, and their styles kept apart from the app's, is in
 [plugins/README.md](../../plugins/README.md).

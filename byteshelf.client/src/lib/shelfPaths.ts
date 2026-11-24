@@ -60,16 +60,16 @@ export function shelfRoute(shelf: string, path: string = ROOT_PATH): string {
 }
 
 const VIEW_PARAM = 'view';
-const CONTENTS_VIEW = 'contents';
+const LISTING_VIEW = 'contents';
 
 /** The browser route of a folder's own listing, where its type has a viewer that shows it otherwise. */
-export function folderContentsRoute(shelf: string, path: string): string {
-  return `${shelfRoute(shelf, path)}?${VIEW_PARAM}=${CONTENTS_VIEW}`;
+export function folderListingRoute(shelf: string, path: string): string {
+  return `${shelfRoute(shelf, path)}?${VIEW_PARAM}=${LISTING_VIEW}`;
 }
 
-/** Whether a folder's route asks for its own listing, as `folderContentsRoute` does. */
-export function showsContents(query: URLSearchParams): boolean {
-  return query.get(VIEW_PARAM) === CONTENTS_VIEW;
+/** Whether a folder's route asks for its own listing, as `folderListingRoute` does. */
+export function asksForListing(query: URLSearchParams): boolean {
+  return query.get(VIEW_PARAM) === LISTING_VIEW;
 }
 
 /** The browser route of one of a shelf's pages; its files open at the root directory. */

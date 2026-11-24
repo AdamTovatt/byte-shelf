@@ -48,7 +48,9 @@ Storing with `overwrite`, as a single `PUT`, an upload or an upload link, needs 
 An upload records who started it; only that caller, while it may still store what the upload stores
 (a grant can change meanwhile), or one with `Write`, may look at, continue, complete or abort it
 (`ShelfAccess.RequireUpload`), so an add-only key cannot touch another caller's upload.
-`GET /api/shelves` lists the shelves the caller can see; creating a shelf is admin only.
+`GET /api/shelves` lists the shelves the caller can see; creating a shelf is admin only. Each comes with
+what the caller may do with its files (`ShelfInfo.Permission`), as `GET /api/shelves/{shelf}` does. That is
+to tell them; each operation asks the resolver all the same.
 
 The one route that serves file contents without a caller is `GET /api/downloads/{token}`: the token
 is a signed link from `download-link`, which needs `Read`, so every key may make one, add-only

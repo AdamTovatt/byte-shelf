@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { folderSuffixOf, folderTypeOf } from './folderTypes';
+import { folderSuffixOf, folderTypeOf } from './folderTypeLookup';
 import type { FolderType } from './folderType';
 import type { RunningPlugin } from './pluginHost';
 

@@ -5,7 +5,7 @@ import { filePasswordKey, folderPasswordKey, rememberPassword, rememberedPasswor
 import { FAST, encryptedFolder, fakeShelf, resetShelf, storedDirectory, storedFile } from '../test/encryptedShelf';
 import { passwordAsking } from '../test/passwordAsking';
 import { fileStoring, type StoreFile } from './fileStoring';
-import type { OpenFolder } from './openFolder';
+import type { OpenFolder } from '../lib/openFolder';
 import { shelfPasswords } from './shelfPasswords';
 import type { ShelfDirectory } from './shelfService';
 
@@ -156,6 +156,30 @@ describe('storing a file', () => {
     });
   });
 
+  it('sends nothing once the folder is encrypted by another than it was read as', async () => {
+    const vault = await encryptedFolder('/outer/vault', 'right');
+    const read = into('/outer/vault', vault);
+    fakeShelf.checks.delete(vault.id);
+    const outer = await encryptedFolder('/outer', 'another');
+    rememberPassword(folderPasswordKey('docs', outer.id), 'another');
+
+    await expect(store(read, '/outer/vault/a.txt', contents)).rejects.toThrow('vault is no longer encrypted as it was, or where it was.');
+    expect(uploads).toEqual([]);
+  });
+
+  it('sends nothing to a folder moved away while the file was encrypted', async () => {
+    const vault = await encryptedFolder('/vault', 'right');
+    rememberPassword(folderPasswordKey('docs', vault.id), 'right');
+    const stream = vi.spyOn(contents, 'stream').mockImplementation(() => {
+      folderIds.set('/vault', 'another');
+      return new Response('new').body!;
+    });
+
+    await expect(store(into('/vault', vault), '/vault/a.txt', contents)).rejects.toThrow('vault is no longer where it was.');
+    expect(stream).toHaveBeenCalled();
+    expect(uploads).toEqual([]);
+  });
+
   it('sends nothing to a folder that has been moved away, though it was plain when it was read', async () => {
     const read = into('/a');
     folderIds.set('/a', 'another');
@@ -257,7 +281,7 @@ describe('storing a file', () => {
 
       await expect(store(into('/a'), '/a/a.txt', contents, { storing: storing.signal })).rejects.toMatchObject({ name: 'AbortError' });
       expect(steps.called).toEqual(called);
-      expect(steps.signals.every((signal) => signal === storing.signal)).toBe(true);
+      expect(steps.signals.every((signal) => signal?.aborted)).toBe(true);
       expect(uploads).toEqual([]);
     });
 

@@ -1,7 +1,7 @@
 import type { Viewer } from '../preview/viewerRegistry';
 import type { FileAction } from './fileAction';
 import type { FolderType } from './folderType';
-import { FOLDER_SUFFIX } from './folderTypes';
+import { FOLDER_SUFFIX } from './folderTypeLookup';
 
 /** What a plugin adds to the web UI, as `definePlugin` takes it. */
 export interface PluginDefinition {

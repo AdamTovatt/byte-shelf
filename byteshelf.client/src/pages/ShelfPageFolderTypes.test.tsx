@@ -1,29 +1,22 @@
 // @vitest-environment happy-dom
-import { StrictMode, act, lazy, useEffect, useState, type ComponentType, type SVGProps } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
+import { act, lazy, useEffect, useState, type ComponentType, type SVGProps } from 'react';
 import toast from 'react-hot-toast';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { useQuery, type QueryClient } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ShelfPage } from './ShelfPage';
-import { DialogHost } from '../contexts/DialogHost';
 import { usePluginId } from '../contexts/PluginIdentity';
-import { MobileTopBarContext } from '../contexts/MobileTopBarContext';
-import { saveTokens } from '../services/authService';
-import { SHELF_ROUTE_PATTERNS } from '../lib/shelfPaths';
 import { queryKeys } from '../lib/queryKeys';
 import { createCheck, encryptBlob } from '../lib/encryption/age';
 import { folderPasswordKey, rememberPassword } from '../lib/encryption/passwords';
 import type { FolderType, FolderViewerProps } from '../lib/plugins/folderType';
 import type { RunningPlugin } from '../lib/plugins/pluginHost';
 import type { ShelfFile } from '../services/shelfService';
-import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { stubTabs } from '../test/browser';
 import { button, dialogTitles, labelled, press, shows, submitPassword, untilFound } from '../test/dom';
 import { FAST } from '../test/encryptedShelf';
-import { inAnHour, json, stubServer } from '../test/fakeServer';
-import { pageHistory } from '../test/pageHistory';
+import { json, stubServer } from '../test/fakeServer';
+import type { pageHistory } from '../test/pageHistory';
 import { shelfDirectory, shelfFile } from '../test/shelfFiles';
+import { renderShelfPage, row, signIn } from '../test/shelfPage';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -77,7 +70,7 @@ function later<Props>() {
 }
 
 describe('a folder of a plugin\'s type', () => {
-  let root: Root;
+  let leave: () => void;
   let container: HTMLDivElement;
   let client: QueryClient;
   let sent: string[];
@@ -107,10 +100,7 @@ describe('a folder of a plugin\'s type', () => {
   }
 
   beforeEach(() => {
-    localStorage.clear();
-    sessionStorage.clear();
-    installFakeWebLocks();
-    saveTokens({ token: 't', expiresAt: inAnHour(), refreshToken: 'r' });
+    signIn();
     folders = new Map([
       ['/', { files: [] }],
       ['/reports', { files: [shelfFile('report.txt', { path: '/reports/report.txt' })] }],
@@ -160,38 +150,17 @@ describe('a folder of a plugin\'s type', () => {
         default: return json({ message: 'Not here.' }, 404);
       }
     });
-    container = document.body.appendChild(document.createElement('div'));
   });
 
   afterEach(() => {
-    act(() => root.unmount());
-    document.body.innerHTML = '';
+    leave();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
   /** Opens the page at `url` in a tab of its own. */
-  async function renderAt(url: string, { strict = false, phone = false } = {}): Promise<void> {
-    root = createRoot(container);
-    page = pageHistory();
-    client = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0 } } });
-    const bar = document.body.appendChild(document.createElement('div'));
-    const shelfPage = (
-      <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={[url]}>
-          <MobileTopBarContext.Provider value={{ actions: phone ? bar : null, bar: null }}>
-            <DialogHost>
-              <Routes>
-                <Route path={SHELF_ROUTE_PATTERNS.shelf} element={<ShelfPage />} />
-                <Route path={SHELF_ROUTE_PATTERNS.files} element={<ShelfPage />} />
-              </Routes>
-            </DialogHost>
-          </MobileTopBarContext.Provider>
-          <page.Follow />
-        </MemoryRouter>
-      </QueryClientProvider>
-    );
-    await act(async () => root.render(strict ? <StrictMode>{shelfPage}</StrictMode> : shelfPage));
+  async function renderAt(url: string, options?: Parameters<typeof renderShelfPage>[1]): Promise<void> {
+    ({ container, client, page, leave } = await renderShelfPage(url, options));
   }
 
   /** Fetches again what the page holds of the shelf. */
@@ -203,10 +172,6 @@ describe('a folder of a plugin\'s type', () => {
   async function listed(path: string): Promise<void> {
     await vi.waitFor(() => expect(client.getQueryData(queryKeys.shelfContents.listing('docs', path))).toBeDefined());
     await act(async () => {});
-  }
-
-  function row(name: string): HTMLButtonElement | null {
-    return container.querySelector(`[data-selectable-row] button[aria-label="${name}"]`);
   }
 
   async function open(name: string): Promise<void> {
@@ -395,17 +360,24 @@ describe('a folder of a plugin\'s type', () => {
     expect(mounted).toBe(1);
   });
 
-  it('says why it cannot be listed as it opens', async () => {
-    listingFails = true;
-    await renderAt('/shelves/docs/files/Trip.album');
+  describe('that cannot be listed as it opens', () => {
+    beforeEach(async () => {
+      listingFails = true;
+      await renderAt('/shelves/docs/files/Trip.album');
+      await shows('Down.');
+    });
 
-    await shows('Down.');
-    expect([viewer(), searchField() !== null]).toEqual([null, true]);
-    listingFails = false;
+    it('says why, in place of its viewer', () => {
+      expect([viewer(), searchField() !== null]).toEqual([null, true]);
+    });
 
-    await refetch();
+    it('shows in its viewer once it can be', async () => {
+      listingFails = false;
 
-    await vi.waitFor(() => expect(viewer()).not.toBeNull());
+      await refetch();
+
+      await vi.waitFor(() => expect(viewer()).not.toBeNull());
+    });
   });
 
   it('opens in its viewer by a link with another view', async () => {
@@ -422,13 +394,14 @@ describe('a folder of a plugin\'s type', () => {
     await vi.waitFor(() => expect(searchField()).not.toBeNull());
   });
 
-  it('is drawn by a component that loads as it is shown, under the breadcrumbs meanwhile', async () => {
+  it('is drawn by a component that loads as it is shown, under the breadcrumbs and a spinner meanwhile', async () => {
     const { component, asked, bring } = later<FolderViewerProps>();
     album(component);
     await renderAt('/shelves/docs/files/Trip.album');
     await asked();
     const header = labelled('Pages of docs');
     expect([header !== null, viewer()]).toEqual([true, null]);
+    expect(header!.closest('.min-h-full')!.querySelector('[data-spinner]')).not.toBeNull();
 
     await bring(Album);
 
@@ -484,6 +457,14 @@ describe('a folder of a plugin\'s type', () => {
     });
 
     it('tries it again from the page\'s menu', async () => {
+      await chooseFrom('Pages of docs', 'Show as Album');
+
+      await vi.waitFor(() => expect(viewer()).not.toBeNull());
+    });
+
+    it('tries it again as its contents are left for it', async () => {
+      page.to('/shelves/docs/files/Trip.album?view=contents');
+      await vi.waitFor(() => expect(row('beach.txt')).not.toBeNull());
       await chooseFrom('Pages of docs', 'Show as Album');
 
       await vi.waitFor(() => expect(viewer()).not.toBeNull());
@@ -586,6 +567,35 @@ describe('a folder of a plugin\'s type', () => {
 
       await shows('deep.txt');
     });
+  });
+
+  it('leaves the rows there as one goes whose icon throws as it goes, as the others\' would', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let drawn = 0;
+    function Failing() {
+      useEffect(() => {
+        drawn++;
+        return () => {
+          // Not for ever, which would be tried for as long.
+          if (drawn < 50) throw new Error('It failed as it went.');
+        };
+      }, []);
+      return <svg data-icon="album" />;
+    }
+    folders.set('/Other.album', { files: [] });
+    folders.set('/Third.album', { files: [] });
+    album(Album, { icon: Failing });
+    await renderAt('/shelves/docs');
+    await untilFound('button[aria-label="Third.album"]');
+    folders.delete('/Third.album');
+
+    await refetch();
+
+    await vi.waitFor(() => expect(row('Third.album')).toBeNull());
+    expect([row('Trip.album'), row('Other.album')]).not.toContain(null);
+    // Three rows, and the two left once more.
+    expect(drawn).toBe(5);
+    drawn = 50;
   });
 
   it('leaves the viewer of another folder when one throws', async () => {
@@ -717,7 +727,11 @@ describe('a folder of a plugin\'s type', () => {
         expect(events.map(({ defaultPrevented, dataTransfer }) => [defaultPrevented, dataTransfer!.dropEffect])).toEqual([[true, 'none'], [true, 'none']]);
       });
 
-      it('does so under the breadcrumbs too, and while it opens', async () => {
+      it('does so on the breadcrumbs too', () => {
+        expect(drop('[aria-label="Pages of docs"]', 'Files').every(({ defaultPrevented }) => defaultPrevented)).toBe(true);
+      });
+
+      it('does so while it opens', async () => {
         page.to('/shelves/docs');
         await listed('/');
         folders.delete('/Trip.album');

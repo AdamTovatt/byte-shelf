@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { getErrorMessage } from '../ui';
 import type { EncryptedFolder } from '../services/encryptionService';
-import { folderKey, type OpenFolder } from '../services/openFolder';
+import { folderKey, type OpenFolder } from '../lib/openFolder';
 import type { ShelfPasswords } from '../services/shelfPasswords';
 
 /** A folder whose viewer waits for its password: asked for as it opens, not given, asked for again, or given. */

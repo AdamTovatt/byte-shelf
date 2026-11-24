@@ -2,7 +2,7 @@ import { eitherAborts } from '../lib/abort';
 import { DEFAULT_WORK_FACTOR, encryptBlob } from '../lib/encryption/age';
 import { filePasswordKey, rememberPassword } from '../lib/encryption/passwords';
 import { fetchEncryptedFolder } from './encryptionService';
-import type { OpenFolder } from './openFolder';
+import type { OpenFolder } from '../lib/openFolder';
 import type { ShelfPasswords } from './shelfPasswords';
 import { fetchFileAt, requireDirectoryAt, type ShelfFile } from './shelfService';
 import { uploadFile } from './uploadService';

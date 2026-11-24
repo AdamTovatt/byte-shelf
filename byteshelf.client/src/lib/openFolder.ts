@@ -1,5 +1,5 @@
-import type { EncryptedFolder } from './encryptionService';
-import type { ShelfDirectory } from './shelfService';
+import type { EncryptedFolder } from '../services/encryptionService';
+import type { ShelfDirectory } from '../services/shelfService';
 
 /** A folder as it was read where it was opened. */
 export interface OpenFolder {

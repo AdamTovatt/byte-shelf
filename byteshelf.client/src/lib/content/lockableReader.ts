@@ -1,6 +1,5 @@
 import { isBlobBacked } from '../../services/contentService';
-import type { ReadableFile } from '../../services/fileReading';
-import { streamBlob } from '../streamBlob';
+import { unlockWhole, type ReadableFile } from '../../services/fileReading';
 import { eitherAborts } from '../abort';
 import { blobReader, sourceReader, type ContentReader } from './contentReader';
 import { openingReader } from './openingReader';
@@ -47,8 +46,7 @@ export function lockableReader({ file, reading }: ReadableFile): LockableReader 
         if (!(caught instanceof LockedError)) throw caught;
       }
 
-      const plain = await reading.unlock(file, until);
-      const whole = plain && await streamBlob(plain, file.contentType);
+      const whole = await unlockWhole(reading, file, until);
       until.throwIfAborted();
       if (whole) take(blobReader(whole));
       return whole !== null;

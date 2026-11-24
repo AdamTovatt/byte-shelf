@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { folderSuffixOf, folderTypeOf, type FoundFolderType } from '../lib/plugins/folderTypes';
+import { folderSuffixOf, folderTypeOf, type FoundFolderType } from '../lib/plugins/folderTypeLookup';
 import type { FolderType } from '../lib/plugins/folderType';
-import { nameOf, shelfRoute, showsContents } from '../lib/shelfPaths';
+import { asksForListing, nameOf, shelfRoute } from '../lib/shelfPaths';
 import { isNotFound } from '../services/apiClient';
-import type { OpenFolder } from '../services/openFolder';
+import type { OpenFolder } from '../lib/openFolder';
 import type { ShelfPasswords } from '../services/shelfPasswords';
 import { useFolderLock } from './useFolderLock';
 import { usePluginHost, usePluginsAwaited } from './usePluginHost';
@@ -33,9 +33,9 @@ export type FolderView =
 /** The opening of a folder. */
 interface Opened {
   path: string;
-  asContents: boolean;
-  /** The type it then had; undefined while that waits for plugins. */
-  found: FoundFolderType | null | undefined;
+  asListing: boolean;
+  /** The type it then had, or that plugins are waited for to know. */
+  found: FoundFolderType | null | 'awaited';
   /** The id of the folder whose viewer failed. */
   failedOn: string | null;
 }
@@ -50,15 +50,15 @@ export function useFolderView(shelf: string, path: string, folderPassword: Shelf
 
   const name = nameOf(path);
   const found = folderTypeOf(plugins, name);
-  const asContents = showsContents(query);
+  const asListing = asksForListing(query);
   // A plugin still loading may have the type, or come first of two that do.
   const awaitsType = awaitsPlugins && folderSuffixOf(name) !== null;
 
   // Kept until the folder is opened again: a plugin loaded later takes nothing the person is using from them,
   // nor does a viewer that failed, whatever becomes of the folder's encryption.
   const [kept, setKept] = useState<Opened | null>(null);
-  const isKept = kept !== null && kept.path === path && kept.asContents === asContents && (kept.found !== undefined || awaitsType);
-  const opened = isKept ? kept : { path, asContents, found: awaitsType ? undefined : found, failedOn: null };
+  const isKept = kept !== null && kept.path === path && kept.asListing === asListing && (kept.found !== 'awaited' || awaitsType);
+  const opened: Opened = isKept ? kept : { path, asListing, found: awaitsType ? 'awaited' : found, failedOn: null };
   if (!isKept) setKept(opened);
 
   function offering(show: () => void): FolderView {
@@ -67,8 +67,8 @@ export function useFolderView(shelf: string, path: string, folderPassword: Shelf
 
   /** What it is shown as once it is unlocked. */
   function unlocked(): FolderView {
-    if (asContents) return offering(() => navigate(shelfRoute(shelf, path)));
-    if (opened.found === undefined) return { as: 'opening' };
+    if (asListing) return offering(() => navigate(shelfRoute(shelf, path)));
+    if (opened.found === 'awaited') return { as: 'opening' };
     if (opened.found === null || (listing && opened.failedOn === listing.directory.id)) return offering(() => setKept({ ...opened, found, failedOn: null }));
     if (isNotFound(error)) return { as: 'listing', toViewer: null };
     // By whether it ever failed, as a listing that then shows asks again, and there is no error meanwhile.

@@ -7,8 +7,8 @@ import { useShelfPreview, type ShelfPreview, type ShownFiles } from '../hooks/us
 import { useInvalidateShelf, useShelf } from '../hooks/useShelfQueries';
 import type { ViewedFolder } from '../hooks/useFolderView';
 import type { ShelfWork } from '../hooks/useShelfWork';
-import { folderContentsRoute } from '../lib/shelfPaths';
-import { folderKey } from '../services/openFolder';
+import { folderListingRoute } from '../lib/shelfPaths';
+import { folderKey } from '../lib/openFolder';
 import { ErrorBoundary } from './ErrorBoundary';
 import { FilePreview } from './preview/FilePreview';
 import { ShelfHeader } from './ShelfHeader';
@@ -34,13 +34,13 @@ export function TypedFolder({ shelf, path, work, viewed }: TypedFolderProps) {
   return (
     <div className="flex min-h-full flex-col" onDragOver={refuseFiles} onDrop={refuseFiles}>
       {/* Without the space below it: how far from it the viewer begins is the viewer's own. */}
-      <PageLayout className="-mb-6 md:-mb-8">
+      <PageLayout padding="header">
         <ShelfHeader
           shelf={shelf}
           view="files"
           path={path}
           menuItem={viewed
-            ? { label: 'Show contents', icon: (size) => <Icon icon={iconMap.folder} size={size} />, onChoose: () => navigate(folderContentsRoute(shelf, path)) }
+            ? { label: 'Show contents', icon: (size) => <Icon icon={iconMap.folder} size={size} />, onChoose: () => navigate(folderListingRoute(shelf, path)) }
             : undefined}
         />
       </PageLayout>

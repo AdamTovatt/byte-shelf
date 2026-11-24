@@ -34,6 +34,9 @@ it, and a failed read, that first one included, is tried again at the next poll.
 A key's own row makes nothing stale: it is shown only through its grants, which are logged beside it
 when it comes and goes.
 
+A promotion and a change of someone's role make no `shelves` stale: whether its server is a replica, and what
+the caller may do there, are as they were until a shelf is next read.
+
 What was read from files' contents ([Metadata](../Metadata/Metadata.md)) makes nothing stale: an
 entry names an object, not a shelf, and refreshing every open listing for each file read would cost
 more than it shows. The web UI fetches a file's metadata afresh whenever it shows it. A plugin's document
