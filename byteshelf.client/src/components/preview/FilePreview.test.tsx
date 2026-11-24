@@ -39,10 +39,11 @@ function OwnedViewer() {
   return <p>of the plugin {usePluginId()}</p>;
 }
 
-/** Shows what plugins made from its file and from those beside it. */
+/** Shows what plugins made from its file and from those beside it, whose previews it loads ahead, as one stepped to next. */
 function DerivedViewer({ file, derived, neighbours }: ViewerProps) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => void derived.url('preview').then(setUrl), [derived]);
+  useEffect(() => neighbours.forEach((each) => void each.derived.url('preview')), [neighbours]);
   return <p>{`${file.id} at ${url}, beside ${neighbours.map((each) => `${each.file.id} ${each.derived.has('preview')}`).join(' and ')}`}</p>;
 }
 
@@ -521,6 +522,28 @@ describe('the preview', () => {
       await press('Try again');
 
       await shows('read here');
+    });
+
+    it('reads what plugins made of a file beside it once, as it moves on to it', async () => {
+      const reads: string[] = [];
+      const derivedOf = source.derived;
+      vi.spyOn(source, 'derived').mockImplementation((id, kind) => ({
+        ...derivedOf(id, kind),
+        read: async () => {
+          reads.push(`${id} ${kind}`);
+          return new Blob(['made'], { type: 'image/jpeg' });
+        },
+      }));
+      const made = (id: string) => shelfFile(id, { contentType: 'x-test/derived', derived: { preview: 'p-1' } });
+      const files = [made('a'), made('b'), made('c')];
+      await show(files[0], files);
+      await shows('a at blob:');
+      await vi.waitFor(() => expect([...reads].sort()).toEqual(['a preview', 'b preview']));
+
+      await key('ArrowRight');
+
+      await shows('b at blob:');
+      await vi.waitFor(() => expect([...reads].sort()).toEqual(['a preview', 'b preview', 'c preview']));
     });
 
     it('reads nothing of a type no viewer takes', async () => {

@@ -25,10 +25,25 @@ namespace ByteShelf.Server.Derived.Models
             return All.Where(kind => GroupOf(kind) == group).ToList();
         }
 
-        /// <summary>The kind as it is written in paths.</summary>
+        /// <summary>The kind as it is written in paths and the database.</summary>
         public static string NameOf(DerivedKind kind)
         {
             return kind.ToString().ToLowerInvariant();
+        }
+
+        /// <summary>The kind <see cref="NameOf"/> wrote as <paramref name="name"/>.</summary>
+        /// <exception cref="ArgumentException">No kind is written so.</exception>
+        public static DerivedKind Parse(string name)
+        {
+            foreach (DerivedKind kind in All)
+            {
+                if (NameOf(kind) == name)
+                {
+                    return kind;
+                }
+            }
+
+            throw new ArgumentException($"No kind of derived file is written '{name}'.", nameof(name));
         }
     }
 }

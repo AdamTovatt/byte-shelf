@@ -9,6 +9,7 @@ namespace ByteShelf.Server.Plugins.Processes
         {
             services.TryAddTimeProvider();
             services.AddSingleton<ContentsLocks>();
+            services.AddScoped<ContentsTransactions>();
             services.AddSingleton(_ => PluginExecutable.OfThisServer());
             services.AddSingleton<PluginProcesses>();
 

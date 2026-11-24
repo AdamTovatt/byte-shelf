@@ -90,7 +90,7 @@ namespace ByteShelf.Server.Tests.Derived
                 Directory.CreateDirectory(Path.GetDirectoryName(Store.GetPath(DerivedKind.Thumbnail, file.Sha256))!);
                 File.Move(source, Store.GetPath(DerivedKind.Thumbnail, file.Sha256));
                 await File.WriteAllTextAsync(
-                    Store.GetPath(DerivedKind.Thumbnail, file.Sha256) + ".json", """{"plugin":"test-maker","version":1,"made":{"mediaType":"image/webp"}}""");
+                    Store.GetPath(DerivedKind.Thumbnail, file.Sha256) + ".json", """{"plugin":"test-maker","version":1,"outcome":{"was":"made","mediaType":"image/webp"}}""");
             }
 
             Assert.Equal("/a.txt: Thumbnail test-maker-1", await ListAsync(shelf));

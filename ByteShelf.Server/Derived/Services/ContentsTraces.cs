@@ -9,15 +9,17 @@ namespace ByteShelf.Server.Derived.Services
     /// <remarks>What plugins have of them: the files derived from them, and every process that read them, for metadata too.</remarks>
     internal sealed class ContentsTraces : IContentsTraces
     {
-        private readonly DerivedStore _store;
+        private readonly DerivedFiles _files;
         private readonly ContentsLocks _locks;
+        private readonly ContentsTransactions _transactions;
         private readonly IPlainContentsRepository _contents;
         private readonly PluginProcesses _processes;
 
-        public ContentsTraces(DerivedStore store, ContentsLocks locks, IPlainContentsRepository contents, PluginProcesses processes)
+        public ContentsTraces(DerivedFiles files, ContentsLocks locks, ContentsTransactions transactions, IPlainContentsRepository contents, PluginProcesses processes)
         {
-            _store = store;
+            _files = files;
             _locks = locks;
+            _transactions = transactions;
             _contents = contents;
             _processes = processes;
         }
@@ -39,15 +41,12 @@ namespace ByteShelf.Server.Derived.Services
         }
 
         /// <inheritdoc />
-        public async Task<bool> RemoveUnheldAsync(string sha256, CancellationToken cancellationToken = default)
+        public Task<bool> RemoveUnheldAsync(string sha256, CancellationToken cancellationToken = default)
         {
-            using (await _locks.LockAsync(sha256, cancellationToken))
-            {
-                return await RemoveUnheldAsync(sha256, session: null);
-            }
+            return _transactions.RunAsync(sha256, session => RemoveUnheldAsync(sha256, session), cancellationToken);
         }
 
-        private async Task<bool> RemoveUnheldAsync(string sha256, IDbSession? session)
+        private async Task<bool> RemoveUnheldAsync(string sha256, IDbSession session)
         {
             if ((await _contents.GetUnheldAsync([sha256], session)).Count == 0)
             {
@@ -57,7 +56,7 @@ namespace ByteShelf.Server.Derived.Services
             try
             {
                 await _processes.StopAsync(sha256);
-                _store.Delete(sha256);
+                await _files.DeleteAsync(sha256, session);
                 return true;
             }
             catch (Exception exception) when (exception is PluginNotStoppedException or IOException or UnauthorizedAccessException)

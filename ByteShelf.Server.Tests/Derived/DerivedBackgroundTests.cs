@@ -46,7 +46,7 @@ namespace ByteShelf.Server.Tests.Derived
                 ShelfFile file = await StoreTextAsync(shelf, $"/{text}.txt", text);
                 foreach (DerivedKind kind in DerivedKinds.In(MakingGroup.Background))
                 {
-                    Store.Put(file.Sha256, new KeptFile(kind, new DerivedEntry(TestMaker.Spec.DefaultId, 1, null), SourcePath: null));
+                    await PutAsync(file.Sha256, new KeptFile(kind, new DerivedEntry(TestMaker.Spec.DefaultId, 1, new DerivedOutcome.Failed()), SourcePath: null));
                 }
             }
 
@@ -168,9 +168,9 @@ namespace ByteShelf.Server.Tests.Derived
             Shelf shelf = await CreateShelfAsync();
             ShelfFile kept = await StoreTextAsync(shelf, "/kept.txt", "kept");
             await GetAsync(shelf, kept);
-            Store.Put(TestHashes.Sha256Of("gone"), new KeptFile(DerivedKind.Thumbnail, new DerivedEntry(TestMaker.Spec.DefaultId, 1, null), SourcePath: null));
+            await PutAsync(TestHashes.Sha256Of("gone"), new KeptFile(DerivedKind.Thumbnail, new DerivedEntry(TestMaker.Spec.DefaultId, 1, new DerivedOutcome.Failed()), SourcePath: null));
 
-            Assert.Equal(new DerivedMaintenanceSummary(Unheld: 1, Orphaned: 0, Trimmed: 0), await MaintainAsync());
+            Assert.Equal(new DerivedMaintenanceSummary(Unheld: 1, Orphaned: 0, Trimmed: 0, Recounted: 0), await MaintainAsync());
 
             AssertKept((DerivedKind.Thumbnail, kept), (DerivedKind.Preview, kept));
         }
@@ -184,7 +184,7 @@ namespace ByteShelf.Server.Tests.Derived
             Directory.CreateDirectory(Path.GetDirectoryName(left)!);
             await File.WriteAllTextAsync(left, "left by a crash before its entry was written");
 
-            Assert.Equal(new DerivedMaintenanceSummary(Unheld: 0, Orphaned: 1, Trimmed: 0), await MaintainAsync());
+            Assert.Equal(new DerivedMaintenanceSummary(Unheld: 0, Orphaned: 1, Trimmed: 0, Recounted: 0), await MaintainAsync());
 
             Assert.Empty(AllDerivedFiles());
         }
@@ -199,11 +199,11 @@ namespace ByteShelf.Server.Tests.Derived
 
             // Another version's stays until it is made again.
             Plugins.All = [Plugins.Plugin(version: 2, kinds: [DerivedKind.Agent])];
-            Assert.Equal(new DerivedMaintenanceSummary(Unheld: 0, Orphaned: 2, Trimmed: 0), await MaintainAsync());
+            Assert.Equal(new DerivedMaintenanceSummary(Unheld: 0, Orphaned: 2, Trimmed: 0, Recounted: 0), await MaintainAsync());
             AssertKept((DerivedKind.Agent, file));
 
             Plugins.All = [];
-            Assert.Equal(new DerivedMaintenanceSummary(Unheld: 0, Orphaned: 1, Trimmed: 0), await MaintainAsync());
+            Assert.Equal(new DerivedMaintenanceSummary(Unheld: 0, Orphaned: 1, Trimmed: 0, Recounted: 0), await MaintainAsync());
             AssertKept();
         }
 
@@ -214,11 +214,11 @@ namespace ByteShelf.Server.Tests.Derived
             ShelfFile[] files = [await StoreTextAsync(shelf, "/a.txt", "a"), await StoreTextAsync(shelf, "/b.txt", "b")];
             foreach (ShelfFile file in files)
             {
-                PutLargeFull(file);
+                await PutLargeFullAsync(file);
                 Clock.Advance(TimeSpan.FromMinutes(1));
             }
 
-            Assert.Equal(new DerivedMaintenanceSummary(Unheld: 0, Orphaned: 0, Trimmed: 1), await MaintainAsync());
+            Assert.Equal(new DerivedMaintenanceSummary(Unheld: 0, Orphaned: 0, Trimmed: 1, Recounted: 0), await MaintainAsync());
 
             AssertKept((DerivedKind.Full, files[1]));
         }

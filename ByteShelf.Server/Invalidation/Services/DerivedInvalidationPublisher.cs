@@ -6,7 +6,8 @@ namespace ByteShelf.Server.Invalidation.Services
 {
     /// <summary>
     /// Publishes that a shelf's contents are stale once a derived file its listings show has come or gone, which is in
-    /// no change log: at once, and then at most every <see cref="Interval"/>, however many do.
+    /// no change log, and that shelves are, whose usage counts it: at once, and then at most every <see cref="Interval"/>,
+    /// however many do.
     /// </summary>
     public sealed class DerivedInvalidationPublisher : BackgroundService
     {
@@ -44,6 +45,9 @@ namespace ByteShelf.Server.Invalidation.Services
                     {
                         _broadcaster.Publish(new InvalidationEvent(InvalidationResources.ShelfContents, shelfId.ToString()));
                     }
+
+                    // Shelves' usage counts them, for files in the trash too.
+                    _broadcaster.Publish(new InvalidationEvent(InvalidationResources.Shelves));
                 }
                 catch (Exception exception) when (!stoppingToken.IsCancellationRequested)
                 {

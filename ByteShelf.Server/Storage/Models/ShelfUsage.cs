@@ -3,7 +3,7 @@ namespace ByteShelf.Server.Storage.Models
     /// <summary>What counts against a shelf's quota.</summary>
     public class ShelfUsage
     {
-        /// <summary>The size of every file row on the shelf, the trash included.</summary>
+        /// <summary>The size of every file row on the shelf, the trash included, and of every derived file of each row's contents.</summary>
         public required long UsedBytes { get; init; }
 
         /// <summary>The declared size of every upload in progress; for a swap, only what it adds to its file's size.</summary>

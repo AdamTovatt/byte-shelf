@@ -85,6 +85,28 @@ namespace ByteShelf.Server.Tests.Derived
         }
 
         [Fact]
+        public async Task Encrypt_AsWhatWasMadeWaitsToBeKept_LeavesNothingOfItBeforeItAnswers()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", Plugins.Waiting("a"));
+            Task<MakingOutcome> making = MakeAsync(file);
+            using (await Plugins.StartedAsync("a"))
+            {
+                // Taken out of the process's folder, the run over, and its transaction not yet begun.
+                _sessions.BeforeNextTransaction("MakerRun.KeepAsync", async () =>
+                {
+                    await Task.Run(() => EncryptInPlaceAsync(shelf, file)).WaitAsync(RealTimeLimit);
+                    Assert.DoesNotContain(file.Sha256, Processes.GetContentsGiven());
+                    Assert.Empty(AllDerivedFiles());
+                });
+                Plugins.GoOn("a");
+            }
+
+            Assert.Equal(MakingOutcome.NothingToMake, await making);
+            Assert.Empty(AllDerivedFiles());
+        }
+
+        [Fact]
         public async Task Encrypt_AsWhatWasMadeIsAboutToBeKept_LeavesNothingOfIt()
         {
             Shelf shelf = await CreateShelfAsync();
@@ -97,14 +119,17 @@ namespace ByteShelf.Server.Tests.Derived
                 Task keepWaits = WaitsForAsync(file.Sha256);
                 Plugins.GoOn("a");
                 await keepWaits;
-                Task encryptWaits = WaitsForAsync(file.Sha256);
-                encrypting = EncryptInPlaceAsync(shelf, file);
-                await encryptWaits;
+
+                // Its transaction waits for the keeping one, begun before the lock was asked for.
+                Task asked = _sessions.NextTransactionAskedAsync("UploadService.BeginSwapAsync");
+                encrypting = Task.Run(() => EncryptInPlaceAsync(shelf, file));
+                await asked.WaitAsync(RealTimeLimit);
+                Assert.False(encrypting.IsCompleted);
             }
 
-            await encrypting;
+            await encrypting.WaitAsync(RealTimeLimit);
 
-            // Kept, then removed, as it waited longer.
+            // Kept, then removed, as it came first.
             Assert.Equal(MakingOutcome.Kept, await making);
             Assert.Empty(AllDerivedFiles());
         }
@@ -384,21 +409,6 @@ namespace ByteShelf.Server.Tests.Derived
 
             Assert.Equal(1, summary.RemovedObjects);
             Assert.Empty(AllDerivedFiles());
-        }
-
-        /// <summary>Ends once the next caller waits for what is derived from the contents.</summary>
-        private async Task WaitsForAsync(string sha256)
-        {
-            TaskCompletionSource waits = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            Locks.Locks.WaitingStarted = key =>
-            {
-                if (key == sha256)
-                {
-                    waits.TrySetResult();
-                }
-            };
-
-            await waits.Task.WaitAsync(RealTimeLimit);
         }
 
         private bool IsFree(string sha256)

@@ -1,5 +1,6 @@
 using System.Text;
 using ByteShelf.Server.Derived.Models;
+using ByteShelf.Server.Derived.Repositories;
 using ByteShelf.Server.Derived.Services;
 using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Storage.Models;
@@ -76,12 +77,12 @@ namespace ByteShelf.Server.Tests.Derived
                 expected.Select(kept => (kept.Kind, kept.Of.Sha256)).Order(),
                 DerivedKinds.All.SelectMany(kind => Store.EnumerateHashes(kind).Select(sha256 => (kind, sha256))).Order());
             Assert.Equal(
-                expected.Sum(kept => Store.Find(kept.Kind, kept.Of.Sha256)?.Made == null ? 1 : 2),
+                expected.Sum(kept => Store.Find(kept.Kind, kept.Of.Sha256)?.Outcome is DerivedOutcome.Made ? 2 : 1),
                 AllDerivedFiles().Count(path => !path.EndsWith(WorkFolder.ContentsSuffix, StringComparison.Ordinal)));
         }
 
         /// <summary>A <see cref="DerivedKind.Full"/> file as large as they may be together, which takes no disk.</summary>
-        protected void PutLargeFull(ShelfFile file)
+        protected Task PutLargeFullAsync(ShelfFile file)
         {
             string source = Path.Combine(TestRoot.Root.StagingPath, Guid.NewGuid().ToString("N"));
             using (FileStream large = File.Create(source))
@@ -89,7 +90,62 @@ namespace ByteShelf.Server.Tests.Derived
                 large.SetLength(DerivedStore.MaxFullBytes);
             }
 
-            Store.Put(file.Sha256, new KeptFile(DerivedKind.Full, new DerivedEntry(TestMaker.Spec.DefaultId, 1, new MadeInfo(TestMaker.MediaType)), source));
+            return PutAsync(file.Sha256, new KeptFile(DerivedKind.Full, MadeByTestMaker(), source));
+        }
+
+        /// <summary>What <see cref="TestMaker"/> made and kept.</summary>
+        internal static DerivedEntry MadeByTestMaker()
+        {
+            return new DerivedEntry(TestMaker.Spec.DefaultId, 1, new DerivedOutcome.Made(TestMaker.MediaType));
+        }
+
+        /// <summary>Keeps what is kept of the contents, as a run does, in a transaction and then under their lock.</summary>
+        internal async Task<IReadOnlyList<KeptFile>> PutAsync(string sha256, params KeptFile[] kept)
+        {
+            await using AsyncServiceScope scope = Services.CreateAsyncScope();
+            DerivedFiles files = scope.ServiceProvider.GetRequiredService<DerivedFiles>();
+            return await scope.ServiceProvider.GetRequiredService<ContentsTransactions>().RunAsync(sha256, session => files.KeepAsync(sha256, kept, session));
+        }
+
+        /// <summary>Removes one derived file, as maintenance does, in a transaction and then under the contents' lock.</summary>
+        internal async Task DeleteDerivedAsync(DerivedKind kind, string sha256)
+        {
+            await using AsyncServiceScope scope = Services.CreateAsyncScope();
+            DerivedFiles files = scope.ServiceProvider.GetRequiredService<DerivedFiles>();
+            await scope.ServiceProvider.GetRequiredService<ContentsTransactions>().RunAsync(sha256, async session =>
+            {
+                await files.DeleteAsync(kind, sha256, session);
+                return true;
+            });
+        }
+
+        /// <summary>The sizes written of derived files, which shelves' usage counts.</summary>
+        internal async Task<IReadOnlyDictionary<(string Sha256, DerivedKind Kind), long>> SizesAsync()
+        {
+            await using AsyncServiceScope scope = Services.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IDerivedSizeRepository>().GetAllAsync();
+        }
+
+        /// <summary>Ends once the next caller waits for the contents' lock (<see cref="ContentsLocks"/>).</summary>
+        protected async Task WaitsForAsync(string sha256)
+        {
+            TaskCompletionSource waits = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            Locks.Locks.WaitingStarted = key =>
+            {
+                if (key == sha256)
+                {
+                    waits.TrySetResult();
+                }
+            };
+
+            await waits.Task.WaitAsync(RealTimeLimit);
+        }
+
+        /// <summary>One pass of the job <c>derived.maintenance</c>, in a scope of its own.</summary>
+        internal async Task<DerivedMaintenanceSummary> RunMaintenanceAsync()
+        {
+            await using AsyncServiceScope scope = Services.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<DerivedMaintenance>().RunAsync(CancellationToken.None);
         }
 
         /// <summary>One pass over what is already stored, as the job runs it.</summary>

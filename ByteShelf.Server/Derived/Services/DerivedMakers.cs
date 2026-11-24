@@ -33,15 +33,21 @@ namespace ByteShelf.Server.Derived.Services
 
         /// <summary>
         /// The kinds of <paramref name="group"/> that <paramref name="plugin"/> is what makes from contents files of
-        /// <paramref name="mediaTypes"/> hold, and that it has yet to.
+        /// <paramref name="mediaTypes"/> hold, and that it has yet to, or made with no room to keep it
+        /// (<see cref="DerivedOutcome.NoRoom"/>).
         /// </summary>
         public IReadOnlyList<KindMaker> MissingOf(DerivedFilePlugin plugin, MakingGroup group, string sha256, IReadOnlyCollection<string> mediaTypes)
         {
             return DerivedKinds.In(group)
                 .Select(kind => For(kind, mediaTypes))
                 .OfType<KindMaker>()
-                .Where(maker => maker.Plugin.Id == plugin.Id && !maker.IsCurrent(_store.Find(maker.Declaration.Kind, sha256)))
+                .Where(maker => maker.Plugin.Id == plugin.Id && IsMissing(maker, _store.Find(maker.Declaration.Kind, sha256)))
                 .ToList();
+        }
+
+        private static bool IsMissing(KindMaker maker, DerivedEntry? entry)
+        {
+            return !maker.IsCurrent(entry) || entry!.Outcome is DerivedOutcome.NoRoom;
         }
 
         /// <summary>Whether <paramref name="entry"/> is what an installed plugin made, or failed to make, at the version it makes <paramref name="kind"/> at.</summary>

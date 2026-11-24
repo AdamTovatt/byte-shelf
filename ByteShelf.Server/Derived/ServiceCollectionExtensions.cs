@@ -1,3 +1,4 @@
+using ByteShelf.Server.Derived.Repositories;
 using ByteShelf.Server.Derived.Services;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Storage.Services;
@@ -14,7 +15,10 @@ namespace ByteShelf.Server.Derived
 
             services.TryAddSingleton<IDerivedFilePlugins, NoDerivedFilePlugins>();
             services.AddSingleton<DerivedMakers>();
+            services.AddScoped<IDerivedSizeRepository, DerivedSizeRepository>();
             services.AddSingleton<DerivedStore>();
+            services.AddScoped<DerivedRoom>();
+            services.AddScoped<DerivedFiles>();
             services.AddSingleton<MakerRuns>();
             services.AddSingleton<DerivedMaking>();
             services.AddSingleton<IDerivedListing, DerivedListing>();

@@ -156,7 +156,7 @@ namespace ByteShelf.Server.Tests.Derived
             Clock.Advance(RunLimit);
 
             Assert.Equal(MakingOutcome.Kept, await making);
-            Assert.Equal(new DerivedEntry(TestMaker.Spec.DefaultId, 1, null), Store.Find(DerivedKind.Thumbnail, file.Sha256));
+            Assert.Equal(new DerivedEntry(TestMaker.Spec.DefaultId, 1, new DerivedOutcome.Failed()), Store.Find(DerivedKind.Thumbnail, file.Sha256));
         }
 
         [Fact]
@@ -239,7 +239,7 @@ namespace ByteShelf.Server.Tests.Derived
             ShelfFile[] old = [await StoreTextAsync(shelf, "/a.txt", "a"), await StoreTextAsync(shelf, "/b.txt", "b")];
             foreach (ShelfFile file in old)
             {
-                PutLargeFull(file);
+                await PutLargeFullAsync(file);
             }
 
             ShelfFile now = await StoreTextAsync(shelf, "/c.txt", "c");

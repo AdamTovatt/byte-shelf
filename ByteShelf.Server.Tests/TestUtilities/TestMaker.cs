@@ -166,6 +166,14 @@ namespace ByteShelf.Server.Tests.TestUtilities
                     File.Delete("thumbnail");
                     File.CreateSymbolicLink("thumbnail", Path.GetFullPath("preview"));
                     break;
+                case "unmovable":
+                    // What it made cannot be taken out of its folder.
+                    if (!OperatingSystem.IsWindows())
+                    {
+                        File.SetUnixFileMode(".", UnixFileMode.UserRead | UnixFileMode.UserExecute);
+                    }
+
+                    break;
                 case "reads on":
                     Thread reading = new Thread(() => contents.ReadByte());
                     contents.Position = 0;

@@ -7,13 +7,13 @@ import type { ShownPreview } from '../../lib/preview/shownPreview';
 import type { Neighbour } from '../../lib/preview/viewerRegistry';
 import type { FileActions } from '../../hooks/useFileActions';
 import { PluginIdentity } from '../../contexts/PluginIdentity';
-import { useDerivedReader } from '../../hooks/useDerivedReader';
+import { useDerivedReaders, type DerivedOf } from '../../hooks/useDerivedReaders';
 import { usePluginsAwaited } from '../../hooks/usePluginHost';
 import { usePreviewContents } from '../../hooks/usePreviewContents';
 import { useViewers } from '../../hooks/useViewers';
 import { formatBytes } from '../../lib/format';
 import { isTypingTarget } from '../../lib/keys';
-import { openable, type OpenableFile } from '../../services/fileReading';
+import { openable, type OpenableFile, type ReadableFile } from '../../services/fileReading';
 import type { ShelfFile } from '../../services/shelfService';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { FileActionsMenu } from '../FileActionItems';
@@ -41,9 +41,7 @@ export function FilePreview({ previewed, error, steps, previous, next, onClose, 
   const file = previewed?.file;
   const match = file ? viewers.viewerFor(file) : null;
   const { contents, readWhole } = usePreviewContents(match?.viewer ? previewed : null, asksPassword);
-  const derived = useDerivedReader(match?.viewer ? file : null, previewed?.reading.source);
-  const previousDerived = useDerivedReader(previous?.file, previous?.reading.source);
-  const nextDerived = useDerivedReader(next?.file, next?.reading.source);
+  const [derived, previousDerived, nextDerived] = useDerivedReaders([match?.viewer ? derivedOf(previewed) : null, derivedOf(previous), derivedOf(next)]);
   const neighbours = useMemo(() => [...neighbour(previous?.file, previousDerived), ...neighbour(next?.file, nextDerived)], [previous?.file, previousDerived, next?.file, nextDerived]);
   const target = previewed && openable(previewed, readWhole ?? undefined);
 
@@ -121,6 +119,10 @@ export function FilePreview({ previewed, error, steps, previous, next, onClose, 
       </ErrorBoundary>
     );
   }
+}
+
+function derivedOf(readable: ReadableFile | null): DerivedOf | null {
+  return readable && { file: readable.file, source: readable.reading.source };
 }
 
 function neighbour(file: ShelfFile | undefined, derived: DerivedReader | null): Neighbour[] {

@@ -11,12 +11,13 @@ namespace ByteShelf.Server.Derived.Services
 {
     /// <summary>
     /// The derived files on disk, at <c>derived/&lt;kind&gt;/ab/cd/&lt;sha256&gt;</c> with a <c>.json</c>
-    /// (<see cref="DerivedEntry"/>) beside each, by the SHA-256 of the contents they were made from. A cache:
-    /// emptying the folder has them made again.
+    /// (<see cref="DerivedEntry"/>) beside each, by the SHA-256 of the contents they were made from. A cache: emptying the
+    /// folder has them made again. What writes them writes the bytes each takes with them (<see cref="DerivedFiles"/>).
     /// </summary>
     /// <remarks>
-    /// What may be here depends on the database (a plain file holds the contents), so whoever writes or removes
-    /// holds the contents' lock (<see cref="ContentsLocks"/>) from that question to the answer's commit.
+    /// What may be here depends on the database (a plain file holds the contents), so whoever writes or removes holds the
+    /// contents' lock (<see cref="ContentsLocks"/>) from that question to the answer's commit
+    /// (<see cref="ContentsTransactions"/>).
     /// </remarks>
     public sealed class DerivedStore
     {
@@ -29,14 +30,12 @@ namespace ByteShelf.Server.Derived.Services
 
         private readonly RootFolder _root;
         private readonly TimeProvider _timeProvider;
-        private readonly ContentsLocks _locks;
         private readonly KnownEntries _known;
         private readonly DerivedChanges _changes;
 
         public DerivedStore(RootFolder root, ContentsLocks locks, DerivedChanges changes, TimeProvider timeProvider)
         {
             _root = root;
-            _locks = locks;
             _changes = changes;
             _timeProvider = timeProvider;
             _known = new KnownEntries(locks, MaxKnown);
@@ -62,7 +61,7 @@ namespace ByteShelf.Server.Derived.Services
             {
                 using FileStream file = File.OpenRead(path + EntrySuffix);
                 DerivedEntry? entry = JsonSerializer.Deserialize<DerivedEntry>(file, JsonDefaults.CamelCase);
-                return entry?.Made == null || File.Exists(path) ? entry : null;
+                return entry?.Outcome is not DerivedOutcome.Made || File.Exists(path) ? entry : null;
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException)
             {
@@ -102,13 +101,13 @@ namespace ByteShelf.Server.Derived.Services
             }
         }
 
-        /// <summary>Keeps what was made of the contents in one run. Hold the lock.</summary>
-        public void Put(string sha256, params IReadOnlyList<KeptFile> kept)
+        /// <summary>Puts what is to be kept of the contents in place of what was there of each kind. Hold the lock.</summary>
+        public void Put(string sha256, IReadOnlyList<KeptFile> kept)
         {
             Change(sha256, () => kept.Select(file => Put(sha256, file)).ToList().Contains(true));
         }
 
-        /// <summary>Removes one derived file, or that making it failed. Hold the lock.</summary>
+        /// <summary>Removes one derived file, or what is known of making it. Hold the lock.</summary>
         public void Delete(DerivedKind kind, string sha256)
         {
             Change(sha256, () => Delete(sha256, kind));
@@ -136,16 +135,15 @@ namespace ByteShelf.Server.Derived.Services
         }
 
         /// <summary>
-        /// Removes the least recently used <see cref="DerivedKind.Full"/> files until the rest take at most
-        /// <see cref="MaxFullBytes"/> together; answers how many. The most recently used one stays, whatever its
-        /// size, and one whose lock is held, as it is in use: this waits for nobody.
+        /// The contents whose <see cref="DerivedKind.Full"/> file is past <see cref="MaxFullBytes"/>, counted from the most
+        /// recently used, least recently used last. The most recently used one is never among them, whatever its size.
         /// </summary>
-        public int TrimFull()
+        public IReadOnlyList<string> GetFullOverTheLimit()
         {
             DirectoryInfo folder = new DirectoryInfo(FolderOf(DerivedKind.Full));
             if (!folder.Exists)
             {
-                return 0;
+                return [];
             }
 
             List<FileInfo> files = folder.EnumerateFiles("*", SearchOption.AllDirectories)
@@ -153,27 +151,36 @@ namespace ByteShelf.Server.Derived.Services
                 .OrderByDescending(file => file.LastWriteTimeUtc)
                 .ToList();
 
-            int removed = 0;
+            List<string> over = [];
             long bytes = 0;
             foreach (FileInfo file in files)
             {
                 bytes += file.Length;
-                if (bytes <= MaxFullBytes || file == files[0])
+                if (bytes > MaxFullBytes && file != files[0])
                 {
-                    continue;
-                }
-
-                using (IDisposable? held = _locks.TryLock(file.Name))
-                {
-                    if (held != null)
-                    {
-                        Delete(DerivedKind.Full, file.Name);
-                        removed++;
-                    }
+                    over.Add(file.Name);
                 }
             }
 
-            return removed;
+            return over;
+        }
+
+        /// <summary>How many bytes the derived file kept takes; null when none is.</summary>
+        public long? SizeOf(DerivedKind kind, string sha256)
+        {
+            if (Find(kind, sha256)?.Outcome is not DerivedOutcome.Made)
+            {
+                return null;
+            }
+
+            try
+            {
+                return new FileInfo(GetPath(kind, sha256)).Length;
+            }
+            catch (FileNotFoundException)
+            {
+                return null;
+            }
         }
 
         /// <summary>Changes the contents' derived files on disk, and has listings say so when it answers that one came or went, or fails, as after some.</summary>

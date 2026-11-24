@@ -113,6 +113,9 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <summary>The live files pointing at the object <paramref name="sha256"/>.</summary>
         Task<IReadOnlyList<FileRecord>> GetLiveWithObjectAsync(string sha256, IDbSession? session = null);
 
+        /// <summary>How many rows, live or trashed, of each shelf point at the object <paramref name="sha256"/>.</summary>
+        Task<IReadOnlyDictionary<Guid, int>> CountByShelfWithObjectAsync(string sha256, IDbSession? session = null);
+
         /// <summary>
         /// Removes every row, live or trashed, pointing at the object <paramref name="sha256"/>, each logged
         /// as purged; answers how many. For a backup whose object the server purged meanwhile.

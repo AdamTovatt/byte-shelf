@@ -14,12 +14,16 @@ namespace ByteShelf.Server.Derived.Services
         private readonly IPlainContentsRepository _contents;
         private readonly DerivedMakers _makers;
         private readonly DerivedMaking _making;
+        private readonly DerivedStore _store;
+        private readonly DerivedRoom _room;
 
-        public DerivedBackground(IPlainContentsRepository contents, DerivedMakers makers, DerivedMaking making)
+        public DerivedBackground(IPlainContentsRepository contents, DerivedMakers makers, DerivedMaking making, DerivedStore store, DerivedRoom room)
         {
             _contents = contents;
             _makers = makers;
             _making = making;
+            _store = store;
+            _room = room;
         }
 
         /// <summary>
@@ -36,6 +40,8 @@ namespace ByteShelf.Server.Derived.Services
             MediaTypeSet mediaTypes = MediaTypeSet.Union(
                 plugin.Makes.Where(declaration => DerivedKinds.GroupOf(declaration.Kind) == MakingGroup.Background).Select(declaration => declaration.MediaTypes));
 
+            // Measured once for the pass, and only once some contents need it.
+            Lazy<Task<DerivedRoom.RoomNow>> room = new Lazy<Task<DerivedRoom.RoomNow>>(_room.MeasureAsync);
             int made = 0;
             string? after = null;
             while (await _contents.GetLiveAsync(mediaTypes, after, BatchSize) is { Count: > 0 } batch)
@@ -43,7 +49,7 @@ namespace ByteShelf.Server.Derived.Services
                 foreach ((string sha256, IReadOnlyList<string> held) in batch)
                 {
                     after = sha256;
-                    made += await MakeMissingAsync(plugin, sha256, held, PluginPriority.Backlog, cancellationToken);
+                    made += await MakeMissingAsync(plugin, sha256, held, PluginPriority.Backlog, room, cancellationToken);
                 }
             }
 
@@ -54,21 +60,47 @@ namespace ByteShelf.Server.Derived.Services
         /// <exception cref="PluginUnavailableException">The plugin could not run.</exception>
         public async Task MakeStoredAsync(DerivedFilePlugin plugin, string sha256, CancellationToken cancellationToken)
         {
-            await MakeMissingAsync(plugin, sha256, await _contents.GetMediaTypesAsync(sha256), PluginPriority.Stored, cancellationToken);
+            Lazy<Task<DerivedRoom.RoomNow>> room = new Lazy<Task<DerivedRoom.RoomNow>>(_room.MeasureAsync);
+            await MakeMissingAsync(plugin, sha256, await _contents.GetMediaTypesAsync(sha256), PluginPriority.Stored, room, cancellationToken);
         }
 
-        private async Task<int> MakeMissingAsync(DerivedFilePlugin plugin, string sha256, IReadOnlyList<string> mediaTypes, PluginPriority priority, CancellationToken cancellationToken)
+        private async Task<int> MakeMissingAsync(
+            DerivedFilePlugin plugin, string sha256, IReadOnlyList<string> mediaTypes, PluginPriority priority, Lazy<Task<DerivedRoom.RoomNow>> room, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             IReadOnlyList<KindMaker> missing = _makers.MissingOf(plugin, MakingGroup.Background, sha256, mediaTypes);
-            if (missing.Count == 0)
+            if (missing.Count == 0 || !await AnyHasRoomAsync(sha256, missing, room))
             {
                 return 0;
             }
 
             MakingOutcome outcome = await _making.MakeAsync(sha256, missing[0].Declaration.Kind, plugin, priority).WaitAsync(cancellationToken);
             return outcome == MakingOutcome.Kept ? 1 : 0;
+        }
+
+        /// <summary>
+        /// Whether one of <paramref name="missing"/> may be kept once made: one not made with no room for it, as most are
+        /// not, or one there is room for now, as measured.
+        /// </summary>
+        private async Task<bool> AnyHasRoomAsync(string sha256, IReadOnlyList<KindMaker> missing, Lazy<Task<DerivedRoom.RoomNow>> room)
+        {
+            List<DerivedEntry?> entries = missing.Select(maker => _store.Find(maker.Declaration.Kind, sha256)).ToList();
+            if (entries.Any(entry => entry?.Outcome is not DerivedOutcome.NoRoom))
+            {
+                return true;
+            }
+
+            DerivedRoom.RoomNow now = await room.Value;
+            foreach (DerivedEntry? entry in entries)
+            {
+                if (await now.HasRoomForAsync(sha256, entry))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

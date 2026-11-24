@@ -36,7 +36,7 @@ namespace ByteShelf.Server.Derived.Services
             Dictionary<DerivedKind, string> made = new Dictionary<DerivedKind, string>();
             foreach (DerivedKind kind in kinds)
             {
-                if (entries.TryGetValue(kind, out DerivedEntry? entry) && entry.Made != null && _makers.IsCurrent(kind, entry))
+                if (entries.TryGetValue(kind, out DerivedEntry? entry) && entry.Outcome is DerivedOutcome.Made && _makers.IsCurrent(kind, entry))
                 {
                     made.Add(kind, entry.Tag);
                 }

@@ -111,6 +111,23 @@ namespace ByteShelf.Server.Tests.Mcp
         }
 
         [Fact]
+        public async Task DownloadFile_WhoseShelfHasNoRoomForAPreview_SaysSoAndHowToFetchIt()
+        {
+            byte[] contents = [.. "picture"u8, 0xFF];
+            (await _host.AdminClient.PutAsJsonAsync("/api/shelves/docs", new UpdateShelfRequest { Name = "docs", QuotaBytes = contents.Length + 1 })).EnsureSuccessStatusCode();
+            await _host.PutAsAdminAsync("docs", "/a.heic", contents, "image/heic");
+            await using McpClient client = await ConnectAsync();
+
+            CallToolResult read = await DownloadAsync(client, "/a.heic");
+
+            Assert.Equal(true, read.IsError);
+            Assert.EndsWith(
+                "a shelf that holds the contents of /a.heic has no room in its quota for a preview of it; make a link to it with share_file and fetch it from there, such as with curl.",
+                TextOf(read),
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
         public async Task DownloadFile_OfATypeNoPreviewIsMadeOf_SaysWhatItIsAndHowToFetchIt()
         {
             await _host.PutAsAdminAsync("docs", "/a.mp4", [0xFF, 0xFE], "video/mp4");

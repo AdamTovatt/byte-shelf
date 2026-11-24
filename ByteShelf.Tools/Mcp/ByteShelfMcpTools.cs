@@ -692,6 +692,10 @@ namespace ByteShelf.Tools.Mcp
                 // Why the plugin could not run is in the server's log.
                 throw NotAnsweredInline($"the server failed to make a preview of {file.Path}", whereToGetIt);
             }
+            catch (ByteShelfException exception) when (exception.StatusCode == HttpStatusCode.InsufficientStorage)
+            {
+                throw NotAnsweredInline($"a shelf that holds the contents of {file.Path} has no room in its quota for a preview of it", whereToGetIt);
+            }
 
             if (preview == null)
             {

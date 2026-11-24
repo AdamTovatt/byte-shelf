@@ -26,12 +26,42 @@ whose own type nothing takes has none, though another holds the same contents.
 ## On disk (`DerivedStore`)
 
 `derived/<kind>/ab/cd/<sha256>` in the root, by the SHA-256 of the contents it was made from, and beside
-it `<sha256>.json` (`DerivedEntry`): the plugin and version that made it and its media type, or that
-making it failed. Nothing about them is in the database.
+it `<sha256>.json` (`DerivedEntry`): the plugin and version that made it, and how that ended
+(`DerivedOutcome`): made, with its media type; failed; or made but not kept for want of room, with how many
+bytes it took. In the database is only how many bytes each one kept takes (`derived_size`,
+`IDerivedSizeRepository`), for quotas, written with the files (`DerivedFiles`).
 
-They are a cache: not replicated, not in backups, not counted in quota, not found by search. Empty the
-folder and they are made again, failures tried again too (with the server stopped: a run under way works in
-`derived/work`). What another version made, or failed to make, is made again.
+They are a cache: not replicated, not in backups, not found by search. Empty the folder and they are made
+again, failures tried again too (with the server stopped: a run under way works in `derived/work`). What
+another version made, or failed to make, is made again.
+
+## Quota
+
+What was made of contents counts in the quota of every shelf with a file row, live or in the trash, that
+holds them, once a row, as a file's own bytes do ([Shelves](../Storage/Shelves.md)). One is kept only if
+every such shelf has room for what it adds, its bytes less those of the one it replaces, asked in the
+transaction that keeps it (`DerivedRoom`, `IShelfRepository.HasRoomForMoreOfAsync`), so two keeping at once
+cannot both take the last of the room. Otherwise it is not kept, nor is the one it would replace, and its
+entry says how many bytes it took (`DerivedOutcome.NoRoom`), which is not a failure: the hourly pass makes it
+again once every such shelf has room for as many, by the room each shelf had as the pass began, and asking
+for it is a 507 `quota_exceeded` until then. Of kinds made in one run, each is weighed in turn, so a
+thumbnail may be kept where its preview is not.
+
+An upload's reservation is measured against usage that includes derived files. An upload of contents
+something was made of already is refused as it finishes, with 507, when its row with those files would put
+its shelf over (`UploadService`).
+
+`derived_size` is written in the step that keeps or removes a file, is the server's own as the folder is
+(never logged, replicated or backed up, so a replica counts what it made), and is brought in line with the
+folder by `derived.maintenance`, at startup and daily: an emptied or edited folder counts what is there.
+What fails between the database and the folder counts wrongly until then. A `full` copy trimmed stops
+counting.
+
+Whatever writes them begins its transaction before it takes the contents' lock (`ContentsTransactions`), as
+a swap does, since a swap holds the database while it waits for that lock. So what a run made is taken out
+of its process's folder into one of its own, noting the contents, and kept only once the run is over
+(`TakenFiles`): a removal of the contents finds and removes it as it does a process's folder, and the
+keeping, which waits for the removal's commit, then finds no plain file holding them.
 
 | Kind | The most one may take (`DerivedFileLimits.MaxBytesOf`) | Together |
 |---|---|---|
@@ -65,7 +95,8 @@ encrypted.
 
 One that is missing is made and waited for, 10 seconds at most; then it is a 503 `not_ready` with
 `Retry-After: 5` while making goes on, as it is when the run is stopped. 404 when nothing makes it, when it
-could not be made, and for an encrypted file, even when a plain file holds the same bytes. 500 when the
+could not be made, and for an encrypted file, even when a plain file holds the same bytes. 507 when it was
+made with no room to keep it and a shelf that holds the contents still has none (see Quota). 500 when the
 plugin could not run, or what it made could not be written.
 
 Listings, trees, searches, a deletion's tree and a file's own record name the kinds there are of each file, with a
@@ -99,4 +130,5 @@ same bytes does not count.
 
 The job `derived.maintenance`, at startup and daily, removes what is left of contents no plain file holds (by
 a crash, or a removal that failed), what plugins' processes have of them included, and what a crash left
-without an entry. It also removes what no installed plugin makes any more, and trims `full`.
+without an entry. It also removes what no installed plugin makes any more, trims `full`, and counts the sizes
+of what is left again.

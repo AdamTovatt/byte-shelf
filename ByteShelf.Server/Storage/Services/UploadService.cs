@@ -271,25 +271,29 @@ namespace ByteShelf.Server.Storage.Services
         /// <exception cref="QuotaExceededException">The shelf has too little room.</exception>
         private async Task ReserveAsync(Shelf shelf, UploadRecord upload, IDbSession session)
         {
-            Shelf current = await _shelfRepository.GetByIdAsync(shelf.Id, session)
-                ?? throw new NotFoundException($"There is no shelf '{shelf.Name}'.");
-
-            if (current.QuotaBytes is not long quota)
+            if (await MeasuredAsync(shelf.Id, () => _uploadRepository.InsertAsync(upload, session), session) is { IsOver: true } change)
             {
-                await _uploadRepository.InsertAsync(upload, session);
-                return;
+                throw change.Refused(string.Empty);
+            }
+        }
+
+        /// <summary>
+        /// Makes <paramref name="change"/>, measuring what counts against the shelf's quota before and after it, so the usage
+        /// query alone says what it adds. Null, and nothing measured, when the shelf has no quota. Throwing leaves the
+        /// caller's transaction uncommitted, and the change with it.
+        /// </summary>
+        private async Task<QuotaChange?> MeasuredAsync(Guid shelfId, Func<Task> change, IDbSession session)
+        {
+            Shelf shelf = await _shelfRepository.GetByIdAsync(shelfId, session) ?? throw new NotFoundException("The shelf is gone.");
+            if (shelf.QuotaBytes is not long quota)
+            {
+                await change();
+                return null;
             }
 
-            // Measured before and after, so the usage query alone says what an upload holds. Throwing
-            // leaves the caller's transaction uncommitted, and the row with it.
-            long before = (await _shelfRepository.GetUsageAsync(shelf.Id, session)).TotalBytes;
-            await _uploadRepository.InsertAsync(upload, session);
-            long after = (await _shelfRepository.GetUsageAsync(shelf.Id, session)).TotalBytes;
-            if (after > quota)
-            {
-                throw new QuotaExceededException(
-                    $"The shelf '{shelf.Name}' has {Math.Max(quota - before, 0)} bytes free of its {quota}, too few for {after - before} more.");
-            }
+            long before = (await _shelfRepository.GetUsageAsync(shelfId, session)).TotalBytes;
+            await change();
+            return new QuotaChange(shelf.Name, quota, before, (await _shelfRepository.GetUsageAsync(shelfId, session)).TotalBytes);
         }
 
         /// <summary>
@@ -301,6 +305,10 @@ namespace ByteShelf.Server.Storage.Services
         /// An upload <paramref name="throughLink"/> is held to <see cref="ShelfEncryption.RequireLinkTargetAsync"/>
         /// again in that transaction: the place may have been encrypted while the body arrived.
         /// </summary>
+        /// <exception cref="QuotaExceededException">
+        /// The row takes more of the shelf than the upload reserved, by the derived files the server already has of its
+        /// contents, which usage counts on every row that holds them, and that puts the shelf over its quota.
+        /// </exception>
         private async Task<ShelfFile> FinishAsync(UploadRecord upload, bool throughLink, CancellationToken cancellationToken)
         {
             // The server cannot tell a right password, but it can tell what is no age file at all.
@@ -323,13 +331,25 @@ namespace ByteShelf.Server.Storage.Services
                     await using (ContentsSession session = await _contentsSessions.CreateAsync())
                     {
                         DateTimeOffset now = _timeProvider.GetUtcNow();
-                        stored = upload.Target switch
+                        ShelfFile? storedNow = null;
+                        QuotaChange? change = await MeasuredAsync(upload.ShelfId, async () =>
                         {
-                            StoreAtPath store => await StoreNewAsync(upload, store, sha256, throughLink, now, session),
-                            ContentSwap swap => await SwapInAsync(upload, swap, sha256, now, session),
-                            _ => throw new InvalidOperationException($"No upload stores to a {upload.Target.GetType().Name}."),
-                        };
-                        await _uploadRepository.DeleteAsync(upload.Id, session);
+                            storedNow = upload.Target switch
+                            {
+                                StoreAtPath store => await StoreNewAsync(upload, store, sha256, throughLink, now, session),
+                                ContentSwap swap => await SwapInAsync(upload, swap, sha256, now, session),
+                                _ => throw new InvalidOperationException($"No upload stores to a {upload.Target.GetType().Name}."),
+                            };
+                            await _uploadRepository.DeleteAsync(upload.Id, session);
+                        }, session);
+
+                        // Only what it adds past its reservation: one started before the quota was lowered finishes.
+                        if (change is { IsOver: true, Adds: true })
+                        {
+                            throw change.Refused(" for what plugins made of these contents");
+                        }
+
+                        stored = storedNow!;
 
                         await session.CommitAsync(beforeCommit: () =>
                         {
@@ -468,6 +488,21 @@ namespace ByteShelf.Server.Storage.Services
         {
             await _uploadRepository.DeleteAsync(uploadId);
             _stagingArea.Delete(uploadId);
+        }
+
+        /// <summary>What counted against a shelf's quota before and after a change (<see cref="MeasuredAsync"/>).</summary>
+        private sealed record QuotaChange(string Shelf, long Quota, long Before, long After)
+        {
+            public bool IsOver => After > Quota;
+
+            public bool Adds => After > Before;
+
+            /// <summary>The refusal of the change, saying what the bytes it adds are <paramref name="forWhat"/>.</summary>
+            public QuotaExceededException Refused(string forWhat)
+            {
+                return new QuotaExceededException(
+                    $"The shelf '{Shelf}' has {Math.Max(Quota - Before, 0)} bytes free of its {Quota}, too few for {After - Before} more{forWhat}.");
+            }
         }
     }
 }

@@ -433,6 +433,19 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
+        public async Task CompleteAsync_QuotaLoweredSinceItStarted_StoresWhatItReserved()
+        {
+            Shelf shelf = await CreateShelfAsync(quotaBytes: 100);
+            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/a", SizeBytes = 10 }, Uploader);
+            await ShelfService.UpdateAsync(shelf, shelf.Name, quotaBytes: 5);
+            await UploadService.AppendAsync(shelf, upload.Id, 0, new MemoryStream(Encoding.UTF8.GetBytes("0123456789")), CancellationToken.None);
+
+            ShelfFile file = await UploadService.CompleteAsync(shelf, upload.Id, CancellationToken.None);
+
+            Assert.Equal(10, file.SizeBytes);
+        }
+
+        [Fact]
         public async Task CompleteAsync_ChunksSentInOrder_StoresWholeFile()
         {
             Shelf shelf = await CreateShelfAsync();

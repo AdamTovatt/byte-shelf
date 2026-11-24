@@ -546,6 +546,17 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<IReadOnlyDictionary<Guid, int>> CountByShelfWithObjectAsync(string sha256, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string query = $"SELECT shelf_id AS {nameof(ShelfCount.ShelfId)}, COUNT(*) AS {nameof(ShelfCount.Rows)} FROM file WHERE sha256 = @{nameof(sha256)} GROUP BY shelf_id";
+                IEnumerable<ShelfCount> counts = await dbSession.Connection.QueryAsync<ShelfCount>(query, new { sha256 }, transaction: dbSession.Transaction);
+                return (IReadOnlyDictionary<Guid, int>)counts.ToDictionary(count => count.ShelfId, count => (int)count.Rows);
+            }, session);
+        }
+
+        /// <inheritdoc />
         public async Task<int> PurgeAllWithObjectAsync(string sha256, DateTimeOffset purgedAt, IDbSession session)
         {
             string query = $"DELETE FROM file WHERE sha256 = @{nameof(sha256)} RETURNING id";
@@ -590,6 +601,12 @@ namespace ByteShelf.Server.Storage.Repositories
         internal sealed class FileSearchEntity : FileEntity
         {
             public string FullPath { get; set; } = string.Empty;
+        }
+
+        private sealed class ShelfCount
+        {
+            public Guid ShelfId { get; set; }
+            public long Rows { get; set; }
         }
 
         internal class FileEntity

@@ -58,6 +58,7 @@ namespace ByteShelf.Server.Tests.Derived
 
             await PublishedAsync(shelf, shelf);
             await publisher.StopAsync(CancellationToken.None);
+            Assert.Equal(2, _broadcaster.UsagesStale);
         }
 
         [Fact]
@@ -69,10 +70,7 @@ namespace ByteShelf.Server.Tests.Derived
             Services.GetRequiredService<DerivedChanges>().Take();
             using DerivedInvalidationPublisher publisher = await StartAsync();
 
-            using (await Locks.LockAsync(file.Sha256))
-            {
-                Store.Delete(DerivedKind.Thumbnail, file.Sha256);
-            }
+            await DeleteDerivedAsync(DerivedKind.Thumbnail, file.Sha256);
 
             await PublishedAsync(shelf);
             await publisher.StopAsync(CancellationToken.None);
@@ -132,6 +130,9 @@ namespace ByteShelf.Server.Tests.Derived
 
             public bool Failing { get; set; }
 
+            /// <summary>How often the shelf list, whose usage counts derived files, was told it is stale.</summary>
+            public int UsagesStale { get; private set; }
+
             public IReadOnlyList<Guid> Shelves
             {
                 get
@@ -150,9 +151,16 @@ namespace ByteShelf.Server.Tests.Derived
                     throw new InvalidOperationException("It was told to fail.");
                 }
 
-                Assert.Equal(InvalidationResources.ShelfContents, invalidationEvent.Resource);
                 lock (_shelves)
                 {
+                    if (invalidationEvent.Resource == InvalidationResources.Shelves)
+                    {
+                        Assert.Null(invalidationEvent.Metadata);
+                        UsagesStale++;
+                        return;
+                    }
+
+                    Assert.Equal(InvalidationResources.ShelfContents, invalidationEvent.Resource);
                     _shelves.Add(Guid.Parse(invalidationEvent.Metadata!));
                 }
             }

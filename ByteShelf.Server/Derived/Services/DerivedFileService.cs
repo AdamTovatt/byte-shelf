@@ -25,6 +25,7 @@ namespace ByteShelf.Server.Derived.Services
         private readonly ContentsLocks _locks;
         private readonly DerivedMaking _making;
         private readonly TimeProvider _timeProvider;
+        private readonly DerivedRoom _room;
 
         public DerivedFileService(
             ShelfTree shelfTree,
@@ -34,8 +35,10 @@ namespace ByteShelf.Server.Derived.Services
             DerivedStore store,
             ContentsLocks locks,
             DerivedMaking making,
-            TimeProvider timeProvider)
+            TimeProvider timeProvider,
+            DerivedRoom room)
         {
+            _room = room;
             _shelfTree = shelfTree;
             _trashService = trashService;
             _contents = contents;
@@ -101,27 +104,35 @@ namespace ByteShelf.Server.Derived.Services
                     return null;
                 }
 
-                if (entry!.Made == null)
+                switch (entry!.Outcome)
                 {
-                    return new Found(null);
+                    case DerivedOutcome.NoRoom:
+                        return await _room.HasRoomForAsync(sha256, entry) ? null : throw NoRoom(kind);
+                    case DerivedOutcome.Made made:
+                        return _store.TryOpenRead(kind, sha256) is not FileStream contents
+                            ? null
+                            : new Found(new DerivedFile
+                            {
+                                Kind = kind,
+                                Sha256 = sha256,
+                                Tag = entry.Tag,
+                                MediaType = made.MediaType,
+                                Contents = contents,
+                            });
+                    default:
+                        return new Found(null);
                 }
-
-                return _store.TryOpenRead(kind, sha256) is not FileStream contents
-                    ? null
-                    : new Found(new DerivedFile
-                    {
-                        Kind = kind,
-                        Sha256 = sha256,
-                        Tag = entry.Tag,
-                        MediaType = entry.Made.MediaType,
-                        Contents = contents,
-                    });
             }
         }
 
         private static NotFoundException None(FileRecord file, DerivedKind kind)
         {
             return new NotFoundException($"The file {file.Id} has no {DerivedKinds.NameOf(kind)}.");
+        }
+
+        private static QuotaExceededException NoRoom(DerivedKind kind)
+        {
+            return new QuotaExceededException($"A shelf that holds the file's contents has no room for its {DerivedKinds.NameOf(kind)}.");
         }
 
         private static RetryLaterException Later(DerivedKind kind)

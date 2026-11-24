@@ -49,7 +49,9 @@ namespace ByteShelf.Server.Derived.Services
         {
             try
             {
-                return await _processes.RunAsync(_runs.Of(plugin, key.Sha256, key.Group), turn, CancellationToken.None);
+                MakerRun run = _runs.Of(plugin, key.Sha256, key.Group);
+                TakenFiles? taken = await _processes.RunAsync(run, turn, CancellationToken.None);
+                return taken == null ? MakingOutcome.NothingToMake : await run.KeepAsync(taken, CancellationToken.None);
             }
             catch (OperationCanceledException)
             {

@@ -4,13 +4,16 @@ using System.Runtime.Versioning;
 using ByteShelf.Server.Backup.Models;
 using ByteShelf.Server.Backup.Services;
 using ByteShelf.Server.ChangeLog.Models;
+using ByteShelf.Server.Derived.Repositories;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.IO;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
+using EasyReasy.Database;
 using EasyReasy.Database.Mapping;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using StoredObjects = ByteShelf.Server.Storage.Services.ObjectStore;
 
@@ -105,6 +108,22 @@ namespace ByteShelf.Server.Tests.Backup
             await RootBackup.WriteAsync(TestRoot.Root, _zipPath, CancellationToken.None);
 
             Assert.Equal(0, await CountAsync(Restore(), "SELECT COUNT(*) FROM upload"));
+        }
+
+        [Fact]
+        public async Task WriteAsync_SizesOfDerivedFiles_AreLeftOutAsTheFilesAre()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
+            await using (IDbSession session = await TestRoot.SessionFactory.CreateSessionAsync())
+            {
+                await Services.GetRequiredService<IDerivedSizeRepository>().SetAsync(file.Sha256, DerivedKind.Thumbnail, 10, session);
+            }
+
+            await RootBackup.WriteAsync(TestRoot.Root, _zipPath, CancellationToken.None);
+
+            Assert.Equal(1, await CountAsync(TestRoot.Root, "SELECT COUNT(*) FROM derived_size"));
+            Assert.Equal(0, await CountAsync(Restore(), "SELECT COUNT(*) FROM derived_size"));
         }
 
         [Fact]

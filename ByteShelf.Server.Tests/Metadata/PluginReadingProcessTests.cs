@@ -167,7 +167,7 @@ namespace ByteShelf.Server.Tests.Metadata
             await using AsyncServiceScope scope = Services.CreateAsyncScope();
             DerivedMaintenanceSummary summary = await scope.ServiceProvider.GetRequiredService<DerivedMaintenance>().RunAsync(CancellationToken.None).WaitAsync(RealTimeLimit);
 
-            Assert.Equal(new DerivedMaintenanceSummary(Unheld: 2, Orphaned: 0, Trimmed: 0), summary);
+            Assert.Equal(new DerivedMaintenanceSummary(Unheld: 2, Orphaned: 0, Trimmed: 0, Recounted: 0), summary);
             Assert.True(process.HasExited);
             Assert.Equal(heldFolder.Path, Assert.Single(WorkFolder.Find(TestRoot.Root)).Path);
         }

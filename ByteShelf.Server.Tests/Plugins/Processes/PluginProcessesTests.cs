@@ -79,7 +79,7 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
 
             Assert.Equal(MakingOutcome.Kept, await MakeAsync(file));
 
-            Assert.Equal(made, Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Made?.MediaType);
+            Assert.Equal(made, (Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Outcome as DerivedOutcome.Made)?.MediaType);
             Assert.Empty(WorkFolder.Find(TestRoot.Root));
         }
 
@@ -94,7 +94,7 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
             // The clock stands, so it is no time limit that ends it.
             Assert.Equal(MakingOutcome.Kept, await MakeAsync(eating));
 
-            Assert.Null(Store.Find(DerivedKind.Thumbnail, eating.Sha256)!.Made);
+            Assert.IsType<DerivedOutcome.Failed>(Store.Find(DerivedKind.Thumbnail, eating.Sha256)!.Outcome);
             Assert.Equal("Thumbnail of b by test-maker 1", await GetAsync(shelf, await StoreTextAsync(shelf, "/b.txt", "b")));
         }
 
@@ -109,7 +109,7 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
             Clock.Advance(RunLimit);
 
             Assert.Equal(MakingOutcome.Kept, await making);
-            Assert.Null(Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Made);
+            Assert.IsType<DerivedOutcome.Failed>(Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Outcome);
         }
 
         [UnixFact]
@@ -166,29 +166,29 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
         }
 
         [Fact]
-        public async Task StopAsync_AsWhatItMadeOfOtherContentsIsTaken_WaitsUntilItHasBeen()
+        public async Task StopAsync_AsWhatItMadeOfOtherContentsWaitsToBeKept_EndsTheProcessAndLeavesThatToBeKept()
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile before = await StoreTextAsync(shelf, "/before.txt", "before");
             ShelfFile now = await StoreTextAsync(shelf, "/now.txt", Plugins.Waiting("now"));
             await GetAsync(shelf, before);
             Task<MakingOutcome> making = MakeAsync(now);
-            Task stopping;
             using (await Plugins.StartedAsync("now"))
             using (await Locks.LockAsync(now.Sha256))
             {
-                TaskCompletionSource takes = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                Locks.Locks.WaitingStarted = _ => takes.TrySetResult();
+                TaskCompletionSource keeps = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                Locks.Locks.WaitingStarted = _ => keeps.TrySetResult();
                 Plugins.GoOn("now");
-                await takes.Task.WaitAsync(RealTimeLimit);
-                stopping = Processes.StopAsync(before.Sha256);
-                await Task.WhenAny(stopping, Task.Delay(TimeSpan.FromSeconds(2)));
-                Assert.False(stopping.IsCompleted);
+                await keeps.Task.WaitAsync(RealTimeLimit);
+
+                // Taken out of the process's folder already, so nothing waits for the keeping.
+                await Processes.StopAsync(before.Sha256).WaitAsync(RealTimeLimit);
+                Assert.DoesNotContain(before.Sha256, Processes.GetContentsGiven());
             }
 
-            await stopping.WaitAsync(RealTimeLimit);
-            await making;
-            Assert.NotNull(Store.Find(DerivedKind.Thumbnail, now.Sha256)!.Made);
+            Assert.Equal(MakingOutcome.Kept, await making);
+            Assert.IsType<DerivedOutcome.Made>(Store.Find(DerivedKind.Thumbnail, now.Sha256)!.Outcome);
+            Assert.Empty(Processes.GetContentsGiven());
         }
 
         [UnixFact]
@@ -241,7 +241,31 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
 
             Assert.Equal(MakingOutcome.Kept, await MakeAsync(file));
 
-            Assert.Null(Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Made);
+            Assert.IsType<DerivedOutcome.Failed>(Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Outcome);
+        }
+
+        [UnixFact]
+        public async Task RunAsync_WhatCannotBeTakenOutOfItsProcesssFolder_LeavesNoFolderOfItsOwn()
+        {
+            ShelfFile file = await StoreTextAsync(await CreateShelfAsync(), "/a.txt", "unmovable");
+            try
+            {
+                await Assert.ThrowsAnyAsync<UnauthorizedAccessException>(() => MakeAsync(file));
+
+                // The process's alone, which it could not empty either.
+                WorkFolder left = Assert.Single(WorkFolder.Find(TestRoot.Root));
+                Assert.True(Directory.EnumerateFiles(left.Path).Any());
+            }
+            finally
+            {
+                foreach (string folder in Directory.EnumerateDirectories(Path.Combine(TestRoot.Root.DerivedPath, "work")))
+                {
+                    if (!OperatingSystem.IsWindows())
+                    {
+                        File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                    }
+                }
+            }
         }
 
         [UnixFact]
@@ -252,8 +276,8 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
 
             Assert.Equal(MakingOutcome.Kept, await MakeAsync(file));
 
-            Assert.Null(Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Made);
-            Assert.NotNull(Store.Find(DerivedKind.Preview, file.Sha256)!.Made);
+            Assert.IsType<DerivedOutcome.Failed>(Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Outcome);
+            Assert.IsType<DerivedOutcome.Made>(Store.Find(DerivedKind.Preview, file.Sha256)!.Outcome);
         }
 
         [UnixFact]
@@ -264,8 +288,8 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
 
             Assert.Equal(MakingOutcome.Kept, await MakeAsync(file));
 
-            Assert.Null(Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Made);
-            Assert.NotNull(Store.Find(DerivedKind.Preview, file.Sha256)!.Made);
+            Assert.IsType<DerivedOutcome.Failed>(Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Outcome);
+            Assert.IsType<DerivedOutcome.Made>(Store.Find(DerivedKind.Preview, file.Sha256)!.Outcome);
         }
 
         [UnixFact]
@@ -312,7 +336,7 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
             }
 
             await making;
-            Assert.NotNull(Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Made);
+            Assert.IsType<DerivedOutcome.Made>(Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Outcome);
         }
 
         [Fact]
@@ -378,7 +402,7 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
             Clock.Advance(RunLimit);
 
             Assert.Equal(MakingOutcome.Kept, await making);
-            Assert.Null(Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Made);
+            Assert.IsType<DerivedOutcome.Failed>(Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Outcome);
         }
 
         [UnixFact]
@@ -451,8 +475,8 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
 
             Assert.Equal(MakingOutcome.Kept, await MakeAsync(file));
 
-            Assert.Null(Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Made);
-            Assert.NotNull(Store.Find(DerivedKind.Preview, file.Sha256)!.Made);
+            Assert.IsType<DerivedOutcome.Failed>(Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Outcome);
+            Assert.IsType<DerivedOutcome.Made>(Store.Find(DerivedKind.Preview, file.Sha256)!.Outcome);
         }
 
         /// <summary>Contents whose process closes its pipe once it has begun, and goes on.</summary>
