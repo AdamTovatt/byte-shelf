@@ -1,5 +1,4 @@
 using ByteShelf.Server.ChangeLog.Models;
-using ByteShelf.Server.Derived.Services;
 using ByteShelf.Server.Replication.Models;
 using ByteShelf.Server.Replication.Repositories;
 using ByteShelf.Server.Shared.Errors;
@@ -35,8 +34,7 @@ namespace ByteShelf.Server.Replication.Services
         private readonly ReplicaApplier _applier;
         private readonly ObjectStore _objectStore;
         private readonly ObjectCollector _objectCollector;
-        private readonly IDerivedRemoval _derivedRemoval;
-        private readonly StoredContents _storedContents;
+        private readonly ContentsSessions _contentsSessions;
         private readonly StagingArea _stagingArea;
         private readonly MaintenanceGate _maintenanceGate;
         private readonly ReplicaSyncControl _control;
@@ -52,8 +50,7 @@ namespace ByteShelf.Server.Replication.Services
             ReplicaApplier applier,
             ObjectStore objectStore,
             ObjectCollector objectCollector,
-            IDerivedRemoval derivedRemoval,
-            StoredContents storedContents,
+            ContentsSessions contentsSessions,
             StagingArea stagingArea,
             MaintenanceGate maintenanceGate,
             ReplicaSyncControl control,
@@ -68,8 +65,7 @@ namespace ByteShelf.Server.Replication.Services
             _applier = applier;
             _objectStore = objectStore;
             _objectCollector = objectCollector;
-            _derivedRemoval = derivedRemoval;
-            _storedContents = storedContents;
+            _contentsSessions = contentsSessions;
             _stagingArea = stagingArea;
             _maintenanceGate = maintenanceGate;
             _control = control;
@@ -150,8 +146,9 @@ namespace ByteShelf.Server.Replication.Services
             HashSet<(Guid FileId, string Sha256)> unavailable = new HashSet<(Guid FileId, string Sha256)>();
             await FetchObjectsAsync(source, entries, unavailable, cancellationToken);
 
+            IReadOnlyCollection<string> released;
             AppliedChanges changes = new AppliedChanges();
-            await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+            await using (ContentsSession session = await _contentsSessions.CreateAsync())
             {
                 await _applier.ApplyAsync(WithoutUnavailable(entries, unavailable), session, changes);
                 await _applier.SettleAsync(session, changes);
@@ -160,31 +157,26 @@ namespace ByteShelf.Server.Replication.Services
                     return;
                 }
 
-                await _derivedRemoval.CommitReleasingAsync(changes.ReleasedObjects, session);
+                await session.CommitAsync();
+                released = session.Released;
             }
 
-            await FinishAsync(changes);
+            await FinishAsync(changes, released);
         }
 
         /// <summary>
         /// Does what applied changes leave to do once they commit: ends removed users' sessions first, the
         /// part that matters for safety, then removes at once the old contents of files swapped in place
-        /// (encrypted or decrypted), as the primary did, unless a row here still points at them, and has what
-        /// plugins make from new contents made.
+        /// (encrypted or decrypted), as the primary did, unless a row here still points at them.
         /// </summary>
-        private async Task FinishAsync(AppliedChanges changes)
+        private async Task FinishAsync(AppliedChanges changes, IReadOnlyCollection<string> released)
         {
             foreach (Guid userId in changes.RemovedUsers)
             {
                 await _userService.EndSessionsAsync(userId);
             }
 
-            await _objectCollector.RemoveReleasedAsync(changes.ReleasedObjects);
-
-            foreach (string sha256 in changes.StoredContents)
-            {
-                _storedContents.Add(sha256);
-            }
+            await _objectCollector.RemoveReleasedAsync(released);
         }
 
         /// <summary>
@@ -224,8 +216,9 @@ namespace ByteShelf.Server.Replication.Services
                 after = page.Entries[^1].Sequence;
             }
 
+            IReadOnlyCollection<string>? released = null;
             AppliedChanges changes = new AppliedChanges();
-            await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+            await using (ContentsSession session = await _contentsSessions.CreateAsync())
             {
                 await _applier.RemoveMissingFromCopyAsync(session, changes);
 
@@ -249,10 +242,15 @@ namespace ByteShelf.Server.Replication.Services
                 await _copyRepository.ClearAsync(session);
                 if (await _sourceRepository.SetProgressAsync(source, startedAt.Value, appliedFingerprint: null, _timeProvider.GetUtcNow(), session))
                 {
-                    await _derivedRemoval.CommitReleasingAsync(changes.ReleasedObjects, session);
-                    await FinishAsync(changes);
-                    return;
+                    await session.CommitAsync();
+                    released = session.Released;
                 }
+            }
+
+            if (released != null)
+            {
+                await FinishAsync(changes, released);
+                return;
             }
 
             // Promoted (or paired anew) while the copy was read, by the server's command in another process:

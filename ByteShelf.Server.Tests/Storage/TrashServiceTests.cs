@@ -327,7 +327,7 @@ namespace ByteShelf.Server.Tests.Storage
             DateTimeOffset now = Clock.GetUtcNow();
             string sha256 = Sha256Of("x");
 
-            await using IDbTransactionSession session = await TestRoot.SessionFactory.CreateSessionWithTransactionAsync();
+            await using ContentsSession session = await Services.CreateContentsSessionAsync();
             DirectoryRecord root = await directories.GetRootAsync(shelf.Id, session);
             DirectoryRecord top = DeletedDirectory(shelf, root.Id, name, deletionId, now);
             await directories.InsertAsync(top, session);

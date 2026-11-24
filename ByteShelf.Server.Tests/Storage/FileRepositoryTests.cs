@@ -4,6 +4,7 @@ using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
+using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using EasyReasy.Database;
@@ -103,7 +104,7 @@ namespace ByteShelf.Server.Tests.Storage
             long before = await ChangeLog.GetLatestSequenceAsync();
 
             FileRecord? swapped;
-            await using (IDbTransactionSession session = await TestRoot.SessionFactory.CreateSessionWithTransactionAsync())
+            await using (ContentsSession session = await Services.CreateContentsSessionAsync())
             {
                 swapped = await Files.SwapContentAsync(file.Id, Sha256Of("then"), Sha256Of("new"), 3, encrypted: true, TestInstants.Now, session);
                 await session.CommitAsync();
@@ -123,7 +124,7 @@ namespace ByteShelf.Server.Tests.Storage
             await FileService.DeleteFileAsync(shelf, EntryReference.ForId(file.Id));
             long before = await ChangeLog.GetLatestSequenceAsync();
 
-            await using (IDbTransactionSession session = await TestRoot.SessionFactory.CreateSessionWithTransactionAsync())
+            await using (ContentsSession session = await Services.CreateContentsSessionAsync())
             {
                 Assert.Null(await Files.SwapContentAsync(file.Id, file.Sha256, Sha256Of("new"), 3, encrypted: true, TestInstants.Now, session));
                 await session.CommitAsync();
@@ -144,7 +145,7 @@ namespace ByteShelf.Server.Tests.Storage
             await Services.SetFileDocumentAsync(file.Id, "{\"kept\":true}");
             long before = await ChangeLog.GetLatestSequenceAsync();
 
-            await using (IDbTransactionSession session = await TestRoot.SessionFactory.CreateSessionWithTransactionAsync())
+            await using (ContentsSession session = await Services.CreateContentsSessionAsync())
             {
                 await Files.SwapContentAsync(file.Id, file.Sha256, Sha256Of("new"), 3, encrypted: true, TestInstants.Now, session);
                 await session.CommitAsync();

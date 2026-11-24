@@ -164,10 +164,28 @@ altered token answers 404. Removing the secret and restarting ends every link at
 3. Finish: the server hashes the staged bytes itself, then in one transaction creates missing
    directories, moves an overwritten file to the trash, inserts the file row and removes the upload.
    The object is placed just before the commit. A swap instead checks its file again as it stands,
-   points the row at the new object, and removes the old object once that commits, what was derived
-   from it before (see "Encryption"); a removal of the object that fails is logged and left to maintenance, as the swap stands.
+   points the row at the new object, and removes the old object once that commits, what else the server
+   has of it before (see "Changing which contents files hold"); a removal of the object that fails is logged
+   and left to maintenance, as the swap stands.
 
 The client never supplies a hash the server trusts.
+
+## Changing which contents files hold (`ContentsSession`)
+
+What changes which contents a file holds (`IFileRepository`'s insert, swap, replicated write and purges)
+takes an `IContentsSession`, a transaction in which it notes the contents the file no longer holds, or no
+longer holds as plain, and those a live plain file came to hold. Over the server's own database only
+`ContentsSessions` starts one, so nothing there can commit such a change without what committing one does:
+
+- before the commit, what else the server has of the contents released goes (`IContentsTraces`: what plugins
+  made of them and what their processes hold, [Derived files](../Derived/Derived.md)) unless a plain file holds
+  them still, and none comes to be until it has committed. What cannot be removed refuses the commit.
+- after it, whoever does something with contents stored is told (`IStoredContentsListener`: the jobs that read
+  them, [Metadata](../Metadata/Metadata.md), and the makers of derived files).
+
+Removing the released objects is left to who started it (`ContentsSession.Released`,
+`ObjectCollector.RemoveReleasedAsync`), once it holds no object's lock. A backup prunes a copy of the
+database, of whose contents nobody has anything (`ContentsSession.OfACopy`).
 
 ## Deletes, restores and the purge (`TrashService`)
 
@@ -299,9 +317,9 @@ the items before it done; a client that goes away stops it between items.
 
 ## Removing objects safely (`ObjectCollector`)
 
-An object is removed only when no row, live or trashed, points at it. What was derived from it goes with the
-last plain file that holds it, which may be sooner: an encrypted file with the same bytes keeps the object
-([Derived files](../Derived/Derived.md)). Both sides of the question hold the object's lock
+An object is removed only when no row, live or trashed, points at it. What else the server has of it
+(`IContentsTraces`) goes with the last plain file that holds it, which may be sooner: an encrypted file
+with the same bytes keeps the object ([Derived files](../Derived/Derived.md)). Both sides of the question hold the object's lock
 (`ObjectStore.LockAsync`): a finishing upload from placing the object until its row commits, a removal from
 checking for rows until the file is gone. A replica's sync places
 objects for rows it commits later, after a whole page has arrived; it holds `MaintenanceGate` for the

@@ -1,4 +1,3 @@
-using ByteShelf.Server.Derived.Services;
 using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Storage.Models;
 using ByteShelfCommon;

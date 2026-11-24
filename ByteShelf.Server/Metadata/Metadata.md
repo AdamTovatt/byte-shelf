@@ -168,7 +168,8 @@ query string (`pluginFields=`, escaped, once a filter), the CLI and MCP:
 ## The jobs (`metadata.reading`, `metadata.plugin_reading`)
 
 Two jobs read contents, so that what plugins have yet to read never delays the server's own reading. Both run
-at startup, whenever an upload finishes (`MetadataReadingSignal`, woken by `UploadService`), and hourly
+at startup, whenever a live plain file comes to hold contents (`MetadataReadingSignal`, an
+`IStoredContentsListener`, [Storage](../Storage/Storage.md)), and hourly
 ([Jobs](../Jobs/Jobs.md)). A pass of `metadata.reading` (`MetadataReading`) drops what was read from contents
 no plain file row, live or trashed, holds any more (a file in the trash keeps it for a restore), every
 plugin's, installed or not; then it runs the server's own reader. A pass of `metadata.plugin_reading`

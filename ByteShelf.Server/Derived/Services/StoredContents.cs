@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using ByteShelf.Server.Storage.Services;
 
 namespace ByteShelf.Server.Derived.Services
 {
@@ -7,7 +8,7 @@ namespace ByteShelf.Server.Derived.Services
     /// be made of them before what is missing from files stored long ago. Not kept over a restart: those are then
     /// missing like any others.
     /// </summary>
-    public sealed class StoredContents
+    public sealed class StoredContents : IStoredContentsListener
     {
         private readonly IReadOnlyDictionary<string, Channel<string>> _byPlugin;
 
@@ -17,7 +18,7 @@ namespace ByteShelf.Server.Derived.Services
         }
 
         /// <summary>Tells every plugin that the contents were stored, whatever their types.</summary>
-        public void Add(string sha256)
+        public void Stored(string sha256)
         {
             foreach (Channel<string> channel in _byPlugin.Values)
             {

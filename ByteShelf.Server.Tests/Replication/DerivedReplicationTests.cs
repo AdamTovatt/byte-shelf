@@ -70,6 +70,26 @@ namespace ByteShelf.Server.Tests.Replication
         }
 
         [Fact]
+        public async Task Sync_AShelfRemovedOnThePrimary_RemovesItWithTheFilesTheReplicaKeptInItsTrash()
+        {
+            await using ReplicationPair pair = await StartAsync();
+            await pair.CreateShelfAsync("gone");
+            ShelfFile file = await pair.PutOnPrimaryAsync("gone", "/a.txt", "hello");
+            await pair.SyncAsync();
+            using HttpClient client = await pair.SignInOnReplicaAsync();
+            await client.GetStringAsync($"/api/shelves/gone/files/derived?id={file.Id}&kind=thumbnail");
+
+            // A purge reaches a replica as a move to its trash, which keeps the file until the shelf goes.
+            await pair.PurgeOnPrimaryAsync("gone", "/a.txt");
+            await pair.SyncAsync();
+            Assert.NotEmpty(DerivedOnReplica(pair));
+            (await pair.Primary.AdminClient.DeleteAsync("/api/shelves/gone")).EnsureSuccessStatusCode();
+            await pair.SyncAsync();
+
+            Assert.Empty(DerivedOnReplica(pair));
+        }
+
+        [Fact]
         public async Task Sync_AFileDecryptedOnThePrimary_HasItMadeOnTheReplica()
         {
             await using ReplicationPair pair = await StartAsync();

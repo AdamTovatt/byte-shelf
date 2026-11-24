@@ -1,13 +1,14 @@
 using ByteShelf.Server.Derived.Models;
 using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Storage.Repositories;
+using ByteShelf.Server.Storage.Services;
 using ByteShelfCommon;
 
 namespace ByteShelf.Server.Derived.Services
 {
     /// <summary>
     /// One pass of the job <c>derived.maintenance</c>: removes the derived files of contents no plain file holds
-    /// any more (a crash leaves them, as does a shelf removed on a replica), those no installed plugin makes, and
+    /// any more (a crash leaves them, as does a removal that failed), those no installed plugin makes, and
     /// the least used over their limit; then what else plugins' processes have of contents no plain file holds.
     /// </summary>
     internal sealed class DerivedMaintenance
@@ -16,7 +17,7 @@ namespace ByteShelf.Server.Derived.Services
 
         private readonly DerivedStore _store;
         private readonly IPlainContentsRepository _contents;
-        private readonly IDerivedRemoval _removal;
+        private readonly IContentsTraces _traces;
         private readonly DerivedMakers _makers;
         private readonly ContentsLocks _locks;
         private readonly PluginProcesses _processes;
@@ -24,14 +25,14 @@ namespace ByteShelf.Server.Derived.Services
         public DerivedMaintenance(
             DerivedStore store,
             IPlainContentsRepository contents,
-            IDerivedRemoval removal,
+            IContentsTraces traces,
             DerivedMakers makers,
             ContentsLocks locks,
             PluginProcesses processes)
         {
             _store = store;
             _contents = contents;
-            _removal = removal;
+            _traces = traces;
             _makers = makers;
             _locks = locks;
             _processes = processes;
@@ -70,7 +71,7 @@ namespace ByteShelf.Server.Derived.Services
             int removed = 0;
             foreach (string sha256 in unheld)
             {
-                removed += await _removal.RemoveUnheldAsync(sha256, cancellationToken) ? 1 : 0;
+                removed += await _traces.RemoveUnheldAsync(sha256, cancellationToken) ? 1 : 0;
             }
 
             return removed;

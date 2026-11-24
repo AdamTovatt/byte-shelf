@@ -56,7 +56,7 @@ namespace ByteShelf.Server.Tests.Storage
         private async Task InsertFileAsync(Shelf shelf, string sha256)
         {
             DateTimeOffset now = Clock.GetUtcNow();
-            await using IDbTransactionSession session = await TestRoot.SessionFactory.CreateSessionWithTransactionAsync();
+            await using ContentsSession session = await Services.CreateContentsSessionAsync();
             DirectoryRecord root = await Services.GetRequiredService<IDirectoryRepository>().GetRootAsync(shelf.Id, session);
 
             await Services.GetRequiredService<IFileRepository>().InsertAsync(

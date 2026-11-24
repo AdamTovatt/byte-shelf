@@ -19,9 +19,8 @@ namespace ByteShelf.Server.Tests.Derived
     /// What was derived from contents never outlives the plaintext: nothing of it is left once a file encrypted
     /// in place is answered, whatever was being made then, unless another plain file holds the contents.
     /// </summary>
-    public sealed class DerivedRemovalTests : DerivedTestBase
+    public sealed class ContentsTracesTests : DerivedTestBase
     {
-
         private HookedCommitSessionFactory _sessions = null!;
 
         protected override void ConfigureServices(IServiceCollection services)
@@ -189,7 +188,7 @@ namespace ByteShelf.Server.Tests.Derived
             File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserExecute);
             try
             {
-                await Assert.ThrowsAsync<UnauthorizedAccessException>(() => EncryptInPlaceAsync(shelf, file));
+                Assert.IsType<UnauthorizedAccessException>((await Assert.ThrowsAsync<TracesNotRemovedException>(() => EncryptInPlaceAsync(shelf, file))).InnerException);
             }
             finally
             {
@@ -279,7 +278,7 @@ namespace ByteShelf.Server.Tests.Derived
             Task<MakingOutcome> making = MakeAsync(file);
             using (await Plugins.StartedAsync("a"))
             {
-                // As a shelf removed on a replica takes its files, which leaves what goes with them to maintenance.
+                // Rows that go without releasing their contents: what is kept is checked under the lock all the same.
                 await Services.InTransactionAsync((provider, session) =>
                     provider.GetRequiredService<IFileRepository>().PurgeAllWithObjectAsync(file.Sha256, TestInstants.Now, session));
                 Plugins.GoOn("a");
@@ -297,7 +296,7 @@ namespace ByteShelf.Server.Tests.Derived
             await GetAsync(shelf, file);
             using UndeletableFolder left = new UndeletableFolder(TestRoot, file.Sha256);
 
-            await Assert.ThrowsAsync<PluginNotStoppedException>(() => EncryptInPlaceAsync(shelf, file));
+            Assert.IsType<PluginNotStoppedException>((await Assert.ThrowsAsync<TracesNotRemovedException>(() => EncryptInPlaceAsync(shelf, file))).InnerException);
             Assert.False((await FileService.GetFileAsync(shelf, EntryReference.ForId(file.Id))).Encrypted);
 
             left.Release();
@@ -306,7 +305,7 @@ namespace ByteShelf.Server.Tests.Derived
         }
 
         [UnixFact]
-        public async Task Purge_OnceARunLeftWhatCannotBeRemoved_StandsAndMaintenanceRemovesTheRest()
+        public async Task Purge_OnceARunLeftWhatCannotBeRemoved_IsRefusedAndMaintenancePurgesItOnceItCan()
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "undeletable");
@@ -314,17 +313,39 @@ namespace ByteShelf.Server.Tests.Derived
             using UndeletableFolder left = new UndeletableFolder(TestRoot, file.Sha256);
 
             await FileService.DeleteFileAsync(shelf, EntryReference.ForId(file.Id));
-            await TrashService.EmptyAsync(shelf, CancellationToken.None);
-            Assert.NotEmpty(AllDerivedFiles());
+            Assert.IsType<PluginNotStoppedException>((await Assert.ThrowsAsync<TracesNotRemovedException>(() => TrashService.EmptyAsync(shelf, CancellationToken.None))).InnerException);
+            Assert.NotNull(await Services.GetRequiredService<IFileRepository>().GetByIdAsync(file.Id));
 
             left.Release();
             await Services.GetRequiredService<IStorageMaintenance>().RunAsync(TestInstants.Now, CancellationToken.None);
+            Assert.Null(await Services.GetRequiredService<IFileRepository>().GetByIdAsync(file.Id));
             Assert.Empty(AllDerivedFiles());
             Assert.False(ObjectStore.Exists(file.Sha256));
         }
 
         [Fact]
-        public async Task CommitReleasing_SeveralContents_HoldsTheLockOfEachUntilItHasCommitted()
+        public async Task Purge_IsGoneBeforeItsTransactionCommits()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "hello");
+            await GetAsync(shelf, file);
+            await FileService.DeleteFileAsync(shelf, EntryReference.ForId(file.Id));
+            IReadOnlyList<string>? left = null;
+            _sessions.BeforeCommit = async session =>
+            {
+                if (await session.Connection.QuerySingleAsync<long>("SELECT COUNT(*) FROM file WHERE id = @Id", new { file.Id }, transaction: session.Transaction) == 0)
+                {
+                    left = AllDerivedFiles();
+                }
+            };
+
+            await TrashService.EmptyAsync(shelf, CancellationToken.None);
+
+            Assert.Equal([], left);
+        }
+
+        [Fact]
+        public async Task Commit_ReleasingSeveralContents_HoldsTheLockOfEachUntilItHasCommitted()
         {
             string[] released = [TestHashes.Sha256Of("a"), TestHashes.Sha256Of("b")];
             IReadOnlyList<bool>? free = null;
@@ -334,9 +355,15 @@ namespace ByteShelf.Server.Tests.Derived
                 return Task.CompletedTask;
             };
 
-            await using (IDbTransactionSession session = await _sessions.CreateSessionWithTransactionAsync())
+            await using (ContentsSession session = await Services.CreateContentsSessionAsync())
             {
-                await Services.GetRequiredService<IDerivedRemoval>().CommitReleasingAsync(released, session);
+                foreach (string sha256 in released)
+                {
+                    session.Release(sha256);
+                }
+
+                // As anything that knows only of a transaction commits it.
+                await ((IDbSession)session).CommitAsync();
             }
 
             Assert.Equal([false, false], free);

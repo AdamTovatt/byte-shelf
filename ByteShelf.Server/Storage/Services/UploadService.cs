@@ -1,6 +1,4 @@
-using ByteShelf.Server.Derived.Services;
 using ByteShelf.Server.Metadata.Repositories;
-using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
@@ -13,6 +11,7 @@ namespace ByteShelf.Server.Storage.Services
     public class UploadService : IUploadService
     {
         private readonly IDbSessionFactory _sessionFactory;
+        private readonly ContentsSessions _contentsSessions;
         private readonly IShelfRepository _shelfRepository;
         private readonly IUploadRepository _uploadRepository;
         private readonly IFileRepository _fileRepository;
@@ -22,15 +21,13 @@ namespace ByteShelf.Server.Storage.Services
         private readonly StagingArea _stagingArea;
         private readonly ObjectStore _objectStore;
         private readonly ObjectCollector _objectCollector;
-        private readonly IDerivedRemoval _derivedRemoval;
         private readonly UploadLocks _uploadLocks;
-        private readonly MetadataReadingSignal _metadataSignal;
-        private readonly StoredContents _storedContents;
         private readonly StorageOptions _options;
         private readonly TimeProvider _timeProvider;
 
         public UploadService(
             IDbSessionFactory sessionFactory,
+            ContentsSessions contentsSessions,
             IShelfRepository shelfRepository,
             IUploadRepository uploadRepository,
             IFileRepository fileRepository,
@@ -40,14 +37,12 @@ namespace ByteShelf.Server.Storage.Services
             StagingArea stagingArea,
             ObjectStore objectStore,
             ObjectCollector objectCollector,
-            IDerivedRemoval derivedRemoval,
             UploadLocks uploadLocks,
-            MetadataReadingSignal metadataSignal,
-            StoredContents storedContents,
             StorageOptions options,
             TimeProvider timeProvider)
         {
             _sessionFactory = sessionFactory;
+            _contentsSessions = contentsSessions;
             _shelfRepository = shelfRepository;
             _uploadRepository = uploadRepository;
             _fileRepository = fileRepository;
@@ -57,10 +52,7 @@ namespace ByteShelf.Server.Storage.Services
             _stagingArea = stagingArea;
             _objectStore = objectStore;
             _objectCollector = objectCollector;
-            _derivedRemoval = derivedRemoval;
             _uploadLocks = uploadLocks;
-            _metadataSignal = metadataSignal;
-            _storedContents = storedContents;
             _options = options;
             _timeProvider = timeProvider;
         }
@@ -305,7 +297,7 @@ namespace ByteShelf.Server.Storage.Services
         /// or swaps its contents (<see cref="SwapInAsync"/>) and removes the upload, placing the object last
         /// before the commit. The object's lock is held from placing it until the row commits, so no
         /// removal can take it away in between. A swap's old contents are removed once it commits, unless
-        /// another file holds them, and what was derived from them before it commits. Hold the upload's lock.
+        /// another file holds them, and what else the server has of them before it does. Hold the upload's lock.
         /// An upload <paramref name="throughLink"/> is held to <see cref="ShelfEncryption.RequireLinkTargetAsync"/>
         /// again in that transaction: the place may have been encrypted while the body arrived.
         /// </summary>
@@ -321,13 +313,14 @@ namespace ByteShelf.Server.Storage.Services
 
             string sha256 = await _stagingArea.ComputeSha256Async(upload.Id, cancellationToken);
             ShelfFile stored;
+            IReadOnlyCollection<string> released;
 
             using (await _objectStore.LockAsync(sha256, CancellationToken.None))
             {
                 bool placed = false;
                 try
                 {
-                    await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+                    await using (ContentsSession session = await _contentsSessions.CreateAsync())
                     {
                         DateTimeOffset now = _timeProvider.GetUtcNow();
                         stored = upload.Target switch
@@ -338,14 +331,12 @@ namespace ByteShelf.Server.Storage.Services
                         };
                         await _uploadRepository.DeleteAsync(upload.Id, session);
 
-                        await _derivedRemoval.CommitReleasingAsync(
-                            upload.Target is ContentSwap released ? [released.Sha256] : [],
-                            session,
-                            beforeCommit: () =>
-                            {
-                                _objectStore.Place(_stagingArea.GetPath(upload.Id), sha256);
-                                placed = true;
-                            });
+                        await session.CommitAsync(beforeCommit: () =>
+                        {
+                            _objectStore.Place(_stagingArea.GetPath(upload.Id), sha256);
+                            placed = true;
+                        });
+                        released = session.Released;
                     }
                 }
                 catch when (placed)
@@ -357,13 +348,7 @@ namespace ByteShelf.Server.Storage.Services
                 }
             }
 
-            if (upload.Target is ContentSwap committed)
-            {
-                await _objectCollector.RemoveReleasedAsync([committed.Sha256]);
-            }
-
-            _metadataSignal.ContentsStored();
-            _storedContents.Add(sha256);
+            await _objectCollector.RemoveReleasedAsync(released);
             return stored;
         }
 
@@ -371,7 +356,7 @@ namespace ByteShelf.Server.Storage.Services
         /// Creates missing directories, moves a file the upload replaces to the trash, and inserts the new
         /// file's row.
         /// </summary>
-        private async Task<ShelfFile> StoreNewAsync(UploadRecord upload, StoreAtPath store, string sha256, bool throughLink, DateTimeOffset now, IDbSession session)
+        private async Task<ShelfFile> StoreNewAsync(UploadRecord upload, StoreAtPath store, string sha256, bool throughLink, DateTimeOffset now, IContentsSession session)
         {
             await EnsureTargetAcceptsAsync(upload.ShelfId, store.Path, store.Overwrite, upload.Encrypted, session);
             if (throughLink)
@@ -414,7 +399,7 @@ namespace ByteShelf.Server.Storage.Services
         /// Points the swap's file at the new contents in place, checked again as things stand now
         /// (<see cref="GetSwappableAsync"/>): the file may have moved, changed or gone since the swap started.
         /// </summary>
-        private async Task<ShelfFile> SwapInAsync(UploadRecord upload, ContentSwap swap, string sha256, DateTimeOffset now, IDbSession session)
+        private async Task<ShelfFile> SwapInAsync(UploadRecord upload, ContentSwap swap, string sha256, DateTimeOffset now, IContentsSession session)
         {
             (FileRecord file, string path) = await GetSwappableAsync(upload.ShelfId, swap, upload.Encrypted, session);
 

@@ -1,7 +1,7 @@
 using ByteShelf.Server.Storage.Models;
 using ByteShelfCommon;
 
-namespace ByteShelf.Server.Derived.Services
+namespace ByteShelf.Server.Storage.Services
 {
     /// <summary>Which derived files there are of files, for listings to say. Nothing is made for it.</summary>
     public interface IDerivedListing

@@ -52,8 +52,8 @@ once, and goes on though nobody waits. What fails because of the contents is kep
 blame nothing is kept, and the next one to ask, or the next pass, tries again.
 
 `DerivedBackground` makes thumbnails and previews of live plain files: of contents as uploads and a
-replica's sync store them (`StoredContents`), and of everything already stored, as the job
-`derived.making`, at startup and hourly. A replica makes its own.
+replica's sync store them (`StoredContents`, an `IStoredContentsListener`), and of everything already
+stored, as the job `derived.making`, at startup and hourly. A replica makes its own.
 
 ## Serving them (`DerivedFileService`)
 
@@ -78,26 +78,25 @@ The web UI adds a query parameter `v` to the address an `<img>` loads one from, 
 what tells that one from any other at its place, so that the browser, which shows its copy for an hour, never
 shows another's.
 
-## Removing them (`DerivedRemoval`)
+## Removing them (`ContentsTraces`)
 
 **A derived file shows what encryption hides, so it never outlives the plaintext.** What was derived from
 contents goes with the last plain file, live or in the trash, that holds them. An encrypted file with the
 same bytes does not count.
 
-- A swap (encrypting or decrypting in place) removes it **inside its transaction, before it commits**
-  (`CommitReleasingAsync`, the one way to commit a swap), and holds the contents' lock until it has committed:
-  every process that read them is ended and what it left removed, metadata's readers included
-  ([Processes](../Plugins/Processes/Processes.md)), and none is given them while the rest of the server still
-  sees the file as plain. What cannot be removed refuses the swap. If the commit then fails, what was removed
-  is made again.
-- A replica does the same in the transaction that applies the swap; what cannot be removed stops its sync
-  until it can.
+- A swap (encrypting or decrypting in place) and a purge of files remove it **inside their transaction,
+  before it commits**, as committing a `ContentsSession` does ([Storage](../Storage/Storage.md)), and hold
+  the contents' lock until it has committed: every process that read them is ended and what it left
+  removed, metadata's readers included ([Processes](../Plugins/Processes/Processes.md)), and none is given
+  them while the rest of the server still sees the file as plain. What cannot be removed refuses the swap or
+  the purge. If the commit then fails, what was removed is made again.
+- A replica does the same in the transaction that applies a swap or removes a shelf; what cannot be removed
+  stops its sync until it can.
 - A run starts (`PluginProcesses`), and what it made is kept (`MakerRun`), only where a plain file holds the
   contents (`IPlainContentsRepository`), asked under that lock.
-- A purge removes it once it has committed, and so does whatever else removes an object
-  (`ObjectCollector`). One that fails leaves the rest to maintenance.
+- Storage maintenance, removing an object no row points at (`ObjectCollector`), removes it too. One that
+  fails leaves the rest to the next pass.
 
-The job `derived.maintenance`, at startup and daily, removes what is left of contents no plain file holds (by a
-crash, a removal that failed, or a shelf removed on a replica, which takes its files without looking at what
-they held), what plugins' processes have of them included, and what a crash left without an entry. It also removes what no installed plugin makes any more,
-and trims `full`.
+The job `derived.maintenance`, at startup and daily, removes what is left of contents no plain file holds (by
+a crash, or a removal that failed), what plugins' processes have of them included, and what a crash left
+without an entry. It also removes what no installed plugin makes any more, and trims `full`.

@@ -240,7 +240,7 @@ namespace ByteShelf.Server.Backup.Services
         private static async Task<int> PruneSnapshotAsync(StorageDatabase snapshot, IReadOnlyList<SwappedFile> swapped, IReadOnlyList<string> missingObjects)
         {
             DateTimeOffset now = TimeProvider.System.GetUtcNow();
-            await using IDbTransactionSession session = await snapshot.Sessions.CreateSessionWithTransactionAsync();
+            await using ContentsSession session = ContentsSession.OfACopy(await snapshot.Sessions.CreateSessionWithTransactionAsync());
             foreach (Guid upload in await snapshot.Uploads.GetAllIdsAsync(session))
             {
                 await snapshot.Uploads.DeleteAsync(upload, session);

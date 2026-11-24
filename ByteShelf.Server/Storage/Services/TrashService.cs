@@ -16,6 +16,7 @@ namespace ByteShelf.Server.Storage.Services
         private static readonly DateTimeOffset ExpiredDeletionTime = DateTimeOffset.UnixEpoch;
 
         private readonly IDbSessionFactory _sessionFactory;
+        private readonly ContentsSessions _contentsSessions;
         private readonly IDirectoryRepository _directoryRepository;
         private readonly IFileRepository _fileRepository;
         private readonly ITrashRepository _trashRepository;
@@ -29,6 +30,7 @@ namespace ByteShelf.Server.Storage.Services
 
         public TrashService(
             IDbSessionFactory sessionFactory,
+            ContentsSessions contentsSessions,
             IDirectoryRepository directoryRepository,
             IFileRepository fileRepository,
             ITrashRepository trashRepository,
@@ -41,6 +43,7 @@ namespace ByteShelf.Server.Storage.Services
             TimeProvider timeProvider)
         {
             _sessionFactory = sessionFactory;
+            _contentsSessions = contentsSessions;
             _directoryRepository = directoryRepository;
             _fileRepository = fileRepository;
             _trashRepository = trashRepository;
@@ -234,9 +237,11 @@ namespace ByteShelf.Server.Storage.Services
 
         /// <summary>
         /// Removes every row deleted before <paramref name="cutoff"/>, on one shelf or all of them, in
-        /// short transactions, files before the directories they were in. Then removes the objects only
-        /// those files pointed at, and what was derived from them.
+        /// short transactions, files before the directories they were in. A batch of files commits once what
+        /// the server has beside contents no plain file holds any more is gone (<see cref="ContentsSession"/>),
+        /// and the objects only those files pointed at go after it.
         /// </summary>
+        /// <exception cref="TracesNotRemovedException">Some could not be removed; that batch is not purged.</exception>
         private async Task<int> PurgeDeletedBeforeAsync(DateTimeOffset cutoff, Guid? shelfId, CancellationToken cancellationToken)
         {
             int purgedFiles = 0;
@@ -251,7 +256,8 @@ namespace ByteShelf.Server.Storage.Services
                     break;
                 }
 
-                await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+                IReadOnlyCollection<string> released;
+                await using (ContentsSession session = await _contentsSessions.CreateAsync())
                 {
                     DateTimeOffset now = _timeProvider.GetUtcNow();
                     foreach (FileRecord file in files)
@@ -263,9 +269,10 @@ namespace ByteShelf.Server.Storage.Services
                     }
 
                     await session.CommitAsync();
+                    released = session.Released;
                 }
 
-                await _objectCollector.RemoveReleasedAsync(files.Select(file => file.Sha256).Distinct(), cancellationToken);
+                await _objectCollector.RemoveReleasedAsync(released, cancellationToken);
             }
 
             while (true)

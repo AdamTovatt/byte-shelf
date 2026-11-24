@@ -20,7 +20,7 @@ namespace ByteShelf.Server.Storage.Repositories
         Task<IReadOnlyList<FileRecord>> GetLiveInDirectoryAsync(Guid directoryId, IDbSession? session = null);
 
         /// <summary>Adds a file, which keeps what plugins keep about the file <paramref name="replacedId"/> it was stored over, null for none.</summary>
-        Task InsertAsync(FileRecord file, Guid? replacedId, IDbSession session);
+        Task InsertAsync(FileRecord file, Guid? replacedId, IContentsSession session);
 
         /// <summary>Moves a live file to the trash under <paramref name="deletionId"/>. False when it is not live.</summary>
         Task<bool> SoftDeleteAsync(Guid id, Guid deletionId, DateTimeOffset deletedAt, IDbSession session);
@@ -43,9 +43,9 @@ namespace ByteShelf.Server.Storage.Repositories
         /// its contents are still <paramref name="expectedSha256"/>; null when it is not live or they are
         /// not. Logged as <see cref="ChangeLog.Models.ChangeAction.Swapped"/>, after what was read from the old
         /// contents was removed and before what plugins keep about the file is logged again. Removing the old
-        /// object is the caller's, once this commits.
+        /// object is the caller's, once this commits (<see cref="IContentsSession"/>).
         /// </summary>
-        Task<FileRecord?> SwapContentAsync(Guid id, string expectedSha256, string sha256, long sizeBytes, bool encrypted, DateTimeOffset at, IDbSession session);
+        Task<FileRecord?> SwapContentAsync(Guid id, string expectedSha256, string sha256, long sizeBytes, bool encrypted, DateTimeOffset at, IContentsSession session);
 
         /// <summary>
         /// The live files under <paramref name="directoryId"/>, at any depth, that match the criteria of
@@ -101,8 +101,8 @@ namespace ByteShelf.Server.Storage.Repositories
         /// </summary>
         Task<IReadOnlyList<FileRecord>> GetTrashedBeforeAsync(DateTimeOffset deletedBefore, Guid? shelfId, int limit, IDbSession? session = null);
 
-        /// <summary>Removes a trashed file's row for good. False when it is not in the trash.</summary>
-        Task<bool> PurgeAsync(Guid id, DateTimeOffset purgedAt, IDbSession session);
+        /// <summary>Removes a trashed file's row for good, releasing its contents. False when it is not in the trash.</summary>
+        Task<bool> PurgeAsync(Guid id, DateTimeOffset purgedAt, IContentsSession session);
 
         /// <summary>Whether any row, live or trashed, points at the object <paramref name="sha256"/>.</summary>
         Task<bool> IsObjectReferencedAsync(string sha256, IDbSession? session = null);
@@ -124,9 +124,9 @@ namespace ByteShelf.Server.Storage.Repositories
         /// different live file at the same place is moved to the trash first, as
         /// <paramref name="displacedDeletionId"/>; the log brings it back where it belongs if it still exists.
         /// </summary>
-        Task UpsertReplicatedAsync(FileRecord file, string action, Guid displacedDeletionId, DateTimeOffset at, IDbSession session);
+        Task UpsertReplicatedAsync(FileRecord file, string action, Guid displacedDeletionId, DateTimeOffset at, IContentsSession session);
 
-        /// <summary>Removes every file of a shelf, trash included, for removing the shelf.</summary>
-        Task PurgeForShelfAsync(Guid shelfId, DateTimeOffset purgedAt, IDbSession session);
+        /// <summary>Removes every file of a shelf, trash included, releasing their contents, for removing the shelf.</summary>
+        Task PurgeForShelfAsync(Guid shelfId, DateTimeOffset purgedAt, IContentsSession session);
     }
 }

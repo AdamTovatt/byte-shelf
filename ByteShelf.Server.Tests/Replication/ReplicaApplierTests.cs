@@ -11,11 +11,11 @@ using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
+using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Repositories;
 using ByteShelfCommon;
-using EasyReasy.Database;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ByteShelf.Server.Tests.Replication
@@ -407,7 +407,7 @@ namespace ByteShelf.Server.Tests.Replication
 
         private async Task ApplyAsync(params ChangeLogEntry[] entries)
         {
-            await using IDbTransactionSession session = await Services.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync();
+            await using ContentsSession session = await Services.CreateContentsSessionAsync();
             ReplicaApplier applier = Services.GetRequiredService<ReplicaApplier>();
             AppliedChanges changes = new AppliedChanges();
             await applier.ApplyAsync(entries, session, changes);

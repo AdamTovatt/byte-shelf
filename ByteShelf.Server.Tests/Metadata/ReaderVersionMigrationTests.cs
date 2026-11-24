@@ -8,6 +8,7 @@ using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Models;
+using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using EasyReasy.Database;
@@ -79,7 +80,7 @@ namespace ByteShelf.Server.Tests.Metadata
         [Fact]
         public async Task Replay_TheMigratedLog_EndsWithTheMigratedReading()
         {
-            await using (IDbTransactionSession session = await Services.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync())
+            await using (ContentsSession session = await Services.CreateContentsSessionAsync())
             {
                 await Services.GetRequiredService<ReplicaApplier>().ApplyAsync(await TestMigrations.ReadLogAsync(_old.Database), session, new AppliedChanges());
                 await session.CommitAsync();

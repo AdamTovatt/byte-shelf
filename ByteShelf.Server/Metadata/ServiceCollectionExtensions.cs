@@ -2,6 +2,7 @@ using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Replication;
 using ByteShelf.Server.Shared;
+using ByteShelf.Server.Storage.Services;
 using ByteShelfCommon;
 
 namespace ByteShelf.Server.Metadata
@@ -19,6 +20,7 @@ namespace ByteShelf.Server.Metadata
             services.AddReplicationState();
 
             services.AddSingleton<MetadataReadingSignal>();
+            services.AddSingleton<IStoredContentsListener>(provider => provider.GetRequiredService<MetadataReadingSignal>());
             services.AddSingleton<ContentReadRunner>();
             services.AddSingleton<ReaderProblems>();
             services.AddScoped<IObjectMetadataRepository, ObjectMetadataRepository>();

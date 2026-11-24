@@ -65,81 +65,59 @@ namespace ByteShelf.Server.Replication.Services
                 new EntityHandler(
                     ChangeEntityType.ShelfKeyGrant,
                     "shelf_key_grant",
-                    (entry, at, session, _) => keyRemoval.UpsertReplicatedGrantAsync(ChangePayload.Deserialize<ShelfKeyGrant>(entry.Payload!), entry.Action, at, session),
+                    (entry, at, session) => keyRemoval.UpsertReplicatedGrantAsync(ChangePayload.Deserialize<ShelfKeyGrant>(entry.Payload!), entry.Action, at, session),
                     keyRemoval.RemoveReplicatedGrantAsync),
                 new EntityHandler(
                     ChangeEntityType.ShelfKey,
                     "shelf_key",
-                    (entry, at, session, _) => keyRemoval.UpsertReplicatedKeyAsync(ChangePayload.Deserialize<ShelfKey>(entry.Payload!), entry.Action, at, session),
+                    (entry, at, session) => keyRemoval.UpsertReplicatedKeyAsync(ChangePayload.Deserialize<ShelfKey>(entry.Payload!), entry.Action, at, session),
                     // The primary logs a key's grants going before the key; an older state applied since may
                     // have brought one back, so they go with it here too.
                     keyRemoval.DeleteKeyAsync),
                 new EntityHandler(
                     ChangeEntityType.ShelfGrant,
                     "shelf_grant",
-                    (entry, at, session, _) => grantRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<ShelfGrant>(entry.Payload!), entry.Action, at, session),
+                    (entry, at, session) => grantRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<ShelfGrant>(entry.Payload!), entry.Action, at, session),
                     grantRepository.DeleteByIdAsync),
                 new EntityHandler(
                     ChangeEntityType.UserLogin,
                     "user_login",
-                    (entry, at, session, _) => loginRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<UserLogin>(entry.Payload!), entry.Action, at, session),
+                    (entry, at, session) => loginRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<UserLogin>(entry.Payload!), entry.Action, at, session),
                     loginRepository.DeleteByIdAsync),
                 new EntityHandler(
                     ChangeEntityType.ObjectMetadata,
                     "object_metadata",
-                    (entry, at, session, _) => metadataRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<ObjectMetadata>(entry.Payload!), entry.Action, at, session),
+                    (entry, at, session) => metadataRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<ObjectMetadata>(entry.Payload!), entry.Action, at, session),
                     metadataRepository.DeleteByIdAsync),
                 new EntityHandler(
                     ChangeEntityType.ContentPluginMetadata,
                     "content_plugin_metadata",
-                    (entry, at, session, _) => contentPluginMetadataRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<ContentPluginMetadata>(entry.Payload!), entry.Action, at, session),
+                    (entry, at, session) => contentPluginMetadataRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<ContentPluginMetadata>(entry.Payload!), entry.Action, at, session),
                     contentPluginMetadataRepository.DeleteByIdAsync),
                 new EntityHandler(
                     ChangeEntityType.FilePluginMetadata,
                     ChangeEntityType.Owned[ChangeEntityType.FilePluginMetadata].OwnedTable,
-                    (entry, at, session, _) => filePluginMetadataRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<FilePluginMetadata>(entry.Payload!), entry.Action, at, session),
+                    (entry, at, session) => filePluginMetadataRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<FilePluginMetadata>(entry.Payload!), entry.Action, at, session),
                     filePluginMetadataRepository.DeleteByIdAsync),
                 new EntityHandler(
                     ChangeEntityType.Passkey,
                     "passkey",
-                    (entry, at, session, _) => passkeyRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<Passkey>(entry.Payload!), entry.Action, at, session),
+                    (entry, at, session) => passkeyRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<Passkey>(entry.Payload!), entry.Action, at, session),
                     passkeyRepository.DeleteByIdAsync),
                 new EntityHandler(
                     ChangeEntityType.File,
                     "file",
-                    async (entry, at, session, changes) =>
-                    {
-                        // A file's row points at other contents only when they were swapped in place
-                        // (encrypting or decrypting it), whose old ones go at once here too. Told by the
-                        // hashes, not by the entry's action: a whole copy holds only a file's newest
-                        // entry, so a swap followed by a move arrives as a move.
-                        FileRecord file = ChangePayload.Deserialize<FileRecord>(entry.Payload!);
-                        FileRecord? here = await fileRepository.GetByIdAsync(file.Id, session);
-                        await fileRepository.UpsertReplicatedAsync(file, entry.Action, Guid.NewGuid(), at, session);
-
-                        bool otherContents = here != null && here.Sha256 != file.Sha256;
-
-                        // An age file stored as a plain one is encrypted by the very same bytes.
-                        if (here != null && (otherContents || here.Encrypted != file.Encrypted))
-                        {
-                            changes.ObjectReleased(here.Sha256);
-                        }
-
-                        if ((here == null || otherContents) && !file.Encrypted && file.DeletedAt == null)
-                        {
-                            changes.ContentsStored(file.Sha256);
-                        }
-                    },
+                    (entry, at, session) => fileRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<FileRecord>(entry.Payload!), entry.Action, Guid.NewGuid(), at, session),
                     (id, at, session) => fileRepository.SoftDeleteAsync(id, Guid.NewGuid(), at, session)),
                 new EntityHandler(
                     ChangeEntityType.Directory,
                     "directory",
-                    (entry, at, session, _) => directoryRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<DirectoryRecord>(entry.Payload!), entry.Action, Guid.NewGuid(), at, session),
+                    (entry, at, session) => directoryRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<DirectoryRecord>(entry.Payload!), entry.Action, Guid.NewGuid(), at, session),
                     (id, at, session) => directoryRepository.TrashIfLiveAsync(id, Guid.NewGuid(), at, session)),
                 new EntityHandler(
                     ChangeEntityType.Shelf,
                     "shelf",
-                    (entry, at, session, _) => shelfRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<Shelf>(entry.Payload!), entry.Action, at, session),
+                    (entry, at, session) => shelfRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<Shelf>(entry.Payload!), entry.Action, at, session),
                     async (id, at, session) =>
                     {
                         if (await shelfRepository.GetByIdAsync(id, session) == null)
@@ -159,7 +137,7 @@ namespace ByteShelf.Server.Replication.Services
                 new EntityHandler(
                     ChangeEntityType.User,
                     "user_account",
-                    (entry, at, session, _) => userRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<User>(entry.Payload!), entry.Action, at, session),
+                    (entry, at, session) => userRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<User>(entry.Payload!), entry.Action, at, session),
                     userService.RemoveUserAsync,
                     RemovalEndsSessions: true),
             };
@@ -175,7 +153,7 @@ namespace ByteShelf.Server.Replication.Services
         /// </summary>
         /// <exception cref="ReplicaOutdatedException">An entry is of a type this build does not know.</exception>
         /// <exception cref="PrimaryFailedException">An entry's state is in a shape this build does not take, as from a primary on another version.</exception>
-        public async Task ApplyAsync(IReadOnlyList<ChangeLogEntry> entries, IDbSession session, AppliedChanges changes)
+        public async Task ApplyAsync(IReadOnlyList<ChangeLogEntry> entries, IContentsSession session, AppliedChanges changes)
         {
             // An entry may name a parent that a later one in the same batch writes.
             await session.DeferForeignKeysAsync();
@@ -194,7 +172,7 @@ namespace ByteShelf.Server.Replication.Services
                 {
                     try
                     {
-                        await handler.WriteAsync(entry, now, session, changes);
+                        await handler.WriteAsync(entry, now, session);
                         changes.Written(handler.EntityType);
                     }
                     catch (JsonException exception)
@@ -213,7 +191,7 @@ namespace ByteShelf.Server.Replication.Services
         /// Removes everything here that the whole copy in <c>replication_copy</c> does not hold, as removal
         /// entries for it would, noting in <paramref name="changes"/> what is left to do once it commits.
         /// </summary>
-        public async Task RemoveMissingFromCopyAsync(IDbSession session, AppliedChanges changes)
+        public async Task RemoveMissingFromCopyAsync(IContentsSession session, AppliedChanges changes)
         {
             await session.DeferForeignKeysAsync();
 
@@ -238,7 +216,7 @@ namespace ByteShelf.Server.Replication.Services
         /// later after all, as it was swapped or restored, the primary logs its documents again after it
         /// (<see cref="IFilePluginMetadataRepository.LogAgainAsync"/>).
         /// </summary>
-        public async Task SettleAsync(IDbSession session, AppliedChanges changes)
+        public async Task SettleAsync(IContentsSession session, AppliedChanges changes)
         {
             DateTimeOffset now = _timeProvider.GetUtcNow();
             foreach (EntityHandler handler in _handlers.Where(handler => changes.WrittenTypes.Contains(handler.EntityType)))
@@ -253,7 +231,7 @@ namespace ByteShelf.Server.Replication.Services
             }
         }
 
-        private static async Task RemoveAsync(EntityHandler handler, Guid id, DateTimeOffset at, IDbSession session, AppliedChanges changes)
+        private static async Task RemoveAsync(EntityHandler handler, Guid id, DateTimeOffset at, IContentsSession session, AppliedChanges changes)
         {
             if (await handler.RemoveAsync(id, at, session) && handler.RemovalEndsSessions)
             {
@@ -263,14 +241,14 @@ namespace ByteShelf.Server.Replication.Services
 
         /// <param name="EntityType">The type as <see cref="ChangeEntityType"/> names it.</param>
         /// <param name="Table">The table its rows are in, for finding what a copy no longer holds.</param>
-        /// <param name="WriteAsync">Writes an entry's state, noting the objects it leaves that entity no longer pointing at.</param>
+        /// <param name="WriteAsync">Writes an entry's state.</param>
         /// <param name="RemoveAsync">Removes one by id; false when there was none.</param>
         /// <param name="RemovalEndsSessions">Whether removing one ends the sessions of the user it is.</param>
         private sealed record EntityHandler(
             string EntityType,
             string Table,
-            Func<ChangeLogEntry, DateTimeOffset, IDbSession, AppliedChanges, Task> WriteAsync,
-            Func<Guid, DateTimeOffset, IDbSession, Task<bool>> RemoveAsync,
+            Func<ChangeLogEntry, DateTimeOffset, IContentsSession, Task> WriteAsync,
+            Func<Guid, DateTimeOffset, IContentsSession, Task<bool>> RemoveAsync,
             bool RemovalEndsSessions = false);
     }
 }

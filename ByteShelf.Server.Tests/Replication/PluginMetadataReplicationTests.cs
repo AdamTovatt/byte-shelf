@@ -9,6 +9,7 @@ using ByteShelf.Server.Replication.Repositories;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
+using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using EasyReasy.Database;
@@ -267,7 +268,10 @@ namespace ByteShelf.Server.Tests.Replication
             await pair.SyncAsync();
             foreach (ShelfFile each in new[] { file, removed })
             {
-                Assert.True(await pair.Replica.Services.InTransactionAsync((provider, session) => provider.GetRequiredService<IFileRepository>().PurgeAsync(each.Id, DateTimeOffset.UtcNow, session)));
+                using IServiceScope purging = pair.Replica.Services.CreateScope();
+                await using ContentsSession session = await purging.ServiceProvider.CreateContentsSessionAsync();
+                Assert.True(await purging.ServiceProvider.GetRequiredService<IFileRepository>().PurgeAsync(each.Id, DateTimeOffset.UtcNow, session));
+                await session.CommitAsync();
             }
 
             Assert.Null(await pair.Replica.Services.GetFileDocumentAsync(file.Id));

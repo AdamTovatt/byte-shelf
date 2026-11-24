@@ -1,22 +1,20 @@
 using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Storage.Repositories;
+using ByteShelf.Server.Storage.Services;
 using EasyReasy.Database;
 
 namespace ByteShelf.Server.Derived.Services
 {
     /// <inheritdoc />
-    /// <remarks>
-    /// Processes are ended inside the transaction, not before it, though one that will not die holds the database's
-    /// write lock for some ten seconds: before it, a swap that is refused would end them for nothing.
-    /// </remarks>
-    internal sealed class DerivedRemoval : IDerivedRemoval
+    /// <remarks>What plugins have of them: the files derived from them, and every process that read them, for metadata too.</remarks>
+    internal sealed class ContentsTraces : IContentsTraces
     {
         private readonly DerivedStore _store;
         private readonly ContentsLocks _locks;
         private readonly IPlainContentsRepository _contents;
         private readonly PluginProcesses _processes;
 
-        public DerivedRemoval(DerivedStore store, ContentsLocks locks, IPlainContentsRepository contents, PluginProcesses processes)
+        public ContentsTraces(DerivedStore store, ContentsLocks locks, IPlainContentsRepository contents, PluginProcesses processes)
         {
             _store = store;
             _locks = locks;
@@ -25,23 +23,18 @@ namespace ByteShelf.Server.Derived.Services
         }
 
         /// <inheritdoc />
-        public async Task CommitReleasingAsync(IReadOnlyCollection<string> released, IDbTransactionSession session, Action? beforeCommit = null)
+        public async Task<IDisposable> RemoveForCommitAsync(string sha256, IDbSession session)
         {
-            List<IDisposable> held = new List<IDisposable>();
+            IDisposable held = await _locks.LockAsync(sha256);
             try
             {
-                foreach (string sha256 in released)
-                {
-                    held.Add(await _locks.LockAsync(sha256));
-                    await RemoveUnheldAsync(sha256, session);
-                }
-
-                beforeCommit?.Invoke();
-                await session.CommitAsync();
+                await RemoveUnheldAsync(sha256, session);
+                return held;
             }
-            finally
+            catch
             {
-                held.ForEach(contents => contents.Dispose());
+                held.Dispose();
+                throw;
             }
         }
 
@@ -61,9 +54,16 @@ namespace ByteShelf.Server.Derived.Services
                 return false;
             }
 
-            await _processes.StopAsync(sha256);
-            _store.Delete(sha256);
-            return true;
+            try
+            {
+                await _processes.StopAsync(sha256);
+                _store.Delete(sha256);
+                return true;
+            }
+            catch (Exception exception) when (exception is PluginNotStoppedException or IOException or UnauthorizedAccessException)
+            {
+                throw new TracesNotRemovedException(sha256, exception);
+            }
         }
     }
 }

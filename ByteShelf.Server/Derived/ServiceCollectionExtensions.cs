@@ -1,5 +1,6 @@
 using ByteShelf.Server.Derived.Services;
 using ByteShelf.Server.Shared;
+using ByteShelf.Server.Storage.Services;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace ByteShelf.Server.Derived
@@ -19,7 +20,8 @@ namespace ByteShelf.Server.Derived
             services.AddSingleton<IDerivedListing, DerivedListing>();
             services.AddSingleton<DerivedChanges>();
             services.AddSingleton<StoredContents>();
-            services.AddScoped<IDerivedRemoval, DerivedRemoval>();
+            services.AddSingleton<IStoredContentsListener>(provider => provider.GetRequiredService<StoredContents>());
+            services.AddScoped<IContentsTraces, ContentsTraces>();
             services.AddScoped<IDerivedFileService, DerivedFileService>();
             services.AddScoped<DerivedBackground>();
             services.AddScoped<DerivedMaintenance>();
