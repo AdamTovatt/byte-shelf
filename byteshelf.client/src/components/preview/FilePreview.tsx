@@ -4,6 +4,7 @@ import { contentsKey } from '../../lib/preview/fileContents';
 import type { Steps } from '../../lib/preview/neighbours';
 import type { ShownPreview } from '../../lib/preview/shownPreview';
 import type { FileActions } from '../../hooks/useFileActions';
+import { PluginIdentity } from '../../contexts/PluginIdentity';
 import { usePluginsAwaited } from '../../hooks/usePluginHost';
 import { usePreviewContents } from '../../hooks/usePreviewContents';
 import { useViewers } from '../../hooks/useViewers';
@@ -101,11 +102,13 @@ export function FilePreview({ previewed, error, steps, onClose, detailsOn, actio
       return <PreviewFailure error={contents.error} onTryAgain={contents.retry} />;
     }
 
-    const { id, component: Viewer } = match.viewer;
+    const { viewer: { id, component: Viewer }, pluginId } = match;
     return (
       <ErrorBoundary key={`${contentsKey(of.file)} ${id}`} fallback={<PreviewMessage message="The viewer failed while showing this file." action={download} />}>
         <Suspense fallback={<PreviewSpinner />}>
-          <Viewer file={of.file} content={contents.reader} />
+          <PluginIdentity id={pluginId}>
+            <Viewer file={of.file} content={contents.reader} />
+          </PluginIdentity>
         </Suspense>
       </ErrorBoundary>
     );

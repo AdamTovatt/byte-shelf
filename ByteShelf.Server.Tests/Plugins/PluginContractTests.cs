@@ -29,9 +29,12 @@ namespace ByteShelf.Server.Tests.Plugins
                     "ByteShelf.Plugins 1.0.0.0",
                     "ByteShelf.Plugins.IByteShelfPlugin",
                     "ByteShelf.Plugins.IByteShelfPlugin: Void Configure(ByteShelf.Plugins.IPluginBuilder)",
+                    "ByteShelf.Plugins.IContentDocumentReader",
+                    "ByteShelf.Plugins.IContentDocumentReader: System.Threading.Tasks.Task`1[System.Text.Json.Nodes.JsonObject] ReadAsync(System.IO.Stream, System.Threading.CancellationToken)",
                     "ByteShelf.Plugins.IPluginBuilder",
                     "ByteShelf.Plugins.IPluginBuilder: Microsoft.Extensions.DependencyInjection.IServiceCollection Services",
                     "ByteShelf.Plugins.IPluginBuilder: Microsoft.Extensions.DependencyInjection.IServiceCollection get_Services()",
+                    "ByteShelf.Plugins.IPluginBuilder: Void AddReader[TReader](Int32, System.Collections.Generic.IReadOnlyList`1[System.String])",
                 ],
                 members.Order(StringComparer.Ordinal).Prepend($"{Contract.GetName().Name} {Contract.GetName().Version}"));
         }

@@ -10,13 +10,17 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <summary>The file with <paramref name="id"/>, live or in the trash.</summary>
         Task<FileRecord?> GetByIdAsync(Guid id, IDbSession? session = null);
 
+        /// <summary>The shelf of each of the files <paramref name="ids"/> there is, live or in the trash, by the file's id.</summary>
+        Task<IReadOnlyDictionary<Guid, Guid>> GetShelfIdsAsync(IReadOnlyCollection<Guid> ids, IDbSession? session = null);
+
         /// <summary>The live file called <paramref name="name"/> directly inside <paramref name="directoryId"/>.</summary>
         Task<FileRecord?> GetLiveByNameAsync(Guid directoryId, string name, IDbSession? session = null);
 
         /// <summary>The live files directly inside <paramref name="directoryId"/>, by name.</summary>
         Task<IReadOnlyList<FileRecord>> GetLiveInDirectoryAsync(Guid directoryId, IDbSession? session = null);
 
-        Task InsertAsync(FileRecord file, IDbSession session);
+        /// <summary>Adds a file, which keeps what plugins keep about the file <paramref name="replacedId"/> it was stored over, null for none.</summary>
+        Task InsertAsync(FileRecord file, Guid? replacedId, IDbSession session);
 
         /// <summary>Moves a live file to the trash under <paramref name="deletionId"/>. False when it is not live.</summary>
         Task<bool> SoftDeleteAsync(Guid id, Guid deletionId, DateTimeOffset deletedAt, IDbSession session);
@@ -37,8 +41,9 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <summary>
         /// Points a live file at other contents in place, keeping its id, name, type and description, while
         /// its contents are still <paramref name="expectedSha256"/>; null when it is not live or they are
-        /// not. Logged as <see cref="ChangeLog.Models.ChangeAction.Swapped"/>. Removing the old object is
-        /// the caller's, once this commits.
+        /// not. Logged as <see cref="ChangeLog.Models.ChangeAction.Swapped"/>, after what was read from the old
+        /// contents was removed and before what plugins keep about the file is logged again. Removing the old
+        /// object is the caller's, once this commits.
         /// </summary>
         Task<FileRecord?> SwapContentAsync(Guid id, string expectedSha256, string sha256, long sizeBytes, bool encrypted, DateTimeOffset at, IDbSession session);
 
@@ -78,7 +83,7 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <summary>Whether a deletion holds any file that is not encrypted.</summary>
         Task<bool> DeletionHoldsPlainFileAsync(Guid deletionId, IDbSession? session = null);
 
-        /// <summary>Brings back every file of a deletion; answers how many.</summary>
+        /// <summary>Brings back every file of a deletion; answers how many. Logged, and then what plugins keep about them again.</summary>
         Task<int> RestoreDeletionAsync(Guid deletionId, DateTimeOffset restoredAt, IDbSession session);
 
         /// <summary>

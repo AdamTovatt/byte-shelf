@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import toast from 'react-hot-toast';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DialogHost } from '../contexts/DialogHost';
+import { usePluginId } from '../contexts/PluginIdentity';
 import { useFileActions, type FileActions } from './useFileActions';
 import { usePasswordPrompt, type AskPassword } from './usePasswordPrompt';
 import { Modal } from '../ui';
@@ -48,7 +49,7 @@ describe('running a file action', () => {
   async function runs(run: FileAction['run']): Promise<{ done: Promise<void> }> {
     let done = Promise.resolve();
     await act(async () => {
-      done = actions.run(action(run), target);
+      done = actions.run({ pluginId: 'a', key: 'a act', action: action(run) }, target);
     });
     return { done };
   }
@@ -188,6 +189,31 @@ describe('running a file action', () => {
     await press('Cancel');
     expect(dialogTitles()).toEqual(['Late', 'Inside']);
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Inside');
+  });
+
+  function Owner() {
+    return <p>of the plugin {usePluginId()}</p>;
+  }
+
+  it('shows its dialogs as the plugin\'s: what they draw late, and one shown by another, too', async () => {
+    const Late = lazy(async () => ({ default: Owner }));
+    await runs(({ showDialog }) => showDialog((close) => (
+      <><Late /><button onClick={() => { close(); showDialog(() => <Modal isOpen title="Next" onClose={() => undefined}><Owner /></Modal>); }}>Next</button></>
+    )));
+    await vi.waitFor(() => act(async () => expect(document.body.textContent).toContain('of the plugin a')));
+
+    await press('Next');
+
+    expect(dialogTitles()).toEqual(['Next']);
+    expect(document.body.textContent).toContain('of the plugin a');
+  });
+
+  it('keeps apart whose the dialogs of two plugins are', async () => {
+    await act(async () => {
+      for (const pluginId of ['a', 'b']) void actions.run({ pluginId, key: pluginId, action: action(({ showDialog }) => showDialog(() => <Owner />)) }, target);
+    });
+
+    expect(document.body.textContent).toMatch(/of the plugin a.*of the plugin b/);
   });
 
   function Broken(): never {

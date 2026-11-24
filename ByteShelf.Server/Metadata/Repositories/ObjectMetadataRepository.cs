@@ -14,6 +14,7 @@ namespace ByteShelf.Server.Metadata.Repositories
         private const string SelectColumns = $@"
             id,
             sha256,
+            reader_version AS {nameof(ObjectMetadataEntity.ReaderVersion)},
             read_at AS {nameof(ObjectMetadataEntity.ReadAt)},
             taken_at AS {nameof(ObjectMetadataEntity.TakenAt)},
             latitude,
@@ -23,11 +24,15 @@ namespace ByteShelf.Server.Metadata.Repositories
             title,
             camera";
 
-        private const string InsertSql = @"
-            INSERT INTO object_metadata (id, sha256, read_at, taken_at, latitude, longitude, duration_seconds, page_count, title, title_fold, camera, camera_fold)
-            VALUES (@Id, @Sha256, @ReadAt, @TakenAt, @Latitude, @Longitude, @DurationSeconds, @PageCount, @Title, @TitleFold, @Camera, @CameraFold)";
+        private const string Columns =
+            "id, sha256, reader_version, read_at, taken_at, latitude, longitude, duration_seconds, page_count, title, title_fold, camera, camera_fold";
 
-        private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict(InsertSql);
+        private const string Values =
+            "@Id, @Sha256, @ReaderVersion, @ReadAt, @TakenAt, @Latitude, @Longitude, @DurationSeconds, @PageCount, @Title, @TitleFold, @Camera, @CameraFold";
+
+        private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict($"INSERT INTO object_metadata ({Columns}) VALUES ({Values})");
+
+        private static readonly string RecordSql = PlainContents.RecordSql("object_metadata", Columns, Values);
 
         private readonly IChangeLogRepository _changeLog;
 
@@ -52,69 +57,48 @@ namespace ByteShelf.Server.Metadata.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<IReadOnlyList<string>> GetUnreadAsync(string? after, int limit, IDbSession? session = null)
+        public async Task<IReadOnlyList<string>> GetUnreadAsync(int readerVersion, MediaTypeSet mediaTypes, string? after, int limit, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>
             {
-                // The types read are a fixed list of lowercase ASCII, as media_type is, so they are written
-                // into the query rather than bound.
-                IEnumerable<string> typeConditions = ReadMediaTypes.Families.Select(family => $"file.media_type LIKE '{family}%'")
-                    .Concat(ReadMediaTypes.Types.Select(type => $"file.media_type = '{type}'"));
-
-                string query = $@"
-                    SELECT DISTINCT file.sha256
-                    FROM file
-                    WHERE file.deleted_at IS NULL
-                      AND file.encrypted = 0
-                      AND ({string.Join(" OR ", typeConditions)})
-                      AND NOT EXISTS (SELECT 1 FROM object_metadata WHERE object_metadata.sha256 = file.sha256)
-                      AND (@{nameof(after)} IS NULL OR file.sha256 > @{nameof(after)})
-                    ORDER BY file.sha256
-                    LIMIT @{nameof(limit)}";
+                string query = PlainContents.UnreadSql(mediaTypes, $@"
+                    EXISTS (
+                        SELECT 1 FROM object_metadata
+                        WHERE object_metadata.sha256 = file.sha256
+                          AND object_metadata.reader_version = @{nameof(readerVersion)})");
 
                 IEnumerable<string> hashes = await dbSession.Connection.QueryAsync<string>(
-                    query, new { after, limit }, transaction: dbSession.Transaction);
+                    query, new { readerVersion, after, limit }, transaction: dbSession.Transaction);
 
                 return (IReadOnlyList<string>)hashes.ToList();
             }, session);
         }
 
         /// <inheritdoc />
-        public async Task<bool> InsertAsync(ObjectMetadata metadata, IDbSession session)
+        public async Task<bool> RecordAsync(ObjectMetadata metadata, IDbSession session)
         {
-            string query = $"{InsertSql} ON CONFLICT DO NOTHING";
-            int inserted = await session.Connection.ExecuteAsync(query, Parameters(metadata), transaction: session.Transaction);
-            if (inserted == 0)
+            bool isNew = await GetBySha256Async(metadata.Sha256, session) == null;
+            int written = await session.Connection.ExecuteAsync(RecordSql, Parameters(metadata), transaction: session.Transaction);
+            if (written == 0)
             {
                 return false;
             }
 
-            await _changeLog.AppendAsync(ChangeEntityType.ObjectMetadata, metadata.Id, ChangeAction.Added, metadata, metadata.ReadAt, session);
+            string action = isNew ? ChangeAction.Added : ChangeAction.Updated;
+            await _changeLog.AppendAsync(ChangeEntityType.ObjectMetadata, metadata.Id, action, metadata, metadata.ReadAt, session);
             return true;
         }
 
         /// <inheritdoc />
-        public async Task<int> DeleteUnreferencedAsync(DateTimeOffset at, IDbSession session)
+        public async Task<int> DeleteUnheldAsync(DateTimeOffset at, IDbSession session)
         {
-            return await DeleteUnreferencedOfAsync(sha256: null, at, session);
+            return await _changeLog.DeleteAndLogAsync(ChangeEntityType.ObjectMetadata, PlainContents.DeleteUnheldSql("object_metadata"), new { }, at, session);
         }
 
         /// <inheritdoc />
-        public async Task<bool> DeleteUnreferencedAsync(string sha256, DateTimeOffset at, IDbSession session)
+        public async Task DeleteUnheldByOthersAsync(string sha256, Guid fileId, DateTimeOffset at, IDbSession session)
         {
-            return await DeleteUnreferencedOfAsync(sha256, at, session) > 0;
-        }
-
-        /// <summary>Removes the rows no file holds, of the contents <paramref name="sha256"/> only, or of all when it is null.</summary>
-        private async Task<int> DeleteUnreferencedOfAsync(string? sha256, DateTimeOffset at, IDbSession session)
-        {
-            string query = $@"
-                DELETE FROM object_metadata
-                WHERE (@{nameof(sha256)} IS NULL OR object_metadata.sha256 = @{nameof(sha256)})
-                  AND NOT EXISTS (SELECT 1 FROM file WHERE file.sha256 = object_metadata.sha256)
-                RETURNING id";
-
-            return await _changeLog.DeleteAndLogAsync(ChangeEntityType.ObjectMetadata, query, new { sha256 }, at, session);
+            await _changeLog.DeleteAndLogAsync(ChangeEntityType.ObjectMetadata, PlainContents.DeleteUnheldByOthersSql("object_metadata"), new { sha256, fileId }, at, session);
         }
 
         /// <inheritdoc />
@@ -140,6 +124,7 @@ namespace ByteShelf.Server.Metadata.Repositories
             {
                 row.Id,
                 row.Sha256,
+                row.ReaderVersion,
                 row.ReadAt,
                 metadata.TakenAt,
                 metadata.Latitude,
@@ -157,6 +142,7 @@ namespace ByteShelf.Server.Metadata.Repositories
         {
             public Guid Id { get; set; }
             public string Sha256 { get; set; } = string.Empty;
+            public int ReaderVersion { get; set; }
             public DateTimeOffset ReadAt { get; set; }
             public DateTimeOffset? TakenAt { get; set; }
             public double? Latitude { get; set; }
@@ -172,6 +158,7 @@ namespace ByteShelf.Server.Metadata.Repositories
                 {
                     Id = Id,
                     Sha256 = Sha256,
+                    ReaderVersion = ReaderVersion,
                     ReadAt = ReadAt,
                     Metadata = new ContentMetadata
                     {

@@ -1,5 +1,6 @@
 using ByteShelf.Server.Access.Controllers;
 using ByteShelf.Server.Access.Models;
+using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Replication.Controllers;
 using ByteShelf.Server.Shared.Auth;
 using ByteShelf.Server.Shared.Errors;
@@ -28,6 +29,7 @@ namespace ByteShelf.Server.Storage.Controllers
 
         private readonly IDirectoryService _directoryService;
         private readonly IFileService _fileService;
+        private readonly FileMetadataService _fileMetadataService;
         private readonly IUploadService _uploadService;
         private readonly DownloadLinks _downloadLinks;
         private readonly UploadLinks _uploadLinks;
@@ -37,6 +39,7 @@ namespace ByteShelf.Server.Storage.Controllers
         public EntriesController(
             IDirectoryService directoryService,
             IFileService fileService,
+            FileMetadataService fileMetadataService,
             IUploadService uploadService,
             DownloadLinks downloadLinks,
             UploadLinks uploadLinks,
@@ -45,6 +48,7 @@ namespace ByteShelf.Server.Storage.Controllers
         {
             _directoryService = directoryService;
             _fileService = fileService;
+            _fileMetadataService = fileMetadataService;
             _uploadService = uploadService;
             _downloadLinks = downloadLinks;
             _uploadLinks = uploadLinks;
@@ -87,14 +91,30 @@ namespace ByteShelf.Server.Storage.Controllers
             return Ok(await _fileService.GetFileAsync(Shelf, EntryReference.From(path, id)));
         }
 
-        /// <summary>What a file's contents say about it, as read in the background after it was stored.</summary>
+        /// <summary>What a file's contents say about it, as read in the background after it was stored, and what installed plugins keep about it.</summary>
         [HttpGet("files/metadata")]
         [ShelfAccess(ShelfOperation.Read)]
         [ProducesResponseType(typeof(FileMetadata), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         public async Task<IActionResult> GetFileMetadata([FromQuery] string? path, [FromQuery] Guid? id)
         {
-            return Ok(await _fileService.GetMetadataAsync(Shelf, EntryReference.From(path, id)));
+            return Ok(await _fileMetadataService.GetAsync(Shelf, EntryReference.From(path, id)));
+        }
+
+        /// <summary>
+        /// Writes the document an installed plugin (<c>plugin</c>) keeps about a file, whole, or removes it with
+        /// a null one, over the version <c>expectedVersion</c> names, null for a first write; answers what the
+        /// plugin keeps about the file then. 409 when another version is there. Moves no <c>updatedAt</c>.
+        /// </summary>
+        [HttpPut("files/plugin-metadata")]
+        [ShelfAccess(ShelfOperation.Write)]
+        [ProducesResponseType(typeof(PluginFileDetails), 200)]
+        [ProducesResponseType(typeof(ErrorResponse), 400)]
+        [ProducesResponseType(typeof(ErrorResponse), 404)]
+        [ProducesResponseType(typeof(ErrorResponse), 409)]
+        public async Task<IActionResult> SetPluginMetadata([FromQuery] string? path, [FromQuery] Guid? id, [FromQuery] string plugin, [FromBody] SetPluginMetadataRequest request)
+        {
+            return Ok(await _fileMetadataService.SetPluginDocumentAsync(Shelf, EntryReference.From(path, id), plugin, request));
         }
 
         /// <summary>Moves a file to the trash.</summary>

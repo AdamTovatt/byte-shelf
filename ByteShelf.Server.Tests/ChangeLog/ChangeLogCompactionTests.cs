@@ -24,7 +24,7 @@ namespace ByteShelf.Server.Tests.ChangeLog
             long removal = (await ChangeLog.GetAfterAsync(0, 100)).Last(entry => entry.EntityId == purged.Id).Sequence;
 
             Clock.Advance(ChangeLogCompactionWorker.Retention + TimeSpan.FromDays(1));
-            await CompactAsync();
+            await CompactChangeLogAsync();
 
             IReadOnlyList<ChangeLogEntry> kept = await ChangeLog.GetAfterAsync(0, 100);
             Assert.Equal(
@@ -43,7 +43,7 @@ namespace ByteShelf.Server.Tests.ChangeLog
             await FileService.MoveFileAsync(shelf, EntryReference.ForId(file.Id), "/b.txt");
 
             Clock.Advance(ChangeLogCompactionWorker.Retention + TimeSpan.FromDays(1));
-            await CompactAsync();
+            await CompactChangeLogAsync();
 
             Assert.Equal(added, await ChangeLog.GetPrunedThroughAsync());
         }
@@ -57,45 +57,38 @@ namespace ByteShelf.Server.Tests.ChangeLog
             int before = (await ChangeLog.GetAfterAsync(0, 100)).Count;
 
             Clock.Advance(ChangeLogCompactionWorker.Retention - TimeSpan.FromDays(1));
-            await CompactAsync();
+            await CompactChangeLogAsync();
 
             Assert.Equal(before, (await ChangeLog.GetAfterAsync(0, 100)).Count);
             Assert.Equal(0, await ChangeLog.GetPrunedThroughAsync());
         }
 
         [Fact]
-        public async Task GetLatestStatesAfterAsync_AnEntityChangedTwice_AppearsOnceAtItsNewest()
+        public async Task GetLatestStatesPageAsync_AnEntityChangedTwice_AppearsOnceAtItsNewest()
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
             await FileService.MoveFileAsync(shelf, EntryReference.ForId(file.Id), "/b.txt");
 
-            IReadOnlyList<ChangeLogEntry> states = await ChangeLog.GetLatestStatesAfterAsync(0, 100);
+            IReadOnlyList<ChangeLogEntry> states = await Services.GetLatestStatesAsync();
 
             ChangeLogEntry fileState = Assert.Single(states, entry => entry.EntityId == file.Id);
             Assert.Equal(ChangeAction.Moved, fileState.Action);
         }
 
         [Fact]
-        public async Task GetLatestStatesAfterAsync_AnEntityRemoved_ComesAsItsRemoval()
+        public async Task GetLatestStatesPageAsync_AnEntityRemoved_ComesAsItsRemoval()
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
             await FileService.DeleteFileAsync(shelf, EntryReference.ForId(file.Id));
             await TrashService.EmptyAsync(shelf, CancellationToken.None);
 
-            IReadOnlyList<ChangeLogEntry> states = await ChangeLog.GetLatestStatesAfterAsync(0, 100);
+            IReadOnlyList<ChangeLogEntry> states = await Services.GetLatestStatesAsync();
 
             // So a copy that took the file on an earlier page drops it.
             ChangeLogEntry removal = Assert.Single(states, entry => entry.EntityId == file.Id);
             Assert.Equal((ChangeAction.Purged, null), (removal.Action, removal.Payload));
-        }
-
-        private async Task CompactAsync()
-        {
-            await using IDbTransactionSession session = await Services.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync();
-            await ChangeLog.CompactAsync(Clock.GetUtcNow() - ChangeLogCompactionWorker.Retention, session);
-            await session.CommitAsync();
         }
     }
 }

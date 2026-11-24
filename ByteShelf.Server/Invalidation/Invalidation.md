@@ -16,19 +16,19 @@ A Server-Sent Events stream that tells the web UI which cached queries to refetc
 
 ## Where events come from
 
-`ChangeLogInvalidationPublisher` follows the change log, polling it once a second, and publishes
-what each new entry makes stale (`ChangeLogInvalidations`). Every change to storage, users and
-access is in the log, written in the transaction that made it, so no service publishes on its own:
-nothing can forget to, and nothing is published for a change that rolls back. SQLite commits one
-writer at a time in sequence order, so following the sequence misses nothing. It starts from where
-the log stands when it first reads it, and a failed read, that first one included, is tried again at
-the next poll.
+`ChangeLogInvalidationPublisher` follows the change log, polling it once a second, and publishes what
+each new entry makes stale (`ChangeLogInvalidations`). Every change a service makes to storage, users
+and access is in the log, written in the transaction that made it, so no service publishes on its own
+(what goes with a file by a foreign key is not in it, but the file's purge is): nothing can forget to,
+and nothing is published for a change that rolls back. SQLite commits one writer at a time in sequence
+order, so following the sequence misses nothing. It starts from where the log stands when it first reads
+it, and a failed read, that first one included, is tried again at the next poll.
 
 | Resource | Made stale by | Metadata |
 |---|---|---|
 | `users` | a user's changes | none |
 | `shelves` | a shelf's changes, any file or directory (usage), any user's grant (who sees which shelf) | none |
-| `shelf-contents` | a shelf's changes, its files and directories (the trash included) | the shelf's id; none for a purge, which no longer knows its shelf |
+| `shelf-contents` | a shelf's changes, its files and directories (the trash included), and what plugins keep about a file | the shelf's id; none for a purge, which no longer knows its shelf |
 | `shelf-access` | a shelf's changes and its users' grants; any key's grant | the shelf's id; none once the user's grant is gone, and none for a key's grant, since a shelf's key list shows each key's other shelves and so every shelf's list is stale |
 
 A key's own row makes nothing stale: it is shown only through its grants, which are logged beside it
@@ -36,7 +36,15 @@ when it comes and goes.
 
 What was read from files' contents ([Metadata](../Metadata/Metadata.md)) makes nothing stale: an
 entry names an object, not a shelf, and refreshing every open listing for each file read would cost
-more than it shows. The web UI fetches a file's metadata afresh whenever it shows it.
+more than it shows. The web UI fetches a file's metadata afresh whenever it shows it. A plugin's document
+about contents is the same.
+
+A plugin's document about a file makes its shelf's contents stale, as a description does: listings carry
+its fields and search finds the file by them. Its entry names the file, whose shelf the publisher looks
+up, and makes nothing stale once the file is gone, whose purge did. A document that was deleted
+(`--forget-plugin`, or a replica removing what its primary no longer has) names none, so every shelf's
+contents are stale; an entry whose state the log forgot for a newer one
+([Change log](../ChangeLog/ChangeLog.md)) says nothing, as the newer follows it.
 
 Every constant in `InvalidationResources` needs an entry in the web UI's map from resources to
 queries; a missing one silently stops that resource from refreshing, and a client test checks the

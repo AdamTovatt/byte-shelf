@@ -27,17 +27,18 @@ read it as `range_not_satisfiable`); a path that is not allowed is a 400.
 
 | Method and route | What it does |
 |---|---|
-| `GET entries?path=` | Lists a directory (the root without `path` or `id`). Each of its `directories` is the `directory` with the `sizeBytes`, `fileCount` and `encryptedFileCount` of the live files under it at any depth (`ListedDirectory`), summed in the same query (a recursive walk per child), so listing the root walks the whole shelf. `encryptedBy` is the encrypted directory it is or is inside, null for none. |
+| `GET entries?path=` | Lists a directory (the root without `path` or `id`). Each of its `directories` is the `directory` with the `sizeBytes`, `fileCount` and `encryptedFileCount` of the live files under it at any depth (`ListedDirectory`), summed in the same query (a recursive walk per child), so listing the root walks the whole shelf. Its `files`, as those of `tree`, `search` and a deletion's tree, have `pluginFields`: the values of the fields plugins declare for listings ([Metadata](../Metadata/Metadata.md)), absent when there are none. `encryptedBy` is the encrypted directory it is or is inside, null for none. |
 | `GET tree?under=&depth=&limit=&after=` | One page of the live directories and files under `under` (the root by default), at any depth or down to `depth` levels (1: what it holds directly), together by path in code point order: `limit` (1 to 1000, 100 by default) entries, and `nextCursor` to pass as `after` for the next page. 400 for a depth below 1 or a limit out of range, 404 when `under` is missing or names a file. |
 | `GET files?path=` | A file's record. |
-| `GET files/metadata?path=` | What the file's contents say (`FileMetadata`): when and where it was taken, the camera, a video's length, a PDF's title and pages. `readable` says whether the server reads the file at all (not when it is encrypted or of a type it does not read); `readAt` is null until it has read them, and always when it does not. See [Metadata](../Metadata/Metadata.md). |
+| `GET files/metadata?path=` | What the file's contents say (`FileMetadata`): when and where it was taken, the camera, a video's length, a PDF's title and pages. `readable` says whether the server reads the file at all (not when it is encrypted or of a type it does not read); `readAt` is null until it has read them, and always when it does not. `plugins` has what each installed plugin keeps, by its id: its documents, the version of the one about the file, and its declared fields with their values. See [Metadata](../Metadata/Metadata.md). |
+| `PUT files/plugin-metadata?path=&plugin=` | Writes the document an installed plugin keeps about the file, the body's `document`, whole, or removes it when null, over the version `expectedVersion` names (null for a first write); answers what the plugin keeps about the file then. Moves no `updatedAt`. 400 without a `document` or for one that is not one (a JSON object of at most 64 KiB, nested at most 32 deep), 404 for a plugin that is not installed, 409 when another version is there. |
 | `DELETE files?path=` | Moves a file to the trash; answers the deletion. |
 | `POST files/move?path=` | Moves or renames a file to the body's `toPath`; missing directories above it are created. 400 for `/`, 409 when the path is taken. |
 | `PUT files/description?path=` | Sets the body's `description`, or removes it when null or blank; 400 over `FileDescription.MaxLength` characters. |
 | `POST entries/move` | Moves or renames files and directories in one request (`MoveEntriesRequest`): `moves`, each `{ path, toPath }`, or `paths` into `intoDirectory`, each keeping its name. See "Batches" below. |
 | `PUT files/descriptions` | Sets or removes files' descriptions in one request (`SetDescriptionsRequest`): `descriptions`, each `{ path, description }`, or `paths` that all get `description` (null or blank removes theirs). See "Batches" below. |
-| `GET search?under=&text=&…` | One page of the live files under `under` (the root by default) that match every criterion given: `text`, `contentType`, `minSizeBytes`, `maxSizeBytes`, `createdFrom`, `createdBefore`, `updatedFrom`, `updatedBefore`, `sha256`, `hasDescription` (`true` for only described files, `false` for only undescribed ones), the metadata criteria `takenFrom`, `takenBefore`, `hasGps`, `minDurationSeconds`, `maxDurationSeconds`, `minPageCount` and `maxPageCount` ([Metadata](../Metadata/Metadata.md)), `limit` (1 to 1000, 100 by default) and `after` (the previous page's `nextCursor`). Sizes are inclusive; a time range includes its start and excludes its end. 400 for a criterion `FileSearch.Normalize` refuses, 404 when `under` is missing or names a file. See "Descriptions and search" below. |
-| `GET duplicates?under=&text=&…` | One page of the duplicates among the live plain, non-empty files `search` would find with the same criteria: `groups` of two or more files with the same SHA-256, each with its `sha256`, `sizeBytes`, `repeatedBytes` (the size times the copies after the first) and `files` by path, most `repeatedBytes` first, then by SHA-256. `limit` (1 to 1000, 100 by default) counts groups; `after` takes the previous page's `nextCursor`, written `bytes:sha256`. 400 for a criterion or limit `DuplicateSearch.Normalize` refuses or an `after` that is not such a cursor, 404 as for `search`. See "Duplicates" below. |
+| `GET search?under=&text=&…` | One page of the live files under `under` (the root by default) that match every criterion given: `text`, `contentType`, `minSizeBytes`, `maxSizeBytes`, `createdFrom`, `createdBefore`, `updatedFrom`, `updatedBefore`, `sha256`, `hasDescription` (`true` for only described files, `false` for only undescribed ones), the metadata criteria `takenFrom`, `takenBefore`, `hasGps`, `minDurationSeconds`, `maxDurationSeconds`, `minPageCount` and `maxPageCount`, and `pluginFields`, filters on fields plugins declare, each a parameter of its own ([Metadata](../Metadata/Metadata.md)), `limit` (1 to 1000, 100 by default) and `after` (the previous page's `nextCursor`). Sizes are inclusive; a time range includes its start and excludes its end. 400 for a criterion `FileSearch.Normalize` refuses, a filter that cannot be read or one on a field no installed plugin declares or of another kind, 404 when `under` is missing or names a file. See "Descriptions and search" below. |
+| `GET duplicates?under=&text=&…` | One page of the duplicates among the live plain, non-empty files `search` would find with the same criteria: `groups` of two or more files with the same SHA-256, each with its `sha256`, `sizeBytes`, `repeatedBytes` (the size times the copies after the first) and `files` by path, most `repeatedBytes` first, then by SHA-256. `limit` (1 to 1000, 100 by default) counts groups; `after` takes the previous page's `nextCursor`, written `bytes:sha256`. 400 for a criterion or limit `DuplicateSearch.Normalize` refuses, a filter `search` refuses or an `after` that is not such a cursor, 404 as for `search`. See "Duplicates" below. |
 | `POST directories` | Creates the directory at the body's `path` and any missing one above it; an existing one is answered as it is. |
 | `POST directories/move?path=` | Moves or renames a directory with everything in it to the body's `toPath`. 400 for the root, a destination of `/` or inside itself, or one that would make a path under it longer than `ShelfPath.MaxPathLength`; 409 when the path is taken. |
 | `DELETE directories?path=` | Moves a directory and everything live under it to the trash as one deletion; 400 for the root. |
@@ -191,7 +192,8 @@ A file has at most one description, free text of up to 2,000 characters (code po
 `length()` counts them), trimmed, with blank meaning none. It is part of the file's row, so the change
 log carries it to replicas. Setting it moves the file's `updatedAt` and is logged as an update;
 setting the text it already has changes and logs nothing. A file stored over another keeps the
-other's description unless its upload brings one: a new version of a file is still that file.
+other's description unless its upload brings one: a new version of a file is still that file. It keeps
+what plugins keep about the other, too ([Metadata](../Metadata/Metadata.md)).
 
 Search runs in one query: a recursive walk from the `under` directory builds each live file's full
 path, and the criteria of `ByteShelfCommon.FileCriteria` filter the files. `text` matches the name or
@@ -200,14 +202,15 @@ lowercase). SQLite's own `lower()` folds ASCII only, so the file row keeps folde
 (`name_fold`, `description_fold`) that `FileRepository` writes from the name and description on
 every write. `contentType` compares the type without its parameters, kept the same way in
 `media_type` by `ContentTypes.MediaTypeOf`, and `type/*` matches the whole family. `text` also
-matches the title and camera read from a plain file's contents, and the metadata criteria ask what
+matches the title and camera read from a plain file's contents and the fields plugins declare to be
+searched, `pluginFields` asks about any field they declare, and the metadata criteria ask what
 else was read ([Metadata](../Metadata/Metadata.md)); the in-memory client reads nothing, so there
-they match no file. `hasDescription` compares whether `description` is null, which is how a blank
+the metadata criteria match no file. `hasDescription` compares whether `description` is null, which is how a blank
 one is stored.
 Results come by full path; a page asks for one row more than it returns, to know whether another
 follows, and its `nextCursor` is its last path, which the next page starts after. The in-memory
 client applies the same rules, and the client contract tests run both. The criteria's condition
-lives in `SearchCriteria`, and the files it takes in `FileRepository`'s `FoundSql`, both shared by
+lives in `SearchCriteria`, and the files it takes in `FileRepository`'s `Found`, both shared by
 search and the search for duplicates.
 
 ## Duplicates (`FileService.FindDuplicatesAsync`)
@@ -236,7 +239,8 @@ directory before its files.
 Files are encrypted with a password in the clients, never on the server: the password and the
 plaintext never reach it. An encrypted file's contents are an age file (c2sp.org/age) with a scrypt
 recipient, which `age -d` opens anywhere; only the contents are encrypted, so names, sizes (of the
-encrypted bytes), directories and descriptions stay as they are and search keeps finding them, and
+encrypted bytes), directories, descriptions and plugins' documents about the file stay as they are,
+readable by the server and whoever can read the shelf, and search keeps finding them, and
 the content type is the decrypted file's. A file is stored as encrypted with `encrypted=true` on
 `PUT content` or in `POST uploads`, and the server checks it starts as an age file (400 otherwise);
 it cannot check the password. The flag is on the file row and its change log entry, so replicas
@@ -258,10 +262,12 @@ removing its encryption decrypts nothing, so a client decrypts them after; the s
 the mark.
 
 A client encrypts or decrypts a stored file by swapping its contents in place (`PUT content/swap`,
-`POST uploads/swap`): the file keeps its id, path, type and description, and its old contents are
-removed at once rather than moved to the trash, unless another file holds the same ones. This is the
-one write that destroys contents without the trash, and it is allowed only for what the person
-confirmed cannot be undone: it must flip the file's encryption, and it must name the SHA-256 the
+`POST uploads/swap`): the file keeps its id, path, type, description and plugins' documents about it,
+and its old contents are removed at once rather than moved to the trash, unless another file holds the
+same ones. What was read from them goes in the same transaction, unless another plain file holds them
+([Metadata](../Metadata/Metadata.md)). This is the one write that destroys contents without the trash,
+and it is allowed only for what the person confirmed cannot be undone: it must flip the file's
+encryption, and it must name the SHA-256 the
 contents still have, so a change made since they were read is never lost (409 otherwise). Its change
 log entry (`swapped`) points the row at the new contents, and a replica removes the old ones as soon
 as it applies it, the one exception to replicas keeping what the primary drops for their own restore

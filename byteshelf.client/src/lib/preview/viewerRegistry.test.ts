@@ -71,7 +71,8 @@ describe('the viewer a file is shown with', () => {
     const pdf = file('application/pdf');
 
     expect(registry.viewerFor(pdf)).toEqual({ viewer: null, unavailable: 'No ant here.' });
-    expect(registry.with('bee', [available]).viewerFor(pdf)?.viewer?.id).toBe('available');
+    expect(registry.with('bee', [available]).viewerFor(pdf)).toEqual({ viewer: available, pluginId: 'bee', unavailable: null });
+    expect(registry.with(null, [available]).viewerFor(pdf)).toEqual({ viewer: available, pluginId: null, unavailable: null });
     expect(registry.viewerFor(file('image/png'))).toBeNull();
   });
 

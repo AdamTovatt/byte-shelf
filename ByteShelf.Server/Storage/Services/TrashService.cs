@@ -21,6 +21,7 @@ namespace ByteShelf.Server.Storage.Services
         private readonly ITrashRepository _trashRepository;
         private readonly ShelfTree _shelfTree;
         private readonly ShelfEncryption _encryption;
+        private readonly ListedFiles _listedFiles;
         private readonly ObjectCollector _objectCollector;
         private readonly ObjectStore _objectStore;
         private readonly StorageOptions _options;
@@ -33,6 +34,7 @@ namespace ByteShelf.Server.Storage.Services
             ITrashRepository trashRepository,
             ShelfTree shelfTree,
             ShelfEncryption encryption,
+            ListedFiles listedFiles,
             ObjectCollector objectCollector,
             ObjectStore objectStore,
             StorageOptions options,
@@ -44,6 +46,7 @@ namespace ByteShelf.Server.Storage.Services
             _trashRepository = trashRepository;
             _shelfTree = shelfTree;
             _encryption = encryption;
+            _listedFiles = listedFiles;
             _objectCollector = objectCollector;
             _objectStore = objectStore;
             _options = options;
@@ -139,7 +142,7 @@ namespace ByteShelf.Server.Storage.Services
                     Tree = DirectoryTree.Page(
                         StorageContracts.ToShelfDirectory(container, containerPath),
                         directories.Select(row => StorageContracts.ToShelfDirectory(row.Directory, row.Path)),
-                        files.Select(row => StorageContracts.ToShelfFile(row.File, ShelfPath.GetParent(row.Path))),
+                        await _listedFiles.OfAsync(files, session),
                         limit),
                 };
             }

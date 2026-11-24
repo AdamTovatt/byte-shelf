@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using ByteShelfCommon;
+using ListedFields = System.Collections.Generic.IReadOnlyDictionary<string, System.Collections.Generic.IReadOnlyDictionary<string, ByteShelfCommon.PluginFieldValue>>;
 
 namespace ByteShelfClient.InMemory
 {
@@ -13,8 +15,11 @@ namespace ByteShelfClient.InMemory
     /// </summary>
     internal sealed class InMemoryShelf
     {
-        public InMemoryShelf(string name, long? quotaBytes, DateTimeOffset createdAt)
+        private readonly InstalledPlugins _plugins;
+
+        public InMemoryShelf(string name, long? quotaBytes, DateTimeOffset createdAt, InstalledPlugins plugins)
         {
+            _plugins = plugins;
             Id = Guid.NewGuid();
             Name = name;
             QuotaBytes = quotaBytes;
@@ -335,6 +340,35 @@ namespace ByteShelfClient.InMemory
 
         public ShelfFile ToShelfFile(FileNode file)
         {
+            return ToShelfFile(file, pluginFields: null);
+        }
+
+        /// <summary>The file as a listing gives it, with the values of the fields plugins declare for listings.</summary>
+        public ShelfFile ToListedFile(FileNode file)
+        {
+            Dictionary<string, IReadOnlyDictionary<string, PluginFieldValue>> listed = new Dictionary<string, IReadOnlyDictionary<string, PluginFieldValue>>(StringComparer.Ordinal);
+            foreach (PluginDeclaration plugin in _plugins.All)
+            {
+                Dictionary<string, PluginFieldValue> values = new Dictionary<string, PluginFieldValue>(StringComparer.Ordinal);
+                foreach (PluginField field in plugin.Fields.Where(field => field.Listed))
+                {
+                    if (file.ValueOf(plugin, field) is { } value && value.FitsListings())
+                    {
+                        values.Add(field.Name, value);
+                    }
+                }
+
+                if (values.Count > 0)
+                {
+                    listed.Add(plugin.Id, values);
+                }
+            }
+
+            return ToShelfFile(file, listed.Count > 0 ? listed : null);
+        }
+
+        private ShelfFile ToShelfFile(FileNode file, ListedFields? pluginFields)
+        {
             return new ShelfFile
             {
                 Id = file.Id,
@@ -349,6 +383,7 @@ namespace ByteShelfClient.InMemory
                 UpdatedAt = file.UpdatedAt,
                 Description = file.Description,
                 Encrypted = file.Encrypted,
+                PluginFields = pluginFields,
             };
         }
 
@@ -425,6 +460,22 @@ namespace ByteShelfClient.InMemory
             public DateTimeOffset? DeletedAt { get; set; }
             public Guid? DeletionId { get; set; }
             public bool IsLive => DeletedAt == null;
+
+            /// <summary>What plugins keep about the file, by plugin id; a removed document stays with its version and no document.</summary>
+            public Dictionary<string, PluginRow> Plugins { get; init; } = new Dictionary<string, PluginRow>(StringComparer.Ordinal);
+
+            /// <summary>The value of a field a plugin declares; none of one in the document about the contents, which nothing here reads.</summary>
+            public PluginFieldValue? ValueOf(PluginDeclaration plugin, PluginField field)
+            {
+                return field.Document == PluginDocumentSubject.File ? PluginFieldValue.Of(field, Plugins.GetValueOrDefault(plugin.Id)?.Element) : null;
+            }
+        }
+
+        /// <summary>A plugin's document about a file, as the server's row holds it.</summary>
+        internal sealed record PluginRow(int Version, PluginDocument? Document)
+        {
+            /// <summary>The document read once, for every field a search or listing asks it.</summary>
+            public JsonElement? Element { get; } = Document?.ToElement();
         }
 
         /// <summary>

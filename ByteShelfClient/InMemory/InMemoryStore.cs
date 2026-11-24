@@ -5,8 +5,9 @@ namespace ByteShelfClient.InMemory
     /// <summary>Everything an <see cref="InMemoryByteShelfClient"/> holds, behind one lock.</summary>
     internal sealed class InMemoryStore
     {
-        public InMemoryStore(TimeProvider timeProvider, TimeSpan restoreWindow)
+        public InMemoryStore(TimeProvider timeProvider, TimeSpan restoreWindow, InstalledPlugins plugins)
         {
+            Plugins = plugins;
             TimeProvider = timeProvider;
             RestoreWindow = restoreWindow;
             Replication = new InMemoryReplication(this);
@@ -14,6 +15,9 @@ namespace ByteShelfClient.InMemory
 
         /// <summary>Held around every read and change, so each call sees and leaves a consistent state.</summary>
         public object Gate { get; } = new object();
+
+        /// <summary>The plugins this store has, as a server has those installed.</summary>
+        public InstalledPlugins Plugins { get; }
 
         public TimeProvider TimeProvider { get; }
 

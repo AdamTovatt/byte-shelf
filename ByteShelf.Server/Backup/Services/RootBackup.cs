@@ -3,6 +3,8 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using ByteShelf.Server.Backup.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
+using ByteShelf.Server.Metadata.Repositories;
+using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.IO;
 using ByteShelf.Server.Shared.Root;
@@ -235,12 +237,17 @@ namespace ByteShelf.Server.Backup.Services
         /// <summary>
         /// Drops from the snapshot the uploads in progress, points the files swapped meanwhile at their new
         /// contents, and purges the other files whose objects are missing, both logged so that replicas
-        /// copying the restored root follow; answers how many files were purged.
+        /// copying the restored root follow; answers how many files were purged. What was read from contents
+        /// the backup then holds no plain file of goes too, as it does on the server: their plaintext may be
+        /// gone for being encrypted.
         /// </summary>
         private static async Task<int> PruneSnapshotAsync(StorageDatabase snapshot, IReadOnlyList<SwappedFile> swapped, IReadOnlyList<string> missingObjects)
         {
             DateTimeOffset now = TimeProvider.System.GetUtcNow();
             await using IDbTransactionSession session = await snapshot.Sessions.CreateSessionWithTransactionAsync();
+
+            // What goes is overwritten too: the pages it was on go into the zip as they are.
+            await session.Connection.ExecuteAsync("PRAGMA secure_delete = ON", transaction: session.Transaction);
             foreach (Guid upload in await snapshot.Uploads.GetAllIdsAsync(session))
             {
                 await snapshot.Uploads.DeleteAsync(upload, session);
@@ -255,6 +262,11 @@ namespace ByteShelf.Server.Backup.Services
             foreach (string sha256 in missingObjects)
             {
                 filesPurged += await snapshot.Files.PurgeAllWithObjectAsync(sha256, now, session);
+            }
+
+            if (missingObjects.Count > 0)
+            {
+                await snapshot.MetadataUpkeep.RemoveUnheldAsync(now, session);
             }
 
             await session.CommitAsync();
@@ -336,7 +348,13 @@ namespace ByteShelf.Server.Backup.Services
             {
                 _dataSource = DataSources.Create(connectionString);
                 Sessions = new DbSessionFactory(_dataSource);
-                Files = new FileRepository(_dataSource, Sessions, new ChangeLogRepository(_dataSource, Sessions));
+                ChangeLogRepository changeLog = new ChangeLogRepository(_dataSource, Sessions);
+                PluginFieldValueRepository fieldValues = new PluginFieldValueRepository(_dataSource, Sessions, KnownPlugins.NotKnown);
+                MetadataUpkeep = new MetadataUpkeep(
+                    new ObjectMetadataRepository(_dataSource, Sessions, changeLog),
+                    new ContentPluginMetadataRepository(_dataSource, Sessions, changeLog, fieldValues),
+                    new FilePluginMetadataRepository(_dataSource, Sessions, changeLog, fieldValues));
+                Files = new FileRepository(_dataSource, Sessions, changeLog, MetadataUpkeep);
                 Uploads = new UploadRepository(_dataSource, Sessions);
             }
 
@@ -345,6 +363,8 @@ namespace ByteShelf.Server.Backup.Services
             public IFileRepository Files { get; }
 
             public IUploadRepository Uploads { get; }
+
+            public MetadataUpkeep MetadataUpkeep { get; }
 
             public ValueTask DisposeAsync()
             {

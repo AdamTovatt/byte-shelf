@@ -4,8 +4,11 @@ using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Storage.Models;
+using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
+using EasyReasy.Database;
+using EasyReasy.Database.Mapping;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -13,7 +16,7 @@ namespace ByteShelf.Server.Tests.Metadata
 {
     public class MetadataReadingTests : ServiceTestBase
     {
-        private static readonly byte[] AgeBytes = Encoding.ASCII.GetBytes("age-encryption.org/v1\nan encrypted file");
+        private FileMetadataService FileMetadataService => Services.GetRequiredService<FileMetadataService>();
 
         private MetadataReading Reading => Services.GetRequiredService<MetadataReading>();
 
@@ -25,8 +28,8 @@ namespace ByteShelf.Server.Tests.Metadata
 
             MetadataReadingSummary summary = await Reading.RunAsync(CancellationToken.None);
 
-            FileMetadata metadata = await FileService.GetMetadataAsync(shelf, EntryReference.ForId(photo.Id));
-            Assert.Equal(new MetadataReadingSummary(OnReplica: false, Read: 1, Damaged: 0, Removed: 0), summary);
+            FileMetadata metadata = await FileMetadataService.GetAsync(shelf, EntryReference.ForId(photo.Id));
+            Assert.Equal(new MetadataReadingSummary(OnReplica: false, Read: 1, Failed: 0, Removed: 0), summary);
             Assert.Equal(TestInstants.Now, metadata.ReadAt);
             Assert.Equal(new DateTimeOffset(2024, 6, 1, 12, 30, 0, TimeSpan.Zero), metadata.TakenAt);
             Assert.Equal(("Apple iPhone 15", 59.3293), (metadata.Camera, Math.Round(metadata.Latitude!.Value, 5)));
@@ -41,7 +44,7 @@ namespace ByteShelf.Server.Tests.Metadata
 
             await Reading.RunAsync(CancellationToken.None);
 
-            FileMetadata metadata = await FileService.GetMetadataAsync(shelf, EntryReference.ForPath("/q3.pdf"));
+            FileMetadata metadata = await FileMetadataService.GetAsync(shelf, EntryReference.ForPath("/q3.pdf"));
             Assert.Equal(("Q3 report", 4), (metadata.Title, metadata.PageCount));
             ChangeLogEntry logged = Assert.Single(await ChangeLog.GetAfterAsync(before, 100));
             Assert.Equal((ChangeEntityType.ObjectMetadata, ObjectMetadata.IdFor(pdf.Sha256), ChangeAction.Added), (logged.EntityType, logged.EntityId, logged.Action));
@@ -58,8 +61,8 @@ namespace ByteShelf.Server.Tests.Metadata
             MetadataReadingSummary summary = await Reading.RunAsync(CancellationToken.None);
 
             Assert.Equal(1, summary.Read);
-            Assert.Equal("Nikon Z 6", (await FileService.GetMetadataAsync(shelf, EntryReference.ForPath("/a.jpg"))).Camera);
-            Assert.Equal("Nikon Z 6", (await FileService.GetMetadataAsync(shelf, EntryReference.ForPath("/copies/b.jpg"))).Camera);
+            Assert.Equal("Nikon Z 6", (await FileMetadataService.GetAsync(shelf, EntryReference.ForPath("/a.jpg"))).Camera);
+            Assert.Equal("Nikon Z 6", (await FileMetadataService.GetAsync(shelf, EntryReference.ForPath("/copies/b.jpg"))).Camera);
         }
 
         [Fact]
@@ -75,6 +78,25 @@ namespace ByteShelf.Server.Tests.Metadata
         }
 
         [Fact]
+        public async Task RunAsync_ContentsAnotherVersionRead_ReadsThemAgainOnceAndLogsIt()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile photo = await StoreAsync(shelf, "/photo.jpg", TestMedia.Photo(make: "Nikon"), "image/jpeg");
+            await Services.InTransactionAsync((provider, session) => provider.GetRequiredService<IObjectMetadataRepository>()
+                .RecordAsync(ObjectMetadata.Of(photo.Sha256, MetadataReader.Version - 1, TestInstants.Now, ContentMetadata.None), session));
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            MetadataReadingSummary raised = await Reading.RunAsync(CancellationToken.None);
+            MetadataReadingSummary again = await Reading.RunAsync(CancellationToken.None);
+
+            Assert.Equal((1, 0), (raised.Read, again.Read));
+            Assert.Equal("Nikon", (await FileMetadataService.GetAsync(shelf, EntryReference.ForId(photo.Id))).Camera);
+            ChangeLogEntry logged = Assert.Single(await ChangeLog.GetAfterAsync(before, 100));
+            Assert.Equal(ChangeAction.Updated, logged.Action);
+            Assert.Equal(MetadataReader.Version, ChangePayload.Deserialize<ObjectMetadata>(logged.Payload!).ReaderVersion);
+        }
+
+        [Fact]
         public async Task RunAsync_FileOfATypeNotRead_LeavesItUnread()
         {
             Shelf shelf = await CreateShelfAsync();
@@ -83,17 +105,17 @@ namespace ByteShelf.Server.Tests.Metadata
             MetadataReadingSummary summary = await Reading.RunAsync(CancellationToken.None);
 
             Assert.Equal(0, summary.Read);
-            FileMetadata metadata = await FileService.GetMetadataAsync(shelf, EntryReference.ForPath("/notes.txt"));
+            FileMetadata metadata = await FileMetadataService.GetAsync(shelf, EntryReference.ForPath("/notes.txt"));
             Assert.Equal((false, null), (metadata.Readable, metadata.ReadAt));
         }
 
         [Fact]
-        public async Task GetMetadataAsync_PhotoNotReadYet_IsReadableWithNothingRead()
+        public async Task GetAsync_PhotoNotReadYet_IsReadableWithNothingRead()
         {
             Shelf shelf = await CreateShelfAsync();
             await StoreAsync(shelf, "/photo.jpg", TestMedia.Photo(make: "Nikon"), "image/jpeg");
 
-            FileMetadata metadata = await FileService.GetMetadataAsync(shelf, EntryReference.ForPath("/photo.jpg"));
+            FileMetadata metadata = await FileMetadataService.GetAsync(shelf, EntryReference.ForPath("/photo.jpg"));
 
             Assert.Equal((true, null, null), (metadata.Readable, metadata.ReadAt, metadata.Camera));
         }
@@ -107,19 +129,19 @@ namespace ByteShelf.Server.Tests.Metadata
             MetadataReadingSummary summary = await Reading.RunAsync(CancellationToken.None);
 
             Assert.Equal(0, summary.Read);
-            Assert.Null((await FileService.GetMetadataAsync(shelf, EntryReference.ForPath("/secret.jpg"))).ReadAt);
+            Assert.Null((await FileMetadataService.GetAsync(shelf, EntryReference.ForPath("/secret.jpg"))).ReadAt);
         }
 
         [Fact]
-        public async Task GetMetadataAsync_EncryptedFileWithAPlainFilesContents_HasNone()
+        public async Task GetAsync_EncryptedFileWithAPlainFilesContents_HasNone()
         {
             Shelf shelf = await CreateShelfAsync();
             await StoreAsync(shelf, "/plain.jpg", AgeBytes, "image/jpeg");
             await StoreAsync(shelf, "/secret.jpg", AgeBytes, "image/jpeg", encrypted: true);
             await Reading.RunAsync(CancellationToken.None);
 
-            FileMetadata plain = await FileService.GetMetadataAsync(shelf, EntryReference.ForPath("/plain.jpg"));
-            FileMetadata secret = await FileService.GetMetadataAsync(shelf, EntryReference.ForPath("/secret.jpg"));
+            FileMetadata plain = await FileMetadataService.GetAsync(shelf, EntryReference.ForPath("/plain.jpg"));
+            FileMetadata secret = await FileMetadataService.GetAsync(shelf, EntryReference.ForPath("/secret.jpg"));
 
             Assert.Equal((true, TestInstants.Now), (plain.Readable, plain.ReadAt));
             Assert.Equal((false, null), (secret.Readable, secret.ReadAt));
@@ -134,8 +156,8 @@ namespace ByteShelf.Server.Tests.Metadata
             MetadataReadingSummary first = await Reading.RunAsync(CancellationToken.None);
             MetadataReadingSummary second = await Reading.RunAsync(CancellationToken.None);
 
-            FileMetadata metadata = await FileService.GetMetadataAsync(shelf, EntryReference.ForPath("/broken.pdf"));
-            Assert.Equal((1, 1), (first.Read, first.Damaged));
+            FileMetadata metadata = await FileMetadataService.GetAsync(shelf, EntryReference.ForPath("/broken.pdf"));
+            Assert.Equal((1, 1), (first.Read, first.Failed));
             Assert.Equal(0, second.Read);
             Assert.Equal((TestInstants.Now, null, null), (metadata.ReadAt, metadata.Title, metadata.PageCount));
         }
@@ -169,7 +191,7 @@ namespace ByteShelf.Server.Tests.Metadata
             await TrashService.RestoreAsync(shelf, deleted.DeletionId);
 
             Assert.Equal(0, summary.Removed);
-            Assert.Equal("Nikon", (await FileService.GetMetadataAsync(shelf, EntryReference.ForId(photo.Id))).Camera);
+            Assert.Equal("Nikon", (await FileMetadataService.GetAsync(shelf, EntryReference.ForId(photo.Id))).Camera);
         }
 
         [Fact]
@@ -200,8 +222,8 @@ namespace ByteShelf.Server.Tests.Metadata
 
             await EncryptInPlaceAsync(shelf, photo);
 
-            Assert.Equal("Nikon", (await FileService.GetMetadataAsync(shelf, EntryReference.ForPath("/copy.jpg"))).Camera);
-            Assert.False((await FileService.GetMetadataAsync(shelf, EntryReference.ForId(photo.Id))).Readable);
+            Assert.Equal("Nikon", (await FileMetadataService.GetAsync(shelf, EntryReference.ForPath("/copy.jpg"))).Camera);
+            Assert.False((await FileMetadataService.GetAsync(shelf, EntryReference.ForId(photo.Id))).Readable);
         }
 
         [Fact]
@@ -213,15 +235,15 @@ namespace ByteShelf.Server.Tests.Metadata
 
             MetadataReadingSummary summary = await Reading.RunAsync(CancellationToken.None);
 
-            Assert.Equal(new MetadataReadingSummary(OnReplica: true, Read: 0, Damaged: 0, Removed: 0), summary);
-            Assert.Null((await FileService.GetMetadataAsync(shelf, EntryReference.ForPath("/photo.jpg"))).ReadAt);
+            Assert.Equal(new MetadataReadingSummary(OnReplica: true, Read: 0, Failed: 0, Removed: 0), summary);
+            Assert.Null((await FileMetadataService.GetAsync(shelf, EntryReference.ForPath("/photo.jpg"))).ReadAt);
         }
 
         [Fact]
         public async Task RunAsync_MoreThanABatch_ReadsThemAll()
         {
             Shelf shelf = await CreateShelfAsync();
-            int count = MetadataReading.BatchSize + 3;
+            int count = ContentReading.BatchSize + 3;
             for (int index = 0; index < count; index++)
             {
                 await StoreAsync(shelf, $"/scans/{index}.pdf", TestMedia.Pdf(pages: 1, title: $"Scan {index}"), "application/pdf");
@@ -236,7 +258,7 @@ namespace ByteShelf.Server.Tests.Metadata
         public async Task Worker_ContentsStoredAfterItsFirstPass_ReadsThemWithoutWaitingForTheClock()
         {
             Shelf shelf = await CreateShelfAsync();
-            PassLogger passes = new PassLogger();
+            PassLogger<MetadataReadingWorker> passes = new PassLogger<MetadataReadingWorker>();
             MetadataReadingWorker worker = new MetadataReadingWorker(
                 Services.GetRequiredService<IServiceScopeFactory>(), Services.GetRequiredService<MetadataReadingSignal>(), Clock, passes);
 
@@ -248,7 +270,7 @@ namespace ByteShelf.Server.Tests.Metadata
             await passes.Finished(2).WaitAsync(TimeSpan.FromSeconds(10));
             await worker.StopAsync(CancellationToken.None);
 
-            Assert.Equal(TestInstants.Now, (await FileService.GetMetadataAsync(shelf, EntryReference.ForId(photo.Id))).ReadAt);
+            Assert.Equal(TestInstants.Now, (await FileMetadataService.GetAsync(shelf, EntryReference.ForId(photo.Id))).ReadAt);
         }
 
         [Fact]
@@ -260,54 +282,8 @@ namespace ByteShelf.Server.Tests.Metadata
 
             MetadataReadingSummary summary = await Reading.RunAsync(CancellationToken.None);
 
-            Assert.Equal(new MetadataReadingSummary(OnReplica: false, Read: 0, Damaged: 0, Removed: 0), summary);
+            Assert.Equal(new MetadataReadingSummary(OnReplica: false, Read: 0, Failed: 0, Removed: 0), summary);
             Assert.Null(await Services.GetRequiredService<IObjectMetadataRepository>().GetBySha256Async(photo.Sha256));
-        }
-
-        private Task<ShelfFile> EncryptInPlaceAsync(Shelf shelf, ShelfFile file)
-        {
-            StartContentSwapRequest request = new StartContentSwapRequest { FileId = file.Id, Sha256 = file.Sha256, SizeBytes = AgeBytes.Length, Encrypted = true };
-            return UploadService.SwapAsync(shelf, request, Uploader, new MemoryStream(AgeBytes), CancellationToken.None);
-        }
-
-        /// <summary>Counts the worker's finished passes, which it logs, so a test can wait for one.</summary>
-        private sealed class PassLogger : ILogger<MetadataReadingWorker>
-        {
-            private readonly TaskCompletionSource[] _finished = [NewSignal(), NewSignal()];
-            private int _count;
-
-            public Task Finished(int pass)
-            {
-                return _finished[pass - 1].Task;
-            }
-
-            public IDisposable? BeginScope<TState>(TState state)
-                where TState : notnull
-            {
-                return null;
-            }
-
-            public bool IsEnabled(LogLevel logLevel)
-            {
-                return true;
-            }
-
-            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-            {
-                if (formatter(state, exception).Contains("finished a pass", StringComparison.Ordinal))
-                {
-                    int pass = Interlocked.Increment(ref _count);
-                    if (pass <= _finished.Length)
-                    {
-                        _finished[pass - 1].TrySetResult();
-                    }
-                }
-            }
-
-            private static TaskCompletionSource NewSignal()
-            {
-                return new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            }
         }
     }
 }

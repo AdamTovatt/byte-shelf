@@ -215,7 +215,12 @@ namespace ByteShelf.Server.Tests.Invalidation
                 throw new NotSupportedException();
             }
 
-            public Task<IReadOnlyList<ChangeLogEntry>> GetLatestStatesAfterAsync(long afterSequence, int limit, IDbSession? session = null)
+            public Task<ChangeLogPage> GetPageAsync(long afterSequence, ChangeLogPageLimit limit, IDbSession session)
+            {
+                throw new NotSupportedException();
+            }
+
+            public Task<ChangeLogPage> GetLatestStatesPageAsync(long afterSequence, ChangeLogPageLimit limit, IDbSession session)
             {
                 throw new NotSupportedException();
             }

@@ -46,7 +46,7 @@ namespace ByteShelf.Server.Users.Services
 
             return await RootCommand.RunAsync(rootPath, logger, change.StartsARoot, async root =>
             {
-                await using ServiceProvider services = BuildServices(root, loggerFactory);
+                await using ServiceProvider services = RootCommand.BuildServices(ServerSettings.Open(root), loggerFactory);
                 await using AsyncServiceScope scope = services.CreateAsyncScope();
                 await scope.ServiceProvider.GetRequiredService<ReplicationState>().RequireWritesAsync();
                 return await change.ApplyAsync(scope.ServiceProvider, passwords);
@@ -77,19 +77,6 @@ namespace ByteShelf.Server.Users.Services
                 _ => null,
             };
             return arguments.AllTaken ? change : null;
-        }
-
-        /// <summary>The services the API changes users through, on <paramref name="root"/>, without the web host.</summary>
-        internal static ServiceProvider BuildServices(RootFolder root, ILoggerFactory loggerFactory)
-        {
-            ServiceCollection services = new ServiceCollection();
-            services.AddSingleton(loggerFactory);
-            services.AddLogging();
-
-            // No link or email leaves a user command: a reset link is never made here.
-            Program.AddDomainServices(services, ServerSettings.Open(root));
-            services.AddReplicationState();
-            return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         }
 
         /// <summary>One change to the users, which says what it did.</summary>

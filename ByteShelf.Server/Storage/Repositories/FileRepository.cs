@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Text.Json;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
+using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Storage.Models;
 using ByteShelfCommon;
@@ -27,18 +28,6 @@ namespace ByteShelf.Server.Storage.Repositories
             deleted_at AS {nameof(FileEntity.DeletedAt)},
             deletion_id AS {nameof(FileEntity.DeletionId)}";
 
-        /// <summary>
-        /// The live files under <see cref="SubtreeWalk.Sql"/>'s directory that meet <see cref="SearchCriteria.Sql"/>,
-        /// each with its full path, ending in its WHERE clause so a query can add conditions: what a
-        /// search finds. <see cref="FoundParameters"/> gives its parameters.
-        /// </summary>
-        private const string FoundSql = $@"
-            SELECT {SelectColumns}, tree.node_path || '/' || file.name AS {nameof(FileSearchEntity.FullPath)}
-            FROM file JOIN tree ON file.directory_id = tree.node_id
-            {SearchCriteria.Join}
-            WHERE file.deleted_at IS NULL
-              AND {SearchCriteria.Sql}";
-
         private const string InsertSql = @"
             INSERT INTO file (id, shelf_id, directory_id, name, content_type, size_bytes, sha256, created_at, updated_at, description, encrypted, deleted_at, deletion_id, name_fold, description_fold, media_type)
             VALUES (@Id, @ShelfId, @DirectoryId, @Name, @ContentType, @SizeBytes, @Sha256, @CreatedAt, @UpdatedAt, @Description, @Encrypted, @DeletedAt, @DeletionId, @NameFold, @DescriptionFold, @MediaType)";
@@ -46,11 +35,13 @@ namespace ByteShelf.Server.Storage.Repositories
         private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict(InsertSql);
 
         private readonly IChangeLogRepository _changeLog;
+        private readonly MetadataUpkeep _metadataUpkeep;
 
-        public FileRepository(DbDataSource dataSource, IDbSessionFactory sessionFactory, IChangeLogRepository changeLog)
+        public FileRepository(DbDataSource dataSource, IDbSessionFactory sessionFactory, IChangeLogRepository changeLog, MetadataUpkeep metadataUpkeep)
             : base(dataSource, sessionFactory)
         {
             _changeLog = changeLog;
+            _metadataUpkeep = metadataUpkeep;
         }
 
         /// <inheritdoc />
@@ -64,6 +55,24 @@ namespace ByteShelf.Server.Storage.Repositories
                     query, new { id }, transaction: dbSession.Transaction);
 
                 return entity?.ToDomain();
+            }, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<IReadOnlyDictionary<Guid, Guid>> GetShelfIdsAsync(IReadOnlyCollection<Guid> ids, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string idsJson = GuidTypeHandler.ToJsonArray(ids);
+                string query = $@"
+                    SELECT file.id, file.shelf_id AS {nameof(FileEntity.ShelfId)}
+                    FROM json_each(@{nameof(idsJson)}) AS asked
+                    JOIN file ON file.id = asked.value";
+
+                IEnumerable<FileEntity> entities = await dbSession.Connection.QueryAsync<FileEntity>(
+                    query, new { idsJson }, transaction: dbSession.Transaction);
+
+                return (IReadOnlyDictionary<Guid, Guid>)entities.ToDictionary(entity => entity.Id, entity => entity.ShelfId);
             }, session);
         }
 
@@ -103,10 +112,14 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
-        public async Task InsertAsync(FileRecord file, IDbSession session)
+        public async Task InsertAsync(FileRecord file, Guid? replacedId, IDbSession session)
         {
             await session.Connection.ExecuteAsync(InsertSql, Parameters(file), transaction: session.Transaction);
             await _changeLog.AppendAsync(ChangeEntityType.File, file.Id, ChangeAction.Added, file, file.CreatedAt, session);
+            if (replacedId is Guid replaced)
+            {
+                await _metadataUpkeep.StoredOverAsync(replaced, file.Id, file.CreatedAt, session);
+            }
         }
 
         /// <inheritdoc />
@@ -133,9 +146,7 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <inheritdoc />
         public async Task<int> SoftDeleteInDirectoriesAsync(IReadOnlyList<Guid> directoryIds, Guid deletionId, DateTimeOffset deletedAt, IDbSession session)
         {
-            // One JSON array rather than a parameter per id, which a large subtree would run out of. The
-            // ids are written as the Guid type handler stores them.
-            string directoryIdsJson = JsonSerializer.Serialize(directoryIds.Select(id => id.ToString("D")));
+            string directoryIdsJson = GuidTypeHandler.ToJsonArray(directoryIds);
 
             string query = $@"
                 UPDATE file
@@ -203,23 +214,27 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <inheritdoc />
         public async Task<FileRecord?> SwapContentAsync(Guid id, string expectedSha256, string sha256, long sizeBytes, bool encrypted, DateTimeOffset at, IDbSession session)
         {
-            string query = $@"
-                UPDATE file
-                SET sha256 = @{nameof(sha256)}, size_bytes = @{nameof(sizeBytes)}, encrypted = @{nameof(encrypted)}, updated_at = @{nameof(at)}
-                WHERE id = @{nameof(id)} AND deleted_at IS NULL AND sha256 = @{nameof(expectedSha256)}
-                RETURNING {SelectColumns}";
-
-            FileEntity? swapped = await session.Connection.QuerySingleOrDefaultAsync<FileEntity>(
-                query, new { id, expectedSha256, sha256, sizeBytes, encrypted, at }, transaction: session.Transaction);
-
-            if (swapped == null)
+            FileRecord? file = await GetByIdAsync(id, session);
+            if (file == null || file.DeletedAt != null || file.Sha256 != expectedSha256)
             {
                 return null;
             }
 
-            FileRecord record = swapped.ToDomain();
-            await _changeLog.AppendAsync(ChangeEntityType.File, id, ChangeAction.Swapped, record, at, session);
-            return record;
+            return await _metadataUpkeep.AroundSwapAsync(id, expectedSha256, at, session, async () =>
+            {
+                string query = $@"
+                    UPDATE file
+                    SET sha256 = @{nameof(sha256)}, size_bytes = @{nameof(sizeBytes)}, encrypted = @{nameof(encrypted)}, updated_at = @{nameof(at)}
+                    WHERE id = @{nameof(id)}
+                    RETURNING {SelectColumns}";
+
+                FileEntity swapped = await session.Connection.QuerySingleAsync<FileEntity>(
+                    query, new { id, sha256, sizeBytes, encrypted, at }, transaction: session.Transaction);
+
+                FileRecord record = swapped.ToDomain();
+                await _changeLog.AppendAsync(ChangeEntityType.File, id, ChangeAction.Swapped, record, at, session);
+                return record;
+            });
         }
 
         /// <inheritdoc />
@@ -270,7 +285,7 @@ namespace ByteShelf.Server.Storage.Repositories
         public async Task<IReadOnlyList<(FileRecord File, string Path)>> SearchAsync(Guid directoryId, string directoryPath, FileSearch search, int maxRows, IDbSession? session = null)
         {
             string? after = search.After;
-            DynamicParameters parameters = FoundParameters(directoryId, directoryPath, search);
+            (string foundSql, DynamicParameters parameters) = Found(directoryId, directoryPath, search);
             parameters.Add(nameof(after), after);
             parameters.Add(nameof(maxRows), maxRows);
 
@@ -278,7 +293,7 @@ namespace ByteShelf.Server.Storage.Repositories
             {
                 string query = $@"
                     {SubtreeWalk.Sql}
-                    {FoundSql}
+                    {foundSql}
                       AND (@{nameof(after)} IS NULL OR {nameof(FileSearchEntity.FullPath)} > @{nameof(after)})
                     ORDER BY {nameof(FileSearchEntity.FullPath)}
                     LIMIT @{nameof(maxRows)}";
@@ -292,7 +307,7 @@ namespace ByteShelf.Server.Storage.Repositories
         {
             long? afterBytes = search.After?.RepeatedBytes;
             string? afterSha256 = search.After?.Sha256;
-            DynamicParameters parameters = FoundParameters(directoryId, directoryPath, search);
+            (string foundSql, DynamicParameters parameters) = Found(directoryId, directoryPath, search);
             parameters.Add(nameof(afterBytes), afterBytes);
             parameters.Add(nameof(afterSha256), afterSha256);
             parameters.Add(nameof(maxGroups), maxGroups);
@@ -304,7 +319,7 @@ namespace ByteShelf.Server.Storage.Repositories
                 string query = $@"
                     {SubtreeWalk.Sql},
                     found AS (
-                        {FoundSql}
+                        {foundSql}
                           AND file.encrypted = 0 AND file.size_bytes > 0
                     ),
                     duplicated AS (
@@ -331,14 +346,20 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <summary>
-        /// The parameters <see cref="FoundSql"/> reads: the walk from the directory searched, and the
-        /// criteria (normalized).
+        /// What a search finds: the live files under <see cref="SubtreeWalk.Sql"/>'s directory that meet the
+        /// criteria (normalized), each with its full path. The SQL ends in its WHERE clause so a query can add
+        /// conditions, and the parameters are those it and the walk read.
         /// </summary>
-        private static DynamicParameters FoundParameters(Guid directoryId, string directoryPath, FileCriteria criteria)
+        private static (string Sql, DynamicParameters Parameters) Found(Guid directoryId, string directoryPath, FileCriteria criteria)
         {
             DynamicParameters parameters = SubtreeWalk.ForFiles(directoryId, directoryPath, depth: null).Parameters();
-            SearchCriteria.Of(criteria).AddTo(parameters);
-            return parameters;
+            string sql = $@"
+                SELECT {SelectColumns}, tree.node_path || '/' || file.name AS {nameof(FileSearchEntity.FullPath)}
+                FROM file JOIN tree ON file.directory_id = tree.node_id
+                {SearchCriteria.Join}
+                WHERE file.deleted_at IS NULL
+                  AND {SearchCriteria.Of(criteria).ToSql(parameters)}";
+            return (sql, parameters);
         }
 
         /// <summary>The rows a query of files with their full paths answered, as records with those paths.</summary>
@@ -374,6 +395,7 @@ namespace ByteShelf.Server.Storage.Repositories
                 await _changeLog.AppendAsync(ChangeEntityType.File, entity.Id, ChangeAction.Restored, entity.ToDomain(), restoredAt, session);
             }
 
+            await _metadataUpkeep.RestoredAsync(restored.Select(entity => entity.Id).ToList(), restoredAt, session);
             return restored.Count;
         }
 

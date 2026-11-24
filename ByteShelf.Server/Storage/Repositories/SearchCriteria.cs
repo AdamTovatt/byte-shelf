@@ -1,13 +1,14 @@
+using ByteShelf.Server.Metadata.Repositories;
 using ByteShelfCommon;
 using EasyReasy.Database.Mapping;
 
 namespace ByteShelf.Server.Storage.Repositories
 {
     /// <summary>
-    /// The normalized <see cref="FileCriteria"/> but where a file is: <see cref="Sql"/> is the condition
-    /// a row of <c>file</c>, joined to what was read from its contents by <see cref="Join"/>, meets when
-    /// it matches every one, shared by search and the search for duplicates. A query that uses it adds
-    /// <see cref="AddTo"/>'s parameters.
+    /// The normalized <see cref="FileCriteria"/> but where a file is: <see cref="ToSql"/> answers the
+    /// condition a row of <c>file</c>, joined to what was read from its contents by <see cref="Join"/>,
+    /// meets when it matches every one, and adds the parameters it reads. Shared by search and the search for
+    /// duplicates.
     /// </summary>
     internal sealed record SearchCriteria(
         string? Text,
@@ -27,7 +28,8 @@ namespace ByteShelf.Server.Storage.Repositories
         double? MinDuration,
         double? MaxDuration,
         int? MinPages,
-        int? MaxPages)
+        int? MaxPages,
+        IReadOnlyList<PluginFieldFilter> PluginFields)
     {
         /// <summary>
         /// Each file with what was read from its contents (<c>object_metadata</c>, see Metadata.md) as
@@ -41,17 +43,21 @@ namespace ByteShelf.Server.Storage.Repositories
               ON meta.object_sha256 = file.sha256 AND file.encrypted = 0";
 
         /// <summary>
-        /// Every criterion that is set. The text matches the title and camera read from the contents as
-        /// it does a name. A file without metadata fails every metadata criterion, since a comparison
-        /// with null is never true. Ranges as in <see cref="FileCriteria"/>: a time includes its start and
-        /// excludes its end; sizes, durations and page counts are inclusive.
+        /// Every criterion that is set but <see cref="PluginFields"/>. The text matches the title and camera
+        /// read from the contents, and the fields plugins declare to be searched, as it does a name. A file
+        /// without metadata fails every metadata criterion, since a comparison with null is never true. Ranges
+        /// as in <see cref="FileCriteria"/>: a time includes its start and excludes its end; sizes, durations
+        /// and page counts are inclusive.
         /// </summary>
-        public const string Sql = $@"
+        private static readonly string Sql = $@"
             (@{nameof(Text)} IS NULL
              OR instr(file.name_fold, @{nameof(Text)}) > 0
              OR instr(coalesce(file.description_fold, ''), @{nameof(Text)}) > 0
              OR instr(coalesce(meta.title_fold, ''), @{nameof(Text)}) > 0
-             OR instr(coalesce(meta.camera_fold, ''), @{nameof(Text)}) > 0)
+             OR instr(coalesce(meta.camera_fold, ''), @{nameof(Text)}) > 0
+             OR EXISTS (
+                 SELECT 1 FROM plugin_field_value AS value
+                 WHERE {PluginFieldValues.OfFile("value")} AND value.searched AND instr(value.text_fold, @{nameof(Text)}) > 0))
             AND (@{nameof(MediaType)} IS NULL OR file.media_type = @{nameof(MediaType)})
             AND (@{nameof(MediaPrefix)} IS NULL
                  OR substr(file.media_type, 1, length(@{nameof(MediaPrefix)})) = @{nameof(MediaPrefix)})
@@ -92,11 +98,12 @@ namespace ByteShelf.Server.Storage.Repositories
                 search.MinDurationSeconds,
                 search.MaxDurationSeconds,
                 search.MinPageCount,
-                search.MaxPageCount);
+                search.MaxPageCount,
+                search.PluginFields);
         }
 
-        /// <summary>Adds the criteria to <paramref name="parameters"/>, under the names <see cref="Sql"/> uses.</summary>
-        public void AddTo(DynamicParameters parameters)
+        /// <summary>The condition of every criterion, whose parameters it adds to <paramref name="parameters"/>.</summary>
+        public string ToSql(DynamicParameters parameters)
         {
             parameters.Add(nameof(Text), Text);
             parameters.Add(nameof(MediaType), MediaType);
@@ -116,6 +123,7 @@ namespace ByteShelf.Server.Storage.Repositories
             parameters.Add(nameof(MaxDuration), MaxDuration);
             parameters.Add(nameof(MinPages), MinPages);
             parameters.Add(nameof(MaxPages), MaxPages);
+            return string.Join(" AND ", PluginFields.Select((filter, index) => PluginFieldValues.Meets(filter, $"pluginField{index}", parameters)).Prepend(Sql));
         }
     }
 }

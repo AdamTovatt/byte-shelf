@@ -103,6 +103,20 @@ describe('the plugins in settings', () => {
     expect(document.body.textContent).toBe('Pluginsbroken' + 'Version 1.0.0' + 'Its part in the web UI failed: It threw.' + 'healthy' + 'Version 1.0.0');
   });
 
+  it('says why a plugin\'s reader is not run, beside what else is wrong with it', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const plugins = [
+      pluginView('broken', { version: '1.0.0', readerProblem: 'Its reader did not stop.' }),
+      pluginView('healthy', { version: '1.0.0', moduleUrl: null }),
+    ];
+    await act(() => host.load(plugins));
+
+    await show(() => json({ plugins, skipped: [] }));
+
+    await shows('healthy');
+    expect(document.body.textContent).toBe('Pluginsbroken' + 'Version 1.0.0' + 'Its part in the web UI failed: It threw.' + 'Its reader did not stop.' + 'healthy' + 'Version 1.0.0');
+  });
+
   it('says why when they cannot be loaded', async () => {
     await show(() => json({ message: 'The server is busy.' }, 503));
 

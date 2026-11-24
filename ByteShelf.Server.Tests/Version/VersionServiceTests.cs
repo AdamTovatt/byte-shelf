@@ -145,8 +145,8 @@ namespace ByteShelf.Server.Tests.Version
 
         private static PluginCatalog WithPluginUi(string hash, string id = "test")
         {
-            PluginManifest manifest = new PluginManifest(id, "Test", "1.0.0", null);
-            return new PluginCatalog([new LoadedPlugin(manifest, new PluginUi(id, "/plugins/test/ui", hash, false))], []);
+            PluginManifest manifest = new PluginManifest(new PluginDeclaration(id, "Test"), "1.0.0", null);
+            return new PluginCatalog([new LoadedPlugin(manifest, new PluginUi(id, "/plugins/test/ui", hash, false), null)], []);
         }
 
         private static VersionService ServiceOn(string? webRootPath, IPluginCatalog? plugins = null)

@@ -1,3 +1,5 @@
+using ByteShelf.Server.Metadata;
+using ByteShelf.Server.Replication;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Errors;
 
@@ -5,8 +7,8 @@ namespace ByteShelf.Server.Shared.Root
 {
     /// <summary>
     /// The frame of a command the server runs on the root at <c>BYTESHELF_ROOT</c> instead of starting,
-    /// from its own machine with no login, with the server running or stopped: its user and replication
-    /// commands. It opens the root, refuses a database with migrations still to run, logs what the command
+    /// from its own machine with no login, with the server running or stopped: its user, replication and
+    /// plugin commands. It opens the root, refuses a database with migrations still to run, logs what the command
     /// did or why it was refused, and releases the database before exiting. Answers the exit code. A
     /// command that sets up a server before its first start may make the root first (see
     /// <see cref="RunAsync"/>).
@@ -84,6 +86,23 @@ namespace ByteShelf.Server.Shared.Root
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// The server's own services, but what serves requests. No email leaves a command: a root's
+        /// settings (<see cref="ServerSettings.Open"/>) have none.
+        /// </summary>
+        internal static ServiceProvider BuildServices(ServerSettings settings, ILoggerFactory loggerFactory, Action<IServiceCollection>? configureServices = null)
+        {
+            ServiceCollection services = new ServiceCollection();
+            services.AddSingleton(loggerFactory);
+            services.AddLogging();
+
+            Program.AddDomainServices(services, settings);
+            services.AddReplicationState();
+            services.AddPluginsNotKnown();
+            configureServices?.Invoke(services);
+            return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         }
 
         private static async Task<int> RunOnAsync(RootFolder root, ILogger logger, Func<RootFolder, Task<string>> apply)

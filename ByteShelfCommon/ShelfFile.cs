@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace ByteShelfCommon
 {
     /// <summary>A stored file: its record on a shelf, without its contents.</summary>
@@ -41,5 +43,13 @@ namespace ByteShelfCommon
         /// a client asks for the password and decrypts them; the server never can.
         /// </summary>
         public required bool Encrypted { get; init; }
+
+        /// <summary>
+        /// The values of the fields installed plugins declare for listings, by plugin id and field name, for
+        /// those the file has. Only a directory's listing, a tree, a search and a deletion's tree carry them;
+        /// null everywhere else, and for a file with none.
+        /// </summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyDictionary<string, IReadOnlyDictionary<string, PluginFieldValue>>? PluginFields { get; init; }
     }
 }

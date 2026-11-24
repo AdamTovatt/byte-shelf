@@ -88,6 +88,19 @@ again if the user is not created. The others refuse such a root rather than crea
 path. Exit codes: 0 done, 1 refused or failed (the reason is logged), 2 the arguments are wrong or
 `BYTESHELF_ROOT` is not set.
 
+## Forgetting a plugin
+
+A plugin that is uninstalled keeps what it kept about files, for it to come back to. To delete it for good:
+
+```
+ByteShelf.Server --forget-plugin <plugin id>
+```
+
+It runs as the user commands do, with the server running or stopped, and answers the same exit codes. It
+deletes what the plugin read from contents and its documents about files, and replicas follow; a replica
+refuses it. Uninstall the plugin and restart the server first: a server running with the plugin reads the
+contents again ([Metadata](ByteShelf.Server/Metadata/Metadata.md)).
+
 ## Environment variables
 
 | Variable | Required | Meaning |
@@ -207,7 +220,7 @@ one `BYTESHELF_PLUGINS` names when it starts; adding or removing one takes a res
 plugin's files under a running server: browsers keep them for good at an address made when it started.
 Stop it first, or put a new folder in the old one's place and restart. Keep the folder of plugins
 outside the root, so backups hold no code. Plugins are neither backed up nor copied to replicas: each
-server has those installed on it.
+server has those installed on it. What they keep about files is both: it is in the database.
 
 **A plugin runs with full trust, and there is no sandbox.** In the web UI it can do what the
 signed-in user can and reads what the page holds, the session and unlocked passwords included; on the
@@ -220,7 +233,8 @@ with the reason, 2 for wrong arguments. It starts nothing, needs no root and goe
 settings above. What it cannot tell is in
 [Plugins](ByteShelf.Server/Plugins/Plugins.md#loading-plugindiscovery-pluginloader): above all, whether
 the plugin works once running. One whose services break the server as it is built or started stops it
-from starting.
+from starting. One whose reader of files' contents cannot be made, or does not stop when told to, runs
+without it, and the Settings page says so; contents it fails on are in the server's log alone.
 
 ## Replicas
 
@@ -246,7 +260,7 @@ primary it follows and the last error (`GET /api/replication` answers the same).
 A file or directory purged on the primary stays in the replica's trash until the replica's own restore
 window has passed since it was deleted. To get it back, download it from the replica's trash (a file
 from the web UI's Trash page, a whole directory with `byteshelf get-deleted <shelf> <deletion-id>`)
-and upload it to the primary. The exception is a file's old contents when it is encrypted or
+and upload it to the primary; what plugins keep about it does not come along. The exception is a file's old contents when it is encrypted or
 decrypted in place: they leave the replica as soon as it applies that change, as they left the primary.
 
 Each server emails its admins when replication has gone wrong for longer than
@@ -323,8 +337,10 @@ replicas take a whole copy once they notice, which [Backup](ByteShelf.Server/Bac
 ## Background work
 
 The server cleans up after itself: hourly it removes abandoned uploads, staging leftovers, the trash
-past its restore window, and objects no file points at; daily it deletes expired sign-in and reset
-tokens and compacts the change log (entries older than 30 days that something newer replaced, and
-removals that old). A failed pass is logged as an error and the next one runs on schedule. A replica
+past its restore window, and objects no file points at, and drops what was read from contents no longer
+stored; daily it deletes expired sign-in and reset tokens and compacts the change log (entries older
+than 30 days that something newer replaced, removals that old, and entries of what plugins kept about
+files purged since). After every upload, and hourly, it reads what the contents of new files say, and has
+plugins read them. A failed pass is logged as an error and the next one runs on schedule. A replica
 also follows its primary continuously, every two seconds when caught up, and every minute each
 server checks replication for the alerts above.

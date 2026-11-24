@@ -24,6 +24,8 @@ export const queryKeys = {
     search: (shelf: string, under: string, criteria: SearchCriteria) => ['shelfContents', shelf, 'search', under, criteria] as const,
     duplicates: (shelf: string, under: string, criteria: SearchCriteria) => ['shelfContents', shelf, 'duplicates', under, criteria] as const,
     metadata: (shelf: string, id: string) => ['shelfContents', shelf, 'metadata', id] as const,
+    // By the shelf's id, which a file carries and no rename changes; the other keys have its name.
+    pluginDocuments: (shelfId: string, id: string) => ['shelfContents', shelfId, 'pluginDocuments', id] as const,
   },
   shelfAccess: {
     root: ['shelfAccess'] as const,
@@ -42,7 +44,8 @@ export const queryKeys = {
   replication: {
     status: ['replication', 'status'] as const,
   },
-  // Not an invalidation resource: the plugins change only with a restart of the server.
+  // Not an invalidation resource: which plugins there are changes only with a restart of the server, and what
+  // is wrong with a reader, which may change while it runs, is seen the next time they are listed.
   plugins: {
     list: ['plugins'] as const,
   },

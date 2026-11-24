@@ -2,13 +2,13 @@
 
 The ByteShelf web UI: React, TypeScript, Vite, Tailwind and TanStack Query, built on the house
 template. Everyone browses the shelves they reach, searches a folder and everything below it by
-name, description, or the title or camera read from its contents (the options at the search
-field's end narrow it: "Duplicates only" to the files with the same contents, "No description" to
-the files still to describe), uploads (dropping files on a directory works too), opens and
+name, description, the title or camera read from its contents, or what plugins keep in fields they
+have searched (the options at the search field's end narrow it: "Duplicates only" to the files with the
+same contents, "No description" to the files still to describe), uploads (dropping files on a directory works too), opens and
 downloads files, previews them over the page (images, video, audio, PDFs and text), shows a file's
 details with what the server read from its contents (`FileDetailsDialog`: when and where a photo was
-taken, the camera, a video's length, a PDF's title and pages), describes, shares by a link, moves,
-renames and deletes them, encrypts files and folders with a password, and restores them from the
+taken, the camera, a video's length, a PDF's title and pages) and the fields plugins declare, describes,
+shares by a link, moves, renames and deletes them, encrypts files and folders with a password, and restores them from the
 trash or previews or downloads a deleted file from it without restoring it (a replica's trash too).
 Admins also create shelves and users, set quotas, give access from a shelf or from a user, make keys
 and give a key other shelves (a key row's Shelves control in shelf settings), and on the Replication
@@ -174,10 +174,13 @@ npm run codegen    # in a second terminal
   ([Plugins](../ByteShelf.Server/Plugins/Plugins.md), Versions). A plugin adds viewers to
   the preview and actions to the menus of live files: in a listing, a search's results and the preview,
   an encrypted file's too, whose password is asked for once the action reads it
-  (`hooks/useFileActions.tsx`). Each viewer, menu item and dialog is drawn in an error boundary.
+  (`hooks/useFileActions.tsx`), and reads and writes its documents about files with
+  `hooks/usePluginDocuments.ts`, for which its viewers and dialogs are drawn in a `PluginIdentity`. Each
+  viewer, menu item and dialog is drawn in an error boundary.
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and
   refetches what each event makes stale (`lib/invalidationMap.ts`), so a change made elsewhere shows up
   within about a second. A test checks the map covers every resource the server publishes. The
   exceptions are the Replication page's status, polled every 5 seconds, as a replica's lag changes
-  without anything being published, and the plugins, which change only with a restart of the server:
-  they are read at sign-in, and again once that is stale as a shelf, a preview or Settings opens.
+  without anything being published, and the plugins, which change only with a restart of the server, but
+  for what is wrong with a reader: they are read at sign-in, and again once that is stale as a shelf, a
+  preview or Settings opens.

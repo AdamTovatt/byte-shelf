@@ -22,8 +22,8 @@ export interface Viewer {
   unavailable?: () => string | null;
 }
 
-/** The viewer that shows a file, or why none of those that take its type can in this browser. */
-export type ViewerMatch = { viewer: Viewer; unavailable: null } | { viewer: null; unavailable: string };
+/** The viewer that shows a file and the plugin it came with, null for a built-in one, or why none of those that take the file's type can in this browser. */
+export type ViewerMatch = { viewer: Viewer; pluginId: string | null; unavailable: null } | { viewer: null; unavailable: string };
 
 /** How closely a viewer takes a file: not at all, by its type's family, or by its type or extension. */
 const MATCH = { none: 0, family: 1, exact: 2 } as const;
@@ -66,9 +66,9 @@ export class ViewerRegistry {
     taking.sort((one, other) => other.match - one.match || byPlugin(one.pluginId, other.pluginId));
 
     let first: ViewerMatch | null = null;
-    for (const { viewer } of taking) {
+    for (const { viewer, pluginId } of taking) {
       const unavailable = whyUnavailable(viewer);
-      if (unavailable === null) return { viewer, unavailable };
+      if (unavailable === null) return { viewer, pluginId, unavailable };
       first ??= { viewer: null, unavailable };
     }
     return first;

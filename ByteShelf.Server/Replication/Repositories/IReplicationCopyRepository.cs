@@ -14,10 +14,13 @@ namespace ByteShelf.Server.Replication.Repositories
         /// </summary>
         Task AddAsync(IReadOnlyList<ChangeLogEntry> entries, IDbSession session);
 
-        /// <summary>The copied entries after <paramref name="afterSequence"/>, oldest first.</summary>
-        Task<IReadOnlyList<ChangeLogEntry>> GetAfterAsync(long afterSequence, int limit, IDbSession? session = null);
+        /// <summary>A page of the copied entries after <paramref name="afterSequence"/>, read in the caller's transaction.</summary>
+        Task<ChangeLogPage> GetPageAsync(long afterSequence, ChangeLogPageLimit limit, IDbSession session);
 
-        /// <summary>The ids in <paramref name="table"/> of the entities of <paramref name="entityType"/> that the copy does not hold.</summary>
-        Task<IReadOnlyList<Guid>> GetIdsMissingAsync(string entityType, string table, IDbSession session);
+        /// <summary>
+        /// The ids in <paramref name="table"/> of the entities of <paramref name="entityType"/> that the copy
+        /// does not hold; given an <paramref name="owner"/>, only those whose owner it does.
+        /// </summary>
+        Task<IReadOnlyList<Guid>> GetIdsMissingAsync(string entityType, string table, EntityOwner? owner, IDbSession session);
     }
 }

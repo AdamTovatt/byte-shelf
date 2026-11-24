@@ -11,7 +11,8 @@ namespace ByteShelfCommon
     /// </summary>
     public class FileCriteria
     {
-        private const string WildcardSubtype = "/*";
+        /// <summary>The most <see cref="PluginFields"/> one search may have.</summary>
+        public const int MaxPluginFields = 20;
 
         /// <summary>Criteria to set with an object initializer.</summary>
         public FileCriteria()
@@ -40,6 +41,7 @@ namespace ByteShelfCommon
             MaxDurationSeconds = criteria.MaxDurationSeconds;
             MinPageCount = criteria.MinPageCount;
             MaxPageCount = criteria.MaxPageCount;
+            PluginFields = criteria.PluginFields;
         }
 
         /// <summary>The directory to search, everything under it included; the shelf's root when null.</summary>
@@ -47,7 +49,7 @@ namespace ByteShelfCommon
 
         /// <summary>
         /// Text the file's name or description contains, ignoring case, or the title or camera its
-        /// contents carry (<see cref="FileMetadata"/>).
+        /// contents carry (<see cref="FileMetadata"/>), or a field a plugin declares to be searched.
         /// </summary>
         public string? Text { get; init; }
 
@@ -110,6 +112,14 @@ namespace ByteShelfCommon
         public int? MaxPageCount { get; init; }
 
         /// <summary>
+        /// What the fields plugins declare must meet, every one of them, at most <see cref="MaxPluginFields"/>;
+        /// none when empty. A filter on a plugin that is not installed, a field it does not declare or a
+        /// condition of another kind than the field's is refused.
+        /// </summary>
+        /// <remarks>A list rather than <c>[]</c>: the server's query binding fills the collection that is there.</remarks>
+        public IReadOnlyList<PluginFieldFilter> PluginFields { get; init; } = new List<PluginFieldFilter>();
+
+        /// <summary>
         /// These criteria checked and put the way they are compared: <see cref="Under"/> always set,
         /// <see cref="Text"/> folded, <see cref="ContentType"/> and <see cref="Sha256"/> lowercase, and
         /// blank text as not set. Durations and page counts are inclusive ranges, and a duration a
@@ -148,6 +158,17 @@ namespace ByteShelfCommon
                 throw new ArgumentException("The smallest duration or page count is above the largest.");
             }
 
+            if (PluginFields.Count > MaxPluginFields)
+            {
+                throw new ArgumentException($"A search takes at most {MaxPluginFields} filters on plugins' fields.");
+            }
+
+            // As a query string's pluginFields= is bound.
+            if (PluginFields.Any(filter => filter == null))
+            {
+                throw new ArgumentException("A filter on a plugin's field is missing.");
+            }
+
             return new FileCriteria
             {
                 Under = Under == null ? ShelfPath.Root : ShelfPath.Normalize(Under),
@@ -168,6 +189,7 @@ namespace ByteShelfCommon
                 MaxDurationSeconds = MaxDurationSeconds,
                 MinPageCount = MinPageCount,
                 MaxPageCount = MaxPageCount,
+                PluginFields = PluginFields.Select(filter => filter.Normalize()).ToList(),
             };
         }
 
@@ -195,23 +217,19 @@ namespace ByteShelfCommon
         /// <remarks>Methods rather than properties, so binding a search from a query string neither offers nor reads them.</remarks>
         public string? ExactMediaType()
         {
-            return ContentType != null && !IsFamily(ContentType) ? ContentType : null;
+            return ContentTypePattern()?.Type;
         }
 
         /// <summary>What every type of the family asked for starts with, such as <c>image/</c>; null for none or one type. Call it on normalized criteria.</summary>
         public string? MediaTypePrefix()
         {
-            return ContentType != null && IsFamily(ContentType) ? ContentType[..^1] : null;
+            return ContentTypePattern()?.Prefix;
         }
 
         /// <summary>Whether a stored content type is the one <see cref="ContentType"/> asks for. Call it on normalized criteria.</summary>
         public bool MatchesContentType(string storedContentType)
         {
-            string mediaType = ContentTypes.MediaTypeOf(storedContentType);
-            string? exact = ExactMediaType();
-            string? prefix = MediaTypePrefix();
-            return (exact == null || mediaType == exact)
-                && (prefix == null || mediaType.StartsWith(prefix, StringComparison.Ordinal));
+            return ContentTypePattern()?.Includes(ContentTypes.MediaTypeOf(storedContentType)) ?? true;
         }
 
         /// <summary>The query string's parts for every criterion that is set, escaped.</summary>
@@ -236,6 +254,11 @@ namespace ByteShelfCommon
             AddQueryPart(parts, "maxDurationSeconds", MaxDurationSeconds?.ToString("R", CultureInfo.InvariantCulture));
             AddQueryPart(parts, "minPageCount", MinPageCount?.ToString(CultureInfo.InvariantCulture));
             AddQueryPart(parts, "maxPageCount", MaxPageCount?.ToString(CultureInfo.InvariantCulture));
+            foreach (PluginFieldFilter filter in PluginFields)
+            {
+                AddQueryPart(parts, "pluginFields", filter.ToString());
+            }
+
             return parts;
         }
 
@@ -249,9 +272,9 @@ namespace ByteShelfCommon
             }
         }
 
-        private static bool IsFamily(string contentType)
+        private MediaTypePattern? ContentTypePattern()
         {
-            return contentType.EndsWith(WildcardSubtype, StringComparison.Ordinal);
+            return ContentType == null ? null : MediaTypePattern.Of(ContentType);
         }
 
         private static string? NormalizeContentType(string? contentType)
@@ -262,9 +285,9 @@ namespace ByteShelfCommon
             }
 
             string trimmed = contentType.Trim().ToLowerInvariant();
-            if (IsFamily(trimmed))
+            if (MediaTypePattern.Of(trimmed).Prefix is { } prefix)
             {
-                string type = trimmed[..^WildcardSubtype.Length];
+                string type = prefix[..^1];
                 if (type.Length == 0 || type.Contains('/', StringComparison.Ordinal) || type.Contains(';', StringComparison.Ordinal))
                 {
                     throw new ArgumentException($"'{contentType}' is not a media type, nor a type with /*.", nameof(contentType));

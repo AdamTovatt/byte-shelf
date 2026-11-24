@@ -22,10 +22,17 @@ namespace ByteShelf.Cli.Commands
             "--min-size", "--max-size", "--created-from", "--created-before", "--updated-from", "--updated-before",
             "--sha256", "--limit", "--after", "--expires", "--depth", "--password-file", "--path",
             "--taken-from", "--taken-before", "--min-duration", "--max-duration", "--min-pages", "--max-pages",
+            "--plugin-field",
         };
 
+        /// <summary>Those of them that may be given several times.</summary>
+        private static readonly HashSet<string> RepeatableOptions = new HashSet<string>(StringComparer.Ordinal) { "--plugin-field" };
+
         private readonly List<string> _positionals = new List<string>();
-        private readonly Dictionary<string, string?> _options = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+        /// <summary>The options and flags given, each with its values in order; a flag has none.</summary>
+        private readonly Dictionary<string, List<string>> _options = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+
         private readonly HashSet<string> _used = new HashSet<string>(StringComparer.Ordinal);
         private int _positionalsUsed;
 
@@ -49,7 +56,7 @@ namespace ByteShelf.Cli.Commands
                 {
                     optionsEnded = true;
                 }
-                else if (arguments._options.ContainsKey(word))
+                else if (arguments._options.ContainsKey(word) && !RepeatableOptions.Contains(word))
                 {
                     throw new UsageException($"{word} is given twice.");
                 }
@@ -60,11 +67,11 @@ namespace ByteShelf.Cli.Commands
                         throw new UsageException($"{word} needs a value.");
                     }
 
-                    arguments._options[word] = words[++i];
+                    arguments.ValuesOf(word).Add(words[++i]);
                 }
                 else
                 {
-                    arguments._options[word] = null;
+                    arguments.ValuesOf(word);
                 }
             }
 
@@ -99,7 +106,14 @@ namespace ByteShelf.Cli.Commands
         public string? Value(string name)
         {
             _used.Add(name);
-            return _options.GetValueOrDefault(name);
+            return _options.GetValueOrDefault(name)?.Single();
+        }
+
+        /// <summary>Every value of an option that may be given several times, in order.</summary>
+        public IReadOnlyList<string> Values(string name)
+        {
+            _used.Add(name);
+            return _options.GetValueOrDefault(name) ?? [];
         }
 
         /// <exception cref="UsageException">The value is not a whole number of bytes.</exception>
@@ -172,6 +186,17 @@ namespace ByteShelf.Cli.Commands
             {
                 throw new UsageException($"Unknown option {unknown}.");
             }
+        }
+
+        private List<string> ValuesOf(string name)
+        {
+            if (!_options.TryGetValue(name, out List<string>? values))
+            {
+                values = new List<string>();
+                _options.Add(name, values);
+            }
+
+            return values;
         }
     }
 }

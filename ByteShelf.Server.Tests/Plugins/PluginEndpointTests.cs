@@ -1,13 +1,18 @@
 using System.Net;
 using System.Net.Http.Json;
+using ByteShelf.Server.Metadata.Models;
+using ByteShelf.Server.Metadata.Repositories;
+using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Plugins.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
+using EasyReasy.Database.Mapping;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace ByteShelf.Server.Tests.Plugins
 {
@@ -197,9 +202,138 @@ namespace ByteShelf.Server.Tests.Plugins
             Assert.Equal(HttpStatusCode.NotFound, (await host.AnonymousClient.GetAsync("/api/plugins/failing/bare")).StatusCode);
         }
 
+        [Fact]
+        public async Task DeclaredFields_OfALoadedPlugin_AreKeptAndFound()
+        {
+            _plugins.Add("notes", TestPlugins.Manifest("notes", fields: """[{ "name": "caption", "label": "Caption", "kind": "text", "document": "file", "searched": true }]"""));
+            await using ServerTestHost host = await ServerTestHost.StartAsync(pluginsPath: _plugins.Path);
+            await host.CreateShelfAsync("docs");
+            await host.PutAsAdminAsync("docs", "/a.txt", "a"u8.ToArray(), "text/plain");
+            await host.PutAsAdminAsync("docs", "/b.txt", "b"u8.ToArray(), "text/plain");
+            SetPluginMetadataRequest write = new SetPluginMetadataRequest { Document = PluginDocument.Parse("""{ "caption": "Ett äpple" }""") };
+
+            HttpResponseMessage written = await host.AdminClient.PutAsJsonAsync("/api/shelves/docs/files/plugin-metadata?path=/a.txt&plugin=notes", write);
+
+            Assert.Equal(HttpStatusCode.OK, written.StatusCode);
+            foreach (string criteria in new[] { "text=äpple", "pluginFields=notes.caption" })
+            {
+                FileSearchResults? found = await host.AdminClient.GetFromJsonAsync<FileSearchResults>($"/api/shelves/docs/search?{criteria}");
+                Assert.Equal("/a.txt", Assert.Single(found!.Files).Path);
+            }
+
+            FileMetadata? metadata = await host.AdminClient.GetFromJsonAsync<FileMetadata>("/api/shelves/docs/files/metadata?path=/a.txt");
+            Assert.Equal("Test notes", metadata!.Plugins["notes"].Name);
+            Assert.Equal(["Caption"], metadata.Plugins["notes"].Fields.Select(field => field.Label));
+        }
+
+        [Fact]
+        public async Task PluginMetadata_OfASkippedPlugin_IsNotFound()
+        {
+            _plugins.Add("skipped", TestPlugins.Manifest("skipped", api: 0));
+            await using ServerTestHost host = await ServerTestHost.StartAsync(pluginsPath: _plugins.Path);
+            await host.CreateShelfAsync("docs");
+            await host.PutAsAdminAsync("docs", "/a.txt", "a"u8.ToArray(), "text/plain");
+
+            HttpResponseMessage refused = await host.AdminClient.PutAsJsonAsync(
+                "/api/shelves/docs/files/plugin-metadata?path=/a.txt&plugin=skipped", new SetPluginMetadataRequest { Document = PluginDocument.Parse("{}") });
+
+            Assert.Equal(HttpStatusCode.NotFound, refused.StatusCode);
+        }
+
+        [Fact]
+        public async Task AReader_OfALoadedPlugin_ReadsTheTypesItTakesAtItsVersion()
+        {
+            _plugins.AddReadingServerPlugin("reading", "3 text/plain text/html");
+            await using ServerTestHost host = await ServerTestHost.StartAsync(pluginsPath: _plugins.Path);
+            await host.CreateShelfAsync("docs");
+            ShelfFile file = await host.PutAsAdminAsync("docs", "/a.txt", "Ett äpple"u8.ToArray(), "text/plain");
+            await host.PutAsAdminAsync("docs", "/a.html", "Html"u8.ToArray(), "text/html");
+            await host.PutAsAdminAsync("docs", "/a.css", "Css"u8.ToArray(), "text/css");
+
+            await host.Services.ReadPluginMetadataAsync();
+
+            Assert.Equal(["reading: Ett äpple"], await ReadWordsAsync(host, "/a.txt"));
+            Assert.Equal(["reading: Html"], await ReadWordsAsync(host, "/a.html"));
+            Assert.Empty(await ReadWordsAsync(host, "/a.css"));
+            Assert.Equal(3, await ReadReaderVersionAsync(host, file.Sha256));
+        }
+
+        [Fact]
+        public async Task Readers_OfTwoLoadedPlugins_BothRead()
+        {
+            _plugins.AddReadingServerPlugin("first", "1 text/plain");
+            _plugins.AddReadingServerPlugin("second", "1 text/plain");
+            await using ServerTestHost host = await ServerTestHost.StartAsync(pluginsPath: _plugins.Path);
+            await host.CreateShelfAsync("docs");
+            await host.PutAsAdminAsync("docs", "/a.txt", "a"u8.ToArray(), "text/plain");
+
+            await host.Services.ReadPluginMetadataAsync();
+
+            Assert.Equal(["first: a", "second: a"], (await ReadWordsAsync(host, "/a.txt")).Order());
+        }
+
+        [Fact]
+        public async Task AReaderThatCannotBeMade_IsLoggedAndLeavesWhatItWouldReadForTheNextStart()
+        {
+            RecordingLogger<ContentReadRunner> logger = new RecordingLogger<ContentReadRunner>();
+            await using ServerTestHost host = await StartWithAnUnmadeReaderAsync(services => services.AddSingleton<ILogger<ContentReadRunner>>(logger));
+            ShelfFile stored = await host.PutAsAdminAsync("docs", "/a.txt", "Ett äpple"u8.ToArray(), "text/plain");
+
+            await host.Services.ReadPluginMetadataAsync();
+
+            Assert.Equal(["healthy: Ett äpple"], await ReadWordsAsync(host, "/a.txt"));
+            await using AsyncServiceScope scope = host.Services.CreateAsyncScope();
+            IContentPluginMetadataRepository repository = scope.ServiceProvider.GetRequiredService<IContentPluginMetadataRepository>();
+            Assert.Equal([stored.Sha256], await repository.GetUnreadAsync("reading", 1, MediaTypeSet.Of("text/plain"), null, 10));
+            Assert.Equal(["The reader reading could not be made, so it reads nothing until the server restarts: It was told to fail."], logger.Messages);
+            Assert.IsType<InvalidOperationException>(Assert.Single(logger.Exceptions));
+        }
+
+        [Fact]
+        public async Task List_ForAdminsAlone_SaysWhyAReaderReadsNothing()
+        {
+            await using ServerTestHost host = await StartWithAnUnmadeReaderAsync();
+            await host.PutAsAdminAsync("docs", "/a.txt", "a"u8.ToArray(), "text/plain");
+            await host.Services.ReadPluginMetadataAsync();
+
+            string problem = "Its reader of files' contents could not be made, so it reads nothing until the server restarts: It was told to fail.";
+            Assert.Equal([("healthy", null), ("reading", problem)], await ReadProblemsAsync(host.AdminClient));
+            Assert.Equal([("healthy", null), ("reading", null)], await ReadProblemsAsync(host.MemberClient));
+        }
+
         public void Dispose()
         {
             _plugins.Dispose();
+        }
+
+        /// <summary>A server with the shelf "docs" and two reading plugins: "reading", whose reader cannot be made, and "healthy".</summary>
+        private async Task<ServerTestHost> StartWithAnUnmadeReaderAsync(Action<IServiceCollection>? configureServices = null)
+        {
+            TestPlugins.Write(_plugins.AddReadingServerPlugin("reading", "1 text/plain"), "fail-reader", string.Empty);
+            _plugins.AddReadingServerPlugin("healthy", "1 text/plain");
+            ServerTestHost host = await ServerTestHost.StartAsync(configureServices, _plugins.Path);
+            await host.CreateShelfAsync("docs");
+            return host;
+        }
+
+        /// <summary>Each plugin with what is wrong with its reader, as <paramref name="client"/> is told.</summary>
+        private static async Task<IEnumerable<(string Id, string? Problem)>> ReadProblemsAsync(HttpClient client)
+        {
+            PluginList? list = await client.GetFromJsonAsync<PluginList>("/api/plugins");
+            return list!.Plugins.Select(plugin => (plugin.Id, plugin.ReaderProblem));
+        }
+
+        /// <summary>The words each plugin's reader found, as "plugin: words".</summary>
+        private static async Task<IReadOnlyList<string>> ReadWordsAsync(ServerTestHost host, string path)
+        {
+            FileMetadata? metadata = await host.AdminClient.GetFromJsonAsync<FileMetadata>($"/api/shelves/docs/files/metadata?path={path}");
+            return metadata!.Plugins.SelectMany(plugin => plugin.Value.Fields.Select(field => $"{plugin.Key}: {field.Value.Text}")).ToList();
+        }
+
+        private static Task<int> ReadReaderVersionAsync(ServerTestHost host, string sha256)
+        {
+            return host.Services.InTransactionAsync((_, session) => session.Connection.QuerySingleAsync<int>(
+                "SELECT reader_version FROM content_plugin_metadata WHERE sha256 = @sha256", new { sha256 }, transaction: session.Transaction));
         }
     }
 }

@@ -24,7 +24,7 @@ describe('a file\'s actions', () => {
       plugin('c', [action('text', ({ contentType }) => contentType === 'text/plain'), action('images', ({ contentType }) => contentType === 'image/png'), action('first', () => true)]),
     ];
 
-    expect(fileActionsFor(plugins, { contentType: 'text/plain' } as ShelfFile).map(({ key, action: { id } }) => [key, id])).toEqual([['a second', 'second'], ['a first', 'first'], ['c text', 'text'], ['c first', 'first']]);
+    expect(fileActionsFor(plugins, { contentType: 'text/plain' } as ShelfFile).map(({ pluginId, key, action: { id } }) => [pluginId, key, id])).toEqual([['a', 'a second', 'second'], ['a', 'a first', 'first'], ['c', 'c text', 'text'], ['c', 'c first', 'first']]);
   });
 
   it('leave out one that fails, saying which once, however often they are asked for', () => {

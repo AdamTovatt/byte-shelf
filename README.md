@@ -11,7 +11,7 @@ in the web UI.
 | `ByteShelf.Server` | The ASP.NET Core server (net10.0). |
 | `ByteShelfCommon` | The shared contract (net8.0, AOT-compatible): request and response types, path and shelf-name rules, source-generated JSON. Published as the `ByteShelfCommon` NuGet package. |
 | `ByteShelfClient` | The client library (net8.0, AOT-compatible): `IByteShelfClient` over HTTP, and in memory for an app's tests. Published as the `ByteShelfClient` NuGet package. |
-| `ByteShelf.Plugins` | What a plugin's server assembly is written against (net10.0): the interface it implements, and the one it registers through. Not published. |
+| `ByteShelf.Plugins` | What a plugin's server assembly is written against (net10.0): the interface it implements, the one it registers through, and the one its reader of files' contents implements. Not published. |
 | `byteshelf.client` | The web UI (React, TypeScript, Vite): browse and upload to the shelves you reach; for admins, shelves, users, access, keys and replication. The server serves its build. |
 | `plugins` | The plugins released with the server, each built on its own ([plugins/README.md](plugins/README.md)). |
 | `ByteShelf.Cli` | The `byteshelf` dotnet tool (net10.0): the command line, and with `--mcp` an MCP server for agents. Published as the `ByteShelf.Cli` NuGet tool package. |

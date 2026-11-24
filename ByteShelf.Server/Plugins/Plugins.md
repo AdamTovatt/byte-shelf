@@ -25,8 +25,19 @@ ui/...              whatever plugin.js loads
 | `name`, `version` | For people to read. |
 | `api` | `PluginApi.Version` of the servers it is for (see Versions). Another number is not loaded. |
 | `serverAssembly` | The path of its server assembly in the folder; left out when it has none. |
+| `fields` | The fields it declares in what it keeps about files ([Metadata](../Metadata/Metadata.md)), below; left out when it has none. |
 
-Other fields are ignored.
+Other fields are ignored. An entry of `fields` needs the first four below, and one that is not as this says,
+such as of another `kind`, refuses the plugin:
+
+| Field | Meaning |
+|---|---|
+| `name` | The property of the document, at its top: a letter, then letters, digits, hyphens and underscores, 64 characters at most. No two have one name. |
+| `label` | For people to read. |
+| `kind` | `text`, `number`, `date` or `flag`. |
+| `document` | `file` for the document about the file, `contents` for the one about its contents. |
+| `searched` | `true` for a text that a search's free text matches; `false` when left out. |
+| `listed` | `true` for one listings carry; `false` when left out. |
 
 ## Loading (`PluginDiscovery`, `PluginLoader`)
 
@@ -62,11 +73,27 @@ object already registered: `AddHttpClient<T>` keeps the names of typed clients i
 client needs a class name no other plugin's has, and a failed plugin's stays taken until the server
 restarts. A copy rather than an empty collection, because the framework's own registrations
 (`AddHttpClient`, `AddLogging`) add to what is already there, and a second set beside the server's
-breaks or resets it. There is no access to shelves or files in the contract.
+breaks or resets it. There is no access to shelves or files in the contract, but the reader's, below, to
+contents.
 
 What the server shares with a plugin must be no older than the plugin was built against, or it is
 refused before any of it runs, as one for another api is. That goes for its server assembly and for
 those in its folder that the assembly's references lead to, not for one it loads by name.
+
+A plugin that reads files' contents adds one reader, `builder.AddReader<TReader>(version, mediaTypes)`: an
+`IContentDocumentReader`, which the server runs in the background, once per version, over every object that a
+live plain file of those types holds, and whose answers it keeps as the plugin's documents about contents
+([Metadata](../Metadata/Metadata.md)). A second reader, or a type that is none, refuses the plugin. The reader
+is made with no services (`new()`), the first time there is something for it to read, so never on a replica
+and not by `--check-plugin`. It may be made and run in another process than the rest of the plugin, with which
+it shares no state; `IPluginReaders` is the one place that says which readers there are, and how each is made
+and run. One that cannot be made, or takes over 60 seconds to be, or does not stop when told to, is not run
+until the server restarts: it is logged, admins see why on the Settings page (`ReaderProblems`), and the rest
+of the plugin works. What it would have read stays to be read, but for contents it did not stop on, which are
+recorded as saying nothing. A read has 60 seconds, and 5 more to stop once cancelled; one that takes longer,
+throws, or answers more than a document holds (64 KiB, nested 32 deep) is recorded as saying nothing too, and
+is not tried again by that version. **A reader keeps what it reads nowhere else**, where it would outlive the
+plaintext.
 
 Each plugin has an `AssemblyLoadContext` of its own (`PluginLoadContext`): its packages and native
 libraries come from its folder, so it may use another version of a package than the server does.
@@ -85,7 +112,8 @@ replica.
 ## The web UI part
 
 `GET /api/plugins` lists the loaded plugins with the addresses of their module and stylesheet, for
-any signed-in user or shelf key, and for an admin those skipped. The `ui` folder, and nothing else
+any signed-in user or shelf key, and for an admin those skipped and why a plugin's reader no longer
+runs (`readerProblem`). The `ui` folder, and nothing else
 of the plugin, is served at `/plugins/{id}/{hash}/...` (`UsePluginAssets`), to anyone, as a browser
 loads modules without the session's token. The hash is of every file in the folder, so each may be
 cached for good, and is in the deploy id ([Version](../Version/Version.md)), so open tabs are told
@@ -120,6 +148,15 @@ A module's default export is `definePlugin({ viewers, fileActions })`, from `@by
 A plugin's module lives as long as the page does, which starts anew as the session ends: what it keeps
 in memory is never there for the next person to sign in. What it keeps in the browser's storage is,
 unless it removes it.
+
+In a viewer or a dialog of the plugin, `usePluginDocuments(file)` reads what it keeps about a live file: its
+document about the contents (`contents`, null for an encrypted file), and the one about the file (`file`)
+with its version, whose changes it follows. `useSetPluginDocument(file)` writes the latter as
+`{ document, expectedVersion }`: the whole of it, null to remove it, over the `fileVersion` the plugin read,
+null when there was none; another version there by now is an `ApiError` of status 409, and the documents are
+read again ([Metadata](../Metadata/Metadata.md)). Both know the plugin by what draws them, and throw
+elsewhere. **What was read from a file's plaintext must not go into the document about the file**, which is
+kept when the file is encrypted. For a file in the trash both fail.
 
 Ids are apart within a plugin's viewers, and within its file actions. Every type is in
 `byteshelf.client/src/plugin/index.ts`.

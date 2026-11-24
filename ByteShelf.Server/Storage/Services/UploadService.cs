@@ -23,7 +23,6 @@ namespace ByteShelf.Server.Storage.Services
         private readonly ObjectCollector _objectCollector;
         private readonly UploadLocks _uploadLocks;
         private readonly MetadataReadingSignal _metadataSignal;
-        private readonly IObjectMetadataRepository _metadataRepository;
         private readonly StorageOptions _options;
         private readonly TimeProvider _timeProvider;
 
@@ -40,7 +39,6 @@ namespace ByteShelf.Server.Storage.Services
             ObjectCollector objectCollector,
             UploadLocks uploadLocks,
             MetadataReadingSignal metadataSignal,
-            IObjectMetadataRepository metadataRepository,
             StorageOptions options,
             TimeProvider timeProvider)
         {
@@ -56,7 +54,6 @@ namespace ByteShelf.Server.Storage.Services
             _objectCollector = objectCollector;
             _uploadLocks = uploadLocks;
             _metadataSignal = metadataSignal;
-            _metadataRepository = metadataRepository;
             _options = options;
             _timeProvider = timeProvider;
         }
@@ -396,7 +393,7 @@ namespace ByteShelf.Server.Storage.Services
                 Encrypted = upload.Encrypted,
             };
 
-            await _fileRepository.InsertAsync(file, session);
+            await _fileRepository.InsertAsync(file, replaced?.Id, session);
             return StorageContracts.ToShelfFile(file, directoryPath);
         }
 
@@ -412,9 +409,6 @@ namespace ByteShelf.Server.Storage.Services
             FileRecord swapped = await _fileRepository.SwapContentAsync(file.Id, swap.Sha256, sha256, upload.SizeBytes, upload.Encrypted, now, session)
                 ?? throw ChangedSinceRead(path);
 
-            // What was read from the plain contents goes with them, at once and from the log too (see
-            // ChangeEntityType.ForgetsRemovedStates), unless another file still holds them.
-            await _metadataRepository.DeleteUnreferencedAsync(swap.Sha256, now, session);
             return StorageContracts.ToShelfFile(swapped, ShelfPath.GetParent(path));
         }
 

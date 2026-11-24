@@ -5,8 +5,8 @@ namespace ByteShelf.Server.Tests.Client
 {
     /// <summary>
     /// File metadata in both clients: what holds for both. Only the server reads contents, with libraries
-    /// the published client does not carry, so the in-memory client's files have none
-    /// (<see cref="FileMetadata.None"/>) and what is read is tested against the server only, in
+    /// the published client does not carry, so nothing is read from the in-memory client's files
+    /// (<see cref="FileMetadata.None"/>, unless a plugin keeps something) and what is read is tested against the server only, in
     /// <see cref="HttpClientContractTests"/>.
     /// </summary>
     public abstract partial class ClientContractTests

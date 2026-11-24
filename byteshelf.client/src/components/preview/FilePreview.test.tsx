@@ -5,8 +5,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FilePreview } from './FilePreview';
 import { BUILT_IN_VIEWERS } from './viewers';
+import { usePluginId } from '../../contexts/PluginIdentity';
 import { neighboursOf } from '../../lib/preview/neighbours';
 import type { FileActions } from '../../hooks/useFileActions';
+import type { OfferedAction } from '../../lib/plugins/offeredActions';
 import type { ViewerProps } from '../../lib/preview/viewerRegistry';
 import type { ContentSource } from '../../services/contentService';
 import type { FileReading } from '../../services/fileReading';
@@ -32,6 +34,11 @@ function BrokenViewer({ file }: ViewerProps): null {
   throw new Error(`Cannot show ${file.name}.`);
 }
 
+/** Shows whose it is, as one that reads the plugin's documents must know. */
+function OwnedViewer() {
+  return <p>of the plugin {usePluginId()}</p>;
+}
+
 /** Brings the component of a viewer that loads it when it is first shown. */
 let loadLazy: (module: { default: ComponentType<ViewerProps> }) => void;
 
@@ -40,7 +47,8 @@ const LazyViewer = lazy(() => new Promise<{ default: ComponentType<ViewerProps> 
 const WITH_PLUGINS = BUILT_IN_VIEWERS.with('test', [
   { id: 'broken', mediaTypes: ['x-test/broken'], extensions: [], component: BrokenViewer },
   { id: 'lazy', mediaTypes: ['x-test/lazy'], extensions: [], component: LazyViewer },
-]);
+  { id: 'owned', mediaTypes: ['x-test/owned'], extensions: [], component: OwnedViewer },
+]).with(null, [{ id: 'own', mediaTypes: ['x-test/own'], extensions: [], component: OwnedViewer }]);
 
 vi.mock('../../hooks/useViewers', () => ({ useViewers: () => WITH_PLUGINS }));
 
@@ -48,6 +56,8 @@ vi.mock('../../hooks/useViewers', () => ({ useViewers: () => WITH_PLUGINS }));
 const plugins = vi.hoisted(() => ({ awaited: false }));
 
 vi.mock('../../hooks/usePluginHost', () => ({ usePluginsAwaited: () => plugins.awaited }));
+
+const CONVERT: OfferedAction = { pluginId: 'a', key: 'a convert', action: { id: 'convert', label: 'Convert', showsFor: () => true, run: () => undefined } };
 
 const LIMIT = 100 * 1024 * 1024;
 
@@ -304,15 +314,23 @@ describe('the preview', () => {
     await shows('There is no preview of files of this type.');
   });
 
+  it('shows a file with a plugin\'s viewer as that plugin\'s, and with one of the app\'s own as no plugin\'s', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await show(shelfFile('a', { contentType: 'x-test/owned' }));
+    await shows('of the plugin test');
+
+    await act(async () => change(shelfFile('b', { contentType: 'x-test/own' })));
+    await shows('The viewer failed while showing this file.');
+  });
+
   it('has the plugins\' actions for a live file in a menu of their own, and none without any', async () => {
     const run = vi.fn(async () => undefined);
-    const convert = { id: 'convert', label: 'Convert', showsFor: () => true, run: () => undefined };
-    actions = { actionsFor: ({ name }) => (name === 'a' ? [{ key: 'a convert', action: convert }] : []), run };
+    actions = { actionsFor: ({ name }) => (name === 'a' ? [CONVERT] : []), run };
     await show(shelfFile('a'), [shelfFile('a'), shelfFile('b')]);
 
     await act(async () => labelled('More actions')!.click());
     await press('Convert');
-    expect(run.mock.calls).toEqual([[convert, expect.objectContaining({ file: expect.objectContaining({ name: 'a' }), source })]]);
+    expect(run.mock.calls).toEqual([[CONVERT, expect.objectContaining({ file: expect.objectContaining({ name: 'a' }), source })]]);
 
     await key('ArrowRight');
     await shows('text of b');
@@ -326,7 +344,7 @@ describe('the preview', () => {
 
   it('gives an action the contents it is reading itself, which the action may give up', async () => {
     const run = vi.fn<FileActions['run']>(async () => undefined);
-    actions = { actionsFor: () => [{ key: 'a convert', action: { id: 'convert', label: 'Convert', showsFor: () => true, run: () => undefined } }], run };
+    actions = { actionsFor: () => [CONVERT], run };
     let bring: (contents: Blob) => void = () => undefined;
     const reads = vi.fn(() => new Promise<Blob>((resolve) => { bring = resolve; }));
     read = reads;

@@ -75,6 +75,19 @@ namespace ByteShelfClient.Http
             return _connection.SendAsync(HttpMethod.Get, $"{_base}/files/metadata?{file.ToQuery()}", ByteShelfJsonContext.Default.FileMetadata, cancellationToken);
         }
 
+        public Task<PluginFileDetails> SetPluginDocumentAsync(EntryReference file, string plugin, PluginDocument? document, int? expectedVersion, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(file);
+            ArgumentNullException.ThrowIfNull(plugin);
+            return _connection.SendAsync(
+                HttpMethod.Put,
+                $"{_base}/files/plugin-metadata?{file.ToQuery()}&plugin={Uri.EscapeDataString(plugin)}",
+                new SetPluginMetadataRequest { Document = document, ExpectedVersion = expectedVersion },
+                ByteShelfJsonContext.Default.SetPluginMetadataRequest,
+                ByteShelfJsonContext.Default.PluginFileDetails,
+                cancellationToken);
+        }
+
         public async Task<ShelfFile> UploadAsync(string path, Stream content, UploadOptions? options = null, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(content);

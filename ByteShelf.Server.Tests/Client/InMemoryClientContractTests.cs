@@ -11,7 +11,7 @@ namespace ByteShelf.Server.Tests.Client
     {
         protected override Task<IByteShelfClient> CreateAdminClientAsync()
         {
-            return Task.FromResult<IByteShelfClient>(new InMemoryByteShelfClient(password: AdminPassword));
+            return Task.FromResult<IByteShelfClient>(new InMemoryByteShelfClient(password: AdminPassword, plugins: [TestMetadataPlugins.Declaration]));
         }
 
         protected override string PrimaryUrl => ((InMemoryByteShelfClient)Client).Address;

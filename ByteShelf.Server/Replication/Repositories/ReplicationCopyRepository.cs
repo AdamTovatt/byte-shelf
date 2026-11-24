@@ -48,32 +48,22 @@ namespace ByteShelf.Server.Replication.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<IReadOnlyList<ChangeLogEntry>> GetAfterAsync(long afterSequence, int limit, IDbSession? session = null)
+        public Task<ChangeLogPage> GetPageAsync(long afterSequence, ChangeLogPageLimit limit, IDbSession session)
         {
-            return await UseSessionAsync(async (dbSession) =>
-            {
-                string query = $@"
-                    SELECT {ChangeLogRepository.SelectColumns}
-                    FROM replication_copy
-                    WHERE sequence > @{nameof(afterSequence)}
-                    ORDER BY sequence
-                    LIMIT @{nameof(limit)}";
-
-                IEnumerable<ChangeLogRepository.ChangeLogEntity> entities = await dbSession.Connection.QueryAsync<ChangeLogRepository.ChangeLogEntity>(
-                    query, new { afterSequence, limit }, transaction: dbSession.Transaction);
-
-                return (IReadOnlyList<ChangeLogEntry>)entities.Select(entity => entity.ToDomain()).ToList();
-            }, session);
+            return ChangeLogPages.ReadAsync("replication_copy", "1", afterSequence, limit, session);
         }
 
         /// <inheritdoc />
-        public async Task<IReadOnlyList<Guid>> GetIdsMissingAsync(string entityType, string table, IDbSession session)
+        public async Task<IReadOnlyList<Guid>> GetIdsMissingAsync(string entityType, string table, EntityOwner? owner, IDbSession session)
         {
+            string ownerCopied = owner == null ? string.Empty : $@"
+                  AND {owner.OwnedColumn} IN (SELECT entity_id FROM replication_copy WHERE entity_type = @ownerType)";
+
             string query = $@"
                 SELECT id FROM {table}
-                WHERE id NOT IN (SELECT entity_id FROM replication_copy WHERE entity_type = @{nameof(entityType)})";
+                WHERE id NOT IN (SELECT entity_id FROM replication_copy WHERE entity_type = @{nameof(entityType)}){ownerCopied}";
 
-            return (await session.Connection.QueryAsync<Guid>(query, new { entityType }, transaction: session.Transaction)).ToList();
+            return (await session.Connection.QueryAsync<Guid>(query, new { entityType, ownerType = owner?.EntityType }, transaction: session.Transaction)).ToList();
         }
     }
 }

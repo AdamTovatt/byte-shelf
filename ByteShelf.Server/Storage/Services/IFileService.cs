@@ -8,9 +8,6 @@ namespace ByteShelf.Server.Storage.Services
     {
         Task<ShelfFile> GetFileAsync(Shelf shelf, EntryReference reference);
 
-        /// <summary>What the file's contents were read to say; <see cref="FileMetadata.None"/> for an encrypted file or a type not read, and readable with nothing yet for one not read yet.</summary>
-        Task<FileMetadata> GetMetadataAsync(Shelf shelf, EntryReference reference);
-
         Task<FileContent> GetContentAsync(Shelf shelf, EntryReference reference);
 
         /// <summary>Moves a live file to the trash; answers the deletion, which can be restored until it is purged.</summary>

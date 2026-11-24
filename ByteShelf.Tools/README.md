@@ -53,6 +53,8 @@ the same words:
   one.
   `list_links` and `revoke_link` need only `Read`, as anyone may revoke their own links, so a
   replica offers them too.
+- `get_info` shows the fields plugins declare, a text of them up to `MaxFieldTextLength` (1,000 characters);
+  `byteshelf stat` shows it whole.
 - The tools never take a password: `download_file` refuses an encrypted file, and a directory
   download leaves encrypted files out (`EncryptedFiles.LeftOut`) and lists them.
 - Every tool working on one shelf takes `shelf` last and optional: left out, it is the only shelf

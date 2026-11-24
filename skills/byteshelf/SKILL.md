@@ -54,7 +54,8 @@ spaces.
 | Save something deleted without restoring it | `byteshelf get-deleted docs <id> ./out` (`--path <path>` for one file or directory it took; a replica's trash too, for a file purged on its primary) |
 | Empty the trash for good | `byteshelf empty-trash docs` (nothing in it can come back afterwards) |
 
-- `find` matches text in a file's name or its description, ignoring case, so describe what you store.
+- `find` matches text in a file's name or its description, and in the fields plugins declare to be searched,
+  ignoring case, so describe what you store.
   `find docs --no-description` lists the files still to describe. Quote a type family:
   `--type 'image/*'`.
 - The server reads what photos, videos and PDFs carry: `find` also matches a PDF's title or a
@@ -62,6 +63,10 @@ spaces.
   (seconds) and `--min-pages`/`--max-pages`, as in `byteshelf find photos --taken-from 2024-06-01
   --has-gps`; `find-duplicates` takes the same options. `stat` shows what was read. Encrypted files
   carry none.
+- Plugins on the server may declare fields, which `stat` shows: `--plugin-field` (up to 20 of them) finds
+  files by them, as in `--plugin-field 'notes.rating=3..5'` (both included), `'notes.caption~apple'`,
+  `'notes.done=true'`, `'notes.due=2026-01-01..2026-02-01'` (before the second; a UTC date, or a time with an
+  offset as `2026-01-01T10:00Z`), `notes.due` (has one) or `'!notes.due'` (has none).
 - `tree`, `find` and `find-duplicates` answer a page at a time. A page that has more ends with
   `More: add --after '<cursor>'`; run the same command with that option for the next page.
 - `put` refuses a path that is taken; add `--overwrite` to replace the file (it goes to the trash, so

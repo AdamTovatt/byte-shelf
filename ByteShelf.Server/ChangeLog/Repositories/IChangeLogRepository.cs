@@ -25,19 +25,23 @@ namespace ByteShelf.Server.ChangeLog.Repositories
         /// <summary>The newest sequence number ever given, or 0 before the first entry; compaction never lowers it.</summary>
         Task<long> GetLatestSequenceAsync(IDbSession? session = null);
 
+        /// <summary>A page of the entries after <paramref name="afterSequence"/>, read in the caller's transaction.</summary>
+        Task<ChangeLogPage> GetPageAsync(long afterSequence, ChangeLogPageLimit limit, IDbSession session);
+
         /// <summary>
-        /// The newest entry of each entity, oldest first, after <paramref name="afterSequence"/> and at most
-        /// <paramref name="limit"/>: a whole copy of the state, read page by page. An entity that no longer
+        /// A page of the newest entry of each entity after <paramref name="afterSequence"/>, read in the
+        /// caller's transaction: a whole copy of the state, page by page. An entity that no longer
         /// exists comes as its removal (null payload), so a reader that copied it on an earlier page,
         /// before it was removed, drops it; compaction drops old removals, so a copy from the start
         /// meets only recent ones.
         /// </summary>
-        Task<IReadOnlyList<ChangeLogEntry>> GetLatestStatesAfterAsync(long afterSequence, int limit, IDbSession? session = null);
+        Task<ChangeLogPage> GetLatestStatesPageAsync(long afterSequence, ChangeLogPageLimit limit, IDbSession session);
 
         /// <summary>
         /// Compacts the log: drops entries made before <paramref name="before"/> that a newer entry for the
-        /// same entity supersedes, and removals made before it, in <paramref name="session"/>'s
-        /// transaction, and records the highest sequence dropped. Answers how many were dropped.
+        /// same entity supersedes, removals made before it, and those of rows that went with their owner
+        /// unlogged (<see cref="ChangeEntityType.Owned"/>), in <paramref name="session"/>'s transaction, and
+        /// records the highest sequence dropped. Answers how many were dropped.
         /// </summary>
         Task<int> CompactAsync(DateTimeOffset before, IDbSession session);
 

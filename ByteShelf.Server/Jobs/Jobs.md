@@ -10,7 +10,7 @@ each pass in a scope of its own; a job that overrides `Wake` also starts a pass 
 `WakeSignal` is woken. A pass's summary is logged at Debug; a failed pass is logged as an
 error, and the next one runs on schedule. The jobs are `storage.maintenance` (hourly),
 `users.expired_token_cleanup` (daily), `change_log.compaction` (daily), `replication.alerts`
-(every minute) and `metadata.reading` (hourly, and woken by every upload;
+(every minute), and `metadata.reading` and `metadata.plugin_reading` (hourly, and woken by every upload;
 [Metadata](../Metadata/Metadata.md)).
 
 Nothing records runs in the database: the log is the record. A job that a person needs to see the

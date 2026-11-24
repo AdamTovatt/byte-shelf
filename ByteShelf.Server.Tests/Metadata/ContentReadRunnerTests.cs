@@ -1,0 +1,205 @@
+using System.Text.Json.Nodes;
+using ByteShelf.Server.Metadata.Repositories;
+using ByteShelf.Server.Metadata.Services;
+using ByteShelf.Server.Tests.TestUtilities;
+using ByteShelfCommon;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace ByteShelf.Server.Tests.Metadata
+{
+    /// <summary>How long one read may take, to the instant, and what is left of it.</summary>
+    public class ContentReadRunnerTests : ServiceTestBase
+    {
+        private static readonly TimeSpan OneMoment = TimeSpan.FromMilliseconds(1);
+
+        private readonly RecordingLogger<ContentReadRunner> _logger = new RecordingLogger<ContentReadRunner>();
+        private readonly ReaderProblems _problems = new ReaderProblems();
+
+        [Fact]
+        public async Task ReadAsync_ReaderMadeWithinTheLimit_Reads()
+        {
+            TaskCompletionSource made = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            TestDocumentReader reader = new TestDocumentReader((_, _) => Task.FromResult<JsonObject?>(null)) { Making = made.Task };
+            ContentReadRunner runner = NewRunner();
+
+            Task<ReadOutcome?> read = runner.ReadAsync(Reader(reader), await StoreAFileAsync(), CancellationToken.None);
+            await Clock.WaitForTimerAsync(TestReadLimits.Prepare);
+            Clock.Advance(TestReadLimits.Prepare - OneMoment);
+            made.SetResult();
+
+            Assert.False((await read.WaitAsync(TestReadLimits.Real))!.Failed);
+            Assert.True(runner.MayRun(Reader(reader)));
+        }
+
+        [Fact]
+        public async Task ReadAsync_ReaderStillBeingMadeAtTheLimit_IsNotRunAndSaysNothingOfTheContents()
+        {
+            TestDocumentReader reader = new TestDocumentReader((_, _) => Task.FromResult<JsonObject?>(null)) { Making = NewSignal().Task };
+            ContentReadRunner runner = NewRunner();
+
+            Task<ReadOutcome?> read = runner.ReadAsync(Reader(reader), await StoreAFileAsync(), CancellationToken.None);
+            await Clock.WaitForTimerAsync(TestReadLimits.Prepare);
+            Clock.Advance(TestReadLimits.Prepare);
+
+            Assert.Null(await read.WaitAsync(TestReadLimits.Real));
+            Assert.False(runner.MayRun(Reader(reader)));
+            Assert.Equal("Its reader of files' contents could not be made, so it reads nothing until the server restarts: It took over 60 seconds.", _problems.Of(TestPluginMetadata.Plugin));
+            Assert.Equal(["The reader test-plugin could not be made, so it reads nothing until the server restarts: It took over 60 seconds."], _logger.Messages);
+        }
+
+        /// <summary>As if cancelled, which the server's shutting down alone is.</summary>
+        [Fact]
+        public async Task ReadAsync_ReaderThatFailsToBeMade_IsNotRunAndSaysWhy()
+        {
+            TestDocumentReader reader = new TestDocumentReader((_, _) => Task.FromResult<JsonObject?>(null)) { Making = Task.FromException(new OperationCanceledException("It gave up.")) };
+            ContentReadRunner runner = NewRunner();
+
+            Assert.Null(await runner.ReadAsync(Reader(reader), await StoreAFileAsync(), CancellationToken.None));
+
+            Assert.Equal("Its reader of files' contents could not be made, so it reads nothing until the server restarts: It gave up.", _problems.Of(TestPluginMetadata.Plugin));
+            Assert.False(runner.MayRun(Reader(reader)));
+        }
+
+        [Fact]
+        public async Task ReadAsync_ServerShutsDownWhileTheReaderIsMade_SaysNothingOfTheReader()
+        {
+            TestDocumentReader reader = new TestDocumentReader((_, _) => Task.FromResult<JsonObject?>(null)) { Making = NewSignal().Task };
+            ContentReadRunner runner = NewRunner();
+            using CancellationTokenSource shuttingDown = new CancellationTokenSource();
+
+            Task<ReadOutcome?> read = runner.ReadAsync(Reader(reader), await StoreAFileAsync(), shuttingDown.Token);
+            await Clock.WaitForTimerAsync(TestReadLimits.Prepare);
+            await shuttingDown.CancelAsync();
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read.WaitAsync(TestReadLimits.Real));
+            Assert.True(runner.MayRun(Reader(reader)));
+            Assert.Empty(_logger.Messages);
+        }
+
+        [Fact]
+        public async Task ReadAsync_WithinTheReadLimit_IsNotCancelled()
+        {
+            TaskCompletionSource<CancellationToken> started = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource<JsonObject?> found = NewSignal();
+            TestDocumentReader reader = new TestDocumentReader((_, cancellationToken) =>
+            {
+                started.SetResult(cancellationToken);
+                return found.Task;
+            });
+            ContentReadRunner runner = NewRunner();
+
+            Task<ReadOutcome?> read = runner.ReadAsync(Reader(reader), await StoreAFileAsync(), CancellationToken.None);
+            CancellationToken given = await started.Task.WaitAsync(TestReadLimits.Real);
+            await Clock.WaitForTimerAsync(TestReadLimits.Read);
+            Clock.Advance(TestReadLimits.Read - OneMoment);
+            Assert.False(given.IsCancellationRequested);
+            found.SetResult(new JsonObject());
+
+            Assert.False((await read.WaitAsync(TestReadLimits.Real))!.Failed);
+        }
+
+        [Fact]
+        public async Task ReadAsync_StoppingWithinTheStopLimit_FailsAndIsNotLeftBehind()
+        {
+            TaskCompletionSource<CancellationToken> started = new TaskCompletionSource<CancellationToken>(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource<JsonObject?> stopped = NewSignal();
+            TestDocumentReader reader = new TestDocumentReader((_, cancellationToken) =>
+            {
+                started.SetResult(cancellationToken);
+                return stopped.Task;
+            });
+            ContentReadRunner runner = NewRunner();
+            ContentReader contentReader = Reader(reader);
+
+            Task<ReadOutcome?> read = runner.ReadAsync(contentReader, await StoreAFileAsync(), CancellationToken.None);
+            CancellationToken given = await started.Task.WaitAsync(TestReadLimits.Real);
+            await Clock.WaitForTimerAsync(TestReadLimits.Read);
+            Clock.Advance(TestReadLimits.Read);
+            await Clock.WaitForTimerAsync(TestReadLimits.Stop);
+            Assert.True(given.IsCancellationRequested);
+            Clock.Advance(TestReadLimits.Stop - OneMoment);
+            stopped.SetResult(new JsonObject());
+
+            Assert.True((await read.WaitAsync(TestReadLimits.Real))!.Failed);
+            Assert.True(runner.MayRun(contentReader));
+        }
+
+        [Fact]
+        public async Task ReadAsync_StillRunningAtTheStopLimit_IsLeftBehindAndItsFileClosedOnceItEnds()
+        {
+            TaskCompletionSource<JsonObject?> stuck = NewSignal();
+            TestDocumentReader reader = new TestDocumentReader((_, _) => stuck.Task);
+            ContentReadRunner runner = NewRunner();
+            ContentReader contentReader = Reader(reader);
+
+            Task<ReadOutcome?> read = runner.ReadAsync(contentReader, await StoreAFileAsync(), CancellationToken.None);
+            await Clock.WaitForTimerAsync(TestReadLimits.Read);
+            Clock.Advance(TestReadLimits.Read);
+            await Clock.WaitForTimerAsync(TestReadLimits.Stop);
+            Clock.Advance(TestReadLimits.Stop);
+
+            Assert.True((await read.WaitAsync(TestReadLimits.Real))!.Failed);
+            Assert.False(runner.MayRun(contentReader));
+            Assert.True(runner.MayRun(Reader(reader, "another")));
+            Assert.Equal("Its reader of files' contents did not stop when it was told to, so it reads nothing more until the server restarts.", _problems.Of(contentReader.Id));
+            stuck.SetResult(null);
+            await reader.AllReadsEndedAsync();
+        }
+
+        [Fact]
+        public async Task ReadAsync_ThatEnds_ClosesItsFile()
+        {
+            TestDocumentReader reader = TestDocumentReader.OfText();
+
+            await NewRunner().ReadAsync(Reader(reader), await StoreAFileAsync(), CancellationToken.None);
+
+            Assert.Equal(1, reader.Reads);
+            await reader.AllReadsEndedAsync();
+        }
+
+        [Fact]
+        public async Task ReadAsync_ReaderThrows_LogsTheExceptionsTypeAndNothingItSays()
+        {
+            TestDocumentReader reader = new TestDocumentReader((_, _) => throw new FormatException("'a secret' is no number"));
+
+            ReadOutcome? outcome = await NewRunner().ReadAsync(Reader(reader), await StoreAFileAsync(), CancellationToken.None);
+
+            Assert.True(outcome!.Failed);
+            string message = Assert.Single(_logger.Messages);
+            Assert.Contains(nameof(FormatException), message, StringComparison.Ordinal);
+            Assert.DoesNotContain("secret", message, StringComparison.Ordinal);
+            Assert.Empty(_logger.Exceptions);
+        }
+
+        [Fact]
+        public async Task ReadAsync_ObjectIsGone_ReadsNothing()
+        {
+            TestDocumentReader reader = TestDocumentReader.OfText();
+
+            Assert.Null(await NewRunner().ReadAsync(Reader(reader), Sha256Of("never stored"), CancellationToken.None));
+
+            Assert.Equal(0, reader.Reads);
+        }
+
+        private ContentReadRunner NewRunner()
+        {
+            return new ContentReadRunner(ObjectStore, _problems, Clock, _logger);
+        }
+
+        private PluginContentReader Reader(TestDocumentReader reader, string plugin = TestPluginMetadata.Plugin)
+        {
+            return new PluginContentReader(reader.AsReaderOf(plugin), Services.GetRequiredService<IContentPluginMetadataRepository>());
+        }
+
+        private async Task<string> StoreAFileAsync()
+        {
+            ShelfFile file = await StoreTextAsync(await CreateShelfAsync(), "/a.txt", "a");
+            return file.Sha256;
+        }
+
+        private static TaskCompletionSource<JsonObject?> NewSignal()
+        {
+            return new TaskCompletionSource<JsonObject?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+    }
+}

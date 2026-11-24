@@ -530,9 +530,6 @@ namespace ByteShelf.Server.Tests.Storage
             return Services.GetRequiredService<IShelfRepository>().GetUsageAsync(shelf.Id);
         }
 
-        /// <summary>Contents the server takes as encrypted: it checks only that they start as an age file.</summary>
-        private static readonly byte[] AgeBytes = Encoding.ASCII.GetBytes("age-encryption.org/v1\nan encrypted file");
-
         /// <param name="expectedSha256">The hash the swap expects the file's contents to have; the file's own unless given.</param>
         private Task<ShelfFile> SwapAsync(Shelf shelf, ShelfFile file, byte[] content, bool encrypted, string? expectedSha256 = null)
         {

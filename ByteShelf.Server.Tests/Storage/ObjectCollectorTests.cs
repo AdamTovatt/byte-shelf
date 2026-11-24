@@ -72,6 +72,7 @@ namespace ByteShelf.Server.Tests.Storage
                     CreatedAt = now,
                     UpdatedAt = now,
                 },
+                replacedId: null,
                 session);
 
             await session.CommitAsync();

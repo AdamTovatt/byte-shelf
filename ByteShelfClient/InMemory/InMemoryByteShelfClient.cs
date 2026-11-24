@@ -24,13 +24,16 @@ namespace ByteShelfClient.InMemory
         /// <param name="password">That admin's password, for <see cref="ChangePasswordAsync"/>.</param>
         /// <param name="timeProvider">The clock stamped on everything and the restore window is judged by; the system's when left out.</param>
         /// <param name="restoreWindow">How long deleted things can be restored; <see cref="DefaultRestoreWindow"/> when left out.</param>
+        /// <param name="plugins">The plugins that are installed, with the fields they declare; none when left out. It has documents about files for them, and none about contents, which it does not read.</param>
+        /// <exception cref="ArgumentException">Two plugins have one id.</exception>
         public InMemoryByteShelfClient(
             string email = "admin@byteshelf.test",
             string password = "password-for-tests",
             TimeProvider? timeProvider = null,
-            TimeSpan? restoreWindow = null)
+            TimeSpan? restoreWindow = null,
+            IReadOnlyList<PluginDeclaration>? plugins = null)
         {
-            _store = new InMemoryStore(timeProvider ?? TimeProvider.System, restoreWindow ?? DefaultRestoreWindow);
+            _store = new InMemoryStore(timeProvider ?? TimeProvider.System, restoreWindow ?? DefaultRestoreWindow, new InstalledPlugins(plugins ?? []));
             CurrentUser = AddUser(new CreateUserRequest { Email = email, DisplayName = "Admin", Password = password, Roles = new[] { UserRoles.Admin } });
         }
 
@@ -71,7 +74,7 @@ namespace ByteShelfClient.InMemory
                         throw InMemoryErrors.Conflict($"A shelf called '{name}' already exists.");
                     }
 
-                    InMemoryShelf created = new InMemoryShelf(name, quotaBytes, _store.Now);
+                    InMemoryShelf created = new InMemoryShelf(name, quotaBytes, _store.Now, _store.Plugins);
                     _store.Shelves.Add(created);
                     return created.ToInfo();
                 },

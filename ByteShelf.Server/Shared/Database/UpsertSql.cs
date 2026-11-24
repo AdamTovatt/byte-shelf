@@ -9,7 +9,8 @@ namespace ByteShelf.Server.Shared.Database
     public static partial class UpsertSql
     {
         /// <summary>
-        /// <paramref name="insert"/>, an <c>INSERT INTO table (id, …) VALUES (…)</c>, followed by an
+        /// <paramref name="insert"/>, an <c>INSERT INTO table (id, …)</c> of values, or of what a <c>SELECT</c> with a
+        /// <c>WHERE</c> answers (SQLite reads the conflict clause as its join without one), followed by an
         /// <c>ON CONFLICT (id)</c> clause that sets every other column it names to the inserted value.
         /// </summary>
         public static string OnIdConflict(string insert)
