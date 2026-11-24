@@ -8,10 +8,8 @@ namespace ByteShelf.Server.Shared.Database
     {
         public static IServiceCollection AddDatabaseServices(this IServiceCollection services, RootFolder root)
         {
-            DbDataSource dataSource = root.Database.CreateDataSource();
-
             services.AddSingleton(root);
-            services.AddSingleton(dataSource);
+            services.AddSingleton<DbDataSource>(root.Database);
             services.AddScoped<IDbSessionFactory, DbSessionFactory>();
 
             return services;

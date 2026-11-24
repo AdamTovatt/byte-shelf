@@ -37,7 +37,7 @@ namespace ByteShelf.Server.Shared.Root
 
         public string KeysPath { get; }
 
-        /// <summary>The database at <see cref="DatabasePath"/>, which is opened through this alone.</summary>
+        /// <summary>The database at <see cref="DatabasePath"/>, opened through this alone.</summary>
         public DatabaseFile Database { get; }
 
         /// <summary>

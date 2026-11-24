@@ -70,14 +70,12 @@ namespace ByteShelf.Server.Backup.Services
                 await using (FileStream file = new FileStream(partialZip, OwnerOnly.Write(FileMode.CreateNew)))
                 using (ZipArchive zip = new ZipArchive(file, ZipArchiveMode.Create))
                 {
-                    await using (StorageDatabase live = new StorageDatabase(root.Database))
-                    await using (StorageDatabase snapshot = new StorageDatabase(new DatabaseFile(snapshotPath, pooling: false)))
-                    {
-                        CopiedObjects copied = await AddObjectsAsync(zip, root, snapshot, live, cancellationToken);
-                        IReadOnlyList<SwappedFile> swapped = await AddSwappedObjectsAsync(zip, root, snapshot, live, copied, cancellationToken);
-                        int filesPurged = await PruneSnapshotAsync(snapshot, swapped, copied.Missing);
-                        summary = new BackupSummary { ObjectCount = copied.Added.Count, ObjectBytes = copied.Bytes, FilesPurgedMeanwhile = filesPurged };
-                    }
+                    StorageDatabase live = new StorageDatabase(root.Database);
+                    StorageDatabase snapshot = new StorageDatabase(new DatabaseFile(snapshotPath, pooling: false));
+                    CopiedObjects copied = await AddObjectsAsync(zip, root, snapshot, live, cancellationToken);
+                    IReadOnlyList<SwappedFile> swapped = await AddSwappedObjectsAsync(zip, root, snapshot, live, copied, cancellationToken);
+                    int filesPurged = await PruneSnapshotAsync(snapshot, swapped, copied.Missing);
+                    summary = new BackupSummary { ObjectCount = copied.Added.Count, ObjectBytes = copied.Bytes, FilesPurgedMeanwhile = filesPurged };
 
                     await AddOwnerOnlyFileAsync(zip, snapshotPath, RootFolder.DatabaseFileName, cancellationToken);
                     foreach (string key in Directory.EnumerateFiles(root.KeysPath).Order(StringComparer.Ordinal))
@@ -335,22 +333,19 @@ namespace ByteShelf.Server.Backup.Services
         /// The storage repositories over one database file, outside the server's container. Private to the
         /// backup, its one user, as the repository tests build theirs by hand too.
         /// </summary>
-        private sealed class StorageDatabase : IAsyncDisposable
+        private sealed class StorageDatabase
         {
-            private readonly DbDataSource _dataSource;
-
             public StorageDatabase(DatabaseFile database)
             {
-                _dataSource = database.CreateDataSource();
-                Sessions = new DbSessionFactory(_dataSource);
-                ChangeLogRepository changeLog = new ChangeLogRepository(_dataSource, Sessions);
-                PluginFieldValueRepository fieldValues = new PluginFieldValueRepository(_dataSource, Sessions, KnownPlugins.NotKnown);
+                Sessions = new DbSessionFactory(database);
+                ChangeLogRepository changeLog = new ChangeLogRepository(database, Sessions);
+                PluginFieldValueRepository fieldValues = new PluginFieldValueRepository(database, Sessions, KnownPlugins.NotKnown);
                 MetadataUpkeep = new MetadataUpkeep(
-                    new ObjectMetadataRepository(_dataSource, Sessions, changeLog),
-                    new ContentPluginMetadataRepository(_dataSource, Sessions, changeLog, fieldValues),
-                    new FilePluginMetadataRepository(_dataSource, Sessions, changeLog, fieldValues));
-                Files = new FileRepository(_dataSource, Sessions, changeLog, MetadataUpkeep);
-                Uploads = new UploadRepository(_dataSource, Sessions);
+                    new ObjectMetadataRepository(database, Sessions, changeLog),
+                    new ContentPluginMetadataRepository(database, Sessions, changeLog, fieldValues),
+                    new FilePluginMetadataRepository(database, Sessions, changeLog, fieldValues));
+                Files = new FileRepository(database, Sessions, changeLog, MetadataUpkeep);
+                Uploads = new UploadRepository(database, Sessions);
             }
 
             public IDbSessionFactory Sessions { get; }
@@ -360,11 +355,6 @@ namespace ByteShelf.Server.Backup.Services
             public IUploadRepository Uploads { get; }
 
             public MetadataUpkeep MetadataUpkeep { get; }
-
-            public ValueTask DisposeAsync()
-            {
-                return _dataSource.DisposeAsync();
-            }
         }
     }
 }

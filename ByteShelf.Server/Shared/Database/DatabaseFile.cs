@@ -11,10 +11,11 @@ namespace ByteShelf.Server.Shared.Database
     /// foreign keys, and overwriting what is deleted (<c>secure_delete</c>, see Metadata/Metadata.md), which
     /// no connection string can ask for.
     /// </summary>
-    public sealed class DatabaseFile
+    public sealed class DatabaseFile : DbDataSource
     {
-        // Makes the connections, and holds nothing: SQLite's pools are the process's.
+#pragma warning disable CA2213 // Holds nothing to dispose: SQLite's pools are the process's.
         private readonly DbDataSource _connections;
+#pragma warning restore CA2213
 
         static DatabaseFile()
         {
@@ -35,40 +36,23 @@ namespace ByteShelf.Server.Shared.Database
             _connections = new SqliteDataSourceFactory().CreateDataSource(connectionString);
         }
 
-        public DbDataSource CreateDataSource()
-        {
-            return new DataSource(this);
-        }
-
-        /// <summary>An open connection of its own, beside the server's data source.</summary>
-        public SqliteConnection OpenConnection()
-        {
-            SqliteConnection connection = CreateConnection();
-            connection.Open();
-            return connection;
-        }
-
-        /// <inheritdoc cref="OpenConnection"/>
-        public async Task<SqliteConnection> OpenConnectionAsync()
-        {
-            SqliteConnection connection = CreateConnection();
-            await connection.OpenAsync();
-            return connection;
-        }
+        public override string ConnectionString => _connections.ConnectionString;
 
         /// <summary>
-        /// Closes this process's pooled connections to the database, which outlive a data source's service
-        /// provider. When no other process has it open, SQLite then removes its <c>-wal</c> and <c>-shm</c>
+        /// Closes this process's pooled connections to the database, which outlive the service provider.
+        /// When no other process has it open, SQLite then removes its <c>-wal</c> and <c>-shm</c>
         /// files. For a command run beside the server: once its work is done rather than whenever it exits,
         /// and before it deletes a database it made.
         /// </summary>
         public void Release()
         {
-            using SqliteConnection connection = CreateConnection();
+            using SqliteConnection connection = CreateDbConnection();
             SqliteConnection.ClearPool(connection);
         }
 
-        private SqliteConnection CreateConnection()
+        // Set through an event because the library's data source makes the connection. If it could make a
+        // connection type of ours, or had a hook for opening, the setting would belong there.
+        protected override SqliteConnection CreateDbConnection()
         {
             SqliteConnection connection = (SqliteConnection)_connections.CreateConnection();
 
@@ -97,23 +81,6 @@ namespace ByteShelf.Server.Shared.Database
                 // Never handed out open without it. Untested: nothing makes the pragma fail.
                 connection.Close();
                 throw;
-            }
-        }
-
-        private sealed class DataSource : DbDataSource
-        {
-            private readonly DatabaseFile _database;
-
-            public DataSource(DatabaseFile database)
-            {
-                _database = database;
-            }
-
-            public override string ConnectionString => _database._connections.ConnectionString;
-
-            protected override DbConnection CreateDbConnection()
-            {
-                return _database.CreateConnection();
             }
         }
     }

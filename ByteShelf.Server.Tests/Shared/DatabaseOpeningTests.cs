@@ -9,7 +9,10 @@ using Microsoft.Data.Sqlite;
 
 namespace ByteShelf.Server.Tests.Shared
 {
-    /// <summary>Databases are opened in one place, checked in the compiled code, where every way of writing a call looks the same.</summary>
+    /// <summary>
+    /// Databases are opened in one place, checked in the compiled code, where every way of writing a call looks
+    /// the same, rather than by an analyzer, which would be a package for this one rule.
+    /// </summary>
     public sealed class DatabaseOpeningTests
     {
         /// <summary>

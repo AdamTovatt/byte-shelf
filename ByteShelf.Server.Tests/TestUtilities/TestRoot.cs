@@ -2,7 +2,6 @@ using System.Data.Common;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Root;
 using EasyReasy.Database;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ByteShelf.Server.Tests.TestUtilities
@@ -21,13 +20,12 @@ namespace ByteShelf.Server.Tests.TestUtilities
         private TestRoot(RootFolder root)
         {
             Root = root;
-            DataSource = root.Database.CreateDataSource();
             SessionFactory = new DbSessionFactory(DataSource);
         }
 
         public RootFolder Root { get; }
 
-        public DbDataSource DataSource { get; }
+        public DbDataSource DataSource => Root.Database;
 
         public IDbSessionFactory SessionFactory { get; }
 
@@ -41,8 +39,8 @@ namespace ByteShelf.Server.Tests.TestUtilities
 
         public async ValueTask DisposeAsync()
         {
-            await DataSource.DisposeAsync();
-            SqliteConnection.ClearAllPools();
+            // This root's pooled connections alone: another test may be using its own.
+            Root.Database.Release();
 
             if (Directory.Exists(Root.Path))
             {
@@ -66,14 +64,14 @@ namespace ByteShelf.Server.Tests.TestUtilities
             DatabaseMigrator.RunMigrations(template.Database, NullLogger.Instance);
 
             // Fold the write-ahead log into the file, so copying the file alone copies everything.
-            using (SqliteConnection connection = template.Database.OpenConnection())
+            using (DbConnection connection = template.Database.OpenConnection())
             {
-                using SqliteCommand command = connection.CreateCommand();
+                using DbCommand command = connection.CreateCommand();
                 command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
                 command.ExecuteNonQuery();
             }
 
-            SqliteConnection.ClearAllPools();
+            template.Database.Release();
             return template.DatabasePath;
         }
     }

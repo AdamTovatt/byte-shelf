@@ -1,3 +1,4 @@
+using System.Data.Common;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Metadata.Models;
@@ -11,7 +12,6 @@ using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using EasyReasy.Database;
 using EasyReasy.Database.Mapping;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -40,7 +40,7 @@ namespace ByteShelf.Server.Tests.Metadata
 
         public override async Task DisposeAsync()
         {
-            SqliteConnection.ClearAllPools();
+            _old.Database.Release();
             Directory.Delete(_old.Path, recursive: true);
             await base.DisposeAsync();
         }
@@ -48,10 +48,9 @@ namespace ByteShelf.Server.Tests.Metadata
         [Fact]
         public async Task Migrate_Row_IsVersionOnes()
         {
-            await using System.Data.Common.DbDataSource dataSource = _old.Database.CreateDataSource();
-            DbSessionFactory sessions = new DbSessionFactory(dataSource);
+            DbSessionFactory sessions = new DbSessionFactory(_old.Database);
 
-            ObjectMetadata? row = await new ObjectMetadataRepository(dataSource, sessions, new ChangeLogRepository(dataSource, sessions)).GetBySha256Async(Photo);
+            ObjectMetadata? row = await new ObjectMetadataRepository(_old.Database, sessions, new ChangeLogRepository(_old.Database, sessions)).GetBySha256Async(Photo);
 
             Assert.Equal((1, "Nikon"), (row!.ReaderVersion, row.Metadata.Camera));
         }
@@ -59,7 +58,7 @@ namespace ByteShelf.Server.Tests.Metadata
         [Fact]
         public async Task Migrate_ChangeLog_HoldsEveryReadingWithItsVersionAndWhatElseItHeldAsItWas()
         {
-            IReadOnlyList<ChangeLogEntry> entries = await ReadLogAsync();
+            IReadOnlyList<ChangeLogEntry> entries = await TestMigrations.ReadLogAsync(_old.Database);
 
             Assert.Equal([ChangeEntityType.Shelf, ChangeEntityType.ObjectMetadata, ChangeEntityType.ObjectMetadata, ChangeEntityType.ObjectMetadata], entries.Select(entry => entry.EntityType));
             Assert.Equal(ShelfPayload(), entries[0].Payload);
@@ -70,7 +69,7 @@ namespace ByteShelf.Server.Tests.Metadata
         [Fact]
         public async Task Migrate_WholeCopyInProgress_HoldsItsReadingWithItsVersion()
         {
-            await using SqliteConnection connection = await _old.Database.OpenConnectionAsync();
+            await using DbConnection connection = await _old.Database.OpenConnectionAsync();
 
             Assert.Equal(ShelfPayload(), await connection.ExecuteScalarAsync<string>("SELECT payload FROM replication_copy WHERE entity_type = 'shelf'"));
             AssertVersionOnes((await connection.ExecuteScalarAsync<string>("SELECT payload FROM replication_copy WHERE entity_type = 'object_metadata'"))!);
@@ -82,7 +81,7 @@ namespace ByteShelf.Server.Tests.Metadata
         {
             await using (IDbTransactionSession session = await Services.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync())
             {
-                await Services.GetRequiredService<ReplicaApplier>().ApplyAsync(await ReadLogAsync(), session, new AppliedChanges());
+                await Services.GetRequiredService<ReplicaApplier>().ApplyAsync(await TestMigrations.ReadLogAsync(_old.Database), session, new AppliedChanges());
                 await session.CommitAsync();
             }
 
@@ -106,7 +105,7 @@ namespace ByteShelf.Server.Tests.Metadata
         /// <summary>A row, log entries and a whole copy in progress as the server wrote them before v0015.</summary>
         private async Task FillAsBeforeV0015Async()
         {
-            await using SqliteConnection connection = await _old.Database.OpenConnectionAsync();
+            await using DbConnection connection = await _old.Database.OpenConnectionAsync();
             string now = StoredInstant.ToText(TestInstants.Now);
             await connection.ExecuteAsync(
                 "INSERT INTO object_metadata (id, sha256, read_at, camera, camera_fold) VALUES (@Id, @Photo, @now, 'Nikon', 'nikon')",
@@ -143,12 +142,6 @@ namespace ByteShelf.Server.Tests.Metadata
         private static string OldPayload(string sha256)
         {
             return ChangePayload.Serialize(new { Id = ObjectMetadata.IdFor(sha256), Sha256 = sha256, ReadAt = TestInstants.Now, Metadata = new ContentMetadata { Camera = "Nikon" } });
-        }
-
-        private async Task<IReadOnlyList<ChangeLogEntry>> ReadLogAsync()
-        {
-            await using System.Data.Common.DbDataSource dataSource = _old.Database.CreateDataSource();
-            return await new ChangeLogRepository(dataSource, new DbSessionFactory(dataSource)).GetAfterAsync(0, 1000);
         }
     }
 }

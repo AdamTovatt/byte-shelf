@@ -17,11 +17,35 @@ namespace ByteShelf.Server.Tests.Shared
         {
             DatabaseFile unpooled = new DatabaseFile(TestRoot.Root.DatabasePath, pooling: false);
 
+            DbConnection openedAfterCreation = TestRoot.DataSource.CreateConnection();
+            await openedAfterCreation.OpenAsync();
+
+            await AssertSettingsAsync(openedAfterCreation);
             await AssertSettingsAsync(await TestRoot.DataSource.OpenConnectionAsync());
             await AssertSettingsAsync(TestRoot.DataSource.OpenConnection());
-            await AssertSettingsAsync(await TestRoot.Root.Database.OpenConnectionAsync());
-            await AssertSettingsAsync(TestRoot.Root.Database.OpenConnection());
             await AssertSettingsAsync(await unpooled.OpenConnectionAsync());
+            await using DbCommand command = TestRoot.DataSource.CreateCommand("PRAGMA secure_delete");
+            Assert.Equal(1L, await command.ExecuteScalarAsync());
+        }
+
+        /// <summary>For a copy that is moved or deleted next: SQLite removes its other files as the last connection closes.</summary>
+        [Fact]
+        public async Task Close_Unpooled_LeavesTheDatabaseFileAlone()
+        {
+            string copy = TestRoot.Root.DatabasePath + ".copy";
+            await using (DbCommand snapshot = TestRoot.DataSource.CreateCommand($"VACUUM INTO '{copy}'"))
+            {
+                await snapshot.ExecuteNonQueryAsync();
+            }
+
+            await using (DbConnection connection = await new DatabaseFile(copy, pooling: false).OpenConnectionAsync())
+            {
+                await connection.ExecuteAsync("PRAGMA journal_mode = WAL");
+                await connection.ExecuteAsync("CREATE TABLE written (id INTEGER)");
+                Assert.True(File.Exists(copy + "-wal"));
+            }
+
+            Assert.False(File.Exists(copy + "-wal"));
         }
 
         /// <summary>A pooled connection left without the settings goes back to the pool so.</summary>
@@ -93,11 +117,12 @@ namespace ByteShelf.Server.Tests.Shared
             Assert.Empty(await PagesHoldingAsync(end));
         }
 
+        /// <summary>Asserts what every open connection has, and disposes <paramref name="connection"/>.</summary>
         private static async Task AssertSettingsAsync(DbConnection connection)
         {
+            await using DbConnection disposed = connection;
             Assert.Equal(1L, await connection.ExecuteScalarAsync<long>("PRAGMA secure_delete"));
             Assert.Equal(1L, await connection.ExecuteScalarAsync<long>("PRAGMA foreign_keys"));
-            await connection.DisposeAsync();
         }
 
         /// <summary>SQLite's own connection under <paramref name="connection"/>.</summary>

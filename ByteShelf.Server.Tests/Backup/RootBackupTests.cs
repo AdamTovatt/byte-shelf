@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.IO.Compression;
 using System.Runtime.Versioning;
 using ByteShelf.Server.Backup.Models;
@@ -10,7 +11,6 @@ using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using EasyReasy.Database.Mapping;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 using StoredObjects = ByteShelf.Server.Storage.Services.ObjectStore;
 
@@ -31,7 +31,7 @@ namespace ByteShelf.Server.Tests.Backup
 
         public override async Task DisposeAsync()
         {
-            SqliteConnection.ClearAllPools();
+            RootFolder.At(_restored).Database.Release();
             foreach (string file in BackupFiles())
             {
                 File.Delete(file);
@@ -359,7 +359,7 @@ namespace ByteShelf.Server.Tests.Backup
 
         private static async Task<long> CountAsync(RootFolder root, string sql)
         {
-            await using SqliteConnection connection = await new DatabaseFile(root.DatabasePath, pooling: false).OpenConnectionAsync();
+            await using DbConnection connection = await new DatabaseFile(root.DatabasePath, pooling: false).OpenConnectionAsync();
             return await connection.QuerySingleAsync<long>(sql);
         }
     }
