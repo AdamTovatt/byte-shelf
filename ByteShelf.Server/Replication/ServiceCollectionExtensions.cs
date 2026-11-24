@@ -24,10 +24,10 @@ namespace ByteShelf.Server.Replication
 
         /// <summary>Replication in the web host: <see cref="AddReplicationPairing"/>, the read-only filter on a replica, and the sync that follows the primary.</summary>
         /// <param name="services">The application's services.</param>
-        /// <param name="publicUrl">This server's public URL, which pairing codes made here name.</param>
-        public static IServiceCollection AddReplicationServices(this IServiceCollection services, string publicUrl)
+        /// <param name="options">Where replicas reach this server, and the limits replication works within.</param>
+        public static IServiceCollection AddReplicationServices(this IServiceCollection services, ReplicationOptions options)
         {
-            services.AddReplicationPairing(publicUrl);
+            services.AddReplicationPairing(options);
             services.AddScoped<ReplicaApplier>();
             services.AddScoped<IReplicationFeed, ReplicationFeed>();
             services.AddScoped<ReplicaSync>();
@@ -58,12 +58,12 @@ namespace ByteShelf.Server.Replication
         /// replication commands, which leave following the primary to the server once it runs.
         /// </summary>
         /// <param name="services">The services.</param>
-        /// <param name="publicUrl">This server's public URL, which pairing codes made here name.</param>
-        public static IServiceCollection AddReplicationPairing(this IServiceCollection services, string publicUrl)
+        /// <param name="options">Where replicas reach this server, and the limits replication works within.</param>
+        public static IServiceCollection AddReplicationPairing(this IServiceCollection services, ReplicationOptions options)
         {
             services.TryAddTimeProvider();
 
-            services.AddSingleton(ReplicationOptions.FromEnvironment(publicUrl));
+            services.AddSingleton(options);
             services.AddSingleton<ReplicaSyncControl>();
 
             // A redirect would carry the replica's credential header to wherever it points (unlike

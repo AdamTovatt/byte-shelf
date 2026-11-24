@@ -50,6 +50,26 @@ export function shows(text: string): Promise<void> {
   });
 }
 
+/** The dialogs shown, in the order they are drawn, the last on top of the others. */
+function drawnDialogs(): { title: string | null; dimsPage: boolean }[] {
+  return Array.from(document.querySelectorAll<HTMLElement>('[data-testid="modal-backdrop"]'), (backdrop) => ({ backdrop, layer: backdrop.parentElement! }))
+    .sort((one, other) => Number(one.layer.style.zIndex) - Number(other.layer.style.zIndex))
+    .map(({ backdrop, layer }) => ({
+      title: layer.querySelector('[role="dialog"]')!.getAttribute('aria-label'),
+      dimsPage: backdrop.classList.contains('bg-black/80'),
+    }));
+}
+
+/** The titles of the dialogs shown, in the order they are drawn, the last on top of the others. */
+export function dialogTitles(): (string | null)[] {
+  return drawnDialogs().map(({ title }) => title);
+}
+
+/** The titles of the dialogs whose backdrops dim the page. */
+export function dimmingTitles(): (string | null)[] {
+  return drawnDialogs().filter(({ dimsPage }) => dimsPage).map(({ title }) => title);
+}
+
 /** The text a message reads as, rendered: a toast's, which may be a string or elements. */
 export function textOf(message: ReactNode): string {
   const container = document.createElement('div');

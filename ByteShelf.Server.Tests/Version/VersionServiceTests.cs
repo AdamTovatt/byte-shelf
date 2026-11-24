@@ -1,5 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
+using ByteShelf.Server.Plugins.Models;
+using ByteShelf.Server.Plugins.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Version.Models;
 using ByteShelf.Server.Version.Services;
@@ -46,6 +48,18 @@ namespace ByteShelf.Server.Tests.Version
 
             Assert.Matches("^[0-9a-f]{32}$", id);
             Assert.NotEqual(id, ServiceOn(WithIndex("anything")).GetCurrent().VersionId);
+        }
+
+        [Fact]
+        public void GetCurrent_AnotherPluginUi_IsAnotherId()
+        {
+            string none = ServiceOn(_webRoot).GetCurrent().VersionId;
+            string before = ServiceOn(_webRoot, WithPluginUi("abc")).GetCurrent().VersionId;
+
+            Assert.NotEqual(none, before);
+            Assert.Equal(before, ServiceOn(_webRoot, WithPluginUi("abc")).GetCurrent().VersionId);
+            Assert.NotEqual(before, ServiceOn(_webRoot, WithPluginUi("def")).GetCurrent().VersionId);
+            Assert.NotEqual(before, ServiceOn(_webRoot, WithPluginUi("abc", "another")).GetCurrent().VersionId);
         }
 
         [Fact]
@@ -129,9 +143,15 @@ namespace ByteShelf.Server.Tests.Version
             return _webRoot;
         }
 
-        private static VersionService ServiceOn(string? webRootPath)
+        private static PluginCatalog WithPluginUi(string hash, string id = "test")
         {
-            return new VersionService(Mock.Of<IWebHostEnvironment>(environment => environment.WebRootPath == webRootPath));
+            PluginManifest manifest = new PluginManifest(id, "Test", "1.0.0", null);
+            return new PluginCatalog([new LoadedPlugin(manifest, new PluginUi(id, "/plugins/test/ui", hash, false))], []);
+        }
+
+        private static VersionService ServiceOn(string? webRootPath, IPluginCatalog? plugins = null)
+        {
+            return new VersionService(Mock.Of<IWebHostEnvironment>(environment => environment.WebRootPath == webRootPath), plugins ?? PluginCatalog.Empty);
         }
     }
 }

@@ -3,14 +3,16 @@ import toast from 'react-hot-toast';
 import { Button, ButtonGroup, Icon, PageLayout, iconMap, useTheme } from '../ui';
 import { PasskeysSection } from '../components/PasskeysSection';
 import { PasswordInput } from '../components/PasswordInput';
+import { PluginsSection } from '../components/PluginsSection';
 import { SectionTitle } from '../components/SectionTitle';
-import { useChangeOwnPassword } from '../hooks/useUserQueries';
+import { useChangeOwnPassword, useIsAdmin } from '../hooks/useUserQueries';
 import { useSubmit } from '../hooks/useSubmit';
 import { validateNewPassword } from '../lib/passwordValidation';
 
-/** The signed-in user's own settings: the theme, their password and their passkeys. Signing out is in the account menu. */
+/** The signed-in user's own settings: the theme, their password and their passkeys, and for an admin the server's plugins. Signing out is in the account menu. */
 export function SettingsPage() {
   const { theme, setTheme } = useTheme();
+  const isAdmin = useIsAdmin();
 
   return (
     <PageLayout className="space-y-10">
@@ -32,6 +34,7 @@ export function SettingsPage() {
 
       <ChangePasswordSection />
       <PasskeysSection />
+      {isAdmin && <PluginsSection />}
     </PageLayout>
   );
 }

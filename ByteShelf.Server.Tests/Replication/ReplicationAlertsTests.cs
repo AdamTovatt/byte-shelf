@@ -50,7 +50,7 @@ namespace ByteShelf.Server.Tests.Replication
 
         protected override void ConfigureServices(IServiceCollection services)
         {
-            services.AddReplicationPairing(AppBaseUrl);
+            services.AddReplicationPairing(new ReplicationOptions { PublicUrl = AppBaseUrl });
             services.AddReplicationAlerts();
             services.AddScoped<IReplicationFeed, ReplicationFeed>();
             services.RemoveAll<IEmailSender>();

@@ -1,12 +1,13 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { hasSession, isSessionStorageKey, saveTokens, sessionUser, signOut } from '../services/authService';
+import { hasSession, isSessionStorageKey, onSessionEnded, saveTokens, sessionUser, signOut } from '../services/authService';
 import type { AuthResponse } from '../services/authTypes';
 import { forgetPasswords } from '../lib/encryption/passwords';
 
 interface AuthContextType {
   isAuthenticated: boolean;
   login: (response: AuthResponse) => void;
+  /** Signs out and starts the page anew. */
   logout: () => Promise<void>;
 }
 
@@ -25,39 +26,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!hasSession()) forgetPasswords();
   }, []);
 
-  // Another tab signing out, or signing in as someone else, changes the shared session. A tab that slept
-  // through a sign-out may first see the next sign-in: as someone else's, it starts anew, so that nothing
-  // the page holds of the one before, such as a file decrypted to be previewed, is theirs to see.
+  /** Takes up the session there is now, if any, with nothing cached or kept of the one before. */
+  const reset = useCallback(() => {
+    forgetPasswords();
+    queryClient.clear();
+    user.current = sessionUser();
+    setIsAuthenticated(hasSession());
+  }, [queryClient]);
+
+  // For a session that has ended: nothing the page holds of it, such as a file decrypted to be previewed
+  // or what a plugin keeps in memory, is there for whoever signs in next.
+  const startAnew = useCallback(() => {
+    reset();
+    window.location.reload();
+  }, [reset]);
+
   useEffect(() => {
+    // Another tab signing out or in, as whoever it is, changes the shared session. A tab that slept
+    // through a sign-out may first see the next sign-in. A renewal leaves the session as it is.
     function onStorage(event: StorageEvent): void {
       if (!isSessionStorageKey(event.key)) return;
-      queryClient.clear();
-      const userChanged = hasSession() && sessionUser() !== user.current;
-      if (!hasSession() || userChanged) forgetPasswords();
-      if (isAuthenticated && userChanged) window.location.reload();
-      setIsAuthenticated(hasSession());
-      user.current = sessionUser();
+      if (!isAuthenticated) reset();
+      else if (!hasSession() || sessionUser() !== user.current) startAnew();
     }
 
+    const stopListening = onSessionEnded(() => isAuthenticated && startAnew());
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, [queryClient, isAuthenticated]);
+    return () => {
+      stopListening();
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [isAuthenticated, reset, startAnew]);
 
   const login = useCallback((response: AuthResponse) => {
-    // Drop any cached data and passwords from a prior session, so an account never inherits another's.
-    queryClient.clear();
-    forgetPasswords();
     saveTokens(response);
-    user.current = sessionUser();
-    setIsAuthenticated(true);
-  }, [queryClient]);
+    reset();
+  }, [reset]);
 
   const logout = useCallback(async () => {
-    forgetPasswords();
     await signOut();
-    setIsAuthenticated(false);
-    queryClient.clear();
-  }, [queryClient]);
+    startAnew();
+  }, [startAnew]);
 
   return (
     <AuthContext.Provider value={{ isAuthenticated, login, logout }}>

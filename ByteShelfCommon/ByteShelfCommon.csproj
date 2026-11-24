@@ -18,6 +18,8 @@
     <Description>Shared contract of ByteShelf, a self-hosted file store: the request and response types the server and ByteShelfClient exchange, path rules, and source-generated JSON.</Description>
     <Copyright>MIT</Copyright>
     <Version>3.1.0</Version>
+    <!-- Major and minor alone: a server loads a plugin built against an earlier or the same one (ByteShelf.Server/Plugins/Plugins.md), and a patch adds nothing it could miss. -->
+    <AssemblyVersion>$([System.Version]::Parse('$(Version)').ToString(2)).0.0</AssemblyVersion>
     <PackageReleaseNotes>Adds ServerVersion, the release a ByteShelf server runs with its deploy id, as its api/version/release answers it to a signed-in user or a shelf key, and ReleaseVersion, which reads an assembly's release from its informational version without the commit after the +. ShelfGrants.ValidatePermission refuses a value that is no ShelfAccessPermission with ArgumentException naming the parameter, as ShelfKeys.ValidatePermission does for a key's. See https://github.com/AdamTovatt/byte-shelf/blob/client-v$(Version)/ByteShelfCommon/README.md</PackageReleaseNotes>
   </PropertyGroup>
 

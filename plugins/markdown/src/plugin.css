@@ -1,0 +1,98 @@
+@tailwind components;
+@tailwind utilities;
+
+/* A Markdown document, whose elements the library writes without classes. */
+.markdown-document {
+  @apply markdown-mx-auto markdown-max-w-3xl markdown-break-words markdown-p-5 markdown-text-base markdown-text-fg;
+}
+
+.markdown-document > * + *,
+.markdown-document blockquote > * + * {
+  @apply markdown-mt-4;
+}
+
+.markdown-document :is(h1, h2, h3, h4, h5, h6) {
+  @apply markdown-mt-6 markdown-font-semibold;
+}
+
+.markdown-document h1 {
+  @apply markdown-text-3xl;
+}
+
+.markdown-document h2 {
+  @apply markdown-border-b markdown-border-border markdown-pb-1 markdown-text-2xl;
+}
+
+.markdown-document h3 {
+  @apply markdown-text-xl;
+}
+
+.markdown-document > :first-child {
+  @apply markdown-mt-0;
+}
+
+.markdown-document a {
+  @apply markdown-underline markdown-underline-offset-2;
+}
+
+/* The app's font has no italic, and the app lets browsers slant none. */
+.markdown-document em {
+  font-synthesis: style;
+}
+
+.markdown-document ul {
+  @apply markdown-list-disc markdown-pl-6;
+}
+
+.markdown-document ol {
+  @apply markdown-list-decimal markdown-pl-6;
+}
+
+.markdown-document li > :is(p, ul, ol) + * {
+  @apply markdown-mt-2;
+}
+
+/* A task's checkbox is in a paragraph of its item when blank lines part the items. */
+.markdown-document li:has(> input, > p > input) {
+  @apply markdown-list-none;
+}
+
+.markdown-document li input {
+  @apply -markdown-ml-5 markdown-mr-2;
+}
+
+.markdown-document blockquote {
+  @apply markdown-border-l-4 markdown-border-border markdown-pl-4 markdown-text-muted;
+}
+
+.markdown-document :is(code, pre) {
+  @apply markdown-rounded-sm markdown-bg-surface markdown-font-mono markdown-text-sm;
+}
+
+.markdown-document code {
+  @apply markdown-px-1;
+}
+
+.markdown-document pre {
+  @apply markdown-overflow-x-auto markdown-rounded-md markdown-p-3;
+}
+
+.markdown-document pre code {
+  @apply markdown-bg-transparent markdown-p-0;
+}
+
+.markdown-document :is(th, td) {
+  @apply markdown-border markdown-border-border markdown-px-3 markdown-py-1.5 markdown-text-left;
+}
+
+.markdown-document th {
+  @apply markdown-font-semibold;
+}
+
+.markdown-document hr {
+  @apply markdown-border-border;
+}
+
+.markdown-document section[data-footnotes] {
+  @apply markdown-mt-8 markdown-text-sm markdown-text-muted;
+}

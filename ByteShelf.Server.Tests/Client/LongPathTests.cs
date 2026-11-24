@@ -1,5 +1,4 @@
 using System.Text;
-using ByteShelf.Server.Email;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Users.Services;
 using ByteShelfClient;
@@ -28,15 +27,14 @@ namespace ByteShelf.Server.Tests.Client
         {
             _root = TestRoot.Create();
             _app = Program.BuildApplication(
-                new[] { "--environment", "Development" },
-                _root.Root,
+                Program.CreateBuilder(["--environment", "Development"]),
+                ServerSettings.Open(_root.Root),
                 builder =>
                 {
                     // Loopback only, on a port of the system's choosing.
                     builder.WebHost.UseUrls("http://127.0.0.1:0");
                     builder.Logging.SetMinimumLevel(LogLevel.Warning);
-                },
-                EmailOptions.None);
+                });
             await _app.StartAsync();
 
             using (IServiceScope scope = _app.Services.CreateScope())

@@ -19,12 +19,12 @@ describe('age encryption', () => {
     expect((await text(encrypted)).startsWith('age-encryption.org/v1\n-> scrypt ')).toBe(true);
   });
 
-  // Slow on purpose (a real work factor 18 scrypt): the one guard on the default.
+  // Slow on purpose (a real work factor 18 scrypt, seconds beside other suites): the one guard on the default.
   it('encrypts at age\'s default work factor unless told otherwise', async () => {
     const encrypted = await encryptBlob(new Blob(['a']), 'pw', 'text/plain');
 
     expect((await text(encrypted)).split('\n')[1]).toMatch(/ 18$/);
-  });
+  }, 30_000);
 
   it('refuses another password as a wrong one', async () => {
     const encrypted = await encryptBlob(new Blob(['a']), 'right', 'text/plain', FAST);

@@ -1,4 +1,4 @@
-import plugin from 'tailwindcss/plugin';
+import plugin from 'tailwindcss/plugin.js';
 import { colors } from '../lib/colors.ts';
 
 function parseHex(hex) {

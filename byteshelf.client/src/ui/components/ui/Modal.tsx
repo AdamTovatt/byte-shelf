@@ -2,7 +2,7 @@ import { useRef, type MouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { iconMap } from '../../lib/iconMap';
 import { IconButton } from './IconButton';
-import { OverlayDepthContext, useOverlay } from '../../hooks/useOverlay';
+import { EnclosingOverlaysContext, useOverlay, type OverlayPlace } from '../../hooks/useOverlay';
 import { cn } from '../../lib/utils';
 import { Card } from './Card';
 import { CustomScroll } from './CustomScroll';
@@ -103,20 +103,20 @@ const headerColumns = 'grid-cols-[minmax(0,1fr)_auto_auto]';
  * that dismisses it. The dialog itself is the caller's, which stops its own clicks from reaching the
  * backdrop.
  *
- * **One dimming layer however many dialogs are open** (#2444). A modal opened from inside another — the
- * SharePoint connect prompt and picker from the new-template dialog, a confirmation from a form — keeps its
- * backdrop, which still takes the click that dismisses it, but paints it clear: the outer modal's is
- * already over the page, and a second one stacked on it darkened the dialog the person had just been
- * using into a black slab behind the new one. `nested` is read from the React tree
- * ({@link OverlayDepthContext}) because both portal into `document.body`.
+ * **One dimming layer however many dialogs are open.** A modal opened over another — the password prompt
+ * over the preview, a confirmation from a form — keeps its backdrop, which still takes the click that
+ * dismisses it, but paints it clear: the other modal's is already over the page, and a second one stacked
+ * on it would turn the dialog the person was using into a black slab behind the new one. The lowest dims,
+ * whatever opened over it.
  */
-function ModalShell({ dismiss, gutter, backdropClassName, nested, children }: { dismiss: () => void; gutter: string; backdropClassName?: string; nested: boolean; children: ReactNode }) {
+function ModalShell({ dismiss, gutter, backdropClassName, place, children }: { dismiss: () => void; gutter: string; backdropClassName?: string; place: OverlayPlace; children: ReactNode }) {
   return createPortal(
-    <div className={cn('fixed inset-0 z-50 flex items-center justify-center', gutter)}>
+    // The topmost is level with the menus and tooltips, which come after it in the document as they open.
+    <div className={cn('fixed inset-0 flex items-center justify-center', gutter)} style={{ zIndex: 50 - place.above }}>
       <div
         // Not stated and then overridden: `cn` concatenates, so a clear class beside `bg-black/80` would be
         // decided by the stylesheet's order. The variant's own backdrop colour is a dimming too, and goes.
-        className={cn('fixed inset-0 animate-modal-backdrop', nested ? 'bg-transparent' : ['bg-black/80', backdropClassName])}
+        className={cn('fixed inset-0 animate-modal-backdrop', place.dimsPage ? ['bg-black/80', backdropClassName] : 'bg-transparent')}
         data-testid="modal-backdrop"
         onClick={dismiss}
       />
@@ -156,18 +156,14 @@ export function Modal(props: ModalProps) {
   const dismiss = dismissible ? onClose : noDismiss;
   const element = useRef<HTMLDivElement>(null);
   // Escape is heard here, on the app's document: see `BareModalProps` for the frame it cannot hear inside.
-  const nestedOverlayDepth = useOverlay({ isOpen, onClose: dismiss, onKeyDown, element });
-  // This modal's own depth: above 1, another modal encloses it, and that one's backdrop is the dimming.
-  const nested = nestedOverlayDepth > 1;
+  const place = useOverlay({ isOpen, onClose: dismiss, onKeyDown, element });
 
   if (!isOpen) return null;
 
-  // The body is scoped so an overlay opened from inside this one registers as nested rather than as
-  // a sibling — which is what decides Escape between the two, and cannot be read off the DOM because
-  // both portal into `document.body`. Wrapped once and rendered by every variant, so they cannot come
-  // to disagree about it.
+  // The body is scoped so an overlay inside this one is known to be over it, also when the two open at
+  // once. Wrapped once and rendered by every variant, so they cannot come to disagree about it.
   const scopedChildren = (
-    <OverlayDepthContext.Provider value={nestedOverlayDepth}>{children}</OverlayDepthContext.Provider>
+    <EnclosingOverlaysContext.Provider value={place.enclosing}>{children}</EnclosingOverlaysContext.Provider>
   );
 
   // What makes an element the dialog, whichever the variant draws.
@@ -183,7 +179,7 @@ export function Modal(props: ModalProps) {
 
   if (props.variant === 'bare') {
     return (
-      <ModalShell dismiss={dismiss} gutter="p-4" nested={nested}>
+      <ModalShell dismiss={dismiss} gutter="p-4" place={place}>
         <div {...dialogProps} className={cn('z-10', focusTarget, slideIn, className)}>
           {scopedChildren}
         </div>
@@ -196,7 +192,7 @@ export function Modal(props: ModalProps) {
 
   if (variant === 'centered') {
     return (
-      <ModalShell dismiss={dismiss} gutter="p-4" nested={nested}>
+      <ModalShell dismiss={dismiss} gutter="p-4" place={place}>
         <Card
           padding="none"
           defaultBackground={false}
@@ -214,7 +210,7 @@ export function Modal(props: ModalProps) {
   }
 
   return (
-    <ModalShell dismiss={dismiss} gutter="p-6" backdropClassName="dark:bg-black/60" nested={nested}>
+    <ModalShell dismiss={dismiss} gutter="p-6" backdropClassName="dark:bg-black/60" place={place}>
       <Card
         padding="none"
         defaultBackground={false}

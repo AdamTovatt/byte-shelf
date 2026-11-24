@@ -3,11 +3,12 @@ import { eitherAborts } from '../abort';
 import { elementUrl, type ElementUrl } from '../localBlobs';
 
 /**
- * A previewed file's contents, as a viewer reads them: always plain, wherever they come from. What is
- * still loading is aborted by `signal`, and when the preview closes or moves on.
+ * A file's contents, as a viewer or a file action reads them: always plain, wherever they come from, and
+ * until the viewer's preview closes or moves on, or the action is done. A read ends as `signal` aborts, and
+ * as that comes; one of an encrypted file's leaves its contents loading for any other.
  */
 export interface ContentReader {
-  /** A URL an `<img>`, `<video>`, `<audio>` or `<iframe>` loads the contents from, until the preview closes or moves on. */
+  /** A URL an `<img>`, `<video>`, `<audio>` or `<iframe>` loads the contents from, until then. */
   url: (signal?: AbortSignal) => Promise<string>;
   /** The whole contents. */
   blob: (signal?: AbortSignal) => Promise<Blob>;
@@ -15,7 +16,7 @@ export interface ContentReader {
   range: (start: number, end: number, signal?: AbortSignal) => Promise<Blob>;
 }
 
-/** A reader the preview closes: aborts what is loading and releases its URL. Reading again after that starts afresh. */
+/** A reader as what holds it closes it, which aborts what is loading and releases its URL. Reading again after that starts afresh, where its maker says no other. */
 export interface ClosableReader extends ContentReader {
   close: () => void;
 }
@@ -55,7 +56,7 @@ export function blobReader(contents: Blob): ClosableReader {
       const mine = shown;
       const { url } = await mine;
       signal?.throwIfAborted();
-      if (shown !== mine) throw new DOMException('The preview closed.', 'AbortError');
+      if (shown !== mine) throw new DOMException('The contents were closed.', 'AbortError');
       return url;
     },
     blob: async (signal) => {

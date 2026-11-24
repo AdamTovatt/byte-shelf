@@ -1,0 +1,18 @@
+{
+  // What a plugin's own tsconfig.json extends: the web UI's settings, with what plugins share with the
+  // app typed as the app has it, and its test runner.
+  "extends": "../byteshelf.client/tsconfig.app.json",
+  "compilerOptions": {
+    "typeRoots": ["../byteshelf.client/node_modules/@types", "../byteshelf.client/node_modules"],
+    "paths": {
+      "@byteshelf/plugin": ["../byteshelf.client/src/plugin/index.ts"],
+      "react": ["../byteshelf.client/node_modules/@types/react"],
+      "react/*": ["../byteshelf.client/node_modules/@types/react/*"],
+      "react-dom": ["../byteshelf.client/node_modules/@types/react-dom"],
+      "react-dom/*": ["../byteshelf.client/node_modules/@types/react-dom/*"],
+      "@tanstack/react-query": ["../byteshelf.client/node_modules/@tanstack/react-query"],
+      "react-router-dom": ["../byteshelf.client/node_modules/react-router-dom"],
+      "vitest": ["../byteshelf.client/node_modules/vitest"]
+    }
+  }
+}

@@ -1,21 +1,34 @@
 // @vitest-environment happy-dom
-import { act } from 'react';
+import { act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import toast from 'react-hot-toast';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DialogHost } from '../contexts/DialogHost';
 import { ShelfPage } from './ShelfPage';
 import { saveTokens } from '../services/authService';
 import { SHELF_ROUTE_PATTERNS } from '../lib/shelfPaths';
 import { queryKeys } from '../lib/queryKeys';
+import type { RunningPlugin } from '../lib/plugins/pluginHost';
+import type { FileActionContext } from '../lib/plugins/fileAction';
+import { Modal } from '../ui';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { encryptBlob } from '../lib/encryption/age';
 import { removePdfViewer, restorePdfViewer, stubTabs } from '../test/browser';
-import { button, labelled, press, shows, submitPassword, untilFound } from '../test/dom';
+import { button, dialogTitles, dimmingTitles, field, fill, labelled, press, shows, submitPassword, untilFound } from '../test/dom';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+/** The plugins there are, and whether they are all loaded. */
+const plugins = vi.hoisted(() => ({ state: { plugins: [] as RunningPlugin[], failures: new Map<string, string>() }, settled: true }));
+
+vi.mock('../hooks/usePluginHost', () => ({
+  usePluginHost: () => plugins.state,
+  usePluginsSettled: () => plugins.settled,
+  usePluginsAwaited: () => !plugins.settled,
+}));
 
 function directory(path: string) {
   return { id: `dir:${path}`, shelfId: 's', parentId: null, path, name: path.slice(path.lastIndexOf('/') + 1), createdAt: '2026-11-02T00:00:00Z', encrypted: false };
@@ -87,12 +100,16 @@ describe('the shelf page\'s rows', () => {
   let sent: string[];
   let location: string;
   let goBack: () => void;
+  let goForward: () => void;
+  let goTo: (url: string) => void;
 
   function Location() {
     const { pathname, search } = useLocation();
     location = pathname + search;
     const navigate = useNavigate();
     goBack = () => act(() => navigate(-1));
+    goForward = () => act(() => navigate(1));
+    goTo = (url) => act(() => navigate(url));
     return null;
   }
 
@@ -110,6 +127,8 @@ describe('the shelf page\'s rows', () => {
     recordFails = false;
     findNothing = false;
     stored = null;
+    plugins.state = { plugins: [], failures: new Map() };
+    plugins.settled = true;
     sent = stubServer(async (request) => {
       const url = new URL(request.url);
       if (url.pathname === '/api/shelves/docs/duplicates') return json(duplicates(url.searchParams.get('after')));
@@ -142,10 +161,12 @@ describe('the shelf page\'s rows', () => {
     await act(async () => root.render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={[url]}>
-          <Routes>
-            <Route path={SHELF_ROUTE_PATTERNS.shelf} element={<ShelfPage />} />
-            <Route path={SHELF_ROUTE_PATTERNS.files} element={<ShelfPage />} />
-          </Routes>
+          <DialogHost>
+            <Routes>
+              <Route path={SHELF_ROUTE_PATTERNS.shelf} element={<ShelfPage />} />
+              <Route path={SHELF_ROUTE_PATTERNS.files} element={<ShelfPage />} />
+            </Routes>
+          </DialogHost>
           <Location />
         </MemoryRouter>
       </QueryClientProvider>,
@@ -395,6 +416,168 @@ describe('the shelf page\'s rows', () => {
       expect(previewed()).toEqual(expected);
     });
   }
+
+  describe('with a plugin\'s file action', () => {
+    let ran: FileActionContext[];
+    let mounted: number;
+
+    function Choosing() {
+      useEffect(() => void mounted++, []);
+      return <input aria-label="Format" />;
+    }
+
+    beforeEach(async () => {
+      ran = [];
+      mounted = 0;
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      plugins.state = {
+        plugins: [{
+          id: 'a',
+          viewers: [],
+          fileActions: [{
+            id: 'broken', label: 'Broken', showsFor: () => true, run: () => undefined,
+            icon: () => { throw new Error('It cannot be drawn.'); },
+          }, {
+            id: 'convert', label: 'Convert', showsFor: ({ name }) => name !== 'b.txt',
+            run: (context) => {
+              ran.push(context);
+              context.showDialog((close) => <Modal isOpen title="Convert it" onClose={close}><Choosing /></Modal>);
+            },
+          }],
+        }],
+        failures: new Map(),
+      };
+      act(() => root.unmount());
+      await renderAt('/shelves/docs');
+      await vi.waitFor(() => expect(row('b.txt')).not.toBeNull());
+    });
+
+    /** Opens the menu labelled `menu`, which no other may have been before it: one that closes is slow to go. */
+    function openMenu(menu: string): void {
+      click(document.querySelector(`button[aria-label="${menu}"]`)!);
+    }
+
+    it.each([['a.txt', true], ['b.txt', false], ['reports', false]])('offers it for the files it shows for, and no folder: %s, %s', (name, offered) => {
+      openMenu(`Actions for ${name}`);
+
+      expect(button('Rename')).not.toBeNull();
+      expect(button('Convert') !== null).toBe(offered);
+      // One that cannot be drawn is left out, alone.
+      expect(button('Broken')).toBeNull();
+    });
+
+    it('offers it for what a search found', async () => {
+      type(searchField(), 'notes');
+      await vi.waitFor(() => expect(container.querySelector('button[aria-label="Actions for c.txt"]')).not.toBeNull());
+
+      openMenu('Actions for c.txt');
+
+      expect(button('Convert')).not.toBeNull();
+    });
+
+    it('runs it on that file of the shelf, and its dialog keeps the page\'s keys', async () => {
+      openMenu('Actions for a.txt');
+      await press('Convert');
+
+      expect(ran.map(({ shelf, file: { name } }) => [shelf, name])).toEqual([['docs', 'a.txt']]);
+      expect(dialogTitles()).toEqual(['Convert it']);
+      key(document, { key: 'a', ctrlKey: true });
+      expect(selected()).toEqual([]);
+
+      key(document, { key: 'Escape' });
+      expect(dialogTitles()).toEqual([]);
+      key(document, { key: 'a', ctrlKey: true });
+      expect(selected()).toHaveLength(3);
+    });
+
+    it('offers it in the preview, where Escape closes its dialog first', async () => {
+      type(searchField(), 'notes');
+      await vi.waitFor(() => expect(container.querySelector('button[aria-label="Open c.txt"]')).not.toBeNull());
+      click(container.querySelector('button[aria-label="Open c.txt"]')!);
+      await previews({ name: 'c.txt', position: '1 of 1+' });
+      openMenu('More actions');
+      await press('Convert');
+      expect(ran.map(({ file: { name } }) => name)).toEqual(['c.txt']);
+      expect(dialogTitles()).toEqual(['c.txt', 'Convert it']);
+      // The preview dims the page already.
+      expect(dimmingTitles()).toEqual(['c.txt']);
+
+      key(document, { key: 'Escape' });
+      expect(dialogTitles()).toEqual(['c.txt']);
+    });
+
+    it('keeps its dialog as it is, with the focus, when the preview closes under it', async () => {
+      key(row('a.txt')!, { key: 'Enter' });
+      await previews({ name: 'a.txt', position: '1 of 2' });
+      openMenu('More actions');
+      await press('Convert');
+      const format = document.querySelector<HTMLInputElement>('input[aria-label="Format"]')!;
+      format.value = 'PNG';
+      act(() => format.focus());
+
+      goBack();
+
+      await vi.waitFor(() => expect(dialogTitles()).toEqual(['Convert it']));
+      expect(document.querySelector('input[aria-label="Format"]')).toBe(format);
+      expect(format.value).toBe('PNG');
+      expect(document.activeElement).toBe(format);
+      expect(mounted).toBe(1);
+      key(document, { key: 'Escape' });
+      expect(dialogTitles()).toEqual([]);
+    });
+
+    it('closes its dialog as another shelf is opened', async () => {
+      openMenu('Actions for a.txt');
+      await press('Convert');
+      expect(dialogTitles()).toEqual(['Convert it']);
+
+      goTo('/shelves/other');
+
+      await vi.waitFor(() => expect(dialogTitles()).toEqual([]));
+    });
+
+    it('has the preview over its dialog as Forward opens it again, and Escape close it first', async () => {
+      key(row('a.txt')!, { key: 'Enter' });
+      await previews({ name: 'a.txt', position: '1 of 2' });
+      openMenu('More actions');
+      await press('Convert');
+      goBack();
+      await vi.waitFor(() => expect(dialogTitles()).toEqual(['Convert it']));
+
+      goForward();
+
+      await vi.waitFor(() => expect(dialogTitles()).toEqual(['Convert it', 'a.txt']));
+      key(document, { key: 'Escape' });
+      await vi.waitFor(() => expect(dialogTitles()).toEqual(['Convert it']));
+    });
+  });
+
+  it('opens a file whose viewer is unavailable here in the preview while plugins are loading, which may show it', async () => {
+    removePdfViewer();
+    const tabs = stubTabs();
+    rootFiles = [{ ...file('a.pdf'), contentType: 'application/pdf' }];
+    plugins.settled = false;
+    await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
+    await vi.waitFor(() => expect(row('a.pdf')).not.toBeNull());
+
+    key(row('a.pdf')!, { key: 'Enter' });
+
+    await vi.waitFor(() => expect(previewed()?.name).toBe('a.pdf'));
+    expect(tabs).toEqual([]);
+  });
+
+  it('opens a file no viewer takes in the preview while plugins are loading, which may take it', async () => {
+    const tabs = stubTabs();
+    rootFiles = [{ ...file('a.zip'), contentType: 'application/zip' }];
+    plugins.settled = false;
+    await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
+    await vi.waitFor(() => expect(row('a.zip')).not.toBeNull());
+
+    key(row('a.zip')!, { key: 'Enter' });
+
+    await previews({ name: 'a.zip', position: undefined });
+    expect(tabs).toEqual([]);
+  });
 
   it('previews a file on Enter, in the URL, and Back closes it', async () => {
     key(row('b.txt')!, { key: 'Enter' });
@@ -670,8 +853,8 @@ describe('the shelf page\'s rows', () => {
     it('keeps the preview open as Escape cancels its prompt, which dims nothing more', async () => {
       key(row('b.txt')!, { key: 'Enter' });
       await locked(true);
-      const dimming = Array.from(document.querySelectorAll('[data-testid="modal-backdrop"]'), (each) => !each.classList.contains('bg-transparent'));
-      expect(dimming).toEqual([true, false]);
+      expect(dialogTitles()).toEqual(['b.txt', 'Unlock b.txt']);
+      expect(dimmingTitles()).toEqual(['b.txt']);
 
       key(document, { key: 'Escape' });
 
@@ -693,7 +876,8 @@ describe('the shelf page\'s rows', () => {
       expect(requests('GET /api/shelves/docs/content')).toHaveLength(1);
     });
 
-    it('is saved, and shown, by Download of one too large to show unasked, with one prompt for both', async () => {
+    /** Presses Download in the preview of one too large to show unasked, which asks for its password; answers what is saved. */
+    async function downloadLarge(): Promise<string[]> {
       stored = await encryptBlob(new Blob(['the secret']), 'pw', 'text/plain', 10);
       rootFiles = [file('a.txt'), { ...file('b.txt'), encrypted: true, sizeBytes: LIMIT + 1 }];
       act(() => root.unmount());
@@ -705,9 +889,13 @@ describe('the shelf page\'s rows', () => {
       });
       key(row('b.txt')!, { key: 'Enter' });
       await previews({ name: 'b.txt', position: '2 of 2' });
-
       click(document.querySelector('[role="dialog"] button[aria-label="Download"]')!);
       await vi.waitFor(() => expect(document.querySelector('form')).not.toBeNull());
+      return saved;
+    }
+
+    it('is saved, and shown, by Download of one too large to show unasked, with one prompt for both', async () => {
+      const saved = await downloadLarge();
       await submitPassword('pw');
 
       await vi.waitFor(async () => {
@@ -716,6 +904,54 @@ describe('the shelf page\'s rows', () => {
       });
       await vi.waitFor(() => expect(document.body.textContent).toContain('the secret'));
       expect(document.querySelector('form')).toBeNull();
+    });
+
+    it('keeps what was typed into the prompt a Download waits for as Back closes the preview', async () => {
+      const saved = await downloadLarge();
+      const prompt = document.querySelector('form')!;
+      fill('Password', 'pw');
+
+      goBack();
+
+      await previews({ name: 'Unlock b.txt', position: undefined });
+      expect(document.querySelector('form')).toBe(prompt);
+      expect(field('Password').value).toBe('pw');
+      await act(async () => prompt.requestSubmit());
+      await vi.waitFor(async () => {
+        await act(async () => {});
+        expect(saved).toEqual(['b.txt']);
+      });
+    });
+
+    it('asks over a dialog of a plugin\'s, and one inside that, dimming nothing more, and Escape is the prompt\'s', async () => {
+      plugins.state = {
+        plugins: [{
+          id: 'a',
+          viewers: [],
+          fileActions: [{
+            id: 'convert', label: 'Convert', showsFor: () => true,
+            run: ({ content, showDialog }) => showDialog((close) => (
+              <Modal isOpen title="Convert it" onClose={close}>
+                <Modal isOpen title="Sure?" onClose={close}>
+                  <button onClick={() => void content.blob().catch(() => undefined)}>Read it</button>
+                </Modal>
+              </Modal>
+            )),
+          }],
+        }],
+        failures: new Map(),
+      };
+      act(() => root.unmount());
+      await renderAt('/shelves/docs');
+      await vi.waitFor(() => expect(row('b.txt')).not.toBeNull());
+      click(document.querySelector('button[aria-label="Actions for b.txt"]')!);
+      await press('Convert');
+      await press('Read it');
+      await vi.waitFor(() => expect(dialogTitles()).toEqual(['Convert it', 'Sure?', 'Unlock b.txt']));
+
+      expect(dimmingTitles()).toEqual(['Convert it']);
+      key(document, { key: 'Escape' });
+      expect(dialogTitles()).toEqual(['Convert it', 'Sure?']);
     });
 
     it('takes its prompt back as Back closes the preview', async () => {

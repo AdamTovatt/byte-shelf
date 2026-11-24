@@ -1,14 +1,17 @@
-import { useState, type ReactNode } from 'react';
+import { Suspense, useState, type ReactNode } from 'react';
 import { Button, Icon, IconButton, Modal, getErrorMessage, iconMap } from '../../ui';
 import { contentsKey } from '../../lib/preview/fileContents';
 import type { Steps } from '../../lib/preview/neighbours';
 import type { ShownPreview } from '../../lib/preview/shownPreview';
+import type { FileActions } from '../../hooks/useFileActions';
+import { usePluginsAwaited } from '../../hooks/usePluginHost';
 import { usePreviewContents } from '../../hooks/usePreviewContents';
 import { useViewers } from '../../hooks/useViewers';
 import { formatBytes } from '../../lib/format';
 import { isTypingTarget } from '../../lib/keys';
 import { openable, type OpenableFile } from '../../services/fileReading';
 import { ErrorBoundary } from '../ErrorBoundary';
+import { FileActionsMenu } from '../FileActionItems';
 import { FileDetailsDialog } from '../FileDetailsDialog';
 import { openFile, opensInTab, saveFiles } from '../fileOpening';
 import { PreviewFailure } from './PreviewFailure';
@@ -18,17 +21,18 @@ import { PreviewSpinner } from './PreviewSpinner';
 interface FilePreviewProps extends ShownPreview {
   /** The shelf the file is live on, whose record of it Details shows; absent for one that is not. */
   detailsOn?: string;
-  /** Dialogs over the preview, such as a password prompt. */
-  children?: ReactNode;
+  /** The plugins' actions, for a file that is live. */
+  actions?: FileActions;
 }
 
 /**
  * A file over its page, in the viewer that takes its type: its name, where it stands among the files
  * beside it (the arrow keys move between them), and saving it, opening it in a tab and its details.
  */
-export function FilePreview({ previewed, error, steps, onClose, detailsOn, asksPassword, children }: FilePreviewProps) {
+export function FilePreview({ previewed, error, steps, onClose, detailsOn, actions, asksPassword }: FilePreviewProps) {
   const [detailing, setDetailing] = useState(false);
   const viewers = useViewers();
+  const awaitsPlugins = usePluginsAwaited();
   const file = previewed?.file;
   const match = file ? viewers.viewerFor(file) : null;
   const { contents, readWhole } = usePreviewContents(match?.viewer ? previewed : null, asksPassword);
@@ -57,6 +61,7 @@ export function FilePreview({ previewed, error, steps, onClose, detailsOn, asksP
           <IconButton variant="ghost" size="sm" icon={iconMap.download} aria-label="Download" title="Download" onClick={() => void saveFiles([target])} />
           {opensInTab(target.file) && <IconButton variant="ghost" size="sm" icon={iconMap.openInTab} aria-label="Open in new tab" title="Open in new tab" onClick={() => void openFile(target)} />}
           {detailsOn !== undefined && <IconButton variant="ghost" size="sm" icon={iconMap.info} aria-label="Details" title="Details" onClick={() => setDetailing(true)} />}
+          {actions && <FileActionsMenu actions={actions} target={target} />}
         </div>
       )}
     >
@@ -65,18 +70,18 @@ export function FilePreview({ previewed, error, steps, onClose, detailsOn, asksP
         {target ? shown(target) : error ? <PreviewMessage message={getErrorMessage(error, 'Could not load the file.')} /> : <PreviewSpinner />}
         {steps && <div className="flex justify-center border-t border-border py-1 sm:hidden"><StepButtons steps={steps} /></div>}
       </div>
-      {children}
       {file && detailing && detailsOn !== undefined && <FileDetailsDialog shelf={detailsOn} file={file} onClose={() => setDetailing(false)} />}
     </Modal>
   );
 
   function shown(of: OpenableFile): ReactNode {
     const download = <Button variant="secondary" icon={<Icon icon={iconMap.download} size={16} />} onClick={() => void saveFiles([of])}>Download</Button>;
-    if (!match) return <PreviewMessage message="There is no preview of files of this type." action={download} />;
+    // A plugin still loading may show it, or show it better.
+    if (awaitsPlugins) return <PreviewSpinner />;
 
-    if (!match.viewer) {
+    if (!match?.viewer) {
       const openInTab = opensInTab(of.file) && <Button variant="secondary" icon={<Icon icon={iconMap.openInTab} size={16} />} onClick={() => void openFile(of)}>Open in new tab</Button>;
-      return <PreviewMessage message={match.unavailable} action={<div className="flex gap-2">{openInTab}{download}</div>} />;
+      return <PreviewMessage message={match?.unavailable ?? 'There is no preview of files of this type.'} action={<div className="flex gap-2">{openInTab}{download}</div>} />;
     }
 
     if (contents.status === 'reading') return <PreviewSpinner />;
@@ -99,7 +104,9 @@ export function FilePreview({ previewed, error, steps, onClose, detailsOn, asksP
     const { id, component: Viewer } = match.viewer;
     return (
       <ErrorBoundary key={`${contentsKey(of.file)} ${id}`} fallback={<PreviewMessage message="The viewer failed while showing this file." action={download} />}>
-        <Viewer file={of.file} content={contents.reader} />
+        <Suspense fallback={<PreviewSpinner />}>
+          <Viewer file={of.file} content={contents.reader} />
+        </Suspense>
       </ErrorBoundary>
     );
   }

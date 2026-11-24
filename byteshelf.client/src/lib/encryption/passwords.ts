@@ -1,3 +1,5 @@
+import { readStoredValue, removeStoredValue, session, writeStoredValue } from '../storage';
+
 // The passwords this tab has unlocked, so a file asks for its password once: kept in sessionStorage,
 // which lives as long as the tab, and forgotten on sign-out. A tab a script opens starts with a copy of
 // its opener's sessionStorage, so the app opens tabs through `openTabWithoutPasswords`, and no other
@@ -17,27 +19,16 @@ export function filePasswordKey(shelf: string, folderId: string | undefined, fil
 }
 
 export function rememberedPassword(key: string): string | null {
-  try {
-    return sessionStorage.getItem(key);
-  } catch {
-    return null;
-  }
+  return readStoredValue(key, session);
 }
 
+/** Keeps a password; where it cannot be kept, it is asked for again each time. */
 export function rememberPassword(key: string, password: string): void {
-  try {
-    sessionStorage.setItem(key, password);
-  } catch {
-    // Storage unavailable: the password is asked for again each time.
-  }
+  writeStoredValue(key, password, session);
 }
 
 export function forgetPassword(key: string): void {
-  try {
-    sessionStorage.removeItem(key);
-  } catch {
-    // Nothing was kept.
-  }
+  removeStoredValue(key, session);
 }
 
 /** Forgets every password this tab kept, as signing out does. */

@@ -162,7 +162,7 @@ namespace ByteShelf.Server.Tests.Access
 
         protected override void ConfigureServices(IServiceCollection services)
         {
-            services.AddReplicationServices(AppBaseUrl);
+            services.AddReplicationServices(new ReplicationOptions { PublicUrl = AppBaseUrl });
         }
 
         /// <summary>Applies the migrated database's whole log to this test's fresh one, as a replica following it from the start.</summary>

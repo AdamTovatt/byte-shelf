@@ -2673,6 +2673,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/plugins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["PluginList"];
+                        "application/json": components["schemas"]["PluginList"];
+                        "text/json": components["schemas"]["PluginList"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/replication": {
         parameters: {
             query?: never;
@@ -4978,6 +5026,17 @@ export interface components {
         PathEncryption: {
             encryptedBy?: components["schemas"]["EncryptedFolder"];
         };
+        PluginList: {
+            plugins: components["schemas"]["PluginView"][];
+            skipped: components["schemas"]["SkippedPlugin"][] | null;
+        };
+        PluginView: {
+            id: string;
+            name: string;
+            version: string;
+            moduleUrl: string | null;
+            stylesheetUrl: string | null;
+        };
         PromoteResponse: {
             primaryTold: boolean;
         };
@@ -5145,6 +5204,13 @@ export interface components {
         };
         /** @enum {string} */
         ShelfLinkKind: "download" | "upload";
+        SkippedPlugin: {
+            folder: string;
+            id: string | null;
+            name: string | null;
+            version: string | null;
+            reason: string;
+        };
         StartContentSwapRequest: {
             /** Format: uuid */
             fileId: string;

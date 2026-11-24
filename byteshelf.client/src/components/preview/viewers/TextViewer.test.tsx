@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TextViewer } from './TextViewer';
-import { blobReader } from '../../../lib/preview/contentReader';
+import { blobReader } from '../../../lib/content/contentReader';
 import { press, untilFound } from '../../../test/dom';
 import { shelfFile } from '../../../test/shelfFiles';
 

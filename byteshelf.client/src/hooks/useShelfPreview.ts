@@ -5,6 +5,7 @@ import { runOrToast } from '../lib/utils';
 import { isNotFound } from '../services/apiClient';
 import type { FileReading } from '../services/fileReading';
 import type { ShelfFile } from '../services/shelfService';
+import { usePluginsSettled } from './usePluginHost';
 import { useCloseWhenGone, usePreviewParam } from './usePreviewParam';
 import { useFile } from './useShelfQueries';
 import { useViewers } from './useViewers';
@@ -23,7 +24,7 @@ export interface FetchedFiles {
 }
 
 export interface ShelfPreview extends PagePreview {
-  /** Whether a file opens in the preview: a viewer takes it, and this browser shows it in the page. */
+  /** Whether a file opens in the preview: a viewer shows it in this browser, or one of a plugin still loading may. */
   showsInPreview: (file: ShelfFile) => boolean;
   open: (file: ShelfFile) => void;
 }
@@ -35,6 +36,7 @@ export function useShelfPreview(shelf: string, shown: ShownFiles, reading: FileR
   const { data: file, error, isFetching } = useFile(shelf, id, listed);
 
   const viewers = useViewers();
+  const pluginsSettled = usePluginsSettled();
   const takes = useCallback((each: ShelfFile) => viewers.viewerFor(each) !== null, [viewers]);
   const previewable = useMemo(() => shown.files.filter(takes), [shown.files, takes]);
 
@@ -73,7 +75,7 @@ export function useShelfPreview(shelf: string, shown: ShownFiles, reading: FileR
 
   return {
     isOpen: id !== null && !gone,
-    showsInPreview: (each) => Boolean(viewers.viewerFor(each)?.viewer),
+    showsInPreview: (each) => Boolean(viewers.viewerFor(each)?.viewer) || !pluginsSettled,
     open: (opened) => open(opened.id),
     shown: {
       previewed: file ? { file, reading } : null,

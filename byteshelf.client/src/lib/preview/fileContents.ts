@@ -1,5 +1,6 @@
 import type { ReadableFile } from '../../services/fileReading';
 import type { ShelfFile } from '../../services/shelfService';
+import { untilAborted } from '../abort';
 import { streamBlob } from '../streamBlob';
 
 /** A file up to this size is read into the page at once, a larger one only when asked. */
@@ -81,11 +82,11 @@ export class FileContents {
     void this.joinUnlocking();
   }
 
-  /** The contents, to save or open the file with: read and unlocked first when they are not yet. Null when no password was given. */
-  async whole(): Promise<Blob | null> {
+  /** The contents, to save or open the file with: read and unlocked first when they are not yet, unless `signal` aborts. Null when no password was given. */
+  async whole(signal?: AbortSignal): Promise<Blob | null> {
     this.saves++;
     try {
-      return (await this.joinReading()) ?? (await this.joinUnlocking());
+      return (await untilAborted(this.joinReading(), signal)) ?? (await untilAborted(this.joinUnlocking(), signal));
     } finally {
       this.saves--;
       if (!this.isOpen) this.dropUnwanted();

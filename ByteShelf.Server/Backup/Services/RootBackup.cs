@@ -45,7 +45,9 @@ namespace ByteShelf.Server.Backup.Services
         internal static async Task<BackupSummary> WriteAsync(RootFolder root, string zipPath, Func<Task> afterSnapshot, CancellationToken cancellationToken)
         {
             string target = Path.GetFullPath(zipPath);
-            if (IsInside(target, root.Path))
+            // Links are not resolved: only an admin running the backup can name a path through one, and the
+            // worst it does is put that one zip inside the root.
+            if (FilePaths.IsInside(target, root.Path))
             {
                 throw new ArgumentException($"Write the backup outside the root ({root.Path}).", nameof(zipPath));
             }
@@ -299,14 +301,6 @@ namespace ByteShelf.Server.Backup.Services
             {
                 return null;
             }
-        }
-
-        // Compares the paths as written, without resolving symbolic links: only an admin running the
-        // backup can name a path through one, and the worst it does is put that one zip inside the root.
-        private static bool IsInside(string path, string folder)
-        {
-            string relative = Path.GetRelativePath(folder, path);
-            return relative != ".." && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) && !Path.IsPathRooted(relative);
         }
 
         private static void DeleteIfPresent(string path)

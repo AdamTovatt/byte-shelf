@@ -1,19 +1,35 @@
-// Safe localStorage access: reads and writes that swallow the exceptions thrown when storage is
-// unavailable (private browsing, storage-restricted embeds, quota). Preference persistence is
-// best-effort — the app must work identically without it.
+// Safe access to the browser's storage: reads and writes that swallow the exceptions thrown when it is
+// unavailable (private browsing, storage-restricted embeds, quota). What is kept is best-effort: the app
+// must work without it.
 
-export function readStoredValue(key: string): string | null {
+/** A storage, as it is reached: merely reading the property can throw. */
+type Reach = () => Storage;
+
+/** Shared by every tab, and kept. */
+export const local: Reach = () => localStorage;
+/** This tab's alone, and kept as long as it. */
+export const session: Reach = () => sessionStorage;
+
+export function readStoredValue(key: string, storage: Reach = local): string | null {
   try {
-    return localStorage.getItem(key);
+    return storage().getItem(key);
   } catch {
     return null;
   }
 }
 
-export function writeStoredValue(key: string, value: string): void {
+export function writeStoredValue(key: string, value: string, storage: Reach = local): void {
   try {
-    localStorage.setItem(key, value);
+    storage().setItem(key, value);
   } catch {
-    // Storage unavailable — the preference just won't persist.
+    // Storage unavailable: the value just won't persist.
+  }
+}
+
+export function removeStoredValue(key: string, storage: Reach = local): void {
+  try {
+    storage().removeItem(key);
+  } catch {
+    // Nothing was kept.
   }
 }

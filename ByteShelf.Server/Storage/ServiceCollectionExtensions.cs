@@ -7,11 +7,11 @@ namespace ByteShelf.Server.Storage
 {
     public static class ServiceCollectionExtensions
     {
-        public static IServiceCollection AddStorageServices(this IServiceCollection services)
+        public static IServiceCollection AddStorageServices(this IServiceCollection services, StorageOptions options)
         {
             services.TryAddTimeProvider();
 
-            services.AddSingleton(StorageOptions.FromEnvironment());
+            services.AddSingleton(options);
             services.AddSingleton<ObjectStore>();
             services.AddSingleton<StagingArea>();
             services.AddSingleton<UploadLocks>();

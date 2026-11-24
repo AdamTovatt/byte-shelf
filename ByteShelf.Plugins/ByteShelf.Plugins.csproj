@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    What a plugin's server assembly is written against (ByteShelf.Server/Plugins/Plugins.md). The server
+    loads its own copy for every plugin, so a plugin references this without copying it to its output.
+    Its assembly version is the plugin api (PluginApi) and a minor, raised as Plugins.md, Versions, says. A
+    new member of IByteShelfPlugin without a default is a break. PluginContractTests holds the version to
+    what is here.
+  -->
+  <PropertyGroup>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+</Project>

@@ -163,3 +163,27 @@ test('a file opens in a preview over the shelf, and an encrypted one once it is 
   await reader.getByRole('dialog', { name: 'Unlock note.txt' }).getByRole('button', { name: 'Unlock' }).click();
   await expect(locked.getByText('the note')).toBeVisible({ timeout: 30_000 });
 });
+
+// What only a browser shows for a plugin: its module and stylesheet loaded from the server into the
+// signed-in app through the import map, drawing with the app's own React.
+test('a Markdown file is previewed by the plugin that takes it', async ({ browser }) => {
+  const page = await signIn(browser);
+  await page.getByRole('button', { name: 'New shelf' }).click();
+  await page.getByLabel('Name').fill('plugins');
+  await page.getByRole('button', { name: 'Create' }).click();
+  await expect(page).toHaveURL('/shelves/plugins');
+  const text = '# Title\n\n| Name | Size |\n| --- | --- |\n| a.txt | 1 |\n\n<b>markup</b> [web](https://elsewhere.test) [near](other.md)\n';
+  await page.getByTestId('file-input').setInputFiles({ name: 'notes.md', mimeType: 'text/markdown', buffer: Buffer.from(text) });
+  await expect(page.getByText('Uploaded notes.md')).toBeVisible();
+
+  await page.getByRole('button', { name: 'notes.md', exact: true }).dblclick();
+  const preview = page.getByRole('dialog', { name: 'notes.md' });
+  await expect(preview.getByRole('heading', { name: 'Title', level: 1 })).toBeVisible();
+  await expect(preview.getByRole('cell', { name: 'a.txt' })).toBeVisible();
+  // The plugin's stylesheet, whose rules a table's cells have from nowhere else.
+  await expect(preview.getByRole('cell', { name: 'a.txt' })).toHaveCSS('padding-left', '12px');
+  await expect(preview.getByRole('link')).toHaveText('web');
+
+  await preview.getByRole('button', { name: 'Source' }).click();
+  await expect(preview.getByText('<b>markup</b>', { exact: false })).toBeVisible();
+});

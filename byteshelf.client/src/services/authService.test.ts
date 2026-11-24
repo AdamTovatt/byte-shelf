@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getFreshToken, renewAccessToken, saveTokens, signOut } from './authService';
+import { getFreshToken, onSessionEnded, renewAccessToken, saveTokens, signOut } from './authService';
 import { installFakeWebLocks, removeWebLocks } from '../test/fakeWebLocks';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
 
@@ -76,6 +76,34 @@ describe('the session', () => {
       expect(localStorage.getItem('byteshelf_auth_refresh_token')).toBeNull();
     });
 
+    it.each([
+      ['the server has ended the session', runOut(), 401, 1],
+      ['the server cannot renew it just now', runOut(), 503, 0],
+      ['it has not run out', inAnHour(), 401, 0],
+    ])('tells that it ended, or not, when %s', async (_, expiresAt, status, times) => {
+      const told = vi.fn();
+      const stop = onSessionEnded(told);
+      saveTokens({ token: 'first', expiresAt, refreshToken: 'refresh-1' });
+      answer = async () => new Response(null, { status });
+
+      await getFreshToken();
+
+      expect(told).toHaveBeenCalledTimes(times);
+      stop();
+    });
+
+    it('tells that it ended when it is gone, and no longer once that is no one\'s to hear', async () => {
+      const told = vi.fn();
+      const stop = onSessionEnded(told);
+
+      await getFreshToken();
+      expect(told).toHaveBeenCalledTimes(1);
+
+      stop();
+      await getFreshToken();
+      expect(told).toHaveBeenCalledTimes(1);
+    });
+
     it('keeps the session when the server cannot renew it just now', async () => {
       saveTokens({ token: 'first', expiresAt: runOut(), refreshToken: 'refresh-1' });
       answer = async () => new Response(null, { status: 503 });
@@ -95,6 +123,16 @@ describe('the session', () => {
       expect([sent, spent]).toEqual([['POST /api/auth/logout'], ['refresh-1']]);
       expect(localStorage.getItem('byteshelf_auth_refresh_token')).toBeNull();
       expect(localStorage.getItem('byteshelf_auth_token')).toBeNull();
+    });
+
+    it('ends it on the server also when the page starts anew meanwhile', async () => {
+      saveTokens({ token: 'first', expiresAt: inAnHour(), refreshToken: 'refresh-1' });
+      const fetched = vi.fn(async () => new Response(null, { status: 204 }));
+      vi.stubGlobal('fetch', fetched);
+
+      await signOut();
+
+      expect(fetched).toHaveBeenCalledWith('/api/auth/logout', expect.objectContaining({ keepalive: true }));
     });
 
     it('forgets the session even when the server cannot be reached', async () => {

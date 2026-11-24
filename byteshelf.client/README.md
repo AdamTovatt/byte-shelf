@@ -12,24 +12,30 @@ renames and deletes them, encrypts files and folders with a password, and restor
 trash or previews or downloads a deleted file from it without restoring it (a replica's trash too).
 Admins also create shelves and users, set quotas, give access from a shelf or from a user, make keys
 and give a key other shelves (a key row's Shelves control in shelf settings), and on the Replication
-page pair replicas, see how far behind each is, remove one, and promote a replica.
+page pair replicas, see how far behind each is, remove one, and promote a replica; their Settings list
+the server's plugins, and why one was skipped or its part in the web UI failed.
 
 `src/ui` is the UI library: buttons, fields, cards, dialogs, menus, page layout and the sidebar, with
 the colour, type and icon systems and the Tailwind preset they need. A dialog takes the focus, keeps Tab
-in it and gives the focus back. It was copied from the house
-component library, trimmed to what ByteShelf uses; pages import from `src/ui`. `src/components` holds
-what the library lacks: app-specific pieces (the form dialog, the password dialog, the quota field)
-and a few generic ones written for this app (`CardList`, `MiddleTruncatedName`). The file picker is a
-hook, `hooks/useFilePicker.tsx`.
+in it and gives the focus back; of several, the last to open is on top and has the keys, and the lowest
+dims the page (`ui/hooks/useOverlay.ts`). It was copied from the house component library, trimmed to
+what ByteShelf uses; pages import from `src/ui`, and what plugins are not to have of it, as they have
+all that exports, from its own file. `src/components` holds what the library lacks:
+app-specific pieces (the form dialog, the password dialog, the quota field) and a few generic ones
+written for this app (`CardList`, `MiddleTruncatedName`). The file picker is a hook,
+`hooks/useFilePicker.tsx`. A dialog that code shows, rather than a page's own state, such as a password
+prompt or a file action's, is held by `contexts/DialogHost.tsx`, apart from the pages, so one stays as
+it is while the preview under it opens or closes, but for the preview's own prompt, which goes with it.
+All close as the shelf or page they were shown on is left.
 
 ## Working on it
 
 ```bash
 npm ci
-npm run dev        # Vite on port 44903, forwarding /api, /mcp, /llms.txt and /swagger to the server (ASPNETCORE_URLS, else :5190)
+npm run dev        # Vite on port 44903, forwarding /api, /plugins, /mcp, /llms.txt and /swagger to the server (ASPNETCORE_URLS, else :5190)
 npm run lint
 npm test           # Vitest
-npm run test:e2e   # Playwright: builds the UI, starts the server on a root of its own, runs e2e/
+npm run test:e2e   # Playwright: builds the UI and the Markdown plugin, starts the server on a root of its own, runs e2e/
 npm run build      # into dist/, which a published server serves
 ```
 
@@ -56,7 +62,11 @@ npm run codegen    # in a second terminal
 - **The session** is kept in `localStorage`, shared by every tab. A refresh token works once, so
   renewals run one at a time across tabs (the Web Locks API), and each first takes up a token another
   tab renewed to. Signing out ends the session on the server too. The access token also rides in an
-  `HttpOnly` cookie on `/api/open` only, which the server sets and clears; the app never reads it.
+  `HttpOnly` cookie on `/api/open` only, which the server sets and clears; the app never reads it. A page
+  whose session ends, by signing out here or in another tab or as a request finds that the server ended
+  it, or is another user's once it looks, starts anew (`contexts/AuthContext.tsx`), holding nothing it
+  decrypted, or a plugin kept in memory, for whoever signs in next. `lib/startupToast.ts` leaves a toast
+  for the page it starts.
 - **Passkeys:** the sign-in page has a passkey button and, where the browser offers it, the saved
   passkeys as suggestions in the email field (`hooks/usePasskeySignIn.ts`), asking the server for a
   new ceremony before the one offered runs out. Settings adds, renames and removes them
@@ -73,8 +83,8 @@ npm run codegen    # in a second terminal
   A folder's rows select as in Finder (`hooks/useSelection.ts`): a click selects one, Cmd or Ctrl
   adds or takes one away, Shift selects a range, Space toggles the focused row, Cmd or Ctrl+A selects
   them all, and Escape or a click in empty space clears it; a double-click or Enter opens a row, a file in
-  the preview when a viewer takes it and this browser can show it there, and else in a new tab. While
-  any are selected, a bar over the search row (the top bar, on a phone) downloads, moves or deletes
+  the preview when a viewer takes it and this browser can show it there, or a plugin still loading may, and
+  else in a new tab. While any are selected, a bar over the search row (the top bar, on a phone) downloads, moves or deletes
   them. A selection belongs to its folder, and a row that leaves the list leaves it for good.
   A row, or the selection it is in, moves by dragging it onto a folder's row or breadcrumb crumb
   (`hooks/useEntryDragAndDrop.ts`, dnd-kit on pointer events, so it never meets the browser's own
@@ -90,13 +100,15 @@ npm run codegen    # in a second terminal
   neighbours; Open shows it there whatever its type, saying so of one no viewer takes.
   - *Viewers* (`components/preview/viewers/`) are `{ id, mediaTypes, extensions, component, unavailable? }`,
     held by a registry that never changes (`lib/preview/viewerRegistry.ts`) and is read through
-    `hooks/useViewers.ts` alone. The built-in ones are listed in `BUILT_IN_VIEWERS` (`viewers/index.ts`);
-    `ViewerRegistry.with` answers a registry that holds a plugin's too. An exact type beats a family
-    (`image/*`), a plugin's viewer a built-in one, and the first plugin by id the next; extensions count
-    only for a file stored as `application/octet-stream`. Nothing is rendered as HTML: HTML shows as its
-    source, and SVG through an `<img>`, where its scripts do not run. Text shows its first 1 MiB, decoded as
-    a tab would; an image zooms with the wheel, a pinch or a double-click and moves with a drag.
-  - *Contents* reach a viewer through a `ContentReader` (`lib/preview/contentReader.ts`): `url()`, `blob()`
+    `hooks/useViewers.ts` alone: the built-in ones, listed in `BUILT_IN_VIEWERS` (`viewers/index.ts`), and
+    those of the plugins loaded so far. A preview waits for plugins still loading, at most 3 seconds
+    (`usePluginsAwaited`), and until they are loaded a file that no viewer shows in this browser opens in the
+    preview, not in a tab: one of theirs may. An exact type beats a family (`image/*`), a plugin's viewer a
+    built-in one, and the first plugin by id the next; extensions count only for a file stored as
+    `application/octet-stream`. The built-in ones render nothing as HTML: HTML shows as its source, and SVG
+    through an `<img>`, where its scripts do not run. Text shows its first 1 MiB, decoded as a tab would; an
+    image zooms with the wheel, a pinch or a double-click and moves with a drag.
+  - *Contents* reach a viewer through a `ContentReader` (`lib/content/contentReader.ts`): `url()`, `blob()`
     and `range()`, whatever they come from. A blob-backed file (`isBlobBacked`) is read whole into the page
     first (`lib/preview/fileContents.ts`), over 100 MiB only once Load, Download or Open in new tab is
     pressed, and let go as the preview moves on. It is read and unlocked once for the preview and for a
@@ -143,10 +155,9 @@ npm run codegen    # in a second terminal
   instead. Reading a file asks for no password and answers that it is locked; unlocking it asks, and answers
   the contents (`Decryption` in `services/fileReading.ts`). A password is asked for once and kept in the
   tab's `sessionStorage` (an encrypted folder's under the folder), taken out of any tab the app opens, and
-  forgotten on sign-in and sign-out, and when the app starts with no session (a tab the browser restores
-  after a sign-out); a page that finds another user signed in from another tab starts anew, holding nothing
-  it decrypted for the one before. A plain folder's Remove encryption leaves out the files of an encrypted
-  folder below it, which has its own.
+  forgotten on sign-in, as the session ends, and when the app starts with none (a tab the browser restores
+  after a sign-out). A plain folder's Remove encryption leaves out the files of an encrypted folder below
+  it, which has its own.
 - **Pages and layout:** a shelf's settings are tabs that are routes, `/shelves/:shelf/settings/:tab`
   (`SHELF_SETTINGS_TABS` in `lib/shelfPaths.ts` lists them; the page picks the tab from the route and
   sends any other to the first tab the user sees: General for an admin, Links for anyone else).
@@ -154,8 +165,19 @@ npm run codegen    # in a second terminal
   known, and says why when that fails, rather than treating them as no admin. Below the `md` width the sidebar becomes a drawer behind a top bar, and
   a page puts its own controls in that bar through `MobileTopBarActions`, or covers it with
   `MobileTopBarOverlay` (`components/layout/MobileTopBar.tsx`).
+- **Plugins:** once signed in, the app loads the server's plugins into the page
+  (`lib/plugins/pluginHost.ts`, followed with `hooks/usePluginHost.ts`), each failing alone. What they
+  import as `@byteshelf/plugin` is `src/plugin/index.ts`; `build/sharedModules.ts` makes that and the
+  packages plugins share an entry each of the build, named in `index.html`'s import map, and in the dev
+  server too. `build/buildPlugin.ts` builds the plugins in [plugins](../plugins/README.md). What they
+  may use is a promise: breaking what a release holds of it raises `PluginApi.Version` on the server
+  ([Plugins](../ByteShelf.Server/Plugins/Plugins.md), Versions). A plugin adds viewers to
+  the preview and actions to the menus of live files: in a listing, a search's results and the preview,
+  an encrypted file's too, whose password is asked for once the action reads it
+  (`hooks/useFileActions.tsx`). Each viewer, menu item and dialog is drawn in an error boundary.
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and
   refetches what each event makes stale (`lib/invalidationMap.ts`), so a change made elsewhere shows up
-  within about a second. A test checks the map covers every resource the server publishes. The one
-  exception is the Replication page's status, polled every 5 seconds: a replica's lag changes
-  without anything being published.
+  within about a second. A test checks the map covers every resource the server publishes. The
+  exceptions are the Replication page's status, polled every 5 seconds, as a replica's lag changes
+  without anything being published, and the plugins, which change only with a restart of the server:
+  they are read at sign-in, and again once that is stale as a shelf, a preview or Settings opens.

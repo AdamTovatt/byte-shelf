@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import plugin from '@vitejs/plugin-react';
 import svgr from 'vite-plugin-svgr';
 import { env } from 'process';
+import { sharedModules } from './build/sharedModules.ts';
 
 const target = env.ASPNETCORE_URLS
   ? env.ASPNETCORE_URLS.split(';')[0].replace('localhost', '127.0.0.1')
@@ -10,7 +11,7 @@ const target = env.ASPNETCORE_URLS
 const toServer = { target, secure: false };
 
 export default defineConfig({
-  plugins: [svgr(), plugin()],
+  plugins: [svgr(), plugin(), sharedModules()],
   // Listens on localhost only; `npm run dev -- --host <address>` serves it elsewhere.
   server: {
     proxy: {
@@ -20,6 +21,8 @@ export default defineConfig({
       '/mcp': toServer,
       '/llms.txt': toServer,
       '/swagger': toServer,
+      // The plugins' web UI files.
+      '/plugins': toServer,
     },
     // SpaProxyServerUrl in ByteShelf.Server.csproj names this port. It is the house dev port, the one
     // a dev subdomain's reverse proxy forwards to, so another app's dev server on it must stop first.

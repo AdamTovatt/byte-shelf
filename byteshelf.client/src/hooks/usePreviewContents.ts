@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { blobReader, sourceReader, type ContentReader } from '../lib/preview/contentReader';
+import { blobReader, sourceReader, type ContentReader } from '../lib/content/contentReader';
 import { FileContents, contentsKey, type FileContentsState } from '../lib/preview/fileContents';
 import { isBlobBacked } from '../services/contentService';
-import type { ReadableFile } from '../services/fileReading';
+import type { OpenableFile, ReadableFile } from '../services/fileReading';
 
 /** Where a previewed file's contents are, on the way to its viewer. */
 export type PreviewContents =
@@ -17,7 +17,7 @@ export type PreviewContents =
  * (`FileContents`), which `readWhole` then answers to whatever saves or opens the file; null for any other. A
  * locked file's password is asked for as it shows when `asksPassword`.
  */
-export function usePreviewContents(previewed: ReadableFile | null, asksPassword: boolean): { contents: PreviewContents; readWhole: (() => Promise<Blob | null>) | null } {
+export function usePreviewContents(previewed: ReadableFile | null, asksPassword: boolean): { contents: PreviewContents; readWhole: OpenableFile['readWhole'] | null } {
   const fileContents = useFileContents(previewed, asksPassword);
   const state = useSyncExternalStore(fileContents?.subscribe ?? neverChanges, fileContents?.state ?? noState);
 
@@ -32,7 +32,7 @@ export function usePreviewContents(previewed: ReadableFile | null, asksPassword:
   }, [fileId, blobBacked, source, held]);
   useEffect(() => () => reader?.close(), [reader]);
 
-  return { contents: shown(), readWhole: fileContents && (() => fileContents.whole()) };
+  return { contents: shown(), readWhole: fileContents && ((signal) => fileContents.whole(signal)) };
 
   function shown(): PreviewContents {
     if (reader) return { status: 'ready', reader };

@@ -1,16 +1,13 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
-using ByteShelf.Server.Email;
 using ByteShelf.Server.Mcp;
 using ByteShelf.Server.Shared;
-using ByteShelf.Server.Shared.Auth;
-using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Services;
 using ByteShelfCommon;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -74,6 +71,16 @@ namespace ByteShelf.Server.Tests.TestUtilities
             return _app.GetTestServer().CreateHandler();
         }
 
+        /// <summary>The in-memory server's answer to a GET of <paramref name="path"/> exactly as it is written, its percent-encoding decoded as Kestrel does.</summary>
+        public Task<HttpContext> SendRawAsync(string path)
+        {
+            return _app.GetTestServer().SendAsync(context =>
+            {
+                context.Request.Method = HttpMethods.Get;
+                context.Request.Path = PathString.FromUriComponent(path);
+            });
+        }
+
         /// <summary>Creates a shelf as the admin and answers it.</summary>
         public async Task<ShelfInfo> CreateShelfAsync(string name)
         {
@@ -123,14 +130,15 @@ namespace ByteShelf.Server.Tests.TestUtilities
         }
 
         /// <param name="configureServices">Runs once the server's own services are registered, such as to route its calls to another host or replace a service.</param>
-        public static async Task<ServerTestHost> StartAsync(Action<IServiceCollection>? configureServices = null)
+        /// <param name="pluginsPath">The folder of plugins to load; none when null.</param>
+        public static async Task<ServerTestHost> StartAsync(Action<IServiceCollection>? configureServices = null, string? pluginsPath = null)
         {
             TestRoot root = TestRoot.Create();
 
-            // Development, so APP_BASE_URL may be left unset.
+            // Development, which checks the registrations as the container is built.
             WebApplication app = Program.BuildApplication(
-                new[] { "--environment", "Development" },
-                root.Root,
+                Program.CreateBuilder(["--environment", "Development"]),
+                ServerSettings.Open(root.Root) with { PluginsPath = pluginsPath },
                 builder =>
                 {
                     builder.WebHost.UseTestServer();
@@ -140,14 +148,8 @@ namespace ByteShelf.Server.Tests.TestUtilities
                     builder.Services.AddHttpClient(SelfApi.HttpClientName, client => client.BaseAddress = new Uri("http://localhost/"))
                         .ConfigurePrimaryHttpMessageHandler(services => ((TestServer)services.GetRequiredService<IServer>()).CreateHandler());
 
-                    // No public URL, whatever APP_BASE_URL the machine running the tests has; a test wanting one registers it.
-                    builder.Services.AddSingleton(new PublicAddress(null));
-
-                    // No first admin from the environment, whatever INITIAL_ADMIN_* the machine has: the host makes its own users.
-                    builder.Services.AddSingleton(new InitialAdminSettings(null, null, null));
                     configureServices?.Invoke(builder.Services);
-                },
-                EmailOptions.None);
+                });
 
             await app.StartAsync();
             ServerTestHost host = new ServerTestHost(app, root);

@@ -142,6 +142,40 @@ describe('a file\'s contents', () => {
     expect(reads).toHaveLength(1);
   });
 
+  it('are no longer waited for, or read, once a save of a file that is not shown gives up, at its prompt too', async () => {
+    const aborting = new AbortController();
+    const saved = contents.whole(aborting.signal);
+    aborting.abort();
+    await expect(saved).rejects.toMatchObject({ name: 'AbortError' });
+    expect(reads[0].signal.aborted).toBe(true);
+    reads[0].reject(new DOMException('Aborted.', 'AbortError'));
+
+    const asking = new AbortController();
+    const asked = contents.whole(asking.signal);
+    reads[1].resolve(null);
+    await vi.waitFor(() => expect(unlocks).toHaveLength(1));
+    asking.abort();
+    await expect(asked).rejects.toMatchObject({ name: 'AbortError' });
+    expect(unlocks[0].signal.aborted).toBe(true);
+    await settled();
+    expect([reads.length, unlocks.length]).toEqual([2, 1]);
+  });
+
+  it('go on to the preview, and to another save, as one save gives up', async () => {
+    contents.open(false);
+    const aborting = new AbortController();
+    const given = contents.whole(aborting.signal);
+    const saved = contents.whole();
+
+    aborting.abort();
+    await expect(given).rejects.toMatchObject({ name: 'AbortError' });
+    reads[0].resolve(blob('a'));
+
+    expect(await (await saved)!.text()).toBe('a');
+    expect(await text()).toBe('a');
+    expect(reads).toHaveLength(1);
+  });
+
   it('are unlocked once, by one prompt, whoever asks', async () => {
     contents.open(true);
     const saved = contents.whole();

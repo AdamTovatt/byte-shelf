@@ -2,12 +2,10 @@ using System.IO.Compression;
 using System.Net.Http.Json;
 using System.Text;
 using ByteShelf.Server.Backup.Services;
-using ByteShelf.Server.Email;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
@@ -50,14 +48,13 @@ namespace ByteShelf.Server.Tests.Backup
             ZipFile.ExtractToDirectory(_zipPath, _restored);
 
             await using WebApplication restored = Program.BuildApplication(
-                new[] { "--environment", "Development" },
-                RootFolder.OpenExisting(_restored),
+                Program.CreateBuilder(["--environment", "Development"]),
+                ServerSettings.Open(RootFolder.OpenExisting(_restored)),
                 builder =>
                 {
                     builder.WebHost.UseTestServer();
                     builder.Logging.SetMinimumLevel(LogLevel.Warning);
-                },
-                EmailOptions.None);
+                });
             await restored.StartAsync();
             using HttpClient client = restored.GetTestClient();
 

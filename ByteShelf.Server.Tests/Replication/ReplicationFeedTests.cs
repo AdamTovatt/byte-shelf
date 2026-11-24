@@ -85,7 +85,7 @@ namespace ByteShelf.Server.Tests.Replication
 
         protected override void ConfigureServices(IServiceCollection services)
         {
-            services.AddReplicationServices(AppBaseUrl);
+            services.AddReplicationServices(new ReplicationOptions { PublicUrl = AppBaseUrl });
         }
     }
 }

@@ -1,9 +1,10 @@
 name: Release server
 
 # server-v<version> publishes ByteShelf.Server as a GitHub release that updaemon installs: one
-# self-contained zip per runtime, named byteshelf-<rid>.zip with updaemon.json at its root, and a
-# SHA256SUMS over them that updaemon checks each download against. updaemon takes the version from
-# the tag and installs the repository's latest release, so these are the only releases it makes.
+# self-contained zip per runtime, named byteshelf-<rid>.zip with updaemon.json at its root, one
+# byteshelf-<id>.zip per plugin in plugins/, and a SHA256SUMS over them that updaemon checks each
+# download against. updaemon takes the version from the tag and installs the repository's latest
+# release, so these are the only releases it makes.
 on:
   push:
     tags:
@@ -65,6 +66,21 @@ jobs:
           dotnet publish ByteShelf.Server --configuration Release --runtime "$RID" --self-contained true --output "publish/${RID}"
           test -f "publish/${RID}/updaemon.json"
           (cd "publish/${RID}" && zip -qr "../../release/byteshelf-${RID}.zip" .)
+        done
+
+    # Each plugin in plugins/ is an asset of its own, byteshelf-<id>.zip, with plugin.json at the archive
+    # root. Its build holds its id to its folder's name and to one that does not read as a server's zip;
+    # zip adds to one that is there, so none may be. The server just published must load it.
+    - name: Build and zip plugins
+      run: |
+        shopt -s nullglob
+        for MANIFEST in plugins/*/plugin.json; do
+          FOLDER=$(dirname "$MANIFEST")
+          ZIP="${GITHUB_WORKSPACE}/release/byteshelf-$(basename "$FOLDER").zip"
+          test ! -e "$ZIP"
+          (cd "$FOLDER" && npm ci && npm run build)
+          publish/linux-x64/ByteShelf.Server --check-plugin "${FOLDER}/dist"
+          (cd "${FOLDER}/dist" && zip -qr "$ZIP" .)
         done
 
     - name: Write SHA256SUMS

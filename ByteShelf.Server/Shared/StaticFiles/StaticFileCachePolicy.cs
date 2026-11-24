@@ -17,7 +17,7 @@ namespace ByteShelf.Server.Shared.StaticFiles
         {
             if (context.Context.Request.Path.StartsWithSegments("/assets"))
             {
-                context.Context.Response.Headers["Cache-Control"] = "public, max-age=31536000, immutable";
+                ApplyImmutable(context.Context.Response);
             }
             else
             {
@@ -30,6 +30,12 @@ namespace ByteShelf.Server.Shared.StaticFiles
         {
             string? indexPath = string.IsNullOrEmpty(webRootPath) ? null : Path.Combine(webRootPath, "index.html");
             return indexPath != null && File.Exists(indexPath) ? indexPath : null;
+        }
+
+        /// <summary>Lets a browser keep a response for good: its address changes with its contents.</summary>
+        public static void ApplyImmutable(HttpResponse response)
+        {
+            response.Headers["Cache-Control"] = "public, max-age=31536000, immutable";
         }
 
         /// <summary>

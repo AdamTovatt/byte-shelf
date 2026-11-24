@@ -6,7 +6,7 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['**/dist']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -18,6 +18,13 @@ export default defineConfig([
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
+    },
+  },
+  // A plugin's module (from plugins/), whose export is a definition, not a component.
+  {
+    files: ['*/src/plugin.tsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
     },
   },
   {

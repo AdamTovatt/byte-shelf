@@ -38,6 +38,11 @@ namespace ByteShelf.Server
         [EnvironmentVariableName(optional: true)]
         public static readonly VariableName ReplicationAlertMinutes = new VariableName("BYTESHELF_REPLICATION_ALERT_MINUTES");
 
+        // The folder whose folders are plugins (see Plugins/Plugins.md). Unset: no plugins. Set by updaemon
+        // where it installs them (extensions in updaemon.json).
+        [EnvironmentVariableName(optional: true)]
+        public static readonly VariableName Plugins = new VariableName("BYTESHELF_PLUGINS");
+
         // Comma-separated IP addresses or CIDR ranges of the reverse proxies in front of the server.
         // Their X-Forwarded-For and X-Forwarded-Proto are trusted, so rate limits and the sign-in
         // delay count the real client. Unset: only loopback proxies are trusted.

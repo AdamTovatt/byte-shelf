@@ -1,5 +1,6 @@
-using System.Security.Cryptography;
-using System.Text;
+using ByteShelf.Server.Plugins.Models;
+using ByteShelf.Server.Plugins.Services;
+using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.StaticFiles;
 using ByteShelf.Server.Version.Models;
 using ByteShelfCommon;
@@ -8,9 +9,10 @@ namespace ByteShelf.Server.Version.Services
 {
     /// <summary>
     /// Names the release this server runs, and identifies the running deploy: a hash of the server
-    /// assembly's <c>ModuleVersionId</c> and the web UI's <c>index.html</c>. The build is deterministic,
-    /// so the module id changes exactly when the server's code does; <c>index.html</c> names the
-    /// content-hashed bundles, so it changes exactly when the web UI does. Either changing changes the id.
+    /// assembly's <c>ModuleVersionId</c>, the web UI's <c>index.html</c> and the web UI parts of the
+    /// plugins. The build is deterministic, so the module id changes exactly when the server's code does;
+    /// <c>index.html</c> names the content-hashed bundles, so it changes exactly when the web UI does, and
+    /// each plugin's hash is of its web UI files. Any of them changing changes the id.
     /// </summary>
     public class VersionService : IVersionService
     {
@@ -19,9 +21,9 @@ namespace ByteShelf.Server.Version.Services
 
         private readonly Lazy<string> _versionId;
 
-        public VersionService(IWebHostEnvironment environment)
+        public VersionService(IWebHostEnvironment environment, IPluginCatalog plugins)
         {
-            _versionId = new Lazy<string>(() => ComputeVersionId(environment.WebRootPath));
+            _versionId = new Lazy<string>(() => ComputeVersionId(environment.WebRootPath, plugins));
         }
 
         public VersionView GetCurrent()
@@ -34,18 +36,24 @@ namespace ByteShelf.Server.Version.Services
             return new ServerVersion { Version = Release, VersionId = _versionId.Value };
         }
 
-        private static string ComputeVersionId(string? webRootPath)
+        private static string ComputeVersionId(string? webRootPath, IPluginCatalog plugins)
         {
-            using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-            hash.AppendData(Encoding.UTF8.GetBytes(typeof(VersionService).Assembly.ManifestModule.ModuleVersionId.ToString("N")));
+            using ShortHash hash = new ShortHash();
+            hash.Add(typeof(VersionService).Assembly.ManifestModule.ModuleVersionId.ToString("N"));
 
             string? indexPath = StaticFileCachePolicy.FindIndexHtml(webRootPath);
             if (indexPath != null)
             {
-                hash.AppendData(File.ReadAllBytes(indexPath));
+                hash.AddFile(indexPath);
             }
 
-            return Convert.ToHexStringLower(hash.GetHashAndReset())[..32];
+            foreach (PluginUi ui in plugins.Loaded.Select(plugin => plugin.Ui).OfType<PluginUi>())
+            {
+                hash.Add(ui.PluginId);
+                hash.Add(ui.Hash);
+            }
+
+            return hash.Finish();
         }
     }
 }

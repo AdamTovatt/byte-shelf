@@ -34,8 +34,10 @@ import { useFilePicker } from '../hooks/useFilePicker';
 import { MobileTopBarActions, MobileTopBarOverlay } from '../components/layout/MobileTopBar';
 import { useUploads } from '../hooks/useUploads';
 import { encryptionActions, useEncryption } from '../hooks/useEncryption';
+import { useFileActions } from '../hooks/useFileActions';
+import { FileActionItems } from '../components/FileActionItems';
 import { openFile, opensInTab, saveFiles } from '../components/fileOpening';
-import { PreviewOverPage } from '../components/preview/PreviewOverPage';
+import { FilePreview } from '../components/preview/FilePreview';
 import { useShelfPreview } from '../hooks/useShelfPreview';
 import { isTypingTarget } from '../lib/keys';
 import { liveContent } from '../services/contentService';
@@ -50,6 +52,7 @@ import { formatBytes, formatTime } from '../lib/format';
 import { joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../lib/shelfPaths';
 import { copyWhenReady } from '../lib/clipboard';
 import { runOrToast } from '../lib/utils';
+import { useIsOverlayOpen } from '../ui/hooks/useOverlay';
 import { useSubmit } from '../hooks/useSubmit';
 import { directoryEntry, entrySizeBytes, nameOrCount, type DuplicateGroup, type DuplicateSearchResults, type Entry, type FileSearchResults, type ShelfFile } from '../services/shelfService';
 import { SearchOptions } from '../components/SearchOptions';
@@ -59,8 +62,13 @@ import { NO_SEARCH_FILTERS, isSearch, searchCriteria } from '../lib/searchFilter
 // and serves this page alone, so apart they would only be moved, not made simpler or shared.
 /** One directory on a shelf: what is in it, uploading into it, and renaming, moving and deleting what is there. */
 export function ShelfPage() {
+  // Nothing begun on one shelf goes on over another, such as a dialog of one's file or a search of it.
+  const shelf = useParams().shelf!;
+  return <FilesOf key={shelf} shelf={shelf} />;
+}
+
+function FilesOf({ shelf }: { shelf: string }) {
   const params = useParams();
-  const shelf = params.shelf!;
   const path = pathFromRoute(params['*']);
   const navigate = useNavigate();
   const { data: listing, isLoading, error } = useListing(shelf, path);
@@ -69,6 +77,8 @@ export function ShelfPage() {
   const { decryption } = encryption;
   const reading = useMemo(() => fileReading(liveContent(shelf), decryption), [shelf, decryption]);
   const openableHere = (file: ShelfFile) => openable({ file, reading });
+  const fileActions = useFileActions(shelf);
+  const overlayOpen = useIsOverlayOpen();
   const deleteEntry = useDeleteEntry(shelf);
   const restore = useRestoreDeletion(shelf);
   const createDownloadLink = useCreateDownloadLink(shelf);
@@ -78,10 +88,9 @@ export function ShelfPage() {
   const [describing, setDescribing] = useState<ShelfFile | null>(null);
   const [detailing, setDetailing] = useState<ShelfFile | null>(null);
   const [dragging, setDragging] = useState(false);
-  // Kept with the shelf and folder it was typed in, so opening another starts with no search and no
-  // filter: the route, and so this component, stays the same from one shelf to the next.
-  const [typed, setTyped] = useState({ shelf, path, text: '', filters: NO_SEARCH_FILTERS });
-  const typedHere = typed.shelf === shelf && typed.path === path;
+  // Kept with the folder it was typed in, so opening another starts with no search and no filter.
+  const [typed, setTyped] = useState({ path, text: '', filters: NO_SEARCH_FILTERS });
+  const typedHere = typed.path === path;
   const searchText = typedHere ? typed.text : '';
   const filters = typedHere ? typed.filters : NO_SEARCH_FILTERS;
   const searching = isSearch(searchText, filters);
@@ -109,7 +118,7 @@ export function ShelfPage() {
     if (files.length > 0) void upload(files);
   }
 
-  /** Opens a row: a folder by going into it, a file in the preview when a viewer takes it, else in a new tab. */
+  /** Opens a row: a folder by going into it, a file in the preview when a viewer shows it or one still loading may, else in a new tab. */
   function open(entry: Entry): void {
     if (entry.kind === 'directory') navigate(shelfRoute(shelf, entry.value.path));
     else if (preview.showsInPreview(entry.value)) preview.open(entry.value);
@@ -186,16 +195,15 @@ export function ShelfPage() {
   const prefetchListing = usePrefetchListing(shelf);
   const prefetchedFor = useRef<string | null>(null);
   useEffect(() => {
-    const folder = `${shelf}\n${path}`;
-    if (!listing || prefetchedFor.current === folder) return;
-    prefetchedFor.current = folder;
+    if (!listing || prefetchedFor.current === path) return;
+    prefetchedFor.current = path;
     listing.directories.slice(0, PREFETCHED_SUBFOLDERS).forEach((listed) => prefetchListing(listed.directory.path));
-  }, [shelf, path, listing, prefetchListing]);
+  }, [path, listing, prefetchListing]);
 
   // Only the folder's own list selects; search results open on a click as before. A search hides
   // the list, so it lists nothing to select while it shows, and the selection is dropped as it starts.
   const entryIds = useMemo(() => (searching ? [] : entries.map((entry) => entry.value.id)), [entries, searching]);
-  const selection = useSelection(entryIds, `${shelf}/${path}`);
+  const selection = useSelection(entryIds, path);
   const selected = entries.filter((entry) => selection.isSelected(entry.value.id));
   const selectedFiles = selected.flatMap((entry) => (entry.kind === 'file' ? [entry.value] : []));
   const drag = useEntryDragAndDrop({ shelf, entries, selected });
@@ -206,14 +214,12 @@ export function ShelfPage() {
   const shownFiles = !searching ? { files: listing?.files ?? [] } : filters.duplicates ? duplicateFiles : foundFiles;
   const preview = useShelfPreview(shelf, shownFiles, reading);
 
-  const dialogOpen = preview.isOpen || creatingDirectory || renaming !== null || moving !== null || describing !== null || detailing !== null;
-
   // ⌘A or Ctrl+A selects every row, unless a field has the keys; Escape clears the selection. A
   // dialog keeps both for itself.
   const { active: selecting, clear: clearSelection, selectAll } = selection;
   const canSelectAll = entryIds.length > 0;
   useEffect(() => {
-    if (dialogOpen) return;
+    if (overlayOpen) return;
     function onKeyDown(event: KeyboardEvent): void {
       if (event.key === 'Escape' && selecting) {
         clearSelection();
@@ -224,13 +230,13 @@ export function ShelfPage() {
     }
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [dialogOpen, selecting, clearSelection, selectAll, canSelectAll]);
+  }, [overlayOpen, selecting, clearSelection, selectAll, canSelectAll]);
 
   function row(entry: Entry, options: { label?: string; selectable?: boolean } = {}) {
     // A link would hand on only encrypted bytes, so an encrypted file has none. Only a listing's rows
     // know whether they are under an encrypted folder.
     const encrypted = entry.value.encrypted;
-    const actions = encryptionActions(entry, !options.selectable ? 'unknown' : listing?.encryptedBy ? 'encrypted' : 'plain');
+    const encrypting = encryptionActions(entry, !options.selectable ? 'unknown' : listing?.encryptedBy ? 'encrypted' : 'plain');
     const shown = (
       <EntryRow
         key={entry.value.id}
@@ -249,8 +255,9 @@ export function ShelfPage() {
         onDescribe={entry.kind === 'file' ? () => setDescribing(entry.value) : undefined}
         onShowDetails={entry.kind === 'file' ? () => setDetailing(entry.value) : undefined}
         onCopyLink={entry.kind === 'file' && !encrypted ? () => void copyLink(entry.value) : undefined}
-        onEncrypt={actions.encrypt ? () => void encryption.encrypt(entry) : undefined}
-        onRemoveEncryption={actions.removeEncryption ? () => void encryption.removeEncryption(entry) : undefined}
+        onEncrypt={encrypting.encrypt ? () => void encryption.encrypt(entry) : undefined}
+        onRemoveEncryption={encrypting.removeEncryption ? () => void encryption.removeEncryption(entry) : undefined}
+        pluginItems={entry.kind === 'file' && <FileActionItems actions={fileActions} target={openableHere(entry.value)} />}
         onRename={() => setRenaming(entry)}
         onMove={() => setMoving([entry])}
         onDelete={() => void remove([entry])}
@@ -269,7 +276,7 @@ export function ShelfPage() {
 
   /** Clears the text; the filters stay on until they are turned off where they were turned on. */
   function clearSearch(): void {
-    setTyped({ shelf, path, text: '', filters });
+    setTyped({ path, text: '', filters });
   }
 
   /**
@@ -281,7 +288,7 @@ export function ShelfPage() {
       <Input
         variant="quiet"
         value={searchText}
-        onChange={(event) => setTyped({ shelf, path, text: event.target.value, filters })}
+        onChange={(event) => setTyped({ path, text: event.target.value, filters })}
         onKeyDown={(event) => event.key === 'Escape' && clearSearch()}
         placeholder="Search"
         aria-label="Search files in this folder and below"
@@ -289,7 +296,7 @@ export function ShelfPage() {
         endElement={(
           <div className="flex items-center">
             {searchText && <IconButton variant="ghost" size="sm" icon={iconMap.close} aria-label="Clear the search" onClick={clearSearch} />}
-            <SearchOptions filters={filters} onChange={(changed) => setTyped({ shelf, path, text: searchText, filters: changed })} />
+            <SearchOptions filters={filters} onChange={(changed) => setTyped({ path, text: searchText, filters: changed })} />
           </div>
         )}
         autoComplete="off"
@@ -413,7 +420,7 @@ export function ShelfPage() {
       {moving && <MoveDialog shelf={shelf} entries={moving} onClose={() => setMoving(null)} />}
       {describing && <DescriptionDialog shelf={shelf} file={describing} onClose={() => setDescribing(null)} />}
       {detailing && <FileDetailsDialog shelf={shelf} file={detailing} onClose={() => setDetailing(null)} />}
-      <PreviewOverPage preview={preview} detailsOn={shelf}>{encryption.dialog}</PreviewOverPage>
+      {preview.isOpen && <FilePreview {...preview.shown} detailsOn={shelf} actions={fileActions} />}
     </div>
   );
 }
@@ -530,12 +537,14 @@ interface EntryRowProps {
   onCopyLink?: () => void;
   onEncrypt?: () => void;
   onRemoveEncryption?: () => void;
+  /** For a file: what plugins add to its menu. */
+  pluginItems?: ReactNode;
   onRename: () => void;
   onMove: () => void;
   onDelete: () => void;
 }
 
-function EntryRow({ entry, label, selection, opensIn, onOpen, onOpenInTab, onPrefetch, onDownload, onDescribe, onShowDetails, onCopyLink, onEncrypt, onRemoveEncryption, onRename, onMove, onDelete }: EntryRowProps) {
+function EntryRow({ entry, label, selection, opensIn, onOpen, onOpenInTab, onPrefetch, onDownload, onDescribe, onShowDetails, onCopyLink, onEncrypt, onRemoveEncryption, pluginItems, onRename, onMove, onDelete }: EntryRowProps) {
   const isFile = entry.kind === 'file';
   const name = entry.value.name;
   const selected = selection?.selected ?? false;
@@ -588,6 +597,7 @@ function EntryRow({ entry, label, selection, opensIn, onOpen, onOpenInTab, onPre
         {onDescribe && <DropdownItem icon={<Icon icon={iconMap.edit} size={16} />} onClick={onDescribe}>Description</DropdownItem>}
         {onEncrypt && <DropdownItem icon={<Icon icon={iconMap.lock} size={16} />} onClick={onEncrypt}>Encrypt</DropdownItem>}
         {onRemoveEncryption && <DropdownItem icon={<Icon icon={iconMap.unlock} size={16} />} onClick={onRemoveEncryption}>Remove encryption</DropdownItem>}
+        {pluginItems}
         <DropdownItem icon={<Icon icon={iconMap.rename} size={16} />} onClick={onRename}>Rename</DropdownItem>
         <DropdownItem icon={<Icon icon={iconMap.move} size={16} />} onClick={onMove}>Move</DropdownItem>
         <DropdownItem icon={<Icon icon={iconMap.delete} size={16} />} variant="danger" onClick={onDelete}>Delete</DropdownItem>

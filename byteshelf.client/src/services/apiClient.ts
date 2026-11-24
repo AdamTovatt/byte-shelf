@@ -1,6 +1,6 @@
 import createClient from 'openapi-fetch';
 import type { paths } from '../types/api';
-import { getFreshToken, hasSession, redirectToLoginIfNeeded, renewAccessToken } from './authService';
+import { getFreshToken, renewAccessToken } from './authService';
 
 /** A refusal from the server, with the machine-readable code from its error body when it gave one. */
 export class ApiError extends Error {
@@ -48,13 +48,10 @@ async function sendAuthorized(request: Request, send: (request: Request) => Prom
     return response;
   }
 
+  // None when the session has ended, or could not be renewed just now, such as while the server is
+  // unreachable, and is kept for the next request.
   const renewed = await renewAccessToken(token);
-  if (!renewed) {
-    // renewAccessToken forgets a session the server ended; one it could not renew just now, such as
-    // while the server is unreachable, is kept for the next request.
-    if (!hasSession()) redirectToLoginIfNeeded();
-    return response;
-  }
+  if (!renewed) return response;
 
   retry.headers.set('Authorization', `Bearer ${renewed}`);
   return send(retry);

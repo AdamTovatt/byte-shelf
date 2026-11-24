@@ -1,5 +1,4 @@
 using ByteShelf.Server.Shared;
-using EasyReasy.EnvironmentVariables;
 
 namespace ByteShelf.Server.Replication.Services
 {
@@ -49,13 +48,6 @@ namespace ByteShelf.Server.Replication.Services
 
         /// <summary>The most minutes <see cref="AlertAfter"/> may be: 30 days.</summary>
         public const int MaxAlertAfterMinutes = 30 * 24 * 60;
-
-        /// <summary>The options for a server at <paramref name="publicUrl"/>, <see cref="AlertAfter"/> read from the environment.</summary>
-        /// <exception cref="InvalidOperationException"><c>BYTESHELF_REPLICATION_ALERT_MINUTES</c> is not a whole number of minutes from <see cref="MinAlertAfterMinutes"/> to <see cref="MaxAlertAfterMinutes"/>.</exception>
-        public static ReplicationOptions FromEnvironment(string publicUrl)
-        {
-            return new ReplicationOptions { PublicUrl = publicUrl, AlertAfter = AlertAfterFrom(EnvironmentVariables.ReplicationAlertMinutes.GetValueOrDefault()) };
-        }
 
         /// <summary><see cref="AlertAfter"/> as <c>BYTESHELF_REPLICATION_ALERT_MINUTES</c> gives it: null (unset or blank) for the default.</summary>
         /// <exception cref="InvalidOperationException">It is not a whole number of minutes from <see cref="MinAlertAfterMinutes"/> to <see cref="MaxAlertAfterMinutes"/>.</exception>
