@@ -12,14 +12,8 @@ namespace ByteShelf.Server.Metadata.Services
     /// <summary>A reader of contents, as <see cref="ContentReading"/> runs it: what it has yet to read, how it reads, and where what it finds goes.</summary>
     internal abstract class ContentReader
     {
-        /// <summary>Names the reader, different for every one.</summary>
-        public abstract string Id { get; }
-
-        /// <summary>Records that the contents say nothing, as for a read that failed, so they are not read again.</summary>
-        public abstract RecordReading Nothing { get; }
-
-        /// <summary>Makes it ready to read, once: done at once when it is. One that fails, or never ends, says nothing of any contents.</summary>
-        public abstract Task PrepareAsync();
+        /// <summary>Whether it may read more: not once it has shown that it cannot, whatever the contents.</summary>
+        public abstract bool MayRun { get; }
 
         /// <summary>
         /// The SHA-256 of contents it has yet to read: held by a live file that is not encrypted and is of a
@@ -27,7 +21,12 @@ namespace ByteShelf.Server.Metadata.Services
         /// </summary>
         public abstract Task<IReadOnlyList<string>> GetUnreadAsync(string? after, int limit);
 
-        /// <summary>Once <see cref="PrepareAsync"/> is done, reads <paramref name="contents"/>, a seekable stream at its start; answers how to record what it found.</summary>
-        public abstract Task<RecordReading> ReadAsync(Stream contents, CancellationToken cancellationToken);
+        /// <summary>
+        /// Reads the contents <paramref name="sha256"/>. A read that failed records that they say nothing, so they are not
+        /// read again. Null, with nothing to record, when the contents are gone, or were as it read them, or it could
+        /// not run, which says nothing of them: <see cref="MayRun"/> is false from then on.
+        /// </summary>
+        /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+        public abstract Task<ReadOutcome?> ReadAsync(string sha256, CancellationToken cancellationToken);
     }
 }

@@ -15,7 +15,7 @@ namespace ByteShelf.Server.Plugins.Models
         /// <summary>The address of its stylesheet, if it has one.</summary>
         public required string? StylesheetUrl { get; init; }
 
-        /// <summary>Why its reader of files' contents is not run until the server restarts, as a sentence; null when it is run or there is none, and for anyone but an admin.</summary>
+        /// <summary>Why its reader of files' contents could not run when it last had something to read, as a sentence; null when it is run or there is none, and for anyone but an admin.</summary>
         public required string? ReaderProblem { get; init; }
     }
 }

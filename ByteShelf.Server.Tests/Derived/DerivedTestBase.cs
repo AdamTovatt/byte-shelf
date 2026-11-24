@@ -1,6 +1,7 @@
 using System.Text;
 using ByteShelf.Server.Derived.Models;
 using ByteShelf.Server.Derived.Services;
+using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
@@ -11,11 +12,18 @@ namespace ByteShelf.Server.Tests.Derived
     /// <summary>The server's domains with one plugin that makes every kind from text files, whose runs are real child processes.</summary>
     public abstract class DerivedTestBase : ServiceTestBase
     {
+        /// <summary>How long anything may take, as what a test waits for may never end: its clock stands still.</summary>
+        protected static readonly TimeSpan RealTimeLimit = TimeSpan.FromSeconds(60);
+
         protected TestDerivedPlugins Plugins { get; } = new TestDerivedPlugins();
 
         protected IDerivedFileService DerivedFiles => Services.GetRequiredService<IDerivedFileService>();
 
         internal DerivedStore Store => Services.GetRequiredService<DerivedStore>();
+
+        internal PluginProcesses Processes => Services.GetRequiredService<PluginProcesses>();
+
+        internal ContentsLocks Locks => Services.GetRequiredService<ContentsLocks>();
 
         internal DerivedMaking Making => Services.GetRequiredService<DerivedMaking>();
 
@@ -36,6 +44,12 @@ namespace ByteShelf.Server.Tests.Derived
             Plugins.AddTo(services);
         }
 
+        /// <summary>Has the plugin make <paramref name="kind"/> from the file's contents.</summary>
+        internal Task<MakingOutcome> MakeAsync(ShelfFile file, DerivedKind kind = DerivedKind.Thumbnail, PluginPriority priority = PluginPriority.Backlog)
+        {
+            return Making.MakeAsync(file.Sha256, kind, Plugins.All[0], priority).WaitAsync(RealTimeLimit);
+        }
+
         /// <summary>The derived file's text and media type, asked for as a request does, in a scope of its own.</summary>
         protected async Task<string> GetAsync(Shelf shelf, ShelfFile file, DerivedKind kind = DerivedKind.Thumbnail)
         {
@@ -47,7 +61,7 @@ namespace ByteShelf.Server.Tests.Derived
             return await reader.ReadToEndAsync();
         }
 
-        /// <summary>Everything on disk under <c>derived/</c>, what is being made included.</summary>
+        /// <summary>Everything on disk under <c>derived/</c>, what is being made and what a process was given included.</summary>
         protected IReadOnlyList<string> AllDerivedFiles()
         {
             return Directory.Exists(TestRoot.Root.DerivedPath)
@@ -63,7 +77,7 @@ namespace ByteShelf.Server.Tests.Derived
                 DerivedKinds.All.SelectMany(kind => Store.EnumerateHashes(kind).Select(sha256 => (kind, sha256))).Order());
             Assert.Equal(
                 expected.Sum(kept => Store.Find(kept.Kind, kept.Of.Sha256)?.Made == null ? 1 : 2),
-                AllDerivedFiles().Count);
+                AllDerivedFiles().Count(path => !path.EndsWith(WorkFolder.ContentsSuffix, StringComparison.Ordinal)));
         }
 
         /// <summary>A <see cref="DerivedKind.Full"/> file as large as they may be together, which takes no disk.</summary>

@@ -23,7 +23,7 @@ namespace ByteShelf.Server.Plugins.Controllers
 
         /// <summary>
         /// The plugins this server loaded, for any signed-in user or shelf key, and for an admin those it
-        /// skipped and why, and why one no longer reads contents. Not public, as the release is not: the version
+        /// skipped and why, and why one's reader could not run. Not public, as the release is not: the version
         /// of a plugin released with the server is the server's.
         /// </summary>
         [HttpGet]

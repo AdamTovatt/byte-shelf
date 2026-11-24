@@ -233,8 +233,9 @@ with the reason, 2 for wrong arguments. It starts nothing, needs no root and goe
 settings above. What it cannot tell is in
 [Plugins](ByteShelf.Server/Plugins/Plugins.md#loading-plugindiscovery-pluginloader): above all, whether
 the plugin works once running. One whose services break the server as it is built or started stops it
-from starting. One whose reader of files' contents cannot be made, or does not stop when told to, runs
-without it, and the Settings page says so; contents it fails on are in the server's log alone.
+from starting. One whose reader of files' contents cannot run reads nothing until it can, which every pass
+tries anew, and the Settings page says why; what keeps its maker of thumbnails and the like from running, and
+contents either fails on, are in the server's log alone.
 
 ## Replicas
 
@@ -384,6 +385,9 @@ also follows its primary continuously, every two seconds when caught up, and eve
 server checks replication for the alerts above.
 
 Plugins that make thumbnails and previews have them made as files are uploaded and asked for, and hourly for
-files that lack them; daily, what nothing needs any more is removed. Each plugin runs in a child process of the
-server's own executable (`--make-derived`), one at a time, for at most a minute a file. What they make is in
-`derived/`, outside every shelf's quota ([Derived files](ByteShelf.Server/Derived/Derived.md)).
+files that lack them; daily, what nothing needs any more is removed. What they make is in `derived/`, outside
+every shelf's quota ([Derived files](ByteShelf.Server/Derived/Derived.md)). What a plugin does over files'
+contents it does in a child process of the server's own executable (`--plugin-process`), one a plugin, one file
+at a time, for at most a minute a file, ended when it has had nothing to do for a minute. Each may take 1.5 GiB
+of private memory; memory it shares, and that of processes it starts, comes on top
+([Processes](ByteShelf.Server/Plugins/Processes/Processes.md)).

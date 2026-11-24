@@ -1,20 +1,27 @@
-using ByteShelf.Server.Derived.Repositories;
+using ByteShelf.Server.Plugins.Processes;
+using ByteShelf.Server.Storage.Repositories;
 using EasyReasy.Database;
 
 namespace ByteShelf.Server.Derived.Services
 {
     /// <inheritdoc />
+    /// <remarks>
+    /// Processes are ended inside the transaction, not before it, though one that will not die holds the database's
+    /// write lock for some ten seconds: before it, a swap that is refused would end them for nothing.
+    /// </remarks>
     internal sealed class DerivedRemoval : IDerivedRemoval
     {
         private readonly DerivedStore _store;
-        private readonly ISourceContentsRepository _contents;
-        private readonly DerivedMaking _making;
+        private readonly ContentsLocks _locks;
+        private readonly IPlainContentsRepository _contents;
+        private readonly PluginProcesses _processes;
 
-        public DerivedRemoval(DerivedStore store, ISourceContentsRepository contents, DerivedMaking making)
+        public DerivedRemoval(DerivedStore store, ContentsLocks locks, IPlainContentsRepository contents, PluginProcesses processes)
         {
             _store = store;
+            _locks = locks;
             _contents = contents;
-            _making = making;
+            _processes = processes;
         }
 
         /// <inheritdoc />
@@ -25,7 +32,7 @@ namespace ByteShelf.Server.Derived.Services
             {
                 foreach (string sha256 in released)
                 {
-                    held.Add(await _store.LockAsync(sha256));
+                    held.Add(await _locks.LockAsync(sha256));
                     await RemoveUnheldAsync(sha256, session);
                 }
 
@@ -41,7 +48,7 @@ namespace ByteShelf.Server.Derived.Services
         /// <inheritdoc />
         public async Task<bool> RemoveUnheldAsync(string sha256, CancellationToken cancellationToken = default)
         {
-            using (await _store.LockAsync(sha256, cancellationToken))
+            using (await _locks.LockAsync(sha256, cancellationToken))
             {
                 return await RemoveUnheldAsync(sha256, session: null);
             }
@@ -54,7 +61,7 @@ namespace ByteShelf.Server.Derived.Services
                 return false;
             }
 
-            await _making.StopAsync(sha256);
+            await _processes.StopAsync(sha256);
             _store.Delete(sha256);
             return true;
         }

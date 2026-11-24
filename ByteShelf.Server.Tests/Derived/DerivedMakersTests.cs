@@ -1,4 +1,5 @@
 using ByteShelf.Server.Derived.Services;
+using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 
@@ -13,7 +14,7 @@ namespace ByteShelf.Server.Tests.Derived
 
         public DerivedMakersTests()
         {
-            _store = new DerivedStore(_root.Root, TimeProvider.System);
+            _store = new DerivedStore(_root.Root, new ContentsLocks(), TimeProvider.System);
         }
 
         [Theory]
@@ -46,21 +47,6 @@ namespace ByteShelf.Server.Tests.Derived
             Assert.True(makers.Makes(DerivedKind.Thumbnail, "a"));
             Assert.False(makers.Makes(DerivedKind.Preview, "a"));
             Assert.False(makers.Makes(DerivedKind.Thumbnail, "b"));
-        }
-
-        [Fact]
-        public void Plugin_DeclaringAKindTwice_IsRefused()
-        {
-            Assert.Throws<ArgumentException>(() => _plugins.Plugin("a", 1, [DerivedKind.Full, DerivedKind.Full]));
-        }
-
-        [Theory]
-        [InlineData("")]
-        [InlineData("Images")]
-        [InlineData("a\"b")]
-        public void Plugin_WithoutAPluginsId_IsRefused(string id)
-        {
-            Assert.Throws<ArgumentException>(() => _plugins.Plugin(id));
         }
 
         public Task InitializeAsync()

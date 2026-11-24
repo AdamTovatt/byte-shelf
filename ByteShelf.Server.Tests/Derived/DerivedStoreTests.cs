@@ -1,5 +1,7 @@
+using ByteShelf.Plugins;
 using ByteShelf.Server.Derived.Models;
 using ByteShelf.Server.Derived.Services;
+using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 
@@ -14,12 +16,13 @@ namespace ByteShelf.Server.Tests.Derived
 
         private readonly TestClock _clock = new TestClock(TestInstants.Now);
         private TestRoot _root = null!;
+        private readonly ContentsLocks _locks = new ContentsLocks();
         private DerivedStore _store = null!;
 
         public Task InitializeAsync()
         {
             _root = TestRoot.Create();
-            _store = new DerivedStore(_root.Root, _clock);
+            _store = new DerivedStore(_root.Root, _locks, _clock);
             return Task.CompletedTask;
         }
 
@@ -145,7 +148,7 @@ namespace ByteShelf.Server.Tests.Derived
             _clock.Advance(TimeSpan.FromMinutes(1));
             PutSized(Sha256, 1);
 
-            using (await _store.LockAsync(held))
+            using (await _locks.LockAsync(held))
             {
                 Assert.Equal(0, _store.TrimFull());
             }

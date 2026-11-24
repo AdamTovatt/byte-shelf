@@ -1,3 +1,5 @@
+using ByteShelf.Server.Storage.Models;
+
 namespace ByteShelf.Server.Metadata.Models
 {
     /// <summary>

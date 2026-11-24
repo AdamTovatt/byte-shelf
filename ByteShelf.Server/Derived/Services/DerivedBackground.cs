@@ -1,6 +1,7 @@
 using ByteShelf.Server.Derived.Models;
-using ByteShelf.Server.Derived.Repositories;
-using ByteShelf.Server.Metadata.Models;
+using ByteShelf.Server.Plugins.Processes;
+using ByteShelf.Server.Storage.Models;
+using ByteShelf.Server.Storage.Repositories;
 
 namespace ByteShelf.Server.Derived.Services
 {
@@ -10,11 +11,11 @@ namespace ByteShelf.Server.Derived.Services
         /// <summary>How many contents one query lists.</summary>
         internal const int BatchSize = 500;
 
-        private readonly ISourceContentsRepository _contents;
+        private readonly IPlainContentsRepository _contents;
         private readonly DerivedMakers _makers;
         private readonly DerivedMaking _making;
 
-        public DerivedBackground(ISourceContentsRepository contents, DerivedMakers makers, DerivedMaking making)
+        public DerivedBackground(IPlainContentsRepository contents, DerivedMakers makers, DerivedMaking making)
         {
             _contents = contents;
             _makers = makers;
@@ -25,7 +26,11 @@ namespace ByteShelf.Server.Derived.Services
         /// Has <paramref name="plugin"/> make what is missing of every contents a live plain file holds, whenever it
         /// was stored; answers how many contents it ran for.
         /// </summary>
-        /// <exception cref="MakerUnavailableException">The plugin could not run.</exception>
+        /// <remarks>
+        /// Looks on disk for every contents' files each time, with no index of what is missing: a cache somebody
+        /// emptied is made again, which an index beside it would not notice.
+        /// </remarks>
+        /// <exception cref="PluginUnavailableException">The plugin could not run.</exception>
         public async Task<int> MakeBacklogAsync(DerivedFilePlugin plugin, CancellationToken cancellationToken)
         {
             MediaTypeSet mediaTypes = MediaTypeSet.Union(
@@ -38,7 +43,7 @@ namespace ByteShelf.Server.Derived.Services
                 foreach ((string sha256, IReadOnlyList<string> held) in batch)
                 {
                     after = sha256;
-                    made += await MakeMissingAsync(plugin, sha256, held, MakingPriority.Backlog, cancellationToken);
+                    made += await MakeMissingAsync(plugin, sha256, held, PluginPriority.Backlog, cancellationToken);
                 }
             }
 
@@ -46,13 +51,13 @@ namespace ByteShelf.Server.Derived.Services
         }
 
         /// <summary>Has <paramref name="plugin"/> make what is missing of contents just stored.</summary>
-        /// <exception cref="MakerUnavailableException">The plugin could not run.</exception>
+        /// <exception cref="PluginUnavailableException">The plugin could not run.</exception>
         public async Task MakeStoredAsync(DerivedFilePlugin plugin, string sha256, CancellationToken cancellationToken)
         {
-            await MakeMissingAsync(plugin, sha256, await _contents.GetMediaTypesAsync(sha256), MakingPriority.Stored, cancellationToken);
+            await MakeMissingAsync(plugin, sha256, await _contents.GetMediaTypesAsync(sha256), PluginPriority.Stored, cancellationToken);
         }
 
-        private async Task<int> MakeMissingAsync(DerivedFilePlugin plugin, string sha256, IReadOnlyList<string> mediaTypes, MakingPriority priority, CancellationToken cancellationToken)
+        private async Task<int> MakeMissingAsync(DerivedFilePlugin plugin, string sha256, IReadOnlyList<string> mediaTypes, PluginPriority priority, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 

@@ -1,4 +1,5 @@
 using ByteShelf.Server.Derived.Services;
+using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Storage.Repositories;
 
 namespace ByteShelf.Server.Storage.Services
@@ -46,7 +47,7 @@ namespace ByteShelf.Server.Storage.Services
                         }
                     }
                 }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Data.Common.DbException or MakerNotStoppedException)
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Data.Common.DbException or PluginNotStoppedException)
                 {
                     _logger.LogWarning(exception, "Could not remove the released contents {Sha256}; maintenance removes them on its next pass.", sha256);
                 }

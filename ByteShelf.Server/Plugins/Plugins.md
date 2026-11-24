@@ -60,8 +60,10 @@ address, settings), on the email sender, which is the one that only logs, on wha
 configures (`appsettings.json`, `ASPNETCORE_*`), or on another plugin's registrations. It sees that
 one folder, so not another plugin with the same id. Its arguments, exit codes and what it may need
 are a contract with updaemon, which runs it before switching versions, as the server's user, with
-only `PATH` and `HOME`, from any folder. Only the server itself loads plugins; `--schema-only`,
-`--migrate-only` and the root commands do not.
+only `PATH` and `HOME`, from any folder. Of the server, only itself and the processes it starts for plugins
+([Processes](Processes/Processes.md)) load them; `--schema-only`, `--migrate-only` and the root commands do not.
+A plugin's entry point is made and its registration run in each of those processes too, with the defaults
+`--check-plugin` has and without the server's environment: one more reason for neither to have effects.
 
 ## The server assembly
 
@@ -73,8 +75,8 @@ object already registered: `AddHttpClient<T>` keeps the names of typed clients i
 client needs a class name no other plugin's has, and a failed plugin's stays taken until the server
 restarts. A copy rather than an empty collection, because the framework's own registrations
 (`AddHttpClient`, `AddLogging`) add to what is already there, and a second set beside the server's
-breaks or resets it. There is no access to shelves or files in the contract, but the reader's, below, to
-contents.
+breaks or resets it. There is no access to shelves or files in the contract, but for the reader's and
+the maker's, below, to contents.
 
 What the server shares with a plugin must be no older than the plugin was built against, or it is
 refused before any of it runs, as one for another api is. That goes for its server assembly and for
@@ -83,17 +85,22 @@ those in its folder that the assembly's references lead to, not for one it loads
 A plugin that reads files' contents adds one reader, `builder.AddReader<TReader>(version, mediaTypes)`: an
 `IContentDocumentReader`, which the server runs in the background, once per version, over every object that a
 live plain file of those types holds, and whose answers it keeps as the plugin's documents about contents
-([Metadata](../Metadata/Metadata.md)). A second reader, or a type that is none, refuses the plugin. The reader
-is made with no services (`new()`), the first time there is something for it to read, so never on a replica
-and not by `--check-plugin`. It may be made and run in another process than the rest of the plugin, with which
-it shares no state; `IPluginReaders` is the one place that says which readers there are, and how each is made
-and run. One that cannot be made, or takes over 60 seconds to be, or does not stop when told to, is not run
-until the server restarts: it is logged, admins see why on the Settings page (`ReaderProblems`), and the rest
-of the plugin works. What it would have read stays to be read, but for contents it did not stop on, which are
-recorded as saying nothing. A read has 60 seconds, and 5 more to stop once cancelled; one that takes longer,
-throws, or answers more than a document holds (64 KiB, nested 32 deep) is recorded as saying nothing too, and
-is not tried again by that version. **A reader keeps what it reads nowhere else**, where it would outlive the
-plaintext.
+([Metadata](../Metadata/Metadata.md)). A second reader, or a type that is none, refuses the plugin. The
+reader is made with no services (`new()`), in a process of the plugin's own, which loads the plugin anew and
+shares no state with the rest of it ([Processes](Processes/Processes.md)); not by `--check-plugin`.
+`IPluginReaders` is the one place that says which readers there are, and how each is run. One that cannot be
+made reads nothing until it can: it is logged, and admins see why on the Settings page (`ReaderProblems`). What it
+would have read stays to be read. Its plugin's controllers and web UI go on, and so does its maker when the
+reader's constructor throws; one that crashes or takes over 60 seconds keeps the whole process from loading,
+and so the maker from running, as a maker's does the reader. A read that takes over 60 seconds, throws,
+or answers more than a document holds (64 KiB, nested 32 deep) is recorded as saying nothing, and is not tried
+again by that version. **A reader keeps what it reads nowhere else**, where it would outlive the plaintext.
+
+A plugin that makes derived files, such as thumbnails, adds one maker, `builder.AddMaker<TMaker>(...)`, with each
+kind it makes, at a version, from media types: an `IDerivedFileMaker`, made and run as a reader is, whose files
+the server keeps and serves ([Derived files](../Derived/Derived.md)). Why one could not run is in the server's
+log alone, and what it would have made is not there when asked for. A second maker, a kind twice, or a type
+that is none refuses the plugin. It too keeps what it reads and makes nowhere else.
 
 Each plugin has an `AssemblyLoadContext` of its own (`PluginLoadContext`): its packages and native
 libraries come from its folder, so it may use another version of a package than the server does.
@@ -112,8 +119,8 @@ replica.
 ## The web UI part
 
 `GET /api/plugins` lists the loaded plugins with the addresses of their module and stylesheet, for
-any signed-in user or shelf key, and for an admin those skipped and why a plugin's reader no longer
-runs (`readerProblem`). The `ui` folder, and nothing else
+any signed-in user or shelf key, and for an admin those skipped and why a plugin's reader could not run
+when it last had something to read (`readerProblem`). The `ui` folder, and nothing else
 of the plugin, is served at `/plugins/{id}/{hash}/...` (`UsePluginAssets`), to anyone, as a browser
 loads modules without the session's token. The hash is of every file in the folder, so each may be
 cached for good, and is in the deploy id ([Version](../Version/Version.md)), so open tabs are told

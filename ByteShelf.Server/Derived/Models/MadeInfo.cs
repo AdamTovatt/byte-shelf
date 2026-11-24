@@ -1,3 +1,5 @@
+using ByteShelf.Plugins;
+
 namespace ByteShelf.Server.Derived.Models
 {
     /// <summary>What is known of a derived file that was made.</summary>

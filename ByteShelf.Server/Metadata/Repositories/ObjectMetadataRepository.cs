@@ -3,6 +3,8 @@ using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Shared.Database;
+using ByteShelf.Server.Storage.Models;
+using ByteShelf.Server.Storage.Repositories;
 using ByteShelfCommon;
 using EasyReasy.Database;
 using EasyReasy.Database.Mapping;

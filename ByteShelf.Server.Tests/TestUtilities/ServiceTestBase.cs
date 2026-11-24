@@ -33,6 +33,9 @@ namespace ByteShelf.Server.Tests.TestUtilities
         /// <summary>Contents the server takes as encrypted and as plain.</summary>
         protected static readonly byte[] BytesOfBoth = Encoding.ASCII.GetBytes("age-encryption.org/v1\nstored as plain as well");
 
+        /// <summary>How long a swap may take, as one waits for what plugins do with the contents and the clock stands still.</summary>
+        private static readonly TimeSpan SwapPatience = TimeSpan.FromSeconds(60);
+
         private ServiceProvider _provider = null!;
         private AsyncServiceScope _scope;
         private readonly TestMetadataPlugins _plugins = new TestMetadataPlugins();
@@ -144,7 +147,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
         {
             StartContentSwapRequest request = new StartContentSwapRequest { FileId = file.Id, Sha256 = file.Sha256, SizeBytes = AgeBytes.Length, Encrypted = true };
             using IServiceScope scope = Services.CreateScope();
-            await scope.ServiceProvider.GetRequiredService<IUploadService>().SwapAsync(shelf, request, Uploader, new MemoryStream(AgeBytes), CancellationToken.None);
+            await scope.ServiceProvider.GetRequiredService<IUploadService>().SwapAsync(shelf, request, Uploader, new MemoryStream(AgeBytes), CancellationToken.None).WaitAsync(SwapPatience);
         }
 
         /// <summary>Compacts the change log as the job does at the clock's time.</summary>

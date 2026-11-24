@@ -1,7 +1,8 @@
 using ByteShelf.Server.Derived.Models;
-using ByteShelf.Server.Derived.Repositories;
+using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
+using ByteShelf.Server.Storage.Repositories;
 using ByteShelf.Server.Storage.Services;
 using ByteShelfCommon;
 
@@ -18,18 +19,20 @@ namespace ByteShelf.Server.Derived.Services
 
         private readonly ShelfTree _shelfTree;
         private readonly ITrashService _trashService;
-        private readonly ISourceContentsRepository _contents;
+        private readonly IPlainContentsRepository _contents;
         private readonly DerivedMakers _makers;
         private readonly DerivedStore _store;
+        private readonly ContentsLocks _locks;
         private readonly DerivedMaking _making;
         private readonly TimeProvider _timeProvider;
 
         public DerivedFileService(
             ShelfTree shelfTree,
             ITrashService trashService,
-            ISourceContentsRepository contents,
+            IPlainContentsRepository contents,
             DerivedMakers makers,
             DerivedStore store,
+            ContentsLocks locks,
             DerivedMaking making,
             TimeProvider timeProvider)
         {
@@ -38,6 +41,7 @@ namespace ByteShelf.Server.Derived.Services
             _contents = contents;
             _makers = makers;
             _store = store;
+            _locks = locks;
             _making = making;
             _timeProvider = timeProvider;
         }
@@ -69,7 +73,7 @@ namespace ByteShelf.Server.Derived.Services
                 return found.File ?? throw None(file, kind);
             }
 
-            Task<MakingOutcome> making = _making.MakeAsync(file.Sha256, kind, maker.Plugin, MakingPriority.Asked);
+            Task<MakingOutcome> making = _making.MakeAsync(file.Sha256, kind, maker.Plugin, PluginPriority.Asked);
             try
             {
                 if (await making.WaitAsync(WaitLimit, _timeProvider, cancellationToken) == MakingOutcome.Stopped)
@@ -89,7 +93,7 @@ namespace ByteShelf.Server.Derived.Services
         private async Task<Found?> FindAsync(string sha256, KindMaker maker, CancellationToken cancellationToken)
         {
             DerivedKind kind = maker.Declaration.Kind;
-            using (await _store.LockAsync(sha256, cancellationToken))
+            using (await _locks.LockAsync(sha256, cancellationToken))
             {
                 DerivedEntry? entry = _store.Find(kind, sha256);
                 if (!maker.IsCurrent(entry))

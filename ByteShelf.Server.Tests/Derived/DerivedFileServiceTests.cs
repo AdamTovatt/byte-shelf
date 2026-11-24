@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using System.Globalization;
 using ByteShelf.Server.Derived.Models;
 using ByteShelf.Server.Derived.Services;
+using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
@@ -17,10 +17,6 @@ namespace ByteShelf.Server.Tests.Derived
         // Written out rather than taken from the code, so a change of one is noticed.
         private static readonly TimeSpan WaitLimit = TimeSpan.FromSeconds(10);
         private static readonly TimeSpan RunLimit = TimeSpan.FromSeconds(60);
-
-        private static readonly TimeSpan KillLimit = TimeSpan.FromSeconds(5);
-        private static readonly TimeSpan KillPatience = TimeSpan.FromSeconds(20);
-        private static readonly TimeSpan RealTimeLimit = TimeSpan.FromSeconds(60);
 
         private readonly RecordingLoggerFactory _log = new RecordingLoggerFactory();
 
@@ -134,7 +130,7 @@ namespace ByteShelf.Server.Tests.Derived
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", Plugins.Waiting("a"));
-            Task<MakingOutcome> making = Making.MakeAsync(file.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog);
+            Task<MakingOutcome> making = MakeAsync(file);
             using Process process = await Plugins.StartedAsync("a");
 
             await Clock.WaitForTimerAsync(RunLimit);
@@ -149,11 +145,11 @@ namespace ByteShelf.Server.Tests.Derived
         }
 
         [Fact]
-        public async Task GetAsync_AMakerThatHangsWithoutReadingItsToken_IsKilledToo()
+        public async Task GetAsync_AMakerThatHangs_IsKilled()
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "hang");
-            Task<MakingOutcome> making = Making.MakeAsync(file.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog);
+            Task<MakingOutcome> making = MakeAsync(file);
             await TestDerivedPlugins.UntilAsync(() => Plugins.Runs.Count == 1);
 
             await Clock.WaitForTimerAsync(RunLimit);
@@ -197,75 +193,6 @@ namespace ByteShelf.Server.Tests.Derived
             Assert.Single(Plugins.Runs);
         }
 
-        [UnixFact]
-        public async Task GetAsync_AMakerThatCrashes_TakesWhatItStartedWithIt()
-        {
-            Shelf shelf = await CreateShelfAsync();
-            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", Plugins.WithChild("a", "crash"));
-
-            await KillsAsync(Assert.ThrowsAsync<NotFoundException>(() => GetAsync(shelf, file)));
-
-            Assert.False(TestDerivedPlugins.IsRunning(await Plugins.ChildOfAsync("a")));
-        }
-
-        [UnixFact]
-        public async Task MakeAsync_Stopped_TakesWhatTheMakerStartedWithIt()
-        {
-            Shelf shelf = await CreateShelfAsync();
-            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", Plugins.WithChild("a", "wait"));
-            Task<MakingOutcome> making = Making.MakeAsync(file.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog);
-            int child = await Plugins.ChildOfAsync("a");
-            Assert.True(TestDerivedPlugins.IsRunning(child));
-
-            await KillsAsync(Making.StopAsync(file.Sha256));
-
-            Assert.Equal(MakingOutcome.Stopped, await making);
-            Assert.False(TestDerivedPlugins.IsRunning(child));
-        }
-
-        [UnixFact]
-        public async Task MakeAsync_AMakerSentSignalsToStop_GoesOnAsTheServerEndsIt()
-        {
-            Shelf shelf = await CreateShelfAsync();
-            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", Plugins.Waiting("a"));
-            Task<MakingOutcome> making = Making.MakeAsync(file.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog);
-            using (Process process = await Plugins.StartedAsync("a"))
-            {
-                foreach (string signal in new[] { "-TERM", "-INT", "-HUP", "-QUIT" })
-                {
-                    using Process sent = Process.Start("kill", [signal, process.Id.ToString(CultureInfo.InvariantCulture)]);
-                    await sent.WaitForExitAsync();
-                }
-
-                Plugins.GoOn("a");
-            }
-
-            await making;
-            Assert.NotNull(Store.Find(DerivedKind.Thumbnail, file.Sha256)!.Made);
-        }
-
-        [UnixFact]
-        public async Task MakeAsync_Running_HasNoDumpMadeOfItsMemory()
-        {
-            if (!OperatingSystem.IsLinux())
-            {
-                return;
-            }
-
-            Shelf shelf = await CreateShelfAsync();
-            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", Plugins.Waiting("a"));
-            Task<MakingOutcome> making = Making.MakeAsync(file.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog);
-            using (Process process = await Plugins.StartedAsync("a"))
-            {
-                string[] environment = (await File.ReadAllTextAsync($"/proc/{process.Id}/environ")).Split('\0');
-                Assert.Contains("DOTNET_DbgEnableMiniDump=0", environment);
-                Assert.Contains("DOTNET_EnableDiagnostics=0", environment);
-                Plugins.GoOn("a");
-            }
-
-            await making;
-        }
-
         [Theory]
         [InlineData("full disk")]
         [InlineData("in the way")]
@@ -274,7 +201,18 @@ namespace ByteShelf.Server.Tests.Derived
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", contents);
 
-            await Assert.ThrowsAsync<MakerUnavailableException>(() => GetAsync(shelf, file));
+            await Assert.ThrowsAsync<PluginUnavailableException>(() => GetAsync(shelf, file));
+
+            Assert.Empty(AllDerivedFiles());
+        }
+
+        [LinuxFact]
+        public async Task MakeAsync_AFullDiskTheMakerLetsPass_IsNotTheContentsFailure()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "filled disk");
+
+            await Assert.ThrowsAsync<PluginUnavailableException>(() => GetAsync(shelf, file));
 
             Assert.Empty(AllDerivedFiles());
         }
@@ -289,7 +227,7 @@ namespace ByteShelf.Server.Tests.Derived
                 File.SetUnixFileMode(ObjectStore.GetPath(file.Sha256), UnixFileMode.None);
             }
 
-            Assert.Equal(MakingOutcome.NothingToMake, await Making.MakeAsync(file.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog));
+            Assert.Equal(MakingOutcome.NothingToMake, await MakeAsync(file));
 
             Assert.Empty(AllDerivedFiles());
         }
@@ -308,7 +246,7 @@ namespace ByteShelf.Server.Tests.Derived
             Clock.Advance(TimeSpan.FromMinutes(1));
 
             // As a removal of those contents holds it, which may wait for everything made from them to end.
-            using (await Store.LockAsync(old[0].Sha256))
+            using (await Locks.LockAsync(old[0].Sha256))
             {
                 Assert.Equal(TestMaker.Made(DerivedKind.Full, "c"), await GetAsync(shelf, now, DerivedKind.Full).WaitAsync(RealTimeLimit));
             }
@@ -385,7 +323,7 @@ namespace ByteShelf.Server.Tests.Derived
             Task<string> asked = GetAsync(shelf, file);
             using (await Plugins.StartedAsync("a"))
             {
-                await Making.StopAsync(file.Sha256);
+                await Processes.StopAsync(file.Sha256).WaitAsync(RealTimeLimit);
             }
 
             await Assert.ThrowsAsync<RetryLaterException>(() => asked);
@@ -487,14 +425,14 @@ namespace ByteShelf.Server.Tests.Derived
             ShelfFile raised = await StoreTextAsync(shelf, "/raised.txt", "raised");
             Task<MakingOutcome>[] background =
             [
-                Making.MakeAsync(first.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog),
-                Making.MakeAsync(second.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog),
-                Making.MakeAsync(raised.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog),
+                MakeAsync(first),
+                MakeAsync(second),
+                MakeAsync(raised),
             ];
             using (await Plugins.StartedAsync("first"))
             {
-                Task<MakingOutcome> now = Making.MakeAsync(asked.Sha256, DerivedKind.Agent, Plugins.All[0], MakingPriority.Asked);
-                Task<MakingOutcome> alsoNow = Making.MakeAsync(raised.Sha256, DerivedKind.Preview, Plugins.All[0], MakingPriority.Asked);
+                Task<MakingOutcome> now = MakeAsync(asked, DerivedKind.Agent, PluginPriority.Asked);
+                Task<MakingOutcome> alsoNow = MakeAsync(raised, DerivedKind.Preview, PluginPriority.Asked);
                 Assert.Single(Plugins.Runs);
                 Plugins.GoOn("first");
                 await Task.WhenAll([.. background, now, alsoNow]);
@@ -510,7 +448,7 @@ namespace ByteShelf.Server.Tests.Derived
             Shelf shelf = await CreateShelfAsync();
             ShelfFile slow = await StoreTextAsync(shelf, "/a.txt", Plugins.Waiting("a"));
             ShelfFile quick = await StoreAsync(shelf, "/b.csv", "b"u8.ToArray(), "text/csv");
-            Task<MakingOutcome> making = Making.MakeAsync(slow.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog);
+            Task<MakingOutcome> making = MakeAsync(slow);
             using (await Plugins.StartedAsync("a"))
             {
                 Assert.Equal("Thumbnail of b by b 1", await GetAsync(shelf, quick));
@@ -538,41 +476,14 @@ namespace ByteShelf.Server.Tests.Derived
         public async Task MakeAsync_APluginTheChildCannotLoad_FailsWithoutBlamingTheContents(string location)
         {
             DerivedFilePlugin installed = Plugins.Plugin();
-            Plugins.All = [new DerivedFilePlugin(installed.Id, location.Length == 0 ? location : Plugins.Plugin(version: 2).Location, installed.Makes)];
+            Plugins.All = [installed with { Target = location.Length == 0 ? new PluginTarget(installed.Id, location) : Plugins.Plugin(version: 2).Target }];
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "hello");
 
-            await Assert.ThrowsAsync<MakerUnavailableException>(() => GetAsync(shelf, file));
+            await Assert.ThrowsAsync<PluginUnavailableException>(() => GetAsync(shelf, file));
 
             Assert.Empty(AllDerivedFiles());
             Assert.Empty(Plugins.Runs);
-        }
-
-        [Fact]
-        public async Task DisposeAsync_KillsWhatIsRunningAndRecordsNothing()
-        {
-            Shelf shelf = await CreateShelfAsync();
-            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", Plugins.Waiting("a"));
-            Task<MakingOutcome> making = Making.MakeAsync(file.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog);
-            using Process process = await Plugins.StartedAsync("a");
-
-            await Making.DisposeAsync();
-
-            Assert.Equal(MakingOutcome.Stopped, await making);
-            Assert.True(process.HasExited);
-            Assert.Empty(AllDerivedFiles());
-            Assert.Equal(MakingOutcome.Stopped, await Making.MakeAsync(file.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog));
-        }
-
-        /// <summary>Waits for something that kills processes, which those that will not end would hold up for as long as the clock stands.</summary>
-        private async Task KillsAsync(Task killing)
-        {
-            while (await Task.WhenAny(killing, Task.Delay(KillPatience)) != killing)
-            {
-                Clock.Advance(KillLimit);
-            }
-
-            await killing;
         }
     }
 }

@@ -148,6 +148,8 @@ namespace ByteShelf.Server.Tests.TestUtilities
                     builder.Services.AddHttpClient(SelfApi.HttpClientName, client => client.BaseAddress = new Uri("http://localhost/"))
                         .ConfigurePrimaryHttpMessageHandler(services => ((TestServer)services.GetRequiredService<IServer>()).CreateHandler());
 
+                    // The program plugins' processes are of, which the tests' own is not.
+                    builder.Services.AddSingleton(TestDerivedPlugins.ServerExecutable);
                     configureServices?.Invoke(builder.Services);
                 });
 

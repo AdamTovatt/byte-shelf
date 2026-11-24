@@ -64,6 +64,8 @@ says [what that does not reach](../../DEPLOYMENT.md#deleted-data), such as the w
   fetched them.
 - A read that fails is logged by its exception's type alone: a message may quote the contents, and the
   server's log forgets nothing.
+- A plugin's process that ever read the contents is ended before the swap commits, whatever it is doing
+  ([Processes](../Plugins/Processes/Processes.md)), as it may hold some of them.
 - A reading is recorded only where a live plain file holds the contents in the same transaction
   (`PlainContents.RecordSql`, the write itself), since they may have been encrypted or
   deleted while they were read.
@@ -178,16 +180,19 @@ whenever it was stored, a batch at a time by SHA-256, each in its own transactio
 reader has a version (the server's own is `MetadataReader.Version`), and what another version read it reads
 again.
 
-A plugin's reader is made the first time it has something to read, and has 60 seconds for that; one that is
-not made by then says nothing of any contents, which stay to be read.
-
 A read that throws, answers no valid document, or takes over 60 seconds is recorded as having found nothing,
-and so not tried again by that version: contents never change. A read over its time is cancelled by its token,
-and by its stream, which refuses the next read (`CancellableReadStream`), so a reader that looks at no token
-still stops. One that has not stopped 5 seconds later is left behind on the thread it holds. A reader left
-behind, or not made, is not run again until the server restarts (`ContentReadRunner`); the other readers go
-on. Admins are told why of a plugin's (`ReaderProblems`, [Plugins](../Plugins/Plugins.md)); of the server's
-own, only the log says so. Shutting down records nothing.
+and so not tried again by that version: contents never change. Shutting down records nothing.
+
+The server's own reader runs in the server's process (`ContentReadRunner`). A read over its time is cancelled
+by its token, and by its stream, which refuses the next read (`CancellableReadStream`). One that has not
+stopped 5 seconds later is left behind on the thread it holds, and the reader is not run again until the server
+restarts, which only the log says.
+
+A plugin's runs in the plugin's process ([Processes](../Plugins/Processes/Processes.md)), which is ended with a
+read over its time or memory, or with one that crashes: those found nothing too. A reader that cannot run,
+whatever the contents, as one that cannot be made, ends its part of the pass, and the next plugin's goes on;
+admins are told why (`ReaderProblems`, [Plugins](../Plugins/Plugins.md)), and the next pass tries again. A read
+that is ended because the contents are swapped or purged records nothing, and the pass goes on with the next.
 
 Uploads never wait for them. Contents that vanish between being listed and read are passed over.
 

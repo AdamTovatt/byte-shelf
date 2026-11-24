@@ -42,7 +42,7 @@ namespace ByteShelf.Server.Shared.Root
         /// <summary>The database at <see cref="DatabasePath"/>, opened through this alone.</summary>
         public DatabaseFile Database { get; }
 
-        /// <summary>What plugins made from file contents: a cache, made again when it is gone, and in no backup.</summary>
+        /// <summary>What plugins made from file contents: a cache, made again when it is gone, and in no backup; and where their processes work.</summary>
         public string DerivedPath { get; }
 
         /// <summary>

@@ -1,5 +1,6 @@
 using ByteShelf.Server.Derived.Models;
-using ByteShelf.Server.Derived.Repositories;
+using ByteShelf.Server.Plugins.Processes;
+using ByteShelf.Server.Storage.Repositories;
 using ByteShelfCommon;
 
 namespace ByteShelf.Server.Derived.Services
@@ -7,23 +8,33 @@ namespace ByteShelf.Server.Derived.Services
     /// <summary>
     /// One pass of the job <c>derived.maintenance</c>: removes the derived files of contents no plain file holds
     /// any more (a crash leaves them, as does a shelf removed on a replica), those no installed plugin makes, and
-    /// the least used over their limit.
+    /// the least used over their limit; then what else plugins' processes have of contents no plain file holds.
     /// </summary>
     internal sealed class DerivedMaintenance
     {
         private const int BatchSize = 500;
 
         private readonly DerivedStore _store;
-        private readonly ISourceContentsRepository _contents;
+        private readonly IPlainContentsRepository _contents;
         private readonly IDerivedRemoval _removal;
         private readonly DerivedMakers _makers;
+        private readonly ContentsLocks _locks;
+        private readonly PluginProcesses _processes;
 
-        public DerivedMaintenance(DerivedStore store, ISourceContentsRepository contents, IDerivedRemoval removal, DerivedMakers makers)
+        public DerivedMaintenance(
+            DerivedStore store,
+            IPlainContentsRepository contents,
+            IDerivedRemoval removal,
+            DerivedMakers makers,
+            ContentsLocks locks,
+            PluginProcesses processes)
         {
             _store = store;
             _contents = contents;
             _removal = removal;
             _makers = makers;
+            _locks = locks;
+            _processes = processes;
         }
 
         public async Task<DerivedMaintenanceSummary> RunAsync(CancellationToken cancellationToken)
@@ -35,11 +46,7 @@ namespace ByteShelf.Server.Derived.Services
                 foreach (string[] batch in _store.EnumerateHashes(kind).ToList().Chunk(BatchSize))
                 {
                     IReadOnlyList<string> unheldHere = await _contents.GetUnheldAsync(batch);
-                    foreach (string sha256 in unheldHere)
-                    {
-                        unheld += await _removal.RemoveUnheldAsync(sha256, cancellationToken) ? 1 : 0;
-                    }
-
+                    unheld += await RemoveUnheldAsync(unheldHere, cancellationToken);
                     foreach (string sha256 in batch.Except(unheldHere, StringComparer.Ordinal))
                     {
                         orphaned += await RemoveOrphanedAsync(kind, sha256, cancellationToken) ? 1 : 0;
@@ -47,12 +54,31 @@ namespace ByteShelf.Server.Derived.Services
                 }
             }
 
-            return new DerivedMaintenanceSummary(unheld, orphaned, _store.TrimFull());
+            int trimmed = _store.TrimFull();
+
+            // Last, as a process that will not die fails the pass.
+            foreach (string[] batch in _processes.GetContentsGiven().Chunk(BatchSize))
+            {
+                unheld += await RemoveUnheldAsync(await _contents.GetUnheldAsync(batch), cancellationToken);
+            }
+
+            return new DerivedMaintenanceSummary(unheld, orphaned, trimmed);
+        }
+
+        private async Task<int> RemoveUnheldAsync(IReadOnlyList<string> unheld, CancellationToken cancellationToken)
+        {
+            int removed = 0;
+            foreach (string sha256 in unheld)
+            {
+                removed += await _removal.RemoveUnheldAsync(sha256, cancellationToken) ? 1 : 0;
+            }
+
+            return removed;
         }
 
         private async Task<bool> RemoveOrphanedAsync(DerivedKind kind, string sha256, CancellationToken cancellationToken)
         {
-            using (await _store.LockAsync(sha256, cancellationToken))
+            using (await _locks.LockAsync(sha256, cancellationToken))
             {
                 if (_store.Find(kind, sha256) is { } entry && _makers.Makes(kind, entry.Plugin))
                 {

@@ -27,6 +27,7 @@ namespace ByteShelf.Server.Storage
             services.AddScoped<IShelfRepository, ShelfRepository>();
             services.AddScoped<IDirectoryRepository, DirectoryRepository>();
             services.AddScoped<IFileRepository, FileRepository>();
+            services.AddScoped<IPlainContentsRepository, PlainContentsRepository>();
             services.AddScoped<IUploadRepository, UploadRepository>();
             services.AddScoped<ITrashRepository, TrashRepository>();
             services.AddScoped<ILinkRepository, LinkRepository>();

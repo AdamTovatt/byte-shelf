@@ -1,4 +1,5 @@
 using ByteShelf.Server.Metadata.Models;
+using ByteShelf.Server.Storage.Models;
 using EasyReasy.Database;
 
 namespace ByteShelf.Server.Metadata.Repositories

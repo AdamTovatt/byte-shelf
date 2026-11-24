@@ -8,13 +8,11 @@ namespace ByteShelf.Server.Metadata.Services
         /// <summary>How many objects one query lists to read.</summary>
         internal const int BatchSize = 100;
 
-        private readonly ContentReadRunner _runner;
         private readonly IDbSessionFactory _sessionFactory;
         private readonly TimeProvider _timeProvider;
 
-        public ContentReading(ContentReadRunner runner, IDbSessionFactory sessionFactory, TimeProvider timeProvider)
+        public ContentReading(IDbSessionFactory sessionFactory, TimeProvider timeProvider)
         {
-            _runner = runner;
             _sessionFactory = sessionFactory;
             _timeProvider = timeProvider;
         }
@@ -36,13 +34,13 @@ namespace ByteShelf.Server.Metadata.Services
                 foreach (string sha256 in unread)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (!_runner.MayRun(reader))
+                    if (!reader.MayRun)
                     {
                         return (read, failed);
                     }
 
                     after = sha256;
-                    if (await _runner.ReadAsync(reader, sha256, cancellationToken) is not { } outcome)
+                    if (await reader.ReadAsync(sha256, cancellationToken) is not { } outcome)
                     {
                         continue;
                     }

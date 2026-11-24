@@ -1,3 +1,4 @@
+using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Shared.Root;
 
 namespace ByteShelf.Server.Tests.TestUtilities
@@ -9,7 +10,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
 
         /// <summary>The one the <see cref="TestMaker"/>'s run over contents that say <c>undeletable</c> left.</summary>
         public UndeletableFolder(TestRoot root, string sha256)
-            : this(Assert.Single(Directory.GetDirectories(System.IO.Path.Combine(root.Root.DerivedPath, "work"), sha256 + ".*")))
+            : this(Assert.Single(WorkFolder.Find(root.Root), folder => folder.GetContents().Contains(sha256)).Path)
         {
         }
 
@@ -24,7 +25,9 @@ namespace ByteShelf.Server.Tests.TestUtilities
         /// <summary>One left in <paramref name="root"/> by an earlier server.</summary>
         public static UndeletableFolder Create(RootFolder root, string sha256)
         {
-            UndeletableFolder folder = new UndeletableFolder(System.IO.Path.Combine(root.DerivedPath, "work", sha256 + ".left"));
+            WorkFolder work = WorkFolder.Create(root);
+            work.Add(sha256);
+            UndeletableFolder folder = new UndeletableFolder(work.Path);
             Directory.CreateDirectory(folder._inner);
             File.WriteAllText(System.IO.Path.Combine(folder._inner, "file"), "read from contents");
             folder.SetWritable(false);

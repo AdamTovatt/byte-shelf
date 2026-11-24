@@ -1,13 +1,8 @@
 namespace ByteShelf.Server.Derived.Services
 {
-    /// <summary>A server without plugins that make derived files.</summary>
+    /// <summary>None, as where plugins are not loaded.</summary>
     internal sealed class NoDerivedFilePlugins : IDerivedFilePlugins
     {
         public IReadOnlyList<DerivedFilePlugin> All => [];
-
-        public IDerivedFileMaker? Load(string location)
-        {
-            return null;
-        }
     }
 }

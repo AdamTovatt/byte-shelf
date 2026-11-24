@@ -1,7 +1,7 @@
 using ByteShelf.Server.Derived.Models;
-using ByteShelf.Server.Derived.Repositories;
+using ByteShelf.Server.Storage.Repositories;
 using ByteShelf.Server.Derived.Services;
-using ByteShelf.Server.Metadata.Models;
+using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
@@ -110,11 +110,11 @@ namespace ByteShelf.Server.Tests.Derived
         public async Task MakeBacklogAsync_APluginThatCannotRun_EndsItsPass()
         {
             DerivedFilePlugin installed = Plugins.Plugin();
-            Plugins.All = [new DerivedFilePlugin(installed.Id, string.Empty, installed.Makes)];
+            Plugins.All = [installed with { Target = new PluginTarget(installed.Id, string.Empty) }];
             Shelf shelf = await CreateShelfAsync();
             await StoreTextAsync(shelf, "/a.txt", "a");
 
-            await Assert.ThrowsAsync<MakerUnavailableException>(MakeBacklogAsync);
+            await Assert.ThrowsAsync<PluginUnavailableException>(MakeBacklogAsync);
         }
 
         [Fact]
@@ -128,7 +128,7 @@ namespace ByteShelf.Server.Tests.Derived
 
             // Each with every type, so it is not even asked to be made.
             (string sha256, IReadOnlyList<string> types) = Assert.Single(
-                await Services.GetRequiredService<ISourceContentsRepository>().GetLiveAsync(MediaTypeSet.Of("text/plain"), after: null, limit: 10));
+                await Services.GetRequiredService<IPlainContentsRepository>().GetLiveAsync(MediaTypeSet.Of("text/plain"), after: null, limit: 10));
             Assert.Equal(json.Sha256, sha256);
             Assert.Equal(["application/json", "text/plain"], types);
             Assert.Equal(0, await MakeBacklogAsync());
@@ -204,7 +204,7 @@ namespace ByteShelf.Server.Tests.Derived
 
             Plugins.All = [];
             Assert.Equal(new DerivedMaintenanceSummary(Unheld: 0, Orphaned: 1, Trimmed: 0), await MaintainAsync());
-            Assert.Empty(AllDerivedFiles());
+            AssertKept();
         }
 
         [Fact]

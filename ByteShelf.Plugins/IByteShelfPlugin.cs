@@ -2,9 +2,10 @@ namespace ByteShelf.Plugins
 {
     /// <summary>
     /// The entry point of a plugin's server assembly, which holds exactly one public class implementing
-    /// it, with a public constructor without parameters. The server makes one at startup; so does
-    /// <c>--check-plugin</c>, which runs the registration and throws the result away, so neither the
-    /// constructor nor the registration may have effects of their own.
+    /// it, with a public constructor without parameters. The server makes one at startup, and runs its
+    /// registration; so do <c>--check-plugin</c> and each child process the plugin's reader or maker runs in, which
+    /// start nothing that is registered and have none of the server's settings. So neither the constructor nor the
+    /// registration may have effects of their own.
     /// </summary>
     public interface IByteShelfPlugin
     {

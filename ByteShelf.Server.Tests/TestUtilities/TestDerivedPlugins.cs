@@ -3,9 +3,10 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using ByteShelf.Server.Derived.Models;
 using ByteShelf.Server.Derived.Services;
+using ByteShelf.Server.Plugins.Processes;
 using ByteShelfCommon;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ByteShelf.Server.Tests.TestUtilities
 {
@@ -17,13 +18,17 @@ namespace ByteShelf.Server.Tests.TestUtilities
         private readonly string _folder = Directory.CreateTempSubdirectory("byteshelf-makers-").FullName;
 
         /// <summary>The tests' own executable: the dotnet they run on, whatever is on PATH, with their assembly.</summary>
-        public static MakerExecutable Executable { get; } = new MakerExecutable(
+        public static PluginExecutable Executable { get; } = new PluginExecutable(
             Path.GetFullPath(Path.Combine(RuntimeEnvironment.GetRuntimeDirectory(), "..", "..", "..", "dotnet")), [typeof(TestProgram).Assembly.Location]);
+
+        /// <summary>The server's own program, which loads plugins as a server's does.</summary>
+        public static PluginExecutable ServerExecutable { get; } = new PluginExecutable(
+            Executable.FileName, [Path.Combine(AppContext.BaseDirectory, "ByteShelf.Server.dll")]);
 
         public IReadOnlyList<DerivedFilePlugin> All { get; set; } = [];
 
         /// <summary>What runs the makers; another than <see cref="Executable"/> is set before <see cref="AddTo"/>.</summary>
-        public MakerExecutable Program { get; set; } = Executable;
+        public PluginExecutable Program { get; set; } = Executable;
 
         private string LogPath => Path.Combine(_folder, "log");
 
@@ -35,11 +40,6 @@ namespace ByteShelf.Server.Tests.TestUtilities
         {
             return TestMaker.Plugin(new TestMaker.Spec(
                 id, (kinds ?? DerivedKinds.All).Select(kind => new TestMaker.KindSpec(kind, mediaTypes.Length == 0 ? ["text/plain"] : mediaTypes, version)).ToList(), LogPath));
-        }
-
-        public IDerivedFileMaker? Load(string location)
-        {
-            return TestMaker.Load(location);
         }
 
         /// <summary>Installs these plugins in place of none, with <see cref="Program"/> to run them.</summary>

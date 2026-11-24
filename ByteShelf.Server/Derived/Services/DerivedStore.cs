@@ -1,6 +1,6 @@
 using System.Text.Json;
 using ByteShelf.Server.Derived.Models;
-using ByteShelf.Server.Shared.Concurrency;
+using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Shared.IO;
 using ByteShelf.Server.Shared.Json;
 using ByteShelf.Server.Shared.Root;
@@ -16,9 +16,7 @@ namespace ByteShelf.Server.Derived.Services
     /// </summary>
     /// <remarks>
     /// What may be here depends on the database (a plain file holds the contents), so whoever writes or removes
-    /// holds <see cref="LockAsync"/> from that question to the answer's commit. Only a swap, which holds the
-    /// database's write lock too, waits for a second one while it holds one, and a holder may wait for what is
-    /// being made from those contents to end, which waits for no other contents: so no two wait for each other.
+    /// holds the contents' lock (<see cref="ContentsLocks"/>) from that question to the answer's commit.
     /// </remarks>
     public sealed class DerivedStore
     {
@@ -29,21 +27,13 @@ namespace ByteShelf.Server.Derived.Services
 
         private readonly RootFolder _root;
         private readonly TimeProvider _timeProvider;
-        private readonly KeyedAsyncLock _locks = new KeyedAsyncLock();
+        private readonly ContentsLocks _locks;
 
-        public DerivedStore(RootFolder root, TimeProvider timeProvider)
+        public DerivedStore(RootFolder root, ContentsLocks locks, TimeProvider timeProvider)
         {
+            _locks = locks;
             _root = root;
             _timeProvider = timeProvider;
-        }
-
-        /// <summary>For tests that need a race to happen in a set order.</summary>
-        internal KeyedAsyncLock Locks => _locks;
-
-        /// <summary>Holds the lock for what is derived from one contents; dispose the answer to release it.</summary>
-        public Task<IDisposable> LockAsync(string sha256, CancellationToken cancellationToken = default)
-        {
-            return _locks.AcquireAsync(sha256, cancellationToken);
         }
 
         public string GetPath(DerivedKind kind, string sha256)
@@ -175,7 +165,7 @@ namespace ByteShelf.Server.Derived.Services
                     continue;
                 }
 
-                using (IDisposable? held = _locks.TryAcquire(file.Name))
+                using (IDisposable? held = _locks.TryLock(file.Name))
                 {
                     if (held != null)
                     {

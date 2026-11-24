@@ -11,7 +11,7 @@ in the web UI.
 | `ByteShelf.Server` | The ASP.NET Core server (net10.0). |
 | `ByteShelfCommon` | The shared contract (net8.0, AOT-compatible): request and response types, path and shelf-name rules, source-generated JSON. Published as the `ByteShelfCommon` NuGet package. |
 | `ByteShelfClient` | The client library (net8.0, AOT-compatible): `IByteShelfClient` over HTTP, and in memory for an app's tests. Published as the `ByteShelfClient` NuGet package. |
-| `ByteShelf.Plugins` | What a plugin's server assembly is written against (net10.0): the interface it implements, the one it registers through, and the one its reader of files' contents implements. Not published. |
+| `ByteShelf.Plugins` | What a plugin's server assembly is written against (net10.0): the interface it implements, the one it registers through, and those its reader of files' contents and its maker of derived files implement and are given. Not published. |
 | `byteshelf.client` | The web UI (React, TypeScript, Vite): browse and upload to the shelves you reach; for admins, shelves, users, access, keys and replication. The server serves its build. |
 | `plugins` | The plugins released with the server, each built on its own ([plugins/README.md](plugins/README.md)). |
 | `ByteShelf.Cli` | The `byteshelf` dotnet tool (net10.0): the command line, and with `--mcp` an MCP server for agents. Published as the `ByteShelf.Cli` NuGet tool package. |
@@ -27,7 +27,7 @@ One folder, named by `BYTESHELF_ROOT`, holds the whole instance:
   byteshelf.db              the SQLite database: shelves, directories, files, users, the change log
   objects/ab/cd/<sha256>    file contents, stored whole and never modified
   staging/                  uploads in progress
-  derived/                  what plugins made from file contents, made again when it is gone
+  derived/                  what plugins made from file contents, made again when it is gone, and where their processes work
   keys/                     secrets the server generates for itself (jwt-secret, and link-secret for download and upload links)
 ```
 
@@ -99,7 +99,8 @@ dotnet run --project ByteShelf.Cli -- shelves
   [Invalidation](ByteShelf.Server/Invalidation/Invalidation.md), [Version](ByteShelf.Server/Version/Version.md),
   [Replication](ByteShelf.Server/Replication/Replication.md), [Backup](ByteShelf.Server/Backup/Backup.md),
   [Mcp](ByteShelf.Server/Mcp/Mcp.md), [Metadata](ByteShelf.Server/Metadata/Metadata.md),
-  [Plugins](ByteShelf.Server/Plugins/Plugins.md), [Derived files](ByteShelf.Server/Derived/Derived.md).
+  [Plugins](ByteShelf.Server/Plugins/Plugins.md),
+  [Plugins' processes](ByteShelf.Server/Plugins/Processes/Processes.md), [Derived files](ByteShelf.Server/Derived/Derived.md).
 - [ByteShelfCommon](ByteShelfCommon/README.md), [ByteShelfClient](ByteShelfClient/README.md),
   [the CLI and MCP server](ByteShelf.Cli/README.md), [the shared operations and MCP tools](ByteShelf.Tools/README.md),
   [the web UI](byteshelf.client/README.md), [the plugins made here](plugins/README.md).

@@ -1,16 +1,17 @@
 using System.Diagnostics;
 using ByteShelf.Server.Derived.Models;
 using ByteShelf.Server.Derived.Services;
+using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
 using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
-using EasyReasy.Database;
 using EasyReasy.Database.Mapping;
-using Microsoft.Extensions.DependencyInjection;
+using EasyReasy.Database;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ByteShelf.Server.Tests.Derived
 {
@@ -20,7 +21,6 @@ namespace ByteShelf.Server.Tests.Derived
     /// </summary>
     public sealed class DerivedRemovalTests : DerivedTestBase
     {
-        private static readonly TimeSpan RealTimeLimit = TimeSpan.FromSeconds(30);
 
         private HookedCommitSessionFactory _sessions = null!;
 
@@ -40,7 +40,7 @@ namespace ByteShelf.Server.Tests.Derived
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", contents);
             foreach (DerivedKind kind in DerivedKinds.All)
             {
-                await Making.MakeAsync(file.Sha256, kind, Plugins.All[0], MakingPriority.Asked);
+                await MakeAsync(file, kind, PluginPriority.Asked);
             }
 
             Assert.NotEmpty(AllDerivedFiles());
@@ -55,7 +55,7 @@ namespace ByteShelf.Server.Tests.Derived
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", Plugins.Waiting("a"));
-            Task<MakingOutcome> making = Making.MakeAsync(file.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog);
+            Task<MakingOutcome> making = MakeAsync(file);
             using Process process = await Plugins.StartedAsync("a");
             Assert.NotEmpty(AllDerivedFiles());
 
@@ -73,15 +73,15 @@ namespace ByteShelf.Server.Tests.Derived
             Shelf shelf = await CreateShelfAsync();
             ShelfFile first = await StoreTextAsync(shelf, "/first.txt", Plugins.Waiting("first"));
             ShelfFile next = await StoreTextAsync(shelf, "/next.txt", "next");
-            Task<MakingOutcome> makingFirst = Making.MakeAsync(first.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog);
-            Task<MakingOutcome> makingNext = Making.MakeAsync(next.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog);
+            Task<MakingOutcome> makingFirst = MakeAsync(first);
+            Task<MakingOutcome> makingNext = MakeAsync(next);
             using (await Plugins.StartedAsync("first"))
             {
                 await EncryptInPlaceAsync(shelf, next);
                 Plugins.GoOn("first");
             }
 
-            Assert.Equal((MakingOutcome.Kept, MakingOutcome.Stopped), (await makingFirst, await makingNext));
+            Assert.Equal((MakingOutcome.Kept, MakingOutcome.NothingToMake), (await makingFirst, await makingNext));
             Assert.Single(Plugins.Runs);
         }
 
@@ -90,10 +90,10 @@ namespace ByteShelf.Server.Tests.Derived
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", Plugins.Waiting("a"));
-            Task<MakingOutcome> making = Making.MakeAsync(file.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog);
+            Task<MakingOutcome> making = MakeAsync(file);
             Task encrypting;
             using (await Plugins.StartedAsync("a"))
-            using (await Store.LockAsync(file.Sha256))
+            using (await Locks.LockAsync(file.Sha256))
             {
                 Task keepWaits = WaitsForAsync(file.Sha256);
                 Plugins.GoOn("a");
@@ -122,7 +122,7 @@ namespace ByteShelf.Server.Tests.Derived
                 {
                     // Other connections still see the plain file.
                     Task waits = WaitsForAsync(file.Sha256);
-                    asked = Making.MakeAsync(file.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Asked);
+                    asked = MakeAsync(file, DerivedKind.Thumbnail, PluginPriority.Asked);
                     await waits;
                 }
             };
@@ -260,7 +260,7 @@ namespace ByteShelf.Server.Tests.Derived
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", Plugins.Waiting("a"));
-            Task<MakingOutcome> making = Making.MakeAsync(file.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog);
+            Task<MakingOutcome> making = MakeAsync(file);
             using Process process = await Plugins.StartedAsync("a");
 
             await FileService.DeleteFileAsync(shelf, EntryReference.ForId(file.Id));
@@ -276,7 +276,7 @@ namespace ByteShelf.Server.Tests.Derived
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", Plugins.Waiting("a"));
-            Task<MakingOutcome> making = Making.MakeAsync(file.Sha256, DerivedKind.Thumbnail, Plugins.All[0], MakingPriority.Backlog);
+            Task<MakingOutcome> making = MakeAsync(file);
             using (await Plugins.StartedAsync("a"))
             {
                 // As a shelf removed on a replica takes its files, which leaves what goes with them to maintenance.
@@ -286,7 +286,7 @@ namespace ByteShelf.Server.Tests.Derived
             }
 
             Assert.Equal(MakingOutcome.NothingToMake, await making);
-            Assert.Empty(AllDerivedFiles());
+            AssertKept();
         }
 
         [UnixFact]
@@ -297,7 +297,7 @@ namespace ByteShelf.Server.Tests.Derived
             await GetAsync(shelf, file);
             using UndeletableFolder left = new UndeletableFolder(TestRoot, file.Sha256);
 
-            await Assert.ThrowsAsync<MakerNotStoppedException>(() => EncryptInPlaceAsync(shelf, file));
+            await Assert.ThrowsAsync<PluginNotStoppedException>(() => EncryptInPlaceAsync(shelf, file));
             Assert.False((await FileService.GetFileAsync(shelf, EntryReference.ForId(file.Id))).Encrypted);
 
             left.Release();
@@ -363,7 +363,7 @@ namespace ByteShelf.Server.Tests.Derived
         private async Task WaitsForAsync(string sha256)
         {
             TaskCompletionSource waits = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            Store.Locks.WaitingStarted = key =>
+            Locks.Locks.WaitingStarted = key =>
             {
                 if (key == sha256)
                 {
@@ -376,7 +376,7 @@ namespace ByteShelf.Server.Tests.Derived
 
         private bool IsFree(string sha256)
         {
-            using IDisposable? held = Store.Locks.TryAcquire(sha256);
+            using IDisposable? held = Locks.TryLock(sha256);
             return held != null;
         }
 

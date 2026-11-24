@@ -4,6 +4,8 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using ByteShelf.Server.Derived.Services;
+using ByteShelf.Server.Metadata.Services;
+using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
@@ -151,23 +153,36 @@ namespace ByteShelf.Server.Tests.Derived
         [Fact]
         public async Task Start_RemovesWhatAServerThatDidNotStopWasMakingAndWhatNothingHolds()
         {
-            string? left = null;
+            WorkFolder? left = null;
+            WorkFolder? leftList = null;
             string? unheld = null;
             await using ServerTestHost host = await ServerTestHost.StartAsync(services =>
             {
-                string derived = services.Select(service => service.ImplementationInstance).OfType<RootFolder>().First().DerivedPath;
-                left = Path.Combine(derived, "work", $"{TestHashes.Sha256Of("gone")}.left", "thumbnail");
-                unheld = Path.Combine(derived, "thumbnail", "aa", "aa", new string('a', 64));
-                foreach (string path in new[] { left, unheld })
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                    File.WriteAllText(path, "read from contents");
-                }
+                RootFolder root = services.Select(service => service.ImplementationInstance).OfType<RootFolder>().First();
+                left = WorkFolder.Create(root);
+                left.Add(TestHashes.Sha256Of("gone"));
+                File.WriteAllText(Path.Combine(left.Path, "thumbnail"), "read from contents");
+                leftList = WorkFolder.Create(root);
+                leftList.Add(TestHashes.Sha256Of("gone"));
+                Directory.Delete(leftList.Path);
+                unheld = Path.Combine(root.DerivedPath, "thumbnail", "aa", "aa", new string('a', 64));
+                Directory.CreateDirectory(Path.GetDirectoryName(unheld)!);
+                File.WriteAllText(unheld, "read from contents");
             });
 
-            // The first before it takes requests, the second by the maintenance that runs as it starts.
-            Assert.False(Directory.Exists(Path.GetDirectoryName(left)));
+            // Those of a process before it takes requests, the other by the maintenance that runs as it starts.
+            Assert.DoesNotContain(WorkFolder.Find(host.TestRoot.Root), folder => folder.Path == left!.Path || folder.Path == leftList!.Path);
             await TestDerivedPlugins.UntilAsync(() => !File.Exists(unheld));
+        }
+
+        [Fact]
+        public void Start_RemovesWhatIsLeftBeforeAnythingHasPluginsDoMore()
+        {
+            List<Type> started = _host.Services.GetServices<IHostedService>().Select(service => service.GetType()).ToList();
+
+            Type[] first = [typeof(PluginProcessesLifetime), typeof(MetadataReadingWorker), typeof(StoredContentsWorker), typeof(DerivedMakingWorker)];
+            Assert.Equal(first[0], started.First(first.Contains));
+            Assert.All(first, worker => Assert.Contains(worker, started));
         }
 
         [UnixFact]
