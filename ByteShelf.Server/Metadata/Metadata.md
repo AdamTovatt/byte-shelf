@@ -100,10 +100,11 @@ The log keeps only the newest state of a document of either kind
 Documents do not count toward a shelf's quota, as descriptions and what the server itself read do not: storing
 a file over another copies up to 64 KiB per plugin whatever the new file's size.
 
-Everything metadata knows of plugins comes from `IMetadataPlugins`. A plugin that is no longer installed
-keeps its documents, invisible until it is back: those about a file go with it, those about contents are
-dropped by the job like any. `ByteShelf.Server --forget-plugin <id>` (`PluginMetadataCommand`) deletes both kinds,
-logged, with the versions of those about files, and the log forgets their states; a replica refuses it.
+Everything metadata knows of plugins comes from `IMetadataPlugins`: the plugins the server loaded
+([Plugins](../Plugins/Plugins.md)), none for a command. A plugin that is no longer loaded keeps its documents,
+invisible until it is back: those about a file go with it, those about contents are dropped by the job like
+any. `ByteShelf.Server --forget-plugin <id>` (`PluginMetadataCommand`) deletes both kinds, logged, with the
+versions of those about files, and the log forgets their states; a replica refuses it.
 
 `PUT files/plugin-metadata?plugin=` writes the one about a file (`FileMetadataService`), whole, by anyone who
 may write the file and only for an installed plugin; another version than the named one is a 409, and the
@@ -118,7 +119,8 @@ document whose file it does not have, and a copy does not remove the document of
 
 ## Declared fields (`plugin_field_value`)
 
-A plugin declares fields (`ByteShelfCommon.PluginDeclaration`): a property at the top of one of its two
+A plugin declares fields in its `plugin.json` ([Plugins](../Plugins/Plugins.md),
+`ByteShelfCommon.PluginDeclaration`): a property at the top of one of its two
 documents, with a label, a kind (`text`, `number`, `date`, an instant written as ISO 8601 with an offset, or
 `flag`), whether a search's free text matches it (text only) and whether listings carry it. A value of
 another JSON type is ignored. `PluginFieldValue.Of` in Common reads one, for the server and the in-memory
@@ -133,6 +135,8 @@ values are neither logged nor replicated: every server takes its own by the plug
 requests, `PluginFieldIndex` takes them again for a plugin that declares others now and drops those of one
 that is gone.
 
+- **A file's metadata** (`GET files/metadata`) has those with a value, by plugin, and the web UI's Details
+  dialog, `get_info` and `byteshelf stat` show them.
 - **Listings** (`entries`, `tree`, `search` and a deletion's tree) carry the fields declared for them
   (`ShelfFile.PluginFields`, `ListedFiles`): a text of up to 256 bytes, a longer one left out.
 - **Search** takes `FileCriteria.PluginFields`, at most 20 filters that a file must all meet, and its text

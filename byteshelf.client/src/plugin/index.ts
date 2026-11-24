@@ -12,6 +12,7 @@ export { PlainText, TextPane } from '../components/preview/TextPane';
 export { useLoaded, type Loaded, type Reloadable } from '../hooks/useLoaded';
 export { ErrorBoundary } from '../components/ErrorBoundary';
 export { LoadedContent } from '../components/preview/LoadedContent';
+export { usePluginDocuments, useSetPluginDocument, type PluginDocuments, type PluginDocumentWrite } from '../hooks/usePluginDocuments';
 export type { ShelfFile } from '../services/shelfService';
 export { ApiError, authorizedFetch, throwIfFailed } from '../services/apiClient';
 export { invalidateResource } from '../lib/invalidate';

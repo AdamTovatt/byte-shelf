@@ -12,7 +12,7 @@ assembly as `ByteShelf.Server.Tests.Plugin` is, against the two projects that on
 
 ```
 plugins/<id>/
-  plugin.json         id (the folder's name), name and api; the build adds the version
+  plugin.json         id (the folder's name), name, api and, if any, fields; the build adds the version
   package.json        "type": "module", its own packages, and the scripts below
   package-lock.json   npm install writes it; npm ci, which the release runs, needs it
   tsconfig.json       extends ../tsconfig.base.json, includes src

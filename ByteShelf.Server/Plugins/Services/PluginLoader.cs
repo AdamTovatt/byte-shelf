@@ -63,12 +63,15 @@ namespace ByteShelf.Server.Plugins.Services
             };
 
             PluginUi? ui = Attempt("Its ui folder could not be read", () => PluginUiReader.Read(plugin.Manifest.Id, plugin.Folder));
+            PluginReaderRegistration? reader = null;
             if (plugin.Manifest.ServerAssemblyPath != null)
             {
                 ApplicationPart[] partsBefore = parts.ApplicationParts.ToArray();
                 try
                 {
-                    Replace(services, Register(plugin.Manifest.Id, plugin.Manifest.ServerAssemblyPath, services, parts));
+                    PluginBuilder registered = Register(plugin.Manifest.Id, plugin.Manifest.ServerAssemblyPath, services, parts);
+                    Replace(services, registered.Services);
+                    reader = registered.Reader;
                 }
                 catch
                 {
@@ -77,27 +80,27 @@ namespace ByteShelf.Server.Plugins.Services
                 }
             }
 
-            return new LoadedPlugin(plugin.Manifest, ui);
+            return new LoadedPlugin(plugin.Manifest, ui, reader);
         }
 
-        /// <summary>A copy of <paramref name="services"/> with the plugin's added, its controllers in <paramref name="parts"/> tried.</summary>
-        private static ServiceCollection Register(string pluginId, string assemblyPath, IServiceCollection services, ApplicationPartManager parts)
+        /// <summary>What the plugin registers, in a copy of <paramref name="services"/>, its controllers in <paramref name="parts"/> tried.</summary>
+        private static PluginBuilder Register(string pluginId, string assemblyPath, IServiceCollection services, ApplicationPartManager parts)
         {
             (Assembly assembly, Type entry) = Attempt("Its server assembly could not be loaded", () => LoadAssembly(pluginId, assemblyPath));
 
             // A copy rather than an empty collection: a registration made with TryAdd, as the framework's
             // own AddLogging and AddHttpClient are, then sees what the server has and adds no second one.
-            ServiceCollection registered = new ServiceCollection();
-            Replace(registered, services);
+            PluginBuilder registered = new PluginBuilder(new ServiceCollection());
+            Replace(registered.Services, services);
 
             Attempt("Registering its services failed", () =>
             {
                 IByteShelfPlugin plugin = (IByteShelfPlugin)Activator.CreateInstance(entry)!;
-                plugin.Configure(new PluginBuilder(registered));
+                plugin.Configure(registered);
             });
 
             parts.ApplicationParts.Add(new AssemblyPart(assembly));
-            Attempt("Its controllers could not be built", () => PluginEndpoints.Try(registered));
+            Attempt("Its controllers could not be built", () => PluginEndpoints.Try(registered.Services));
 
             return registered;
         }

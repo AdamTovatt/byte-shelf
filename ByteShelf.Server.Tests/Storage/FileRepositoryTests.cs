@@ -31,6 +31,29 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Fact]
+        public async Task GetShelfIdsAsync_LiveTrashedAndUnknownFiles_AnswersThoseThereAre()
+        {
+            Shelf docs = await CreateShelfAsync();
+            Shelf photos = await CreateShelfAsync("photos");
+            ShelfFile live = await StoreTextAsync(docs, "/live.txt", "a");
+            ShelfFile trashed = await StoreTextAsync(photos, "/trashed.txt", "a");
+            await StoreTextAsync(photos, "/unasked.txt", "a");
+            await FileService.DeleteFileAsync(photos, EntryReference.ForPath("/trashed.txt"));
+
+            IReadOnlyDictionary<Guid, Guid> shelves = await Files.GetShelfIdsAsync([live.Id, trashed.Id, Guid.NewGuid()]);
+
+            Assert.Equal(new Dictionary<Guid, Guid> { [live.Id] = docs.Id, [trashed.Id] = photos.Id }, shelves);
+        }
+
+        [Fact]
+        public async Task GetShelfIdsAsync_OfNone_IsEmpty()
+        {
+            await StoreTextAsync(await CreateShelfAsync(), "/a.txt", "a");
+
+            Assert.Empty(await Files.GetShelfIdsAsync([]));
+        }
+
+        [Fact]
         public async Task PurgeAllWithObjectAsync_LiveAndTrashedRows_RemovesAndLogsEach()
         {
             Shelf shelf = await CreateShelfAsync();

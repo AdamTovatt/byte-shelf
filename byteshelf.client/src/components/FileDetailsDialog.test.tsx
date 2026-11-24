@@ -99,9 +99,63 @@ describe('the file details dialog', () => {
     expect(document.body.textContent).toContain('Loading what its contents say…');
   });
 
+  it('shows the fields plugins declare under their names, and nothing of one that has none', async () => {
+    metadata = {
+      readable: false,
+      plugins: {
+        notes: {
+          name: 'Notes',
+          fields: [
+            { name: 'caption', label: 'Caption', kind: 'text', document: 'file', value: { text: 'Two\nlines' } },
+            { name: 'rating', label: 'Rating', kind: 'number', document: 'file', value: { number: 4.5 } },
+            { name: 'due', label: 'Due', kind: 'date', document: 'file', value: { date: new Date(2026, 2, 1, 9, 5).toISOString() } },
+            { name: 'done', label: 'Done', kind: 'flag', document: 'file', value: { flag: false } },
+            { name: 'kept', label: 'Kept', kind: 'flag', document: 'file', value: { flag: true } },
+          ],
+        },
+        empty: { name: 'Kept without fields', fileDocument: {}, fileVersion: 1, fields: [] },
+      },
+    };
+
+    await show(photo);
+
+    await vi.waitFor(() => expect(fieldsOf('Notes')).toEqual([
+      ['Caption', 'Two\nlines'],
+      ['Rating', '4.5'],
+      ['Due', '2026-03-01 09:05'],
+      ['Done', 'No'],
+      ['Kept', 'Yes'],
+    ]));
+    expect(document.body.textContent).not.toContain('Kept without fields');
+  });
+
+  it('shows the fields of an encrypted file', async () => {
+    metadata = { plugins: { notes: { name: 'Notes', fields: [{ name: 'rating', label: 'Rating', kind: 'number', document: 'file', value: { number: 0 } }] } } };
+
+    await show({ ...photo, encrypted: true });
+
+    await vi.waitFor(() => expect(fieldsOf('Notes')).toEqual([['Rating', '0']]));
+  });
+
+  it('says why it cannot show what plugins keep about an encrypted file', async () => {
+    answerMetadata = async () => json({ message: 'The disk is gone.' }, 500);
+
+    await show({ ...photo, encrypted: true });
+
+    await vi.waitFor(() => expect(document.body.textContent).toContain('never reads its contents. Could not load what plugins keep about it: The disk is gone.'));
+  });
+
   it('says an encrypted file is never read', async () => {
     await show({ ...photo, encrypted: true });
 
     expect(document.body.textContent).toContain('Encrypted: the server never reads its contents.');
   });
 });
+
+/** The labels and values in the section headed `heading`, which names it; undefined when there is none. */
+function fieldsOf(heading: string): (string | null)[][] | undefined {
+  const section = [...document.body.querySelectorAll('section')].find((each) => (
+    document.getElementById(each.getAttribute('aria-labelledby') ?? '')?.textContent === heading
+  ));
+  return section && [...section.querySelectorAll('dt')].map((label) => [label.textContent, label.nextElementSibling!.textContent]);
+}

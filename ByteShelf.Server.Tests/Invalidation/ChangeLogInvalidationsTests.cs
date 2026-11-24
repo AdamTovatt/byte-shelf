@@ -1,12 +1,15 @@
 using System.Net.Http.Json;
 using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.ChangeLog.Models;
+using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Invalidation.Models;
 using ByteShelf.Server.Invalidation.Services;
+using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ByteShelf.Server.Tests.Invalidation
 {
@@ -32,7 +35,7 @@ namespace ByteShelf.Server.Tests.Invalidation
         [MemberData(nameof(ShelfContentsStates))]
         public void For_FileOrDirectory_MakesTheShelfListAndThatShelfsContentsStale(string entityType, object state)
         {
-            IEnumerable<InvalidationEvent> events = ChangeLogInvalidations.For(Entry(entityType, ChangePayload.Serialize(state)));
+            IEnumerable<InvalidationEvent> events = For(Entry(entityType, ChangePayload.Serialize(state)));
 
             Assert.Equal(new[] { Event(InvalidationResources.Shelves), Event(InvalidationResources.ShelfContents, ShelfId) }, events);
         }
@@ -40,7 +43,7 @@ namespace ByteShelf.Server.Tests.Invalidation
         [Fact]
         public void For_Grant_MakesTheShelfListAndThatShelfsAccessStale()
         {
-            IEnumerable<InvalidationEvent> events = ChangeLogInvalidations.For(Entry(ChangeEntityType.ShelfGrant, ChangePayload.Serialize(ChangeStates.Grant(ShelfId))));
+            IEnumerable<InvalidationEvent> events = For(Entry(ChangeEntityType.ShelfGrant, ChangePayload.Serialize(ChangeStates.Grant(ShelfId))));
 
             Assert.Equal(new[] { Event(InvalidationResources.Shelves), Event(InvalidationResources.ShelfAccess, ShelfId) }, events);
         }
@@ -48,8 +51,8 @@ namespace ByteShelf.Server.Tests.Invalidation
         [Fact]
         public void For_Key_MakesNothingStale()
         {
-            Assert.Empty(ChangeLogInvalidations.For(Entry(ChangeEntityType.ShelfKey, ChangePayload.Serialize(ChangeStates.Key()))));
-            Assert.Empty(ChangeLogInvalidations.For(Entry(ChangeEntityType.ShelfKey, payload: null)));
+            Assert.Empty(For(Entry(ChangeEntityType.ShelfKey, ChangePayload.Serialize(ChangeStates.Key()))));
+            Assert.Empty(For(Entry(ChangeEntityType.ShelfKey, payload: null)));
         }
 
         /// <summary>A shelf's key list shows each key's other shelves, so a key's grant on one shelf changes them all.</summary>
@@ -58,8 +61,8 @@ namespace ByteShelf.Server.Tests.Invalidation
         {
             Assert.Equal(
                 new[] { Event(InvalidationResources.ShelfAccess) },
-                ChangeLogInvalidations.For(Entry(ChangeEntityType.ShelfKeyGrant, ChangePayload.Serialize(ChangeStates.KeyGrant(ShelfId)))));
-            Assert.Equal(new[] { Event(InvalidationResources.ShelfAccess) }, ChangeLogInvalidations.For(Entry(ChangeEntityType.ShelfKeyGrant, payload: null)));
+                For(Entry(ChangeEntityType.ShelfKeyGrant, ChangePayload.Serialize(ChangeStates.KeyGrant(ShelfId)))));
+            Assert.Equal(new[] { Event(InvalidationResources.ShelfAccess) }, For(Entry(ChangeEntityType.ShelfKeyGrant, payload: null)));
         }
 
         /// <summary>A purge leaves no state to name the shelf, so the same views go stale for every shelf.</summary>
@@ -67,9 +70,9 @@ namespace ByteShelf.Server.Tests.Invalidation
         [MemberData(nameof(ShelfScopedTypes))]
         public void For_Purged_MakesTheSameViewsStaleForEveryShelf(string entityType)
         {
-            InvalidationEvent[] withState = ChangeLogInvalidations.For(Entry(entityType, ChangePayload.Serialize(ChangeStates.For(entityType, ShelfId)))).ToArray();
+            InvalidationEvent[] withState = For(Entry(entityType, ChangePayload.Serialize(ChangeStates.For(entityType, ShelfId)))).ToArray();
 
-            IEnumerable<InvalidationEvent> purged = ChangeLogInvalidations.For(Entry(entityType, payload: null));
+            IEnumerable<InvalidationEvent> purged = For(Entry(entityType, payload: null));
 
             Assert.Equal(withState.Select(invalidation => new InvalidationEvent(invalidation.Resource, null)), purged);
         }
@@ -77,7 +80,7 @@ namespace ByteShelf.Server.Tests.Invalidation
         [Fact]
         public void For_Shelf_MakesEverythingAboutItStale()
         {
-            IEnumerable<InvalidationEvent> events = ChangeLogInvalidations.For(Entry(ChangeEntityType.Shelf, payload: null, entityId: ShelfId));
+            IEnumerable<InvalidationEvent> events = For(Entry(ChangeEntityType.Shelf, payload: null, entityId: ShelfId));
 
             Assert.Equal(
                 new[] { Event(InvalidationResources.Shelves), Event(InvalidationResources.ShelfContents, ShelfId), Event(InvalidationResources.ShelfAccess, ShelfId) },
@@ -87,7 +90,7 @@ namespace ByteShelf.Server.Tests.Invalidation
         [Fact]
         public void For_User_MakesTheUserListStale()
         {
-            IEnumerable<InvalidationEvent> events = ChangeLogInvalidations.For(Entry(ChangeEntityType.User, "{}"));
+            IEnumerable<InvalidationEvent> events = For(Entry(ChangeEntityType.User, "{}"));
 
             Assert.Equal(new[] { Event(InvalidationResources.Users) }, events);
         }
@@ -95,9 +98,90 @@ namespace ByteShelf.Server.Tests.Invalidation
         [Fact]
         public void For_UsersLogin_MakesNothingStale()
         {
-            IEnumerable<InvalidationEvent> events = ChangeLogInvalidations.For(Entry(ChangeEntityType.UserLogin, "{}"));
+            IEnumerable<InvalidationEvent> events = For(Entry(ChangeEntityType.UserLogin, "{}"));
 
             Assert.Empty(events);
+        }
+
+        [Fact]
+        public void For_DocumentAboutAFile_MakesItsShelfsContentsStale()
+        {
+            FilePluginMetadata document = FilePluginMetadata.Of("p", Guid.NewGuid(), 1, PluginDocument.Parse("{}"));
+            ChangeLogEntry entry = Entry(ChangeEntityType.FilePluginMetadata, ChangePayload.Serialize(document));
+
+            Assert.Equal(document.FileId, ChangeLogInvalidations.FileOf(entry));
+            Assert.Equal(
+                new[] { Event(InvalidationResources.ShelfContents, ShelfId) },
+                ChangeLogInvalidations.For(entry, ShelfId));
+        }
+
+        [Fact]
+        public void For_DocumentAboutAFileThatIsGone_MakesNothingStale()
+        {
+            FilePluginMetadata document = FilePluginMetadata.Of("p", Guid.NewGuid(), 1, PluginDocument.Parse("{}"));
+
+            Assert.Empty(For(Entry(ChangeEntityType.FilePluginMetadata, ChangePayload.Serialize(document))));
+        }
+
+        [Fact]
+        public void For_PurgedDocumentAboutAFile_MakesEveryShelfsContentsStale()
+        {
+            Assert.Equal(
+                new[] { Event(InvalidationResources.ShelfContents) },
+                For(Entry(ChangeEntityType.FilePluginMetadata, payload: null, action: ChangeAction.Purged)));
+        }
+
+        [Theory]
+        [InlineData(ChangeAction.Added)]
+        [InlineData(ChangeAction.Updated)]
+        public void For_DocumentStateForgottenForANewer_MakesNothingStale(string action)
+        {
+            ChangeLogEntry forgotten = Entry(ChangeEntityType.FilePluginMetadata, payload: null, action: action);
+
+            Assert.Null(ChangeLogInvalidations.FileOf(forgotten));
+            Assert.Empty(For(forgotten));
+        }
+
+        [Theory]
+        [InlineData(ChangeEntityType.ObjectMetadata)]
+        [InlineData(ChangeEntityType.ContentPluginMetadata)]
+        public void For_WhatWasReadFromContents_MakesNothingStale(string entityType)
+        {
+            Assert.Empty(For(Entry(entityType, "{}")));
+            Assert.Empty(For(Entry(entityType, payload: null)));
+        }
+
+        [Fact]
+        public async Task PublishAfterAsync_PluginDocumentsWritten_PublishesEachShelfsContents()
+        {
+            await using ServerTestHost host = await ServerTestHost.StartAsync();
+            List<ShelfFile> files = new List<ShelfFile>();
+            foreach (string shelf in new[] { "docs", "photos" })
+            {
+                await host.CreateShelfAsync(shelf);
+                files.Add(await host.PutAsAdminAsync(shelf, "/a.txt", "a"u8.ToArray(), "text/plain"));
+            }
+
+            long before = await host.Services.InTransactionAsync((provider, session) => provider.GetRequiredService<IChangeLogRepository>().GetLatestSequenceAsync(session));
+            foreach (ShelfFile file in files)
+            {
+                await host.Services.SetFileDocumentAsync(file.Id, "{}");
+            }
+
+            // One of the test's own, beside the server's, whose poll publishes the upload whenever it comes to it.
+            InMemoryInvalidationBroadcaster broadcaster = new InMemoryInvalidationBroadcaster();
+            using IInvalidationSubscription subscription = broadcaster.Subscribe("test")!;
+            using ChangeLogInvalidationPublisher publisher = new ChangeLogInvalidationPublisher(
+                host.Services.GetRequiredService<IServiceScopeFactory>(), broadcaster, TimeProvider.System, NullLogger<ChangeLogInvalidationPublisher>.Instance);
+            await publisher.PublishAfterAsync(before);
+
+            List<InvalidationEvent> published = new List<InvalidationEvent>();
+            while (subscription.Reader.TryRead(out InvalidationEvent? invalidation))
+            {
+                published.Add(invalidation);
+            }
+
+            Assert.Equal(files.Select(file => Event(InvalidationResources.ShelfContents, file.ShelfId)), published);
         }
 
         [Fact]
@@ -121,14 +205,19 @@ namespace ByteShelf.Server.Tests.Invalidation
             while (received != expected);
         }
 
-        private static ChangeLogEntry Entry(string entityType, string? payload, Guid? entityId = null)
+        private static IEnumerable<InvalidationEvent> For(ChangeLogEntry entry)
+        {
+            return ChangeLogInvalidations.For(entry, shelfOfFile: null);
+        }
+
+        private static ChangeLogEntry Entry(string entityType, string? payload, Guid? entityId = null, string? action = null)
         {
             return new ChangeLogEntry
             {
                 Sequence = 1,
                 EntityType = entityType,
                 EntityId = entityId ?? Guid.NewGuid(),
-                Action = payload == null ? ChangeAction.Purged : ChangeAction.Updated,
+                Action = action ?? (payload == null ? ChangeAction.Purged : ChangeAction.Updated),
                 Payload = payload,
                 CreatedAt = TestInstants.Now,
             };

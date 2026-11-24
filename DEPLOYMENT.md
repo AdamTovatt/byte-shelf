@@ -233,7 +233,8 @@ with the reason, 2 for wrong arguments. It starts nothing, needs no root and goe
 settings above. What it cannot tell is in
 [Plugins](ByteShelf.Server/Plugins/Plugins.md#loading-plugindiscovery-pluginloader): above all, whether
 the plugin works once running. One whose services break the server as it is built or started stops it
-from starting.
+from starting. One whose reader of files' contents cannot be made or fails shows that in the server's log
+alone: Settings lists it as loaded.
 
 ## Replicas
 

@@ -12,7 +12,9 @@ namespace ByteShelf.Server.Invalidation.Services
     /// </summary>
     public static class ChangeLogInvalidations
     {
-        public static IEnumerable<InvalidationEvent> For(ChangeLogEntry entry)
+        /// <param name="entry">The entry.</param>
+        /// <param name="shelfOfFile">The shelf of the file the entry names by its id alone (<see cref="FileOf"/>); null when it names none or the file is gone.</param>
+        public static IEnumerable<InvalidationEvent> For(ChangeLogEntry entry, Guid? shelfOfFile)
         {
             ArgumentNullException.ThrowIfNull(entry);
             switch (entry.EntityType)
@@ -47,12 +49,41 @@ namespace ByteShelf.Server.Invalidation.Services
                     yield return new InvalidationEvent(InvalidationResources.ShelfAccess);
                     break;
 
+                case ChangeEntityType.FilePluginMetadata when entry.Payload == null:
+                    // One that is gone names no file, so no shelf either. One whose state the log forgot for a
+                    // newer says nothing: the newer follows.
+                    if (entry.Action == ChangeAction.Purged)
+                    {
+                        yield return new InvalidationEvent(InvalidationResources.ShelfContents);
+                    }
+
+                    break;
+
+                case ChangeEntityType.FilePluginMetadata:
+                    // Listings carry fields of it, and search finds the file by them. A file gone since has
+                    // made its shelf's contents stale itself.
+                    if (shelfOfFile is Guid shelfId)
+                    {
+                        yield return new InvalidationEvent(InvalidationResources.ShelfContents, shelfId.ToString("D"));
+                    }
+
+                    break;
+
                 default:
                     // A user's logins (a password change) change nothing the web UI shows, and a key is
                     // shown only through its grants, which are logged beside it when it comes and goes.
-                    // Neither what was read from contents nor what plugins keep about files (Invalidation.md).
+                    // Nor does what was read from contents (Invalidation.md).
                     break;
             }
+        }
+
+        /// <summary>The file whose shelf <see cref="For"/> needs to know of for <paramref name="entry"/>; null for most, which name their own or none.</summary>
+        public static Guid? FileOf(ChangeLogEntry entry)
+        {
+            ArgumentNullException.ThrowIfNull(entry);
+            return entry is { EntityType: ChangeEntityType.FilePluginMetadata, Payload: not null }
+                ? ChangePayload.Deserialize<DocumentOwner>(entry.Payload).FileId
+                : null;
         }
 
         /// <summary>The shelf in the entry's state, or null once the entity is gone.</summary>
@@ -73,5 +104,8 @@ namespace ByteShelf.Server.Invalidation.Services
 
             return shelfId.ToString("D");
         }
+
+        /// <summary>The one part read here of a <see cref="Metadata.Models.FilePluginMetadata"/>, whose document may be large.</summary>
+        private sealed record DocumentOwner(Guid FileId);
     }
 }

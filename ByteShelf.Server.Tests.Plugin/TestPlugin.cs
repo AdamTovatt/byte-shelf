@@ -1,3 +1,4 @@
+using System.Globalization;
 using ByteShelf.Plugins;
 using ByteShelfCommon;
 using EasyReasy.EnvironmentVariables;
@@ -6,7 +7,9 @@ using Microsoft.Extensions.DependencyInjection;
 namespace ByteShelf.Server.Tests.Plugin
 {
     /// <summary>
-    /// Registers <see cref="PluginGreeting"/>, then throws if its folder holds <see cref="FailingFileName"/>
+    /// Registers <see cref="PluginGreeting"/> and, for every line of <see cref="ReadersFileName"/> in its folder,
+    /// <see cref="WordsReader"/> of the version and for the media types it names, or <see cref="NeedingReader"/>
+    /// if there is a <see cref="NeedingReaderFileName"/> (TestPlugins.AddReadingServerPlugin), then throws if its folder holds <see cref="FailingFileName"/>
     /// (TestPlugins.AddFailingServerPlugin), or if <see cref="NeededFileName"/> in it names a service that
     /// was not registered before it (TestPlugins.AddServerPluginNeeding).
     /// </summary>
@@ -15,6 +18,10 @@ namespace ByteShelf.Server.Tests.Plugin
         private const string FailingFileName = "fail-registration";
 
         private const string NeededFileName = "needed-service";
+
+        private const string ReadersFileName = "readers";
+
+        private const string NeedingReaderFileName = "needing-reader";
 
         public void Configure(IPluginBuilder builder)
         {
@@ -28,6 +35,21 @@ namespace ByteShelf.Server.Tests.Plugin
             if (File.Exists(needed) && !services.Any(descriptor => descriptor.ServiceType.FullName == File.ReadAllText(needed)))
             {
                 throw new InvalidOperationException($"There is no {File.ReadAllText(needed)}.");
+            }
+
+            string readers = Path.Combine(folder, ReadersFileName);
+            foreach (string line in File.Exists(readers) ? File.ReadAllLines(readers) : [])
+            {
+                string[] words = line.Split(' ');
+                int version = int.Parse(words[0], CultureInfo.InvariantCulture);
+                if (File.Exists(Path.Combine(folder, NeedingReaderFileName)))
+                {
+                    builder.AddReader<NeedingReader>(version, words[1..]);
+                }
+                else
+                {
+                    builder.AddReader<WordsReader>(version, words[1..]);
+                }
             }
 
             // As a plugin that calls out would; it adds to registrations the server has made already.

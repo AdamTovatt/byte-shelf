@@ -2,7 +2,6 @@ using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Replication;
 using ByteShelf.Server.Shared;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace ByteShelf.Server.Metadata
 {
@@ -16,7 +15,7 @@ namespace ByteShelf.Server.Metadata
 
             services.AddSingleton<MetadataReadingSignal>();
             services.AddSingleton<ContentReadRunner>();
-            services.TryAddSingleton<IMetadataPlugins, NoMetadataPlugins>();
+            services.AddSingleton<IMetadataPlugins, NoMetadataPlugins>();
             services.AddScoped<IObjectMetadataRepository, ObjectMetadataRepository>();
             services.AddScoped<IContentPluginMetadataRepository, ContentPluginMetadataRepository>();
             services.AddScoped<IFilePluginMetadataRepository, FilePluginMetadataRepository>();

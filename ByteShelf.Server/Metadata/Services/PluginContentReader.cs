@@ -31,7 +31,7 @@ namespace ByteShelf.Server.Metadata.Services
 
         public override async Task<RecordReading> ReadAsync(Stream contents, CancellationToken cancellationToken)
         {
-            JsonObject? found = await _reader.ReadAsync(contents, cancellationToken);
+            JsonObject? found = await _reader.DocumentReader.ReadAsync(contents, cancellationToken);
             return Record(found == null ? null : PluginDocument.Parse(found.ToJsonString()));
         }
 

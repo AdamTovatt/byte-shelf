@@ -59,6 +59,24 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<IReadOnlyDictionary<Guid, Guid>> GetShelfIdsAsync(IReadOnlyCollection<Guid> ids, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string idsJson = GuidTypeHandler.ToJsonArray(ids);
+                string query = $@"
+                    SELECT file.id, file.shelf_id AS {nameof(FileEntity.ShelfId)}
+                    FROM json_each(@{nameof(idsJson)}) AS asked
+                    JOIN file ON file.id = asked.value";
+
+                IEnumerable<FileEntity> entities = await dbSession.Connection.QueryAsync<FileEntity>(
+                    query, new { idsJson }, transaction: dbSession.Transaction);
+
+                return (IReadOnlyDictionary<Guid, Guid>)entities.ToDictionary(entity => entity.Id, entity => entity.ShelfId);
+            }, session);
+        }
+
+        /// <inheritdoc />
         public async Task<FileRecord?> GetLiveByNameAsync(Guid directoryId, string name, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>
@@ -124,9 +142,7 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <inheritdoc />
         public async Task<int> SoftDeleteInDirectoriesAsync(IReadOnlyList<Guid> directoryIds, Guid deletionId, DateTimeOffset deletedAt, IDbSession session)
         {
-            // One JSON array rather than a parameter per id, which a large subtree would run out of. The
-            // ids are written as the Guid type handler stores them.
-            string directoryIdsJson = JsonSerializer.Serialize(directoryIds.Select(id => id.ToString("D")));
+            string directoryIdsJson = GuidTypeHandler.ToJsonArray(directoryIds);
 
             string query = $@"
                 UPDATE file

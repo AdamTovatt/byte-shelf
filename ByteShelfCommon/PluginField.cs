@@ -18,17 +18,17 @@ namespace ByteShelfCommon
             ArgumentNullException.ThrowIfNull(name);
             if (!IsName(name))
             {
-                throw new ArgumentException($"'{name}' is not a field's name: a letter, then letters, digits, hyphens and underscores, {MaxNameLength} characters at most.", nameof(name));
+                throw new ArgumentException($"'{name}' is not a field's name: a letter, then letters, digits, hyphens and underscores, {MaxNameLength} characters at most.");
             }
 
             if (string.IsNullOrWhiteSpace(label))
             {
-                throw new ArgumentException($"The field '{name}' has no label.", nameof(label));
+                throw new ArgumentException($"The field '{name}' has no label.");
             }
 
             if (searched && kind != PluginFieldKind.Text)
             {
-                throw new ArgumentException($"The field '{name}' is searched by free text, which only a text field can be.", nameof(searched));
+                throw new ArgumentException($"The field '{name}' is searched by free text, which only a text field can be.");
             }
 
             Name = name;

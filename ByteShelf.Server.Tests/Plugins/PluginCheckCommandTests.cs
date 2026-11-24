@@ -40,6 +40,15 @@ namespace ByteShelf.Server.Tests.Plugins
             Assert.Equal("Registering its services failed: There is no Missing.", _errors.ToString().Trim());
         }
 
+        [Theory]
+        [InlineData("'Text/plain' is not a lowercase media type, such as image/png, or a family of them, such as image/*.", "1 Text/plain")]
+        [InlineData("A plugin has one reader at most.", "1 text/plain", "1 text/html")]
+        public void Run_AReaderThatIsNotAllowed_IsOneWithTheReason(string because, params string[] readers)
+        {
+            Assert.Equal(1, Run(_plugins.AddReadingServerPlugin("reading", readers)));
+            Assert.Equal($"Registering its services failed: {because}", _errors.ToString().Trim());
+        }
+
         [Fact]
         public void Run_AnotherApi_IsOneWithTheReason()
         {

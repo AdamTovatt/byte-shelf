@@ -1,11 +1,14 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 import { FormDialog } from './FormDialog';
 import { useFileMetadata } from '../hooks/useShelfQueries';
 import { formatBytes, formatDuration, formatTime } from '../lib/format';
-import type { FileMetadata, ShelfFile } from '../services/shelfService';
+import type { FileMetadata, PluginFieldValue, PluginFileMetadata, ShelfFile } from '../services/shelfService';
 import { getErrorMessage } from '../ui';
 
-/** A file's record, and what the server read from its contents: when and where it was taken, the camera, its length, a PDF's title and pages. */
+/**
+ * A file's record, what the server read from its contents (when and where it was taken, the camera, its length,
+ * a PDF's title and pages), and the fields plugins declare, under each plugin's name.
+ */
 export function FileDetailsDialog({ shelf, file, onClose }: { shelf: string; file: ShelfFile; onClose: () => void }) {
   const metadata = useFileMetadata(shelf, file.id);
 
@@ -20,6 +23,7 @@ export function FileDetailsDialog({ shelf, file, onClose }: { shelf: string; fil
         <Detail label="SHA-256"><span className="break-all font-mono">{file.sha256}</span></Detail>
       </dl>
       <p className="text-body-sm text-muted">{note(file, metadata.data, metadata.error)}</p>
+      {Object.entries(metadata.data?.plugins ?? {}).map(([id, plugin]) => plugin.fields.length > 0 && <PluginDetails key={id} plugin={plugin} />)}
     </FormDialog>
   );
 }
@@ -38,9 +42,35 @@ function metadataDetails(metadata: FileMetadata): ReactNode {
   );
 }
 
+/** The declared fields of one plugin that have a value for the file, in the order it declares them. */
+function PluginDetails({ plugin }: { plugin: PluginFileMetadata }) {
+  const heading = useId();
+  return (
+    <section aria-labelledby={heading}>
+      <h3 id={heading} className="mb-1.5 text-body-md text-fg">{plugin.name}</h3>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-body-sm">
+        {plugin.fields.map((field) => (
+          <Detail key={field.name} label={field.label}><div className="max-h-40 overflow-y-auto whitespace-pre-wrap break-words">{formatValue(field.value)}</div></Detail>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function formatValue({ text, number, date, flag }: PluginFieldValue): string {
+  if (text != null) return text;
+  if (number != null) return String(number);
+  if (date != null) return formatTime(date);
+  return flag ? 'Yes' : 'No';
+}
+
 /** What the lines above leave unsaid about the contents: why there is nothing read from them, or that there is still to be. */
 function note(file: ShelfFile, metadata: FileMetadata | undefined, error: Error | null): string {
-  if (file.encrypted) return 'Encrypted: the server never reads its contents.';
+  if (file.encrypted) {
+    const unread = 'Encrypted: the server never reads its contents.';
+    return error ? `${unread} Could not load what plugins keep about it: ${getErrorMessage(error, 'the server did not answer.')}` : unread;
+  }
+
   if (error) return `Could not load what its contents say: ${getErrorMessage(error, 'the server did not answer.')}`;
   if (!metadata) return 'Loading what its contents say…';
   if (metadata.readAt) return `Contents read ${formatTime(metadata.readAt)}.`;

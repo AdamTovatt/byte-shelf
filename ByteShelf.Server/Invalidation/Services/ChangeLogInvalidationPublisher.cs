@@ -1,6 +1,7 @@
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Invalidation.Models;
+using ByteShelf.Server.Storage.Repositories;
 
 namespace ByteShelf.Server.Invalidation.Services
 {
@@ -44,7 +45,7 @@ namespace ByteShelf.Server.Invalidation.Services
                     // to a web UI that connects after it. Inside the try, so a failed read is tried again
                     // like a failed poll rather than stopping the host.
                     published = published == null
-                        ? await ReadAsync(repository => repository.GetLatestSequenceAsync())
+                        ? await ReadAsync<IChangeLogRepository, long>(repository => repository.GetLatestSequenceAsync())
                         : await PublishAfterAsync(published.Value);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -67,13 +68,17 @@ namespace ByteShelf.Server.Invalidation.Services
             while (true)
             {
                 long after = published;
-                IReadOnlyList<ChangeLogEntry> entries = await ReadAsync(repository => repository.GetAfterAsync(after, BatchSize));
+                IReadOnlyList<ChangeLogEntry> entries = await ReadAsync<IChangeLogRepository, IReadOnlyList<ChangeLogEntry>>(repository => repository.GetAfterAsync(after, BatchSize));
                 if (entries.Count == 0)
                 {
                     return published;
                 }
 
-                foreach (InvalidationEvent invalidation in entries.SelectMany(ChangeLogInvalidations.For).Distinct())
+                List<(ChangeLogEntry Entry, Guid? File)> changes = entries.Select(entry => (entry, ChangeLogInvalidations.FileOf(entry))).ToList();
+                IReadOnlyDictionary<Guid, Guid> shelves = await ReadShelvesAsync(changes.Select(change => change.File).OfType<Guid>().Distinct().ToList());
+                IEnumerable<InvalidationEvent> invalidations = changes.SelectMany(change =>
+                    ChangeLogInvalidations.For(change.Entry, change.File is Guid file && shelves.TryGetValue(file, out Guid shelf) ? shelf : null));
+                foreach (InvalidationEvent invalidation in invalidations.Distinct())
                 {
                     _broadcaster.Publish(invalidation);
                 }
@@ -82,10 +87,19 @@ namespace ByteShelf.Server.Invalidation.Services
             }
         }
 
-        private async Task<T> ReadAsync<T>(Func<IChangeLogRepository, Task<T>> read)
+        /// <summary>The shelf of each of <paramref name="files"/> there is; most polls have none to ask about.</summary>
+        private async Task<IReadOnlyDictionary<Guid, Guid>> ReadShelvesAsync(IReadOnlyCollection<Guid> files)
+        {
+            return files.Count == 0
+                ? new Dictionary<Guid, Guid>()
+                : await ReadAsync<IFileRepository, IReadOnlyDictionary<Guid, Guid>>(repository => repository.GetShelfIdsAsync(files));
+        }
+
+        private async Task<T> ReadAsync<TRepository, T>(Func<TRepository, Task<T>> read)
+            where TRepository : notnull
         {
             using IServiceScope scope = _scopeFactory.CreateScope();
-            return await read(scope.ServiceProvider.GetRequiredService<IChangeLogRepository>());
+            return await read(scope.ServiceProvider.GetRequiredService<TRepository>());
         }
     }
 }

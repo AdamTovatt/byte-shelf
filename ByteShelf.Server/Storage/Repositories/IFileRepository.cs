@@ -10,6 +10,9 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <summary>The file with <paramref name="id"/>, live or in the trash.</summary>
         Task<FileRecord?> GetByIdAsync(Guid id, IDbSession? session = null);
 
+        /// <summary>The shelf of each of the files <paramref name="ids"/> there is, live or in the trash, by the file's id.</summary>
+        Task<IReadOnlyDictionary<Guid, Guid>> GetShelfIdsAsync(IReadOnlyCollection<Guid> ids, IDbSession? session = null);
+
         /// <summary>The live file called <paramref name="name"/> directly inside <paramref name="directoryId"/>.</summary>
         Task<FileRecord?> GetLiveByNameAsync(Guid directoryId, string name, IDbSession? session = null);
 

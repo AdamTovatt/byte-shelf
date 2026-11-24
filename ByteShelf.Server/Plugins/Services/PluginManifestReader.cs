@@ -1,12 +1,12 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Shared.IO;
+using ByteShelfCommon;
 
 namespace ByteShelf.Server.Plugins.Services
 {
     /// <summary>Reads what a folder's <c>plugin.json</c> says, loading nothing.</summary>
-    public static partial class PluginManifestReader
+    public static class PluginManifestReader
     {
         public const string FileName = "plugin.json";
 
@@ -39,7 +39,7 @@ namespace ByteShelf.Server.Plugins.Services
                 return Unreadable(folder, $"Its {FileName} is not a JSON object.");
             }
 
-            string? id = Text(json, "id") is { } given && IdPattern().IsMatch(given) ? given : null;
+            string? id = Text(json, "id") is { } given && PluginDeclaration.IsId(given) ? given : null;
             string? name = Text(json, "name");
             string? version = Text(json, "version");
             UnreadablePlugin Refused(string reason) => new UnreadablePlugin(new SkippedPlugin { Folder = folder, Id = id, Name = name, Version = version, Reason = reason });
@@ -71,9 +71,19 @@ namespace ByteShelf.Server.Plugins.Services
                 return Refused("It has no version.");
             }
 
+            PluginDeclaration declaration;
+            try
+            {
+                declaration = new PluginDeclaration(id, name, Fields(json));
+            }
+            catch (Exception exception) when (exception is ArgumentException or PluginRefusedException)
+            {
+                return Refused(exception.Message);
+            }
+
             if (!json.TryGetProperty("serverAssembly", out _))
             {
-                return new ReadablePlugin(folder, new PluginManifest(id, name, version, null));
+                return new ReadablePlugin(folder, new PluginManifest(declaration, version, null));
             }
 
             if (Text(json, "serverAssembly") is not { } relative)
@@ -88,8 +98,58 @@ namespace ByteShelf.Server.Plugins.Services
             }
 
             return File.Exists(assembly)
-                ? new ReadablePlugin(folder, new PluginManifest(id, name, version, assembly))
+                ? new ReadablePlugin(folder, new PluginManifest(declaration, version, assembly))
                 : Refused($"Its server assembly {relative} is not there.");
+        }
+
+        /// <summary>The fields the plugin declares; none when the file does not say.</summary>
+        /// <exception cref="ArgumentException">One is not allowed.</exception>
+        /// <exception cref="PluginRefusedException">They are not written as fields are.</exception>
+        private static IReadOnlyList<PluginField> Fields(JsonElement json)
+        {
+            if (!json.TryGetProperty("fields", out JsonElement fields))
+            {
+                return [];
+            }
+
+            return fields.ValueKind == JsonValueKind.Array && fields.EnumerateArray().All(field => field.ValueKind == JsonValueKind.Object)
+                ? fields.EnumerateArray().Select(Field).ToList()
+                : throw new PluginRefusedException("Its fields must be a list of objects.");
+        }
+
+        private static PluginField Field(JsonElement json)
+        {
+            string name = Text(json, "name") ?? throw new PluginRefusedException("One of its fields has no name.");
+            return new PluginField(
+                name,
+                Text(json, "label") ?? string.Empty,
+                Choice<PluginFieldKind>(json, name, "kind"),
+                Choice<PluginDocumentSubject>(json, name, "document"),
+                Flag(json, name, "searched"),
+                Flag(json, name, "listed"));
+        }
+
+        /// <summary>The value the text under <paramref name="property"/> of the field <paramref name="field"/> names, written as the API writes it.</summary>
+        private static T Choice<T>(JsonElement json, string field, string property)
+            where T : struct, Enum
+        {
+            Dictionary<string, T> choices = Enum.GetValues<T>().ToDictionary(value => JsonSerializer.SerializeToElement(value).GetString()!, StringComparer.Ordinal);
+            return Text(json, property) is { } text && choices.TryGetValue(text, out T choice)
+                ? choice
+                : throw new PluginRefusedException($"The {property} of its field '{field}' must be one of: {string.Join(", ", choices.Keys)}.");
+        }
+
+        /// <summary>What <paramref name="property"/> of the field <paramref name="field"/> says; false when it is left out.</summary>
+        private static bool Flag(JsonElement json, string field, string property)
+        {
+            if (!json.TryGetProperty(property, out JsonElement value))
+            {
+                return false;
+            }
+
+            return value.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? value.GetBoolean()
+                : throw new PluginRefusedException($"The {property} of its field '{field}' must be true or false.");
         }
 
         private static UnreadablePlugin Unreadable(string folder, string reason)
@@ -104,8 +164,5 @@ namespace ByteShelf.Server.Plugins.Services
                 ? value.GetString()
                 : null;
         }
-
-        [GeneratedRegex(@"^[a-z0-9-]+\z", RegexOptions.CultureInvariant)]
-        private static partial Regex IdPattern();
     }
 }

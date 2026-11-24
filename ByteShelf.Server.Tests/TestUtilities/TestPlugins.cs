@@ -25,10 +25,11 @@ namespace ByteShelf.Server.Tests.TestUtilities
         public string Path { get; }
 
         /// <summary>A <c>plugin.json</c> this server takes.</summary>
-        public static string Manifest(string id, string? serverAssembly = null, int? api = null)
+        public static string Manifest(string id, string? serverAssembly = null, int? api = null, string? fields = null)
         {
             string assembly = serverAssembly == null ? string.Empty : $", \"serverAssembly\": \"{serverAssembly}\"";
-            return $$"""{ "id": "{{id}}", "name": "Test {{id}}", "version": "1.2.3", "api": {{api ?? Server.Plugins.PluginApi.Version}}{{assembly}} }""";
+            string declared = fields == null ? string.Empty : $", \"fields\": {fields}";
+            return $$"""{ "id": "{{id}}", "name": "Test {{id}}", "version": "1.2.3", "api": {{api ?? Server.Plugins.PluginApi.Version}}{{assembly}}{{declared}} }""";
         }
 
         /// <summary>A path beside <see cref="Path"/>, where no plugin is looked for.</summary>
@@ -51,9 +52,9 @@ namespace ByteShelf.Server.Tests.TestUtilities
         }
 
         /// <summary>Makes a plugin with the built server assembly, and answers its folder.</summary>
-        public string AddServerPlugin(string id)
+        public string AddServerPlugin(string id, string? fields = null)
         {
-            string folder = Add(id, Manifest(id, ServerAssemblyName));
+            string folder = Add(id, Manifest(id, ServerAssemblyName, fields: fields));
             foreach (string file in Directory.EnumerateFiles(BuiltPlugin))
             {
                 File.Copy(file, System.IO.Path.Combine(folder, System.IO.Path.GetFileName(file)));
@@ -67,6 +68,17 @@ namespace ByteShelf.Server.Tests.TestUtilities
         {
             string folder = AddServerPlugin(id);
             Write(folder, "fail-registration", string.Empty);
+            return folder;
+        }
+
+        /// <summary>
+        /// Makes a plugin that adds each of <paramref name="readers"/>, a version and the media types it takes as
+        /// "1 text/plain text/html", whose documents have the field "words", and answers its folder.
+        /// </summary>
+        public string AddReadingServerPlugin(string id, params string[] readers)
+        {
+            string folder = AddServerPlugin(id, """[{ "name": "words", "label": "Words", "kind": "text", "document": "contents" }]""");
+            Write(folder, "readers", string.Join('\n', readers));
             return folder;
         }
 

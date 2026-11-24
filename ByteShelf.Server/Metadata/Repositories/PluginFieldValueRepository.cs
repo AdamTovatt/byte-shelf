@@ -2,6 +2,7 @@ using System.Data.Common;
 using System.Text.Json;
 using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Metadata.Services;
+using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Storage.Models;
 using ByteShelfCommon;
 using ByteShelfCommon.Serialization;
@@ -41,9 +42,7 @@ namespace ByteShelf.Server.Metadata.Repositories
                 return new Dictionary<Guid, ListedFields>();
             }
 
-            // One JSON array rather than a parameter per id, as a long listing would run out of them. The ids
-            // are written as the Guid type handler stores them.
-            string idsJson = JsonSerializer.Serialize(files.Select(file => file.Id.ToString("D")));
+            string idsJson = GuidTypeHandler.ToJsonArray(files.Select(file => file.Id));
             string query = $@"
                 SELECT file.id AS {nameof(ListedEntity.FileId)}, value.plugin_id AS {nameof(ListedEntity.PluginId)}, value.field, value.listed
                 FROM json_each(@{nameof(idsJson)}) AS id

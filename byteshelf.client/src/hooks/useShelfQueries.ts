@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { QUERY_RETRIES } from '../lib/queryClient';
 import { queryKeys } from '../lib/queryKeys';
 import type { SearchCriteria } from '../lib/searchFilters';
@@ -32,7 +32,17 @@ import { joinPath, parentPath } from '../lib/shelfPaths';
 import { getErrorMessage } from '../ui';
 
 export function useShelves() {
-  return useQuery({ queryKey: queryKeys.shelves.list, queryFn: fetchShelves });
+  return useQuery(shelvesQuery);
+}
+
+const shelvesQuery = { queryKey: queryKeys.shelves.list, queryFn: fetchShelves };
+
+/** The name the shelf `id` has now. */
+export async function shelfName(queryClient: QueryClient, id: string): Promise<string> {
+  const shelves = await queryClient.fetchQuery(shelvesQuery);
+  const shelf = shelves.find((each) => each.id === id);
+  if (!shelf) throw new Error('The file is on no shelf you reach.');
+  return shelf.name;
 }
 
 export function useShelf(shelf: string) {
@@ -143,8 +153,9 @@ function unlessNotThere(failures: number, error: Error): boolean {
 }
 
 /**
- * What the server read from a file's contents, fetched afresh each time it is asked for: reading it
- * is not in the live updates, which would refetch every open listing for each file read.
+ * What the server read from a file's contents and what plugins keep about it, fetched afresh each time it is
+ * asked for: what is read is not in the live updates, which would refetch every open listing for each file
+ * read. What plugins keep about the file itself is.
  */
 export function useFileMetadata(shelf: string, id: string) {
   return useQuery({

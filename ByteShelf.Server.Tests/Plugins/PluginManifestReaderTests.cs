@@ -1,6 +1,7 @@
 using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Plugins.Services;
 using ByteShelf.Server.Tests.TestUtilities;
+using ByteShelfCommon;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ByteShelf.Server.Tests.Plugins
@@ -18,7 +19,53 @@ namespace ByteShelf.Server.Tests.Plugins
 
             PluginCandidate plugin = PluginManifestReader.Read(path);
 
-            Assert.Equal(new ReadablePlugin(path, new PluginManifest("my-plugin2", "My plugin", "1.0", Path.Combine(path, "server", "My.dll"))), plugin);
+            Assert.Equal(new ReadablePlugin(path, new PluginManifest(new PluginDeclaration("my-plugin2", "My plugin"), "1.0", Path.Combine(path, "server", "My.dll"))), plugin);
+        }
+
+        [Fact]
+        public void Read_DeclaredFields_TakesEachInTheOrderGiven()
+        {
+            string path = _plugins.Add("notes", TestPlugins.Manifest("notes", fields: """
+                [
+                    { "name": "caption", "label": "Caption", "kind": "text", "document": "file", "searched": true, "listed": true, "more": 1 },
+                    { "name": "width", "label": "Width", "kind": "number", "document": "contents", "searched": false, "listed": false },
+                    { "name": "due", "label": "Due", "kind": "date", "document": "file", "listed": true },
+                    { "name": "done", "label": "Done", "kind": "flag", "document": "file" }
+                ]
+                """));
+
+            ReadablePlugin plugin = Assert.IsType<ReadablePlugin>(PluginManifestReader.Read(path));
+
+            Assert.Equal(
+                [
+                    new PluginField("caption", "Caption", PluginFieldKind.Text, PluginDocumentSubject.File, searched: true, listed: true),
+                    new PluginField("width", "Width", PluginFieldKind.Number, PluginDocumentSubject.Contents),
+                    new PluginField("due", "Due", PluginFieldKind.Date, PluginDocumentSubject.File, listed: true),
+                    new PluginField("done", "Done", PluginFieldKind.Flag, PluginDocumentSubject.File),
+                ],
+                plugin.Manifest.Declaration.Fields);
+        }
+
+        [Theory]
+        [InlineData("""{}""", "Its fields must be a list of objects.")]
+        [InlineData("""null""", "Its fields must be a list of objects.")]
+        [InlineData("""["caption"]""", "Its fields must be a list of objects.")]
+        [InlineData("""[{ "label": "A", "kind": "text", "document": "file" }]""", "One of its fields has no name.")]
+        [InlineData("""[{ "name": "a b", "label": "A", "kind": "text", "document": "file" }]""", "'a b' is not a field's name: a letter, then letters, digits, hyphens and underscores, 64 characters at most.")]
+        [InlineData("""[{ "name": "a", "label": 1, "kind": "text", "document": "file" }]""", "The field 'a' has no label.")]
+        [InlineData("""[{ "name": "a", "label": "A", "document": "file" }]""", "The kind of its field 'a' must be one of: text, number, date, flag.")]
+        [InlineData("""[{ "name": "a", "label": "A", "kind": "Text", "document": "file" }]""", "The kind of its field 'a' must be one of: text, number, date, flag.")]
+        [InlineData("""[{ "name": "a", "label": "A", "kind": "0", "document": "file" }]""", "The kind of its field 'a' must be one of: text, number, date, flag.")]
+        [InlineData("""[{ "name": "a", "label": "A", "kind": "text" }]""", "The document of its field 'a' must be one of: contents, file.")]
+        [InlineData("""[{ "name": "a", "label": "A", "kind": "text", "document": "file", "searched": "true" }]""", "The searched of its field 'a' must be true or false.")]
+        [InlineData("""[{ "name": "a", "label": "A", "kind": "text", "document": "file", "listed": null }]""", "The listed of its field 'a' must be true or false.")]
+        [InlineData("""[{ "name": "a", "label": "A", "kind": "flag", "document": "file", "searched": true }]""", "The field 'a' is searched by free text, which only a text field can be.")]
+        [InlineData("""[{ "name": "a", "label": "A", "kind": "text", "document": "file" }, { "name": "a", "label": "B", "kind": "flag", "document": "contents" }]""", "The plugin 'notes' declares the field 'a' twice.")]
+        public void Read_DeclaredFieldsThatAreNotValid_SaysWhyAndWhichPlugin(string fields, string because)
+        {
+            UnreadablePlugin plugin = Assert.IsType<UnreadablePlugin>(PluginManifestReader.Read(_plugins.Add("notes", TestPlugins.Manifest("notes", fields: fields))));
+
+            Assert.Equal(("notes", because), (plugin.Skipped.Id, plugin.Skipped.Reason));
         }
 
         [Theory]
@@ -26,12 +73,12 @@ namespace ByteShelf.Server.Tests.Plugins
         [InlineData("", "could not be read")]
         [InlineData("[]", "not a JSON object")]
         [InlineData("""{ "id": "a", "name": "\ud800", "version": "1", "api": 1 }""", "could not be read")]
-        [InlineData("""{ "name": "A", "version": "1", "api": 1 }""", "id")]
-        [InlineData("""{ "id": "", "name": "A", "version": "1", "api": 1 }""", "id")]
-        [InlineData("""{ "id": "My", "name": "A", "version": "1", "api": 1 }""", "id")]
-        [InlineData("""{ "id": "../a", "name": "A", "version": "1", "api": 1 }""", "id")]
-        [InlineData("""{ "id": "a\n", "name": "A", "version": "1", "api": 1 }""", "id")]
-        [InlineData("""{ "id": 7, "name": "A", "version": "1", "api": 1 }""", "id")]
+        [InlineData("""{ "name": "A", "version": "1", "api": 1 }""", "Its id must be")]
+        [InlineData("""{ "id": "", "name": "A", "version": "1", "api": 1 }""", "Its id must be")]
+        [InlineData("""{ "id": "My", "name": "A", "version": "1", "api": 1 }""", "Its id must be")]
+        [InlineData("""{ "id": "../a", "name": "A", "version": "1", "api": 1 }""", "Its id must be")]
+        [InlineData("""{ "id": "a\n", "name": "A", "version": "1", "api": 1 }""", "Its id must be")]
+        [InlineData("""{ "id": 7, "name": "A", "version": "1", "api": 1 }""", "Its id must be")]
         [InlineData("""{ "id": "a", "name": "A", "version": "1" }""", "api must")]
         [InlineData("""{ "id": "a", "name": "A", "version": "1", "api": "1" }""", "api must")]
         [InlineData("""{ "id": "a", "name": "A", "version": "1", "api": 1.5 }""", "api must")]

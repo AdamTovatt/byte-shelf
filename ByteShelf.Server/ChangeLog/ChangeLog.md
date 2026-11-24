@@ -3,14 +3,15 @@
 A numbered record of every change to shelves, directories, files, users and their logins and
 passkeys, shelf grants, shelf keys and their grants, what was read from files' contents and what
 plugins keep about files ([Metadata](../Metadata/Metadata.md)), written for replicas to follow. Each
-row holds the entity's type and id, a descriptive action, and the entity's whole state afterwards as
-JSON (`null` once the entity is gone). Applying a row is an upsert or a delete by id, so applying it
-twice is harmless.
+row holds the entity's type and id, the action, and the entity's whole state afterwards as JSON
+(`null` once the entity is gone). A replica looks at the state alone: applying a row is an upsert or a
+delete by id, so applying it twice is harmless. Live updates look at the action too, which tells a removal
+from a state forgotten as below ([Invalidation](../Invalidation/Invalidation.md)).
 
 What was read from contents, by the server or a plugin's reader, and what a plugin keeps about a file are
 the kinds of entity whose earlier states the log forgets when one changes or is removed
 (`ChangeEntityType.ForgetsEarlierStates`): its earlier entries' payloads are blanked in the transaction that
-logs the new one, so each reads as a removal, and a replica that replays one meets the newest after it. A
+logs the new one, so a replica takes each for a removal, and one that replays one meets the newest after it. A
 photo encrypted in place loses its row at once, and its position and camera must not stay in the log, on the
 primary or a replica, for the compaction window below. A plugin's document may be 64 KiB and written any
 number of times, so its earlier states would grow the log without a bound.

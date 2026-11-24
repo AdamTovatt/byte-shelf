@@ -1,8 +1,10 @@
+using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Plugins.Controllers;
 using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Plugins.Services;
 using ByteShelf.Server.Shared.StaticFiles;
 using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.FileProviders;
 
 namespace ByteShelf.Server.Plugins
@@ -18,12 +20,13 @@ namespace ByteShelf.Server.Plugins
 
         /// <summary>
         /// Loads the plugins under <paramref name="pluginsPath"/>, none when it is null, adding their
-        /// registrations to the server's own, which must all be there.
+        /// registrations to the server's own, which must all be there, and has files' metadata know them.
         /// </summary>
         public static void LoadPlugins(this IMvcBuilder mvc, string? pluginsPath, ILogger logger)
         {
             PluginCatalog catalog = PluginLoader.LoadAll(PluginDiscovery.Find(pluginsPath, logger), mvc.Services, mvc.PartManager, logger);
             mvc.Services.AddSingleton<IPluginCatalog>(catalog);
+            mvc.Services.Replace(ServiceDescriptor.Singleton<IMetadataPlugins, LoadedMetadataPlugins>());
         }
 
         /// <summary>

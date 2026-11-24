@@ -13,6 +13,8 @@ export type FileSearchResults = components['schemas']['FileSearchResults'];
 export type DuplicateSearchResults = components['schemas']['DuplicateSearchResults'];
 export type DuplicateGroup = components['schemas']['DuplicateGroup'];
 export type FileMetadata = components['schemas']['FileMetadata'];
+export type PluginFileMetadata = components['schemas']['PluginFileMetadata'];
+export type PluginFieldValue = components['schemas']['PluginFieldValue'];
 
 /**
  * A directory or a file in a listing, as the shelf page and its dialogs act on it. A directory
@@ -87,6 +89,23 @@ export function fetchFile(shelf: string, id: string): Promise<ShelfFile> {
 /** What the server read from a file's contents; `readAt` is null until it has, and for good when `readable` is false (an encrypted file, or a type it does not read). */
 export function fetchFileMetadata(shelf: string, id: string): Promise<FileMetadata> {
   return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/files/metadata', { params: { ...shelfPath(shelf), query: { id } } }));
+}
+
+/**
+ * Writes a plugin's document about a file over the version `expectedVersion`, null for the first, and removes
+ * it for a null `document`; refused with 409 when another version is there.
+ */
+export function setPluginDocument(
+  shelf: string,
+  id: string,
+  plugin: string,
+  document: Record<string, unknown> | null,
+  expectedVersion: number | null,
+): Promise<PluginFileMetadata> {
+  return unwrapResponse(apiClient.PUT('/api/shelves/{shelf}/files/plugin-metadata', {
+    params: { ...shelfPath(shelf), query: { id, plugin } },
+    body: { document, expectedVersion },
+  }));
 }
 
 /** Sets a file's description; null or blank removes it. */

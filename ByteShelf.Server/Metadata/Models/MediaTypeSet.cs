@@ -22,7 +22,7 @@ namespace ByteShelf.Server.Metadata.Models
             {
                 if (!Pattern().IsMatch(pattern))
                 {
-                    throw new ArgumentException($"'{pattern}' is not a lowercase media type, such as image/png, or a family of them, such as image/*.", nameof(patterns));
+                    throw new ArgumentException($"'{pattern}' is not a lowercase media type, such as image/png, or a family of them, such as image/*.");
                 }
 
                 checkedPatterns.Add(MediaTypePattern.Of(pattern));

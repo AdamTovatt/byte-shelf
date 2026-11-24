@@ -130,7 +130,7 @@ namespace ByteShelf.Server.Tests.Metadata
 
         private PluginContentReader Reader(TestDocumentReader reader, string plugin = TestPluginMetadata.Plugin)
         {
-            return new PluginContentReader(plugin, new MetadataPluginReader(reader), Services.GetRequiredService<IContentPluginMetadataRepository>());
+            return new PluginContentReader(plugin, reader.AsPluginReader(), Services.GetRequiredService<IContentPluginMetadataRepository>());
         }
 
         private async Task<string> StoreAFileAsync()

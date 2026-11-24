@@ -10,7 +10,7 @@ namespace ByteShelfCommon
         {
             if (!IsId(id))
             {
-                throw new ArgumentException($"'{id}' is not a plugin's id: lowercase letters, digits and hyphens.", nameof(id));
+                throw new ArgumentException($"'{id}' is not a plugin's id: lowercase letters, digits and hyphens.");
             }
 
             ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -21,7 +21,7 @@ namespace ByteShelfCommon
             string? twice = Fields.GroupBy(field => field.Name, StringComparer.Ordinal).FirstOrDefault(group => group.Count() > 1)?.Key;
             if (twice != null)
             {
-                throw new ArgumentException($"The plugin '{id}' declares the field '{twice}' twice.", nameof(fields));
+                throw new ArgumentException($"The plugin '{id}' declares the field '{twice}' twice.");
             }
         }
 

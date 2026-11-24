@@ -506,7 +506,7 @@ namespace ByteShelf.Server.Tests.Metadata
         private static MetadataPlugin Plugin(TestDocumentReader reader, string id)
         {
             PluginField text = new PluginField("text", "Text", PluginFieldKind.Text, PluginDocumentSubject.Contents, searched: true, listed: true);
-            return new MetadataPlugin(new PluginDeclaration(id, id, [text]), new MetadataPluginReader(reader));
+            return new MetadataPlugin(new PluginDeclaration(id, id, [text]), reader.AsPluginReader());
         }
 
         private static (int Read, int Failed) Counts(MetadataReadingSummary summary)
