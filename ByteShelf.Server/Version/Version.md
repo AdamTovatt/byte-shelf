@@ -1,8 +1,9 @@
 # Version
 
 Deploy detection: `GET /api/version/current` returns an id for the running deploy, a hash of the
-server assembly's `ModuleVersionId` and the web UI's `index.html`. The build is deterministic, so
-the id changes when the server's code or the web UI changes and stays put otherwise. The web UI
+server assembly's `ModuleVersionId`, the web UI's `index.html` and the plugins' web UI files
+([Plugins](../Plugins/Plugins.md)). The build is deterministic, so the id changes when the server's
+code or the web UI, a plugin's part in it included, changes and stays put otherwise; a plugin's server assembly is not in it. The web UI
 reads it at start, polls the endpoint, and offers a reload when the value changes;
 `StaticFileCachePolicy` serves `index.html` uncached so the reload gets the new bundle.
 

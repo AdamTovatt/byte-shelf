@@ -23,8 +23,9 @@ namespace ByteShelf.Server.Tests.Shared
                 await using WebApplication app = Program.BuildApplication(
                     ["--environment", "Development"],
                     root.Root,
-                    builder => builder.WebHost.UseTestServer(),
-                    EmailOptions.None);
+                    pluginsPath: null,
+                    configureForTests: builder => builder.WebHost.UseTestServer(),
+                    email: EmailOptions.None);
 
                 Assert.Equal(
                     Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory),

@@ -62,6 +62,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ByteShelfCommon\ByteShelfCommon.csproj" />
+    <ProjectReference Include="..\ByteShelf.Plugins\ByteShelf.Plugins.csproj" />
     <ProjectReference Include="..\ByteShelf.Tools\ByteShelf.Tools.csproj" />
     <ProjectReference Include="..\byteshelf.client\byteshelf.client.esproj">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
@@ -72,5 +73,24 @@
     <EmbeddedResource Include="Migrations\**\*.sql" />
     <EmbeddedResource Include="Mcp\llms.txt" LogicalName="llms.txt" />
   </ItemGroup>
+
+  <!--
+    The names of the framework's assemblies, which a plugin always gets from the server
+    (Plugins/Services/HostAssemblies.cs). Written at build, since at run time a self-contained publish
+    has them in one folder with the server's own packages.
+  -->
+  <Target Name="EmbedFrameworkAssemblyNames" DependsOnTargets="ResolveTargetingPackAssets" BeforeTargets="AssignTargetPaths">
+    <PropertyGroup>
+      <FrameworkAssemblyNamesFile>$(IntermediateOutputPath)framework-assemblies.txt</FrameworkAssemblyNamesFile>
+    </PropertyGroup>
+    <ItemGroup>
+      <FrameworkAssemblyName Include="@(Reference->'%(Filename)')" Condition="'%(Reference.FrameworkReferenceName)' != ''" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(FrameworkAssemblyNamesFile)" Lines="@(FrameworkAssemblyName)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <EmbeddedResource Include="$(FrameworkAssemblyNamesFile)" LogicalName="framework-assemblies.txt" />
+      <FileWrites Include="$(FrameworkAssemblyNamesFile)" />
+    </ItemGroup>
+  </Target>
 
 </Project>

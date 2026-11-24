@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The plugin ByteShelf.Server.Tests loads, built as any plugin's server assembly is: its packages beside
+    it, and the assemblies every plugin gets from the server left out.
+  -->
+  <PropertyGroup>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- A package the server has too, at an older version, so a test can tell whose copy was loaded. -->
+    <PackageReference Include="EasyReasy.EnvironmentVariables" Version="1.4.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ByteShelf.Plugins\ByteShelf.Plugins.csproj" Private="false" ExcludeAssets="runtime" />
+    <ProjectReference Include="..\ByteShelfCommon\ByteShelfCommon.csproj" Private="false" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+</Project>

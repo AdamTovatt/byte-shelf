@@ -42,6 +42,10 @@ export const queryKeys = {
   replication: {
     status: ['replication', 'status'] as const,
   },
+  // Not an invalidation resource: the plugins change only with a restart of the server.
+  plugins: {
+    list: ['plugins'] as const,
+  },
   // Not an invalidation resource either: the running build's version is polled, and its release
   // changes only with a deploy, which the poll offers a reload for.
   version: {

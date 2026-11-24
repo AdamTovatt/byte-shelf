@@ -52,12 +52,13 @@ namespace ByteShelf.Server.Tests.Backup
             await using WebApplication restored = Program.BuildApplication(
                 new[] { "--environment", "Development" },
                 RootFolder.OpenExisting(_restored),
-                builder =>
+                pluginsPath: null,
+                configureForTests: builder =>
                 {
                     builder.WebHost.UseTestServer();
                     builder.Logging.SetMinimumLevel(LogLevel.Warning);
                 },
-                EmailOptions.None);
+                email: EmailOptions.None);
             await restored.StartAsync();
             using HttpClient client = restored.GetTestClient();
 

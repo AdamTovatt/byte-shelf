@@ -30,13 +30,14 @@ namespace ByteShelf.Server.Tests.Client
             _app = Program.BuildApplication(
                 new[] { "--environment", "Development" },
                 _root.Root,
-                builder =>
+                pluginsPath: null,
+                configureForTests: builder =>
                 {
                     // Loopback only, on a port of the system's choosing.
                     builder.WebHost.UseUrls("http://127.0.0.1:0");
                     builder.Logging.SetMinimumLevel(LogLevel.Warning);
                 },
-                EmailOptions.None);
+                email: EmailOptions.None);
             await _app.StartAsync();
 
             using (IServiceScope scope = _app.Services.CreateScope())

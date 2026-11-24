@@ -11,10 +11,11 @@ in the web UI.
 | `ByteShelf.Server` | The ASP.NET Core server (net10.0). |
 | `ByteShelfCommon` | The shared contract (net8.0, AOT-compatible): request and response types, path and shelf-name rules, source-generated JSON. Published as the `ByteShelfCommon` NuGet package. |
 | `ByteShelfClient` | The client library (net8.0, AOT-compatible): `IByteShelfClient` over HTTP, and in memory for an app's tests. Published as the `ByteShelfClient` NuGet package. |
+| `ByteShelf.Plugins` | What a plugin's server assembly is written against (net10.0): the entry interface. Not published. |
 | `byteshelf.client` | The web UI (React, TypeScript, Vite): browse and upload to the shelves you reach; for admins, shelves, users, access, keys and replication. The server serves its build. |
 | `ByteShelf.Cli` | The `byteshelf` dotnet tool (net10.0): the command line, and with `--mcp` an MCP server for agents. Published as the `ByteShelf.Cli` NuGet tool package. |
 | `ByteShelf.Tools` | The file operations the CLI's commands and the MCP tools share, and the MCP tools themselves (net10.0), one copy for both MCP servers: the CLI's over stdio and the server's at `/mcp`. Built into both, not published on its own. |
-| `ByteShelf.Server.Tests`, `ByteShelfCommon.Tests`, `ByteShelfClient.Tests`, `ByteShelf.Cli.Tests` | xUnit tests; the server's include the client contract, run against both clients, and the CLI's login against the server. |
+| `ByteShelf.Server.Tests`, `ByteShelfCommon.Tests`, `ByteShelfClient.Tests`, `ByteShelf.Cli.Tests` | xUnit tests; the server's include the client contract, run against both clients, and the CLI's login against the server, and load `ByteShelf.Server.Tests.Plugin`, a plugin of their own. |
 
 ## The root folder
 
@@ -88,14 +89,15 @@ dotnet run --project ByteShelf.Cli -- shelves
 
 ## Documentation
 
-- [DEPLOYMENT.md](DEPLOYMENT.md): installing, environment variables, reverse proxy, replicas, backups.
+- [DEPLOYMENT.md](DEPLOYMENT.md): installing, environment variables, reverse proxy, plugins, replicas, backups.
 - Server domains: [Storage](ByteShelf.Server/Storage/Storage.md), [Shelves](ByteShelf.Server/Storage/Shelves.md),
   [Access](ByteShelf.Server/Access/Access.md), [Change log](ByteShelf.Server/ChangeLog/ChangeLog.md),
   [Users](ByteShelf.Server/Users/Users.md),
   [Jobs](ByteShelf.Server/Jobs/Jobs.md), [Email](ByteShelf.Server/Email/Email.md),
   [Invalidation](ByteShelf.Server/Invalidation/Invalidation.md), [Version](ByteShelf.Server/Version/Version.md),
   [Replication](ByteShelf.Server/Replication/Replication.md), [Backup](ByteShelf.Server/Backup/Backup.md),
-  [Mcp](ByteShelf.Server/Mcp/Mcp.md), [Metadata](ByteShelf.Server/Metadata/Metadata.md).
+  [Mcp](ByteShelf.Server/Mcp/Mcp.md), [Metadata](ByteShelf.Server/Metadata/Metadata.md),
+  [Plugins](ByteShelf.Server/Plugins/Plugins.md).
 - [ByteShelfCommon](ByteShelfCommon/README.md), [ByteShelfClient](ByteShelfClient/README.md),
   [the CLI and MCP server](ByteShelf.Cli/README.md), [the shared operations and MCP tools](ByteShelf.Tools/README.md),
   [the web UI](byteshelf.client/README.md).

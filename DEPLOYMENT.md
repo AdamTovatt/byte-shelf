@@ -101,6 +101,7 @@ path. Exit codes: 0 done, 1 refused or failed (the reason is logged), 2 the argu
 | `INITIAL_ADMIN_DISPLAY_NAME` | no | The first admin's display name; the email's local part otherwise. |
 | `BYTESHELF_RESTORE_WINDOW_DAYS` | no | How long a deletion can be restored before it is purged. Whole days, 30 by default, at most 3650. |
 | `BYTESHELF_REPLICATION_ALERT_MINUTES` | no | How long replication may go wrong before the admins are emailed (see [Replicas](#replicas)). Whole minutes, 60 by default; at least 10, twice the longest a replica waits between failed attempts, and at most 43200 (30 days). |
+| `BYTESHELF_PLUGINS` | no | The folder whose folders are plugins (see [Plugins](#plugins)). Unset, none are loaded. |
 | `BYTESHELF_TRUSTED_PROXIES` | behind a proxy | Comma-separated IPs or CIDR ranges of the reverse proxies in front of the server. Their `X-Forwarded-For` and `X-Forwarded-Proto` are believed, so rate limits and the sign-in delay count each client rather than the proxy. Loopback is always trusted. |
 | `ASPNETCORE_URLS` | no | Where Kestrel listens. |
 
@@ -188,6 +189,26 @@ settings), as bound: a server bound to a single interface's address calls itself
 all interfaces, such as `http://+:5000`, at `127.0.0.1`. So the server must listen on plain HTTP
 somewhere; one on HTTPS or a Unix socket alone cannot run them. Those calls count against the key's
 rate limit beside the MCP request itself.
+
+## Plugins
+
+A plugin is a folder that adds to the web UI, the server, or both
+([Plugins](ByteShelf.Server/Plugins/Plugins.md)). The server loads every folder directly under the
+one `BYTESHELF_PLUGINS` names when it starts; adding or removing one takes a restart. Never change a
+plugin's files under a running server: browsers keep them for good at an address made when it started.
+Stop it first, or put a new folder in the old one's place and restart. Keep the folder of plugins
+outside the root, so backups hold no code.
+
+**A plugin runs with full trust, and there is no sandbox.** In the web UI it can do what the
+signed-in user can and reads what the page holds, the session and unlocked passwords included; on the
+server it can do what the server can. Install only what you trust that far, at your own risk.
+
+A plugin the server cannot load is skipped and logged, and admins see it with the reason on the
+Settings page; the server starts without it. `ByteShelf.Server --check-plugin <folder>` says
+beforehand whether this server would load the plugin in a folder: exit code 0 if it would, 1 if not,
+with the reason, 2 for wrong arguments. It starts nothing and needs no root and no settings. It cannot
+tell whether another folder holds a plugin with the same id, nor whether the plugin works once
+running: one whose services break the server as it is built or started stops it from starting.
 
 ## Replicas
 

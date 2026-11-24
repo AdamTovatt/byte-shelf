@@ -12,7 +12,8 @@ renames and deletes them, encrypts files and folders with a password, and restor
 trash or previews or downloads a deleted file from it without restoring it (a replica's trash too).
 Admins also create shelves and users, set quotas, give access from a shelf or from a user, make keys
 and give a key other shelves (a key row's Shelves control in shelf settings), and on the Replication
-page pair replicas, see how far behind each is, remove one, and promote a replica.
+page pair replicas, see how far behind each is, remove one, and promote a replica; their Settings list
+the server's plugins and why one was skipped.
 
 `src/ui` is the UI library: buttons, fields, cards, dialogs, menus, page layout and the sidebar, with
 the colour, type and icon systems and the Tailwind preset they need. A dialog takes the focus, keeps Tab
@@ -156,6 +157,7 @@ npm run codegen    # in a second terminal
   `MobileTopBarOverlay` (`components/layout/MobileTopBar.tsx`).
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and
   refetches what each event makes stale (`lib/invalidationMap.ts`), so a change made elsewhere shows up
-  within about a second. A test checks the map covers every resource the server publishes. The one
-  exception is the Replication page's status, polled every 5 seconds: a replica's lag changes
-  without anything being published.
+  within about a second. A test checks the map covers every resource the server publishes. The
+  exceptions are the Replication page's status, polled every 5 seconds, as a replica's lag changes
+  without anything being published, and the plugin list in Settings, which changes only with a restart
+  and is read again when the page is opened.

@@ -7,6 +7,8 @@ using ByteShelf.Server.Invalidation;
 using ByteShelf.Server.Jobs;
 using ByteShelf.Server.Mcp;
 using ByteShelf.Server.Metadata;
+using ByteShelf.Server.Plugins;
+using ByteShelf.Server.Plugins.Services;
 using ByteShelf.Server.Replication;
 using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared;
@@ -42,6 +44,12 @@ namespace ByteShelf.Server
 
         public static void Main(string[] args)
         {
+            if (args.Contains(PluginCheckCommand.Flag))
+            {
+                Environment.ExitCode = PluginCheckCommand.Run(args, Console.Out, Console.Error);
+                return;
+            }
+
             if (args.Contains("--schema-only"))
             {
                 RunSchemaOnlyMode(args);
@@ -140,7 +148,7 @@ namespace ByteShelf.Server
         {
             EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(EnvironmentVariables));
 
-            WebApplication app = BuildApplication(args, RootFolder.Open(EnvironmentVariables.ByteShelfRoot.GetValue()));
+            WebApplication app = BuildApplication(args, RootFolder.Open(EnvironmentVariables.ByteShelfRoot.GetValue()), EnvironmentVariables.Plugins.GetValueOrDefault());
             app.Run();
         }
 
@@ -164,24 +172,24 @@ namespace ByteShelf.Server
         /// <summary>
         /// Migrates the root's database and builds the full application on it. Separate from
         /// <see cref="RunApplication"/> so the in-process HTTP tests build the same pipeline on a root
-        /// of their own; <paramref name="configureForTests"/> runs once every service is registered, so a
-        /// test can replace or remove one. <paramref name="email"/> is read from the environment when not
-        /// given; a test gives <see cref="EmailOptions.None"/>, so it never sends through a token the
-        /// machine running it happens to hold.
+        /// of their own, with the plugins under <paramref name="pluginsPath"/>;
+        /// <paramref name="configureForTests"/> runs once every service is registered, so a test can replace
+        /// or remove one. <paramref name="email"/> is read from the environment when not given; a test gives
+        /// <see cref="EmailOptions.None"/>, so it never sends through a token the machine running it happens
+        /// to hold.
         /// </summary>
-        internal static WebApplication BuildApplication(string[] args, RootFolder root, Action<WebApplicationBuilder>? configureForTests = null, EmailOptions? email = null)
+        internal static WebApplication BuildApplication(string[] args, RootFolder root, string? pluginsPath, Action<WebApplicationBuilder>? configureForTests = null, EmailOptions? email = null)
         {
             // The content root is the executable's folder, which holds wwwroot/ and appsettings.json, not the
             // working directory, which is wherever the server was started from.
             WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = AppContext.BaseDirectory });
             builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestLineSize = MaxRequestLineBytes);
 
-            using (ILoggerFactory loggerFactory = CreateStartupLoggerFactory())
-            {
-                DatabaseMigrator.RunMigrations(root.ConnectionString, loggerFactory.CreateLogger<Program>());
-            }
+            using ILoggerFactory startupLoggerFactory = CreateStartupLoggerFactory();
+            ILogger<Program> startupLogger = startupLoggerFactory.CreateLogger<Program>();
+            DatabaseMigrator.RunMigrations(root.ConnectionString, startupLogger);
 
-            AddApi(builder.Services);
+            IMvcBuilder mvc = AddApi(builder.Services);
             ConfigureForwardedHeaders(builder.Services);
 
             // One line per feature; adding a feature = add a folder, add one line here or in AddDomainServices.
@@ -193,6 +201,9 @@ namespace ByteShelf.Server
             builder.Services.AddReplicationServices(publicAddress.Absolute.AbsoluteUri);
             builder.Services.AddMcpServices();
             builder.Services.AddRateLimitingServices();
+
+            // After everything of the server's own, which a plugin's registrations are added to.
+            builder.Services.AddPlugins(mvc, pluginsPath, startupLogger);
             configureForTests?.Invoke(builder);
 
             WebApplication app = builder.Build();
@@ -205,6 +216,7 @@ namespace ByteShelf.Server
             {
                 OnPrepareResponse = StaticFileCachePolicy.Apply,
             });
+            app.UsePluginAssets();
 
             if (app.Environment.IsDevelopment())
             {
@@ -263,11 +275,11 @@ namespace ByteShelf.Server
             });
         }
 
-        private static void AddApi(IServiceCollection services)
+        private static IMvcBuilder AddApi(IServiceCollection services)
         {
             // The assembly is named because MVC otherwise looks for controllers in the entry assembly,
             // which is the test runner when the HTTP tests build this pipeline.
-            services.AddControllers()
+            IMvcBuilder mvc = services.AddControllers()
                 .AddApplicationPart(typeof(Program).Assembly)
                 .AddJsonOptions(options => JsonDefaults.Configure(options.JsonSerializerOptions));
 
@@ -286,6 +298,8 @@ namespace ByteShelf.Server
                 // not as the record it is in C#.
                 options.MapType<DuplicateCursor>(() => new OpenApiSchema { Type = "string" });
             });
+
+            return mvc;
         }
 
         /// <summary>A console logger for the work done before the application's own logging exists.</summary>
