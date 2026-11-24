@@ -259,9 +259,9 @@ the mark.
 
 A client encrypts or decrypts a stored file by swapping its contents in place (`PUT content/swap`,
 `POST uploads/swap`): the file keeps its id, path, type and description, and its old contents are
-removed at once rather than moved to the trash, unless another file holds the same ones. This is the one
-write that destroys contents without the trash, and it is allowed only for what the person confirmed
-cannot be undone: it must flip the file's encryption, and it must name the SHA-256 the
+removed at once rather than moved to the trash, unless another file holds the same ones. This is the
+one write that destroys contents without the trash, and it is allowed only for what the person
+confirmed cannot be undone: it must flip the file's encryption, and it must name the SHA-256 the
 contents still have, so a change made since they were read is never lost (409 otherwise). Its change
 log entry (`swapped`) points the row at the new contents, and a replica removes the old ones as soon
 as it applies it, the one exception to replicas keeping what the primary drops for their own restore

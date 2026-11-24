@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act } from 'react';
+import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Modal } from './Modal';
@@ -9,12 +9,12 @@ import { Modal } from './Modal';
 describe('a dialog\'s focus', () => {
   let root: Root;
 
-  function show(open: boolean): Promise<void> {
+  function show(open: boolean, children: ReactNode = <button id="only" />): Promise<void> {
     return act(async () => root.render(
       <>
         <button id="behind" />
         <Modal isOpen={open} onClose={() => {}} title="Dialog">
-          <button id="only" />
+          {children}
         </Modal>
         <button id="after" />
       </>,
@@ -61,6 +61,29 @@ describe('a dialog\'s focus', () => {
     expect(document.activeElement).toBe(closeButton());
 
     expect(tab(true).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(element('only'));
+  });
+
+  it.each([
+    ['a frame', <iframe id="stop" />],
+    ['a video', <video id="stop" controls />],
+    // Drawn, as happy-dom draws no recording's player.
+    ['a recording', <audio id="stop" controls style={{ display: 'block' }} />],
+  ])('stops at %s', async (_what, stop) => {
+    await show(true, stop);
+    (closeButton() as HTMLElement).focus();
+
+    tab(true);
+
+    expect(document.activeElement).toBe(element('stop'));
+  });
+
+  it('does not stop at a button that is disabled or not shown', async () => {
+    await show(true, <><button id="only" /><button disabled /><div style={{ display: 'none' }}><button /></div></>);
+    (closeButton() as HTMLElement).focus();
+
+    tab(true);
+
     expect(document.activeElement).toBe(element('only'));
   });
 

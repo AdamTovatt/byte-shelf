@@ -110,15 +110,30 @@ test('a file opens in a preview over the shelf, and an encrypted one once it is 
   await page.getByTestId('file-input').setInputFiles([
     { name: 'note.txt', mimeType: 'text/plain', buffer: Buffer.from('the note') },
     { name: 'pixel.png', mimeType: 'image/png', buffer: pixel },
+    { name: 'todo.txt', mimeType: 'text/plain', buffer: Buffer.from('the last') },
   ]);
-  await expect(page.getByText('Uploaded pixel.png')).toBeVisible();
+  await expect(page.getByText('Uploaded todo.txt')).toBeVisible();
 
   const preview = page.getByRole('dialog', { name: 'note.txt' });
   await page.getByRole('button', { name: 'note.txt', exact: true }).dblclick();
   await expect(preview.getByText('the note')).toBeVisible();
   await page.keyboard.press('ArrowRight');
-  const image = page.getByRole('dialog', { name: 'pixel.png' }).getByRole('img', { name: 'pixel.png' });
+  const among = page.getByRole('dialog', { name: 'pixel.png' });
+  const image = among.getByRole('img', { name: 'pixel.png' });
   await expect(image).toHaveJSProperty('naturalWidth', 1);
+
+  // Tab goes around within it, past the step buttons only a phone shows.
+  await among.getByRole('button', { name: 'Close' }).focus();
+  await page.keyboard.press('Tab');
+  await expect(among.getByRole('button', { name: 'Previous file' })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(among.getByRole('button', { name: 'Close' })).toBeFocused();
+  const size = page.viewportSize()!;
+  await page.setViewportSize({ width: 400, height: 800 });
+  await among.getByRole('button', { name: 'Next file' }).click();
+  await expect(page.getByRole('dialog', { name: 'todo.txt' }).getByText('the last')).toBeVisible();
+  await page.getByRole('button', { name: 'Previous file' }).click();
+  await page.setViewportSize(size);
   await page.reload();
   await expect(image).toHaveJSProperty('naturalWidth', 1);
   await page.goBack();

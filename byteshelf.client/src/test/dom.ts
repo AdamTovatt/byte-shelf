@@ -1,5 +1,6 @@
 import { Fragment, act, createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { expect, vi } from 'vitest';
 
 // Driving rendered forms as a person does, by the labels and button text they read. Dialogs portal
 // into document.body, so everything is looked up there.
@@ -24,6 +25,29 @@ export function fill(label: string, value: string): void {
 /** The button whose text is `name`, or null when none shows. */
 export function button(name: string): HTMLButtonElement | null {
   return Array.from(document.body.querySelectorAll('button')).find((each) => each.textContent?.trim() === name) ?? null;
+}
+
+/** The button labelled `label`, as one that shows an icon is, or null when none shows. */
+export function labelled(label: string): HTMLButtonElement | null {
+  return document.body.querySelector(`button[aria-label="${label}"]`);
+}
+
+/** The first element `selector` finds, once there is one. */
+export function untilFound<T extends Element = HTMLElement>(selector: string): Promise<T> {
+  return vi.waitFor(async () => {
+    await act(async () => {});
+    const found = document.body.querySelector<T>(selector);
+    expect(found).not.toBeNull();
+    return found!;
+  });
+}
+
+/** Waits until the page says `text`. */
+export function shows(text: string): Promise<void> {
+  return vi.waitFor(async () => {
+    await act(async () => {});
+    expect(document.body.textContent).toContain(text);
+  });
 }
 
 /** The text a message reads as, rendered: a toast's, which may be a string or elements. */

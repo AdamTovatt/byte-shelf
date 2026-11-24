@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react';
+import { useRef, type MouseEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { iconMap } from '../../lib/iconMap';
 import { IconButton } from './IconButton';
@@ -27,7 +27,7 @@ interface ModalBaseProps {
    * close button to hide.
    */
   dismissible?: boolean;
-  /** Any key but Escape, heard only while no other overlay is on top of this one. */
+  /** Any key but Escape and Tab, heard only while no other overlay is on top of this one. */
   onKeyDown?: (event: KeyboardEvent) => void;
   /**
    * Marks the rendered dialog card for a test to address — an e2e capture above all, which has to scope
@@ -170,19 +170,21 @@ export function Modal(props: ModalProps) {
     <OverlayDepthContext.Provider value={nestedOverlayDepth}>{children}</OverlayDepthContext.Provider>
   );
 
+  // What makes an element the dialog, whichever the variant draws.
+  const dialogProps = {
+    ref: element,
+    role: 'dialog',
+    'aria-modal': true,
+    'aria-label': title,
+    tabIndex: -1,
+    'data-testid': testId,
+    onClick: (event: MouseEvent) => event.stopPropagation(),
+  } as const;
+
   if (props.variant === 'bare') {
     return (
       <ModalShell dismiss={dismiss} gutter="p-4" nested={nested}>
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={title}
-          ref={element}
-          tabIndex={-1}
-          className={cn('z-10', focusTarget, slideIn, className)}
-          data-testid={testId}
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div {...dialogProps} className={cn('z-10', focusTarget, slideIn, className)}>
           {scopedChildren}
         </div>
       </ModalShell>
@@ -198,14 +200,8 @@ export function Modal(props: ModalProps) {
         <Card
           padding="none"
           defaultBackground={false}
-          ref={element}
-          tabIndex={-1}
+          {...dialogProps}
           className={cn(focusTarget, 'z-10 w-full max-w-lg max-h-[90vh] shadow-login-card flex flex-col', slideIn, modalBg, className)}
-          role="dialog"
-          aria-modal="true"
-          aria-label={title}
-          data-testid={testId}
-          onClick={(e) => e.stopPropagation()}
         >
           {header}
           {/* The body that scrolls, for a capture to put at its top before framing the card (#2514). A
@@ -222,14 +218,8 @@ export function Modal(props: ModalProps) {
       <Card
         padding="none"
         defaultBackground={false}
-        ref={element}
-        tabIndex={-1}
+        {...dialogProps}
         className={cn(focusTarget, 'z-10 w-full h-full shadow-login-card flex flex-col', slideIn, modalBg, className)}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        data-testid={testId}
-        onClick={(e) => e.stopPropagation()}
       >
         {header}
         {disableContentScroll ? (

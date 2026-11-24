@@ -7,7 +7,7 @@ import { VIDEO } from './video';
 import { blobReader, type ContentReader } from '../../../lib/preview/contentReader';
 import type { Viewer } from '../../../lib/preview/viewerRegistry';
 import type { ShelfFile } from '../../../services/shelfService';
-import { press } from '../../../test/dom';
+import { press, untilFound } from '../../../test/dom';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -39,11 +39,7 @@ describe.each<[string, Viewer, string, string]>([
   }
 
   function found(): Promise<HTMLMediaElement> {
-    return vi.waitFor(() => {
-      const player = container.querySelector<HTMLMediaElement>(tag);
-      expect(player).not.toBeNull();
-      return player!;
-    });
+    return untilFound<HTMLMediaElement>(tag);
   }
 
   /** Fails the player with the browser's error `code`. */
@@ -58,7 +54,7 @@ describe.each<[string, Viewer, string, string]>([
 
     await fail(player, MEDIA_ERR_DECODE);
 
-    await vi.waitFor(() => expect(container.textContent).toBe(cannotPlay));
+    await vi.waitFor(() => expect(container.textContent).toBe(`${cannotPlay}Try again`));
   });
 
   it('plays on from a fresh address when the connection was lost and Try again is pressed', async () => {

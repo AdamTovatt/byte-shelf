@@ -2,29 +2,22 @@ import { useState, type ReactNode } from 'react';
 import { Button, Icon, IconButton, Modal, getErrorMessage, iconMap } from '../../ui';
 import { contentsKey } from '../../lib/preview/fileContents';
 import type { Steps } from '../../lib/preview/neighbours';
+import type { ShownPreview } from '../../lib/preview/shownPreview';
 import { usePreviewContents } from '../../hooks/usePreviewContents';
 import { useViewers } from '../../hooks/useViewers';
 import { formatBytes } from '../../lib/format';
 import { isTypingTarget } from '../../lib/keys';
-import { openable, type OpenableFile, type ReadFile } from '../../services/contentService';
+import { openable, type OpenableFile } from '../../services/fileReading';
 import { ErrorBoundary } from '../ErrorBoundary';
 import { FileDetailsDialog } from '../FileDetailsDialog';
 import { openFile, opensInTab, saveFiles } from '../fileOpening';
+import { PreviewFailure } from './PreviewFailure';
 import { PreviewMessage } from './PreviewMessage';
 import { PreviewSpinner } from './PreviewSpinner';
 
-interface FilePreviewProps {
-  /** The file previewed and what reads it; null while its record loads. */
-  previewed: ReadFile | null;
-  /** Why its record could not be loaded. */
-  error: Error | null;
-  /** Its place among the files beside it; null when it is previewed alone. */
-  steps: Steps | null;
-  onClose: () => void;
+interface FilePreviewProps extends ShownPreview {
   /** The shelf the file is live on, whose record of it Details shows; absent for one that is not. */
   detailsOn?: string;
-  /** Whether a locked file's password is asked for as it shows, rather than once Unlock is pressed. */
-  asksPassword: boolean;
   /** Dialogs over the preview, such as a password prompt. */
   children?: ReactNode;
 }
@@ -38,8 +31,8 @@ export function FilePreview({ previewed, error, steps, onClose, detailsOn, asksP
   const viewers = useViewers();
   const file = previewed?.file;
   const match = file ? viewers.viewerFor(file) : null;
-  const { contents, whole } = usePreviewContents(match?.viewer ? previewed : null, asksPassword);
-  const target = previewed && openable(previewed, whole ?? undefined);
+  const { contents, readWhole } = usePreviewContents(match?.viewer ? previewed : null, asksPassword);
+  const target = previewed && openable(previewed, readWhole ?? undefined);
 
   function onKeyDown(event: KeyboardEvent): void {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.defaultPrevented || ownsArrowKeys(event.target)) return;
@@ -100,7 +93,7 @@ export function FilePreview({ previewed, error, steps, onClose, detailsOn, asksP
       return <PreviewMessage message={message} action={<Button onClick={contents.unlock}>Unlock</Button>} />;
     }
     if (contents.status === 'failed') {
-      return <PreviewMessage message={getErrorMessage(contents.error, 'Could not read the file.')} action={<Button variant="secondary" onClick={contents.retry}>Try again</Button>} />;
+      return <PreviewFailure error={contents.error} onTryAgain={contents.retry} />;
     }
 
     const { id, component: Viewer } = match.viewer;

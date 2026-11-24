@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encryptionActions, useEncryption } from './useEncryption';
 import { createCheck, decryptBlob, encryptBlob } from '../lib/encryption/age';
 import { folderPasswordKey, rememberPassword, rememberedPassword, filePasswordKey } from '../lib/encryption/passwords';
-import { fileReading, liveContent, unlockedContents, type ContentSource } from '../services/contentService';
+import { liveContent, type ContentSource } from '../services/contentService';
+import { fileReading, unlockedContents } from '../services/fileReading';
 import type { EncryptedFolder } from '../services/encryptionService';
 import type { Entry, ShelfDirectory, ShelfFile } from '../services/shelfService';
 import { fill, press, textOf as messageText } from '../test/dom';
@@ -246,17 +247,25 @@ describe('encryption in the browser', () => {
     const secret = await file('/secret.txt', 'contents', 'right');
     rememberPassword(filePasswordKey('docs', undefined, secret.id), 'right');
     const reading = new AbortController();
-    const source = deletedSource(null);
-    const open = source.open;
-    source.open = async (id, signal) => {
-      reading.abort();
-      expect(signal.aborted).toBe(true);
-      return open(id, signal);
+    let opening = false;
+    const header = (await shelf.files.get(secret.id)!.content.arrayBuffer()).slice(0, -1);
+    const source: ContentSource = {
+      ...deletedSource(null),
+      // Never past its header, as a slow download, and failing as it is aborted, as one does.
+      open: async (_id, signal) => new ReadableStream({
+        start: (controller) => {
+          opening = true;
+          controller.enqueue(new Uint8Array(header));
+          signal.addEventListener('abort', () => controller.error(signal.reason));
+        },
+      }),
     };
 
-    await encryption.decryption.read(secret, source, reading.signal);
+    const read = encryption.decryption.read(secret, source, reading.signal).catch((error: Error) => error.name);
+    await vi.waitFor(() => expect(opening).toBe(true));
+    reading.abort();
 
-    expect.assertions(1);
+    expect(await read).toBe('AbortError');
   });
 
   it('unlocks a file with the password asked for, from the one opening of it that checked the password', async () => {

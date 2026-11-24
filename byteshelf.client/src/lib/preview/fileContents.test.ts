@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { FileContents } from './fileContents';
-import type { ReadFile } from '../../services/contentService';
+import type { ReadableFile } from '../../services/fileReading';
 import type { ShelfFile } from '../../services/shelfService';
 
 /** A read under way: its signal, and how it ends. */
@@ -35,11 +35,11 @@ describe('a file\'s contents', () => {
   let contents: FileContents;
   let states: string[];
 
-  function file(sizeBytes = 1, path = '/a'): ReadFile {
+  function file(sizeBytes = 1, path = '/a'): ReadableFile {
     return {
       file: { id: 'f', path, sizeBytes, contentType: 'text/plain' } as ShelfFile,
       reading: {
-        source: {} as ReadFile['reading']['source'],
+        source: {} as ReadableFile['reading']['source'],
         read: (_file, signal) => new Promise((resolve, reject) => reads.push({ signal: signal!, resolve, reject })),
         unlock: (each, signal) => new Promise((resolve, reject) => unlocks.push({ path: each.path, signal: signal!, resolve, reject })),
       },
@@ -119,11 +119,11 @@ describe('a file\'s contents', () => {
 
   it('are read once for the preview and a save', async () => {
     contents.open(false);
-    const saved = contents.contents();
+    const saved = contents.whole();
     reads[0].resolve(blob('a'));
 
     expect(await (await saved)!.text()).toBe('a');
-    expect(await (await contents.contents())!.text()).toBe('a');
+    expect(await (await contents.whole())!.text()).toBe('a');
     expect(await text()).toBe('a');
     expect(reads).toHaveLength(1);
   });
@@ -131,7 +131,7 @@ describe('a file\'s contents', () => {
   it('are shown once a save has read or unlocked them', async () => {
     make(LIMIT + 1);
     contents.open(false);
-    const saved = contents.contents();
+    const saved = contents.whole();
     reads[0].resolve(null);
     await vi.waitFor(() => expect(unlocks).toHaveLength(1));
     expect(contents.state().status).toBe('unlocking');
@@ -144,11 +144,11 @@ describe('a file\'s contents', () => {
 
   it('are unlocked once, by one prompt, whoever asks', async () => {
     contents.open(true);
-    const saved = contents.contents();
+    const saved = contents.whole();
     reads[0].resolve(null);
     await vi.waitFor(() => expect(unlocks).toHaveLength(1));
     contents.unlock();
-    const savedLate = contents.contents();
+    const savedLate = contents.whole();
     unlocks[0].resolve(stream('secret'));
 
     expect(await (await saved)!.text()).toBe('secret');
@@ -182,7 +182,7 @@ describe('a file\'s contents', () => {
   it('stay locked, with why, when unlocking them fails, which a save waiting for them is told too', async () => {
     const error = new Error('unreachable');
     contents.open(true);
-    const saved = contents.contents();
+    const saved = contents.whole();
     reads[0].resolve(null);
     await vi.waitFor(() => expect(unlocks).toHaveLength(1));
     unlocks[0].reject(error);
@@ -201,7 +201,7 @@ describe('a file\'s contents', () => {
     unlocks[0].resolve(new ReadableStream({ start: (controller) => void (download = controller) }));
     await becomes('reading');
 
-    const saved = contents.contents();
+    const saved = contents.whole();
     download.enqueue(new TextEncoder().encode('secret'));
     download.close();
 
@@ -231,7 +231,7 @@ describe('a file\'s contents', () => {
     reads[0].resolve(null);
     await becomes('locked');
 
-    const saved = contents.contents();
+    const saved = contents.whole();
     await vi.waitFor(() => expect(unlocks).toHaveLength(1));
     unlocks[0].resolve(stream('secret'));
 
@@ -303,7 +303,7 @@ describe('a file\'s contents', () => {
 
   it('go on being read, and asked for, for a save once the file closes', async () => {
     contents.open(false);
-    const saved = contents.contents();
+    const saved = contents.whole();
     contents.close();
     expect(reads[0].signal.aborted).toBe(false);
     reads[0].resolve(null);

@@ -1,4 +1,4 @@
-import type { ReadFile } from '../../services/contentService';
+import type { ReadableFile } from '../../services/fileReading';
 import type { ShelfFile } from '../../services/shelfService';
 import { streamBlob } from '../streamBlob';
 
@@ -33,7 +33,7 @@ export function contentsKey(file: ShelfFile): string {
  * is dropped then, unless the file is being saved or opened.
  */
 export class FileContents {
-  private file: ReadFile;
+  private file: ReadableFile;
   private now: FileContentsState;
   private readonly listeners = new Set<() => void>();
   private isOpen = false;
@@ -42,7 +42,7 @@ export class FileContents {
   private saves = 0;
   private dropping = new AbortController();
 
-  constructor(file: ReadFile) {
+  constructor(file: ReadableFile) {
     this.file = file;
     this.now = this.initial();
   }
@@ -55,7 +55,7 @@ export class FileContents {
   readonly state = (): FileContentsState => this.now;
 
   /** Goes on with the file's latest record: renamed or moved, its contents are the same. */
-  update(file: ReadFile): void {
+  update(file: ReadableFile): void {
     this.file = file;
   }
 
@@ -82,7 +82,7 @@ export class FileContents {
   }
 
   /** The contents, to save or open the file with: read and unlocked first when they are not yet. Null when no password was given. */
-  async contents(): Promise<Blob | null> {
+  async whole(): Promise<Blob | null> {
     this.saves++;
     try {
       return (await this.joinReading()) ?? (await this.joinUnlocking());

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import type { InfiniteData } from '@tanstack/react-query';
 import {
   Button,
   CopyField,
@@ -30,15 +29,17 @@ import { PREFETCHED_SUBFOLDERS, useCreateDirectory, useDeleteEntry, useDuplicate
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useCreateDownloadLink } from '../hooks/useLinkQueries';
 import { useSelection, type SelectionClickModifiers } from '../hooks/useSelection';
+import { useFoundFiles } from '../hooks/useFoundFiles';
 import { useFilePicker } from '../hooks/useFilePicker';
 import { MobileTopBarActions, MobileTopBarOverlay } from '../components/layout/MobileTopBar';
 import { useUploads } from '../hooks/useUploads';
 import { encryptionActions, useEncryption } from '../hooks/useEncryption';
 import { openFile, opensInTab, saveFiles } from '../components/fileOpening';
-import { FilePreview } from '../components/preview/FilePreview';
-import { useShelfPreview, type ShownFiles } from '../hooks/useShelfPreview';
+import { PreviewOverPage } from '../components/preview/PreviewOverPage';
+import { useShelfPreview } from '../hooks/useShelfPreview';
 import { isTypingTarget } from '../lib/keys';
-import { fileReading, liveContent, openable } from '../services/contentService';
+import { liveContent } from '../services/contentService';
+import { fileReading, openable } from '../services/fileReading';
 import { showActionToast } from '../components/actionToast';
 import { NameAndReason, NameLine } from '../components/MiddleTruncatedName';
 import { reasonOf, runOrToastNamed, toastNamedFailure } from '../components/nameToasts';
@@ -200,19 +201,10 @@ export function ShelfPage() {
   const drag = useEntryDragAndDrop({ shelf, entries, selected });
 
   // The preview goes through the files shown: the folder's own, or the search's results so far.
-  const filesShown: ShelfFile[] = useMemo(() => {
-    if (!searching) return listing?.files ?? [];
-    return filters.duplicates ? duplicatesIn(duplicates.data) : foundIn(found.data);
-  }, [searching, filters.duplicates, listing, duplicates.data, found.data]);
-  const preview = useShelfPreview(shelf, { files: filesShown, fetchMore: fetchMoreFiles() }, reading);
-
-  /** Fetches the search's next page for the preview; undefined when none follows. */
-  function fetchMoreFiles(): ShownFiles['fetchMore'] {
-    if (!searching || !(filters.duplicates ? duplicates : found).hasNextPage) return undefined;
-    return filters.duplicates
-      ? async () => duplicatesIn((await duplicates.fetchNextPage()).data)
-      : async () => foundIn((await found.fetchNextPage()).data);
-  }
+  const foundFiles = useFoundFiles(found, filesOfResults);
+  const duplicateFiles = useFoundFiles(duplicates, filesOfGroups);
+  const shownFiles = !searching ? { files: listing?.files ?? [] } : filters.duplicates ? duplicateFiles : foundFiles;
+  const preview = useShelfPreview(shelf, shownFiles, reading);
 
   const dialogOpen = preview.isOpen || creatingDirectory || renaming !== null || moving !== null || describing !== null || detailing !== null;
 
@@ -421,21 +413,19 @@ export function ShelfPage() {
       {moving && <MoveDialog shelf={shelf} entries={moving} onClose={() => setMoving(null)} />}
       {describing && <DescriptionDialog shelf={shelf} file={describing} onClose={() => setDescribing(null)} />}
       {detailing && <FileDetailsDialog shelf={shelf} file={detailing} onClose={() => setDetailing(null)} />}
-      {preview.isOpen
-        ? <FilePreview {...preview.shown} detailsOn={shelf}>{encryption.dialog}</FilePreview>
-        : encryption.dialog}
+      <PreviewOverPage preview={preview} detailsOn={shelf}>{encryption.dialog}</PreviewOverPage>
     </div>
   );
 }
 
-/** The files of a search's pages. */
-function foundIn(results: InfiniteData<FileSearchResults> | undefined): ShelfFile[] {
-  return results?.pages.flatMap((page) => page.files) ?? [];
+/** The files on a page of a search. */
+function filesOfResults(page: FileSearchResults): ShelfFile[] {
+  return page.files;
 }
 
-/** The files of the pages of a search for duplicates, a group after another. */
-function duplicatesIn(results: InfiniteData<DuplicateSearchResults> | undefined): ShelfFile[] {
-  return results?.pages.flatMap((page) => page.groups.flatMap((group) => group.files)) ?? [];
+/** The files on a page of a search for duplicates, a group after another. */
+function filesOfGroups(page: DuplicateSearchResults): ShelfFile[] {
+  return page.groups.flatMap((group) => group.files);
 }
 
 /** How long typing must pause before a search is sent. */

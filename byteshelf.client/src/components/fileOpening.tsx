@@ -6,7 +6,8 @@
 import { openTabWithoutPasswords } from '../lib/encryption/passwords';
 import { saveBlob, saveFrom, showBlob, showsInTab } from '../lib/localBlobs';
 import { runOrToast } from '../lib/utils';
-import { isBlobBacked, type OpenableFile } from '../services/contentService';
+import { isBlobBacked } from '../services/contentService';
+import type { OpenableFile } from '../services/fileReading';
 import type { ShelfFile } from '../services/shelfService';
 import { showActionToast } from './actionToast';
 import { NameLine } from './MiddleTruncatedName';
@@ -38,9 +39,9 @@ export async function openFile(openable: OpenableFile): Promise<void> {
  * Opens a file from its contents read here. Reading, or asking for a password, can take long enough
  * for the browser to block the tab; a toast then opens it from a fresh click.
  */
-async function openFromBlob({ file, contents }: OpenableFile): Promise<void> {
+async function openFromBlob({ file, readWhole }: OpenableFile): Promise<void> {
   await runOrToast(async () => {
-    const blob = await contents();
+    const blob = await readWhole();
     if (!blob || showBlob(blob, file.name)) return;
     showActionToast({
       message: <NameLine name={file.name} after={file.encrypted ? ' is unlocked' : ' is ready'} />,
@@ -57,9 +58,9 @@ async function openFromBlob({ file, contents }: OpenableFile): Promise<void> {
  */
 export async function saveFiles(files: OpenableFile[]): Promise<void> {
   await runOrToast(async () => {
-    for (const { file, source, contents } of files) {
+    for (const { file, source, readWhole } of files) {
       if (isBlobBacked(file)) {
-        const blob = await contents();
+        const blob = await readWhole();
         if (blob) saveBlob(blob, file.name);
       } else {
         saveFrom(await source.navigationUrl(file.id, true), '');

@@ -50,6 +50,19 @@ export function hasSession(): boolean {
   return getRefreshToken() !== null;
 }
 
+/**
+ * The id of the user signed in, as their access token names them, which a renewal leaves the same; null
+ * without a session, or a token that can be read.
+ */
+export function sessionUser(): string | null {
+  try {
+    const payload = getToken()!.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return (JSON.parse(atob(payload)) as { sub?: string }).sub ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** Whether a storage event means the session was ended or replaced in another tab. */
 export function isSessionStorageKey(key: string | null): boolean {
   return key === null || key === REFRESH_TOKEN_STORAGE_KEY;

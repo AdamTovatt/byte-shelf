@@ -16,7 +16,8 @@ import {
   treeUnder,
   type EncryptedFolder,
 } from '../services/encryptionService';
-import { fileReading, liveContent, unlockedContents, type ContentSource, type Decryption } from '../services/contentService';
+import { liveContent, type ContentSource } from '../services/contentService';
+import { fileReading, unlockedContents, type Decryption } from '../services/fileReading';
 import type { Entry, ShelfDirectory, ShelfFile } from '../services/shelfService';
 import { usePasswordPrompt } from './usePasswordPrompt';
 import { useInvalidateShelf } from './useShelfQueries';

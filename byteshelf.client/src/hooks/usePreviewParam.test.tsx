@@ -77,26 +77,36 @@ describe('the preview in the URL', () => {
     expect([location, preview.id]).toEqual(['/page?tab=1', null]);
   });
 
-  it('knows what was opened here from what was moved on to, gone back to or reloaded', () => {
+  it('knows what was opened here, one over another too', () => {
     expect(preview.wasOpened).toBe(false);
     act(() => preview.open('a'));
     expect(preview.wasOpened).toBe(true);
 
-    act(() => preview.moveTo('b'));
-    expect(preview.wasOpened).toBe(false);
-    act(() => preview.moveTo('a'));
-    expect(preview.wasOpened).toBe(false);
+    act(() => preview.open('b'));
 
-    act(() => preview.open('c'));
-    expect(preview.wasOpened).toBe(true);
-    act(() => preview.close());
-    expect(preview.wasOpened).toBe(false);
-    act(() => navigate(1));
-    expect([preview.id, preview.wasOpened]).toEqual(['c', false]);
+    expect([preview.id, preview.wasOpened]).toEqual(['b', true]);
+  });
 
-    act(() => root.unmount());
-    start(['/page?preview=c']);
-    expect(preview.wasOpened).toBe(false);
+  it.each<[string, () => void]>([
+    ['moved on to', () => act(() => preview.moveTo('a'))],
+    ['moved back to', () => {
+      act(() => preview.open('a'));
+      act(() => preview.moveTo('b'));
+      act(() => preview.moveTo('a'));
+    }],
+    ['gone back to', () => {
+      act(() => preview.open('a'));
+      act(() => preview.close());
+      act(() => navigate(1));
+    }],
+    ['reloaded', () => {
+      act(() => root.unmount());
+      start(['/page?preview=a']);
+    }],
+  ])('knows what was %s from what was opened here', (_how, reach) => {
+    reach();
+
+    expect([preview.id, preview.wasOpened]).toEqual(['a', false]);
   });
 
   it('closes one after another in the history', () => {

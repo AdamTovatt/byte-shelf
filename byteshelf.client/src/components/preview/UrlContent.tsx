@@ -1,9 +1,8 @@
 import { useState, type ReactNode } from 'react';
-import { Button, getErrorMessage } from '../../ui';
 import { useLoaded } from '../../hooks/useLoaded';
 import type { ContentReader } from '../../lib/preview/contentReader';
 import { LoadedContent } from './LoadedContent';
-import { PreviewMessage } from './PreviewMessage';
+import { PreviewFailure } from './PreviewFailure';
 import { PreviewSpinner } from './PreviewSpinner';
 import type { ShowFailure } from './showFailure';
 
@@ -26,19 +25,18 @@ export function UrlContent({ content, cannotShow, children }: UrlContentProps) {
     url.reload();
   }
 
-  if (failure === 'connectionLost') return <Unread message="The connection was lost." onTryAgain={tryAgain} />;
+  if (failure === 'connectionLost') return <PreviewFailure message="The connection was lost." onTryAgain={tryAgain} />;
   if (failure === 'cannotShow') return <NotShown content={content} cannotShow={cannotShow} onTryAgain={tryAgain} />;
   return <LoadedContent loaded={url}>{(loaded) => children(loaded, setFailure)}</LoadedContent>;
 }
 
-/** Why an element did not show a file: its contents could not be read, or else the browser cannot show them. */
+/**
+ * Why an element did not show a file: its contents could not be read, or else the browser cannot show them.
+ * That is tried again too: a connection lost only as the element loaded them reads as this.
+ */
 function NotShown({ content, cannotShow, onTryAgain }: Pick<UrlContentProps, 'content' | 'cannotShow'> & { onTryAgain: () => void }) {
   const read = useLoaded(content, (signal) => content.range(0, 1, signal));
   if (read.status === 'loading') return <PreviewSpinner />;
-  if (read.status === 'failed') return <Unread message={getErrorMessage(read.error, 'Could not read the file.')} onTryAgain={onTryAgain} />;
-  return <PreviewMessage message={cannotShow} />;
-}
-
-function Unread({ message, onTryAgain }: { message: string; onTryAgain: () => void }) {
-  return <PreviewMessage message={message} action={<Button variant="secondary" onClick={onTryAgain}>Try again</Button>} />;
+  if (read.status === 'failed') return <PreviewFailure error={read.error} onTryAgain={onTryAgain} />;
+  return <PreviewFailure message={cannotShow} onTryAgain={onTryAgain} />;
 }

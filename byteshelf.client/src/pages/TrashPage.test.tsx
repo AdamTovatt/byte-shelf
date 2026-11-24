@@ -10,7 +10,7 @@ import { queryKeys } from '../lib/queryKeys';
 import { saveTokens } from '../services/authService';
 import type { DeletionTree, ShelfFile, TrashEntry } from '../services/shelfService';
 import { encryptBlob } from '../lib/encryption/age';
-import { submitPassword } from '../test/dom';
+import { labelled, shows, submitPassword } from '../test/dom';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
 
@@ -134,17 +134,6 @@ describe('the trash page', () => {
     return document.querySelector('[role="dialog"]');
   }
 
-  function shows(text: string): Promise<void> {
-    return vi.waitFor(async () => {
-      await act(async () => {});
-      expect(dialog()?.textContent).toContain(text);
-    });
-  }
-
-  function labelled(label: string): HTMLButtonElement | null {
-    return document.querySelector(`[role="dialog"] button[aria-label="${label}"]`);
-  }
-
   it.each([
     ['a click on its path', () => Array.from(container.querySelectorAll('button')).find((each) => each.textContent === '/a.txt')],
     ['Open', () => container.querySelector<HTMLButtonElement>('button[aria-label="Open /a.txt"]')],
@@ -184,6 +173,22 @@ describe('the trash page', () => {
 
     await vi.waitFor(() => expect(said).toHaveBeenCalledWith('That file is no longer here.', expect.anything()));
     expect([search, dialog()]).toEqual(['', null]);
+  });
+
+  it('previews a file that was gone once it is back', async () => {
+    vi.spyOn(toast, 'error').mockReturnValue('');
+    const openIt = () => act(async () => labelled('Open /a.txt')!.click());
+    await openIt();
+    await shows('hello');
+    restored = true;
+    await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
+    await vi.waitFor(() => expect(dialog()).toBeNull());
+
+    restored = false;
+    await openIt();
+
+    await shows('hello');
+    expect(toast.error).toHaveBeenCalledTimes(1);
   });
 
   it('asks for the password of a file deleted from an encrypted folder as it opens, and shows it read from its deletion', async () => {

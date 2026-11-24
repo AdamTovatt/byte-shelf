@@ -11,7 +11,8 @@ namespace ByteShelf.Server.Shared.Auth
         /// <summary>
         /// The one path prefix where a signed-in browser's token may arrive in a cookie (EasyReasy.Auth's
         /// <c>CookieTokenPaths</c>), for a file opened or saved by plain navigation, or loaded by an
-        /// image, a player or a frame of the web UI, none of which can send a header. Only <c>GET</c> and <c>HEAD</c> read it, and nothing under it may change anything.
+        /// image, a player or a frame of the web UI, none of which can send a header. Only <c>GET</c> and
+        /// <c>HEAD</c> read it, and nothing under it may change anything.
         /// The built-in login, refresh and logout endpoints set and clear the cookie.
         /// </summary>
         public const string CookieTokenPath = "/api/open";

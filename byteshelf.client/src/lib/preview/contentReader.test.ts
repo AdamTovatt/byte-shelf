@@ -4,7 +4,7 @@ import { saveTokens } from '../../services/authService';
 import { deletedContent, liveContent } from '../../services/contentService';
 import { installFakeWebLocks } from '../../test/fakeWebLocks';
 import { inAnHour, stubServer } from '../../test/fakeServer';
-import { blobReader, sourceReader } from './contentReader';
+import { blobReader, sourceReader, type ClosableReader } from './contentReader';
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -55,30 +55,58 @@ describe('a file read by its address', () => {
     expect((await reader.range(9, 12)).size).toBe(0);
   });
 
-  it('aborts what is loading when its caller or the preview does, and reads again after', async () => {
-    const aborted: string[] = [];
-    let answering = false;
-    const sent = stubServer((request) => (answering ? Promise.resolve(new Response('a')) : new Promise((_, reject) => {
-      request.signal.addEventListener('abort', () => {
-        aborted.push(request.url);
-        reject(new DOMException('Aborted', 'AbortError'));
-      });
-    })));
-    const reader = sourceReader('f', liveContent('docs'));
-    const caller = new AbortController();
+  /** What a load answers, or the name of what it failed with. */
+  function ended(load: Promise<unknown>): Promise<unknown> {
+    return load.catch((error: Error) => error.name);
+  }
 
-    const abandoned = reader.blob(caller.signal).catch((error: Error) => error.name);
-    await vi.waitFor(() => expect(sent).toHaveLength(1));
-    caller.abort();
-    expect(await abandoned).toBe('AbortError');
-    const closed = reader.range(0, 5, new AbortController().signal).catch((error: Error) => error.name);
-    await vi.waitFor(() => expect(sent).toHaveLength(2));
-    reader.close();
-    expect(await closed).toBe('AbortError');
-    expect(aborted).toHaveLength(2);
+  describe('while it loads', () => {
+    let reader: ClosableReader;
+    let sent: string[];
+    let answering: boolean;
 
-    answering = true;
-    expect(await (await reader.blob()).text()).toBe('a');
+    beforeEach(() => {
+      answering = false;
+      sent = stubServer((request) => (answering ? Promise.resolve(new Response('a')) : new Promise((_, reject) => {
+        request.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+      })));
+      reader = sourceReader('f', liveContent('docs'));
+    });
+
+    it.each<[string, (signal: AbortSignal) => Promise<unknown>]>([
+      ['whole', (signal) => reader.blob(signal)],
+      ['in part', (signal) => reader.range(0, 5, signal)],
+    ])('%s, is aborted by its caller', async (_how, load) => {
+      const caller = new AbortController();
+      const loading = ended(load(caller.signal));
+      await vi.waitFor(() => expect(sent).toHaveLength(1));
+
+      caller.abort();
+
+      expect(await loading).toBe('AbortError');
+    });
+
+    it.each<[string, (signal: AbortSignal) => Promise<unknown>]>([
+      ['whole', (signal) => reader.blob(signal)],
+      ['in part', (signal) => reader.range(0, 5, signal)],
+    ])('%s, is aborted as the preview closes, and read again after', async (_how, load) => {
+      const loading = ended(load(new AbortController().signal));
+      await vi.waitFor(() => expect(sent).toHaveLength(1));
+
+      reader.close();
+
+      expect(await loading).toBe('AbortError');
+      answering = true;
+      expect(await ((await load(new AbortController().signal)) as Blob).text()).toBe('a');
+    });
+
+    it('has no address for a caller that aborted, nor once the preview closed', async () => {
+      expect(await ended(reader.url(AbortSignal.abort()))).toBe('AbortError');
+
+      const address = ended(reader.url());
+      reader.close();
+      expect(await address).toBe('AbortError');
+    });
   });
 });
 
@@ -107,5 +135,13 @@ describe('a file read from its contents in the page', () => {
     reader.close();
 
     expect(await url).toBe('AbortError');
+  });
+
+  it.each<[string, (reader: ClosableReader) => Promise<unknown>]>([
+    ['its URL', (reader) => reader.url(AbortSignal.abort())],
+    ['its whole', (reader) => reader.blob(AbortSignal.abort())],
+    ['a part of it', (reader) => reader.range(0, 1, AbortSignal.abort())],
+  ])('does not answer %s to a caller that aborted', async (_what, load) => {
+    await expect(load(blobReader(new Blob(['a'])))).rejects.toThrow(expect.objectContaining({ name: 'AbortError' }));
   });
 });

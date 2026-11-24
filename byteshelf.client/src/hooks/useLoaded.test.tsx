@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { useLoaded, type Loaded } from './useLoaded';
+import { useLoaded, type Reloadable } from './useLoaded';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -17,14 +17,14 @@ interface Load {
 describe('a load', () => {
   let root: Root;
   let loads: Load[];
-  let loaded: Loaded<string> & { reload: () => void };
+  let loaded: Reloadable<string>;
 
-  function Probe({ of }: { of: string | null }) {
-    loaded = useLoaded(of, (signal) => new Promise<string>((resolve, reject) => loads.push({ key: of!, signal, resolve, reject })));
+  function Probe({ of }: { of: string }) {
+    loaded = useLoaded(of, (signal) => new Promise<string>((resolve, reject) => loads.push({ key: of, signal, resolve, reject })));
     return null;
   }
 
-  function show(key: string | null): Promise<void> {
+  function show(key: string): Promise<void> {
     return act(async () => root.render(<Probe of={key} />));
   }
 
@@ -50,12 +50,6 @@ describe('a load', () => {
     expect(state()).toBe('loading');
     await act(async () => loads[1].reject(new Error('no b')));
     expect(state()).toBe('no b');
-  });
-
-  it('does not run while its key is null', async () => {
-    await show(null);
-
-    expect([loads.length, state()]).toEqual([0, 'loading']);
   });
 
   it('is aborted as its key changes, and what it then answers is left', async () => {

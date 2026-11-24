@@ -15,7 +15,8 @@ and give a key other shelves (a key row's Shelves control in shelf settings), an
 page pair replicas, see how far behind each is, remove one, and promote a replica.
 
 `src/ui` is the UI library: buttons, fields, cards, dialogs, menus, page layout and the sidebar, with
-the colour, type and icon systems and the Tailwind preset they need. It was copied from the house
+the colour, type and icon systems and the Tailwind preset they need. A dialog takes the focus, keeps Tab
+in it and gives the focus back. It was copied from the house
 component library, trimmed to what ByteShelf uses; pages import from `src/ui`. `src/components` holds
 what the library lacks: app-specific pieces (the form dialog, the password dialog, the quota field)
 and a few generic ones written for this app (`CardList`, `MiddleTruncatedName`). The file picker is a
@@ -83,15 +84,18 @@ npm run codegen    # in a second terminal
   type, its place in the URL (`?preview=<file id>`, `hooks/usePreviewParam.ts`), so Back closes it and a
   reload keeps it. Previous, next and the arrow keys go through the files a viewer takes, in the order of
   the listing or the search's results (`hooks/useShelfPreview.ts`; past the last result so far, next fetches
-  the next page); a file outside them, as after a reload of a search, is previewed alone. A preview whose
-  file is gone closes with a toast. In the trash (`hooks/useTrashPreview.ts`) it is of the one file a file
-  deletion took, by the deletion's id, without neighbours.
+  the pages that follow until one holds a file a viewer takes); a file outside them, as after a reload of a
+  search, is previewed alone. A preview whose file is gone closes with a toast. In the trash
+  (`hooks/useTrashPreview.ts`) it is of the one file a file deletion took, by the deletion's id, without
+  neighbours; Open shows it there whatever its type, saying so of one no viewer takes.
   - *Viewers* (`components/preview/viewers/`) are `{ id, mediaTypes, extensions, component, unavailable? }`,
     held by a registry that never changes (`lib/preview/viewerRegistry.ts`) and is read through
-    `hooks/useViewers.ts` alone. An exact type beats a family (`image/*`), a plugin's viewer a built-in one,
-    and the first plugin by id the next; extensions count only for a file stored as
-    `application/octet-stream`. Nothing is rendered as HTML: HTML shows as its source, and SVG through an
-    `<img>`, where its scripts do not run.
+    `hooks/useViewers.ts` alone. The built-in ones are listed in `BUILT_IN_VIEWERS` (`viewers/index.ts`);
+    `ViewerRegistry.with` answers a registry that holds a plugin's too. An exact type beats a family
+    (`image/*`), a plugin's viewer a built-in one, and the first plugin by id the next; extensions count
+    only for a file stored as `application/octet-stream`. Nothing is rendered as HTML: HTML shows as its
+    source, and SVG through an `<img>`, where its scripts do not run. Text shows its first 1 MiB, decoded as
+    a tab would; an image zooms with the wheel, a pinch or a double-click and moves with a drag.
   - *Contents* reach a viewer through a `ContentReader` (`lib/preview/contentReader.ts`): `url()`, `blob()`
     and `range()`, whatever they come from. A blob-backed file (`isBlobBacked`) is read whole into the page
     first (`lib/preview/fileContents.ts`), over 100 MiB only once Load, Download or Open in new tab is
@@ -102,11 +106,12 @@ npm run codegen    # in a second terminal
     any other a blob: one of untyped bytes. What the page reads itself goes past the browser's cache, so
     nothing of it is left there, and a cached part is never taken for the whole of contents swapped since
     (`requestBytes` in `services/contentService.ts`).
-  - *A viewer that cannot:* one that throws while rendering is caught and Download offered; an image, video
-    or recording the browser cannot decode says so, and one whose connection was lost offers Try again. A
-    viewer that cannot show files in this browser says why (`unavailable`), and the next that takes the type
-    shows them. With none left, as for a PDF where the browser shows none inside a page, the file's row opens
-    it in a tab; reached otherwise, its preview says why, with Open in new tab and Download.
+  - *A viewer that cannot:* one that throws while rendering is caught and Download offered. A file that
+    could not be read says why, and an image, video or recording the browser cannot decode says so, each
+    with Try again: a connection lost as the browser loaded it reads as either. A viewer that cannot show
+    files in this browser says why (`unavailable`), and the next that takes the type shows them. With none
+    left, as for a PDF where the browser shows none inside a page, the file's row opens it in a tab; reached
+    otherwise, its preview says why, with Open in new tab and Download.
 - **Opening and saving** (`components/fileOpening.tsx`): an unencrypted file opens or saves by navigating to
   `/api/open/...`, where the session's token rides in a cookie the server sets at sign-in and renewal
   (a plain navigation cannot send the header), so no public link is made. The session is renewed
@@ -119,8 +124,8 @@ npm run codegen    # in a second terminal
   same opening serves a file in the trash: a `ContentSource` says whether a file is read live or from one
   deletion (`deletedContent`), and which encrypted folder's password opens it: for a live file the one at
   its path, for a deleted one the folder it was stored in, as the deletion's listing names it. The Trash
-  page's Download saves a deleted file through it; a deleted folder downloads whole from the CLI or an
-  agent.
+  page's Download, and its preview's Download and Open in new tab, go through it; a deleted folder downloads
+  whole from the CLI or an agent.
 - **Encryption** (`hooks/useEncryption.tsx`, `hooks/usePasswordPrompt.tsx`, `lib/encryption/`): a file's or
   folder's menu encrypts it with a password, typed twice and then a warning that a lost one cannot be
   recovered; typage encrypts in the browser at age's work factor, about a second a file, and the file's
@@ -136,11 +141,12 @@ npm run codegen    # in a second terminal
   blob: in a tab for images, PDFs, plain text, audio and video, saved for every other type, since a blob
   runs as the app. Opening one asks for its password; reached by previous, next or a reload it shows Unlock
   instead. Reading a file asks for no password and answers that it is locked; unlocking it asks, and answers
-  the contents (`Decryption` in `services/contentService.ts`). A password is asked for once and kept in the
+  the contents (`Decryption` in `services/fileReading.ts`). A password is asked for once and kept in the
   tab's `sessionStorage` (an encrypted folder's under the folder), taken out of any tab the app opens, and
   forgotten on sign-in and sign-out, and when the app starts with no session (a tab the browser restores
-  after a sign-out). A plain folder's Remove encryption leaves out the files of an encrypted folder below
-  it, which has its own.
+  after a sign-out); a page that finds another user signed in from another tab starts anew, holding nothing
+  it decrypted for the one before. A plain folder's Remove encryption leaves out the files of an encrypted
+  folder below it, which has its own.
 - **Pages and layout:** a shelf's settings are tabs that are routes, `/shelves/:shelf/settings/:tab`
   (`SHELF_SETTINGS_TABS` in `lib/shelfPaths.ts` lists them; the page picks the tab from the route and
   sends any other to the first tab the user sees: General for an admin, Links for anyone else).

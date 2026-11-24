@@ -8,11 +8,11 @@ import { LoadError } from '../components/LoadError';
 import { NameLine } from '../components/MiddleTruncatedName';
 import { ShelfHeader } from '../components/ShelfHeader';
 import { saveFiles } from '../components/fileOpening';
-import { FilePreview } from '../components/preview/FilePreview';
+import { PreviewOverPage } from '../components/preview/PreviewOverPage';
 import { useEncryption } from '../hooks/useEncryption';
 import { useTrashPreview } from '../hooks/useTrashPreview';
 import { useEmptyTrash, useRestoreDeletion, useTrash } from '../hooks/useShelfQueries';
-import { deletedFile, openable } from '../services/contentService';
+import { deletedFile, openable } from '../services/fileReading';
 import { formatBytes, formatDate } from '../lib/format';
 import { nameOf } from '../lib/shelfPaths';
 import { runOrToast } from '../lib/utils';
@@ -98,7 +98,7 @@ export function TrashPage() {
       )}
 
       {emptying && <EmptyTrashDialog shelf={shelf} onClose={() => setEmptying(false)} />}
-      {preview.isOpen ? <FilePreview {...preview.shown} steps={null}>{encryption.dialog}</FilePreview> : encryption.dialog}
+      <PreviewOverPage preview={preview}>{encryption.dialog}</PreviewOverPage>
     </PageLayout>
   );
 }

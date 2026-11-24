@@ -1,20 +1,13 @@
 import { useMemo } from 'react';
+import type { PagePreview } from '../lib/preview/shownPreview';
 import { isNotFound } from '../services/apiClient';
-import { deletedFile, type Decryption, type ReadFile } from '../services/contentService';
+import { deletedFile, type Decryption } from '../services/fileReading';
 import { useCloseWhenGone, usePreviewParam } from './usePreviewParam';
 import { useDeletion } from './useShelfQueries';
 
-export interface TrashPreview {
-  isOpen: boolean;
+export interface TrashPreview extends PagePreview {
   /** Opens the preview of the file a file deletion took. */
   open: (deletionId: string) => void;
-  /** What the preview shows while it is open. */
-  shown: {
-    previewed: ReadFile | null;
-    error: Error | null;
-    onClose: () => void;
-    asksPassword: boolean;
-  };
 }
 
 /**
@@ -29,5 +22,5 @@ export function useTrashPreview(shelf: string, decryption: Decryption): TrashPre
   const gone = !isFetching && (isNotFound(error) || (deletion !== undefined && !previewed));
   useCloseWhenGone(gone, close);
 
-  return { isOpen: id !== null && !gone, open, shown: { previewed, error, onClose: close, asksPassword: wasOpened } };
+  return { isOpen: id !== null && !gone, open, shown: { previewed, error, steps: null, onClose: close, asksPassword: wasOpened } };
 }

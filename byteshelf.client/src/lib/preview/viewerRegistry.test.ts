@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ShelfFile } from '../../services/shelfService';
+import { shelfFile } from '../../test/shelfFiles';
 import { ViewerRegistry, type Viewer } from './viewerRegistry';
 
 function viewer(id: string, mediaTypes: string[], extensions: string[] = []): Viewer {
@@ -7,7 +8,7 @@ function viewer(id: string, mediaTypes: string[], extensions: string[] = []): Vi
 }
 
 function file(contentType: string, name = 'a.bin'): ShelfFile {
-  return { id: 'f', shelfId: 's', directoryId: 'd', path: `/${name}`, name, contentType, sizeBytes: 1, sha256: '', createdAt: '', updatedAt: '', description: null, encrypted: false };
+  return shelfFile(name, { contentType });
 }
 
 /** The viewer picked among those registered, by each one's plugin. */

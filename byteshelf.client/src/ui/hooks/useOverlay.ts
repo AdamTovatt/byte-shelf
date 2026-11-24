@@ -3,13 +3,13 @@ import { createContext, useContext, useEffect, useRef, type RefObject } from 're
 interface UseOverlayOptions {
   isOpen: boolean;
   onClose: () => void;
-  /** Any other key, heard only while this overlay is the topmost, as Escape is. */
+  /** Any key but Escape and, given its `element`, Tab: heard only while this overlay is the topmost, as Escape is. */
   onKeyDown?: (event: KeyboardEvent) => void;
   /** The overlay's element, which takes the focus and keeps it while the overlay is the topmost. */
   element?: RefObject<HTMLElement | null>;
 }
 
-/** What Tab stops at. */
+/** What Tab stops at, where it is drawn. */
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe, video[controls], audio[controls], [tabindex]:not([tabindex="-1"])';
 
 /**
@@ -76,7 +76,7 @@ function topmostToken(): symbol | undefined {
  * is nowhere, as after what had it is gone, comes back in.
  */
 function keepTabWithin(element: HTMLElement, event: KeyboardEvent): void {
-  const stops = Array.from(element.querySelectorAll<HTMLElement>(FOCUSABLE));
+  const stops = Array.from(element.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((stop) => stop.checkVisibility());
   const active = document.activeElement;
   const within = element.contains(active);
   if (!within && active !== document.body) return;
@@ -153,8 +153,7 @@ export function useOverlay({ isOpen, onClose, onKeyDown, element }: UseOverlayOp
   useEffect(() => {
     if (!isOpen || !element?.current) return;
     const before = document.activeElement;
-    // Left where it is when something inside took it as it opened, as a field with autoFocus does.
-    if (!element.current.contains(before)) element.current.focus();
+    element.current.focus();
     return () => {
       if (before instanceof HTMLElement) before.focus();
     };

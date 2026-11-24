@@ -1,12 +1,11 @@
 import type { ReactNode } from 'react';
-import { getErrorMessage } from '../../ui';
-import type { Loaded } from '../../hooks/useLoaded';
-import { PreviewMessage } from './PreviewMessage';
+import type { Reloadable } from '../../hooks/useLoaded';
+import { PreviewFailure } from './PreviewFailure';
 import { PreviewSpinner } from './PreviewSpinner';
 
-/** What a viewer loaded, once it has: a spinner until then, and why when it could not be. */
-export function LoadedContent<T>({ loaded, children }: { loaded: Loaded<T>; children: (value: T) => ReactNode }) {
+/** What a viewer loaded, once it has: a spinner until then, and why, and trying again, when it could not be. */
+export function LoadedContent<T>({ loaded, children }: { loaded: Reloadable<T>; children: (value: T) => ReactNode }) {
   if (loaded.status === 'loading') return <PreviewSpinner />;
-  if (loaded.status === 'failed') return <PreviewMessage message={getErrorMessage(loaded.error, 'Could not read the file.')} />;
+  if (loaded.status === 'failed') return <PreviewFailure error={loaded.error} onTryAgain={loaded.reload} />;
   return children(loaded.value);
 }

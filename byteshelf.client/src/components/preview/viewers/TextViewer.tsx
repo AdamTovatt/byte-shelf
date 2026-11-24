@@ -1,6 +1,7 @@
 import { CustomScroll } from '../../../ui';
 import { useLoaded } from '../../../hooks/useLoaded';
 import { formatBytes } from '../../../lib/format';
+import { charsetOf } from '../../../lib/mediaTypes';
 import type { ViewerProps } from '../../../lib/preview/viewerRegistry';
 import { LoadedContent } from '../LoadedContent';
 
@@ -8,14 +9,14 @@ import { LoadedContent } from '../LoadedContent';
 const SHOWN_BYTES = 1024 * 1024;
 
 /** A file's text as it is written, never rendered as what it describes: HTML shows as its source. */
-export function TextViewer({ content }: ViewerProps) {
+export function TextViewer({ file, content }: ViewerProps) {
   const loaded = useLoaded(content, async (signal) => {
     // One byte past what is shown says whether there is more.
     const start = await content.range(0, SHOWN_BYTES + 1, signal);
     const cut = start.size > SHOWN_BYTES;
     const bytes = new Uint8Array(await start.slice(0, SHOWN_BYTES).arrayBuffer());
     // Streaming leaves out a character the cut went through, rather than showing it broken.
-    return { text: new TextDecoder(encodingOf(bytes)).decode(bytes, { stream: cut }), cut };
+    return { text: decoderOf(bytes, file.contentType).decode(bytes, { stream: cut }), cut };
   });
 
   return (
@@ -32,9 +33,24 @@ export function TextViewer({ content }: ViewerProps) {
   );
 }
 
-/** The encoding a text's byte order mark names, as a browser's tab reads it; UTF-8 without one. */
-function encodingOf(bytes: Uint8Array): string {
-  if (bytes[0] === 0xff && bytes[1] === 0xfe) return 'utf-16le';
-  if (bytes[0] === 0xfe && bytes[1] === 0xff) return 'utf-16be';
-  return 'utf-8';
+/**
+ * Decodes a text in the encoding its byte order mark names, or else its stored type, as a browser's tab
+ * does; UTF-8 when neither names one known.
+ */
+function decoderOf(bytes: Uint8Array, contentType: string): TextDecoder {
+  const marked = markedEncoding(bytes);
+  if (marked) return new TextDecoder(marked);
+  try {
+    return new TextDecoder(charsetOf(contentType));
+  } catch {
+    return new TextDecoder();
+  }
+}
+
+/** The encoding a text's byte order mark names; null without one. */
+function markedEncoding(bytes: Uint8Array): string | null {
+  const starts = (...mark: number[]) => mark.every((byte, index) => bytes[index] === byte);
+  if (starts(0xff, 0xfe)) return 'utf-16le';
+  if (starts(0xfe, 0xff)) return 'utf-16be';
+  return starts(0xef, 0xbb, 0xbf) ? 'utf-8' : null;
 }

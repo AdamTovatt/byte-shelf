@@ -170,7 +170,8 @@ credential, are outside the limits.
   that path, which a browser keeps only over HTTPS. Over plain HTTP it falls back to reading each
   file whole into the page, which works but holds large files in memory. Do not log request or
   response headers at the proxy: that cookie carries the token, as `Authorization` does.
-- Leave framing and loading to the page itself: a proxy that adds `X-Frame-Options: DENY`, or a
+- Leave framing and loading to the page itself: a proxy that adds `X-Frame-Options: DENY` or
+  `frame-ancestors 'none'` to what is under `/api/open` (`SAMEORIGIN` and `'self'` work), or a
   `Content-Security-Policy` that does not allow frames and media from `'self'` and `blob:`, and images
   from those and `data:`, breaks the web UI's previews.
 - Passkeys need the browser to reach the server at `APP_BASE_URL`'s host, over HTTPS (or plain HTTP

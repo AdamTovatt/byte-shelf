@@ -12,7 +12,7 @@ import { queryKeys } from '../lib/queryKeys';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { encryptBlob } from '../lib/encryption/age';
 import { removePdfViewer, restorePdfViewer, stubTabs } from '../test/browser';
-import { button, press, submitPassword } from '../test/dom';
+import { button, labelled, press, shows, submitPassword, untilFound } from '../test/dom';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -27,6 +27,8 @@ function file(name: string) {
     sizeBytes: 1, sha256: '', createdAt: '2026-11-02T00:00:00Z', updatedAt: '2026-11-02T00:00:00Z', encrypted: false,
   };
 }
+
+const LIMIT = 100 * 1024 * 1024;
 
 /** The files in the shelf's root; a test adds to it to change what the next listing answers. */
 let rootFiles: ReturnType<typeof file>[];
@@ -53,9 +55,16 @@ function duplicates(after: string | null) {
     : { groups: [duplicateGroup('b.txt', 'b'.repeat(64))], nextCursor: null };
 }
 
-/** Whether the search for a second page fails, and the type of the file it finds. */
+/** Whether the search for a second page fails, the type of the file it finds, and whether a third follows. */
 let searchFails: boolean;
 let secondPageType: string;
+let hasThirdPage: boolean;
+
+/** What the search for a page past the first, and a file's record, wait for before they are answered. */
+let pageHeld: Promise<void> | null;
+let recordHeld: Promise<void> | null;
+/** Whether the next ask for a file's record fails. */
+let recordFails: boolean;
 
 /** An encrypted file's stored contents; null answers a plain one's. */
 let stored: Blob | null;
@@ -63,12 +72,12 @@ let stored: Blob | null;
 /** Whether both searches find nothing; a test sets it to see what an empty search says. */
 let findNothing: boolean;
 
-/** What search answers: a page with /reports/c.txt, then, after its cursor, one with /reports/d.txt. */
+/** What search answers: a page with /reports/c.txt, then, after its cursor, one with /reports/d.txt, and, when there is a third, one with /reports/e.txt. */
 function searched(after: string | null) {
   if (findNothing) return { files: [], nextCursor: null };
-  return after === null
-    ? { files: [{ ...file('c.txt'), path: '/reports/c.txt' }], nextCursor: 'next' }
-    : { files: [{ ...file('d.txt'), path: '/reports/d.txt', contentType: secondPageType }], nextCursor: null };
+  if (after === null) return { files: [{ ...file('c.txt'), path: '/reports/c.txt' }], nextCursor: 'next' };
+  if (after === 'third') return { files: [{ ...file('e.txt'), path: '/reports/e.txt' }], nextCursor: null };
+  return { files: [{ ...file('d.txt'), path: '/reports/d.txt', contentType: secondPageType }], nextCursor: hasThirdPage ? 'third' : null };
 }
 
 describe('the shelf page\'s rows', () => {
@@ -92,19 +101,29 @@ describe('the shelf page\'s rows', () => {
     installFakeWebLocks();
     saveTokens({ token: 't', expiresAt: inAnHour(), refreshToken: 'r' });
     rootFiles = [file('a.txt'), file('b.txt')];
-    elsewhere = [...['c.txt', 'd.txt'].map((name) => ({ ...file(name), path: `/reports/${name}` })), duplicateGroup('a.txt', '').files[1]];
+    elsewhere = [...['c.txt', 'd.txt', 'e.txt'].map((name) => ({ ...file(name), path: `/reports/${name}` })), duplicateGroup('a.txt', '').files[1]];
     searchFails = false;
     secondPageType = 'text/plain';
+    hasThirdPage = false;
+    pageHeld = null;
+    recordHeld = null;
+    recordFails = false;
     findNothing = false;
     stored = null;
     sent = stubServer(async (request) => {
       const url = new URL(request.url);
       if (url.pathname === '/api/shelves/docs/duplicates') return json(duplicates(url.searchParams.get('after')));
+      if (url.pathname === '/api/shelves/docs/search' && url.searchParams.has('after')) await pageHeld;
       if (url.pathname === '/api/shelves/docs/search' && searchFails && url.searchParams.has('after')) return json({ message: 'Down.' }, 500);
       if (url.pathname === '/api/shelves/docs/search') return json(searched(url.searchParams.get('after')));
       if (url.pathname === '/api/shelves/docs/directories/encryption') return json({ encryptedBy: null });
       if (url.pathname === '/api/shelves/docs/content') return stored ? new Response(stored) : new Response('the contents', { status: 206 });
       if (url.pathname === '/api/shelves/docs/files') {
+        await recordHeld;
+        if (recordFails) {
+          recordFails = false;
+          return json({ message: 'Down.' }, 500);
+        }
         const found = [...rootFiles, ...elsewhere].find((each) => each.id === url.searchParams.get('id'));
         return found ? json(found) : json({ message: 'There is no such file.', code: 'not_found' }, 404);
       }
@@ -119,7 +138,7 @@ describe('the shelf page\'s rows', () => {
   /** Opens the page at `url` in a tab of its own: no history and nothing cached. */
   async function renderAt(url: string): Promise<void> {
     root = createRoot(container);
-    client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 0 } } });
     await act(async () => root.render(
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={[url]}>
@@ -438,11 +457,7 @@ describe('the shelf page\'s rows', () => {
   /** Searches, and opens the result c.txt. */
   async function openResult(): Promise<void> {
     type(searchField(), 'notes');
-    click(await vi.waitFor(() => {
-      const found = container.querySelector('button[aria-label="Open c.txt"]');
-      expect(found).not.toBeNull();
-      return found!;
-    }));
+    click(await untilFound('button[aria-label="Open c.txt"]'));
     await previews({ name: 'c.txt', position: '1 of 1+' });
   }
 
@@ -458,7 +473,48 @@ describe('the shelf page\'s rows', () => {
     expect(requests(NEXT_PAGE)).toHaveLength(1);
   });
 
-  it('stays on the last result when the next page holds nothing a viewer takes', async () => {
+  it('goes past a page that holds nothing a viewer takes, on to the one after it', async () => {
+    secondPageType = 'application/zip';
+    hasThirdPage = true;
+    await openResult();
+
+    key(document, { key: 'ArrowRight' });
+
+    await previews({ name: 'e.txt', position: '2 of 2' });
+  });
+
+  it('fetches the next page once, however often it is asked to move on while that loads', async () => {
+    const said = vi.spyOn(toast, 'error').mockReturnValue('');
+    let release = () => {};
+    pageHeld = new Promise((resolve) => (release = resolve));
+    await openResult();
+
+    key(document, { key: 'ArrowRight' });
+    await vi.waitFor(() => expect(requests(NEXT_PAGE)).toHaveLength(1));
+    key(document, { key: 'ArrowRight' });
+    release();
+
+    await previews({ name: 'd.txt', position: '2 of 2' });
+    expect([requests(NEXT_PAGE).length, said.mock.calls]).toEqual([1, []]);
+  });
+
+  it('stays closed when it is closed while the next page loads', async () => {
+    let release = () => {};
+    pageHeld = new Promise((resolve) => (release = resolve));
+    await openResult();
+
+    key(document, { key: 'ArrowRight' });
+    await vi.waitFor(() => expect(requests(NEXT_PAGE)).toHaveLength(1));
+    key(document, { key: 'Escape' });
+    await previews(null);
+    release();
+
+    await untilFound('button[aria-label="Open d.txt"]');
+    await act(async () => {});
+    expect([location, previewed()]).toEqual(['/shelves/docs', null]);
+  });
+
+  it('stays on the last result when the last page holds nothing a viewer takes', async () => {
     secondPageType = 'application/zip';
     await openResult();
 
@@ -467,12 +523,14 @@ describe('the shelf page\'s rows', () => {
     await previews({ name: 'c.txt', position: '1 of 1' });
   });
 
-  it('stays on the last result when the next page fails, and asks again only when asked', async () => {
+  it('stays on the last result when the next page fails, saying so, and asks again only when asked', async () => {
+    const said = vi.spyOn(toast, 'error').mockReturnValue('');
     searchFails = true;
     await openResult();
 
     key(document, { key: 'ArrowRight' });
     await vi.waitFor(() => expect(requests(NEXT_PAGE)).toHaveLength(1));
+    await vi.waitFor(() => expect(said.mock.calls).toEqual([['Down.']]));
     await previews({ name: 'c.txt', position: '1 of 1+' });
     searchFails = false;
     key(document, { key: 'ArrowRight' });
@@ -483,11 +541,7 @@ describe('the shelf page\'s rows', () => {
 
   it('previews the files of a search for duplicates a group after another', async () => {
     await toggleDuplicates();
-    click(await vi.waitFor(() => {
-      const found = container.querySelector('button[aria-label="Open a.txt"]');
-      expect(found).not.toBeNull();
-      return found!;
-    }));
+    click(await untilFound('button[aria-label="Open a.txt"]'));
     await previews({ name: 'a.txt', position: '1 of 2+' });
 
     key(document, { key: 'ArrowRight' });
@@ -510,18 +564,78 @@ describe('the shelf page\'s rows', () => {
     expect(items('a.txt')).toContain('Open in new tab');
   });
 
-  it('keeps the preview on a reload: a file of the folder among the others, one elsewhere alone, and closing it stays here', async () => {
+  it.each([
+    ['a file of the folder among the others', 'a.txt', '1 of 2'],
+    ['one elsewhere alone', 'c.txt', undefined],
+  ])('keeps the preview of %s on a reload', async (_which, name, position) => {
+    act(() => root.unmount());
+
+    await renderAt(`/shelves/docs?preview=file%3A${name}`);
+
+    await previews({ name, position });
+  });
+
+  it('closes one a link opened by staying on the page', async () => {
     act(() => root.unmount());
     await renderAt('/shelves/docs?preview=file%3Aa.txt');
     await previews({ name: 'a.txt', position: '1 of 2' });
-    act(() => root.unmount());
-    await renderAt('/shelves/docs?preview=file%3Ac.txt');
-    await previews({ name: 'c.txt', position: undefined });
 
     key(document, { key: 'Escape' });
 
     await previews(null);
     expect(location).toBe('/shelves/docs');
+  });
+
+  it('offers the file\'s details', async () => {
+    key(row('a.txt')!, { key: 'Enter' });
+    await previews({ name: 'a.txt', position: '1 of 2' });
+
+    click(labelled('Details')!);
+
+    await shows('Details of a.txt');
+  });
+
+  it('shows the listed record until its own loads', async () => {
+    recordHeld = new Promise(() => {});
+
+    key(row('b.txt')!, { key: 'Enter' });
+
+    await previews({ name: 'b.txt', position: '2 of 2' });
+    await shows('the contents');
+  });
+
+  it('asks again for a record that failed to load', async () => {
+    act(() => root.unmount());
+    recordFails = true;
+
+    await renderAt('/shelves/docs?preview=file%3Ac.txt');
+
+    await previews({ name: 'c.txt', position: undefined });
+  });
+
+  it.each([
+    ['encrypted', false, 'This file is encrypted.'],
+    ['decrypted', true, 'the contents'],
+  ])('shows a file %s since it was previewed as it is listed now, not as it was', async (_how, encrypted, shown) => {
+    sessionStorage.clear();
+    const change = async (to: boolean) => {
+      rootFiles = [file('a.txt'), { ...file('b.txt'), encrypted: to }];
+      await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
+    };
+    await change(encrypted);
+    key(row('a.txt')!, { key: 'Enter' });
+    key(document, { key: 'ArrowRight' });
+    await previews({ name: 'b.txt', position: '2 of 2' });
+    key(document, { key: 'Escape' });
+    await previews(null);
+
+    await change(!encrypted);
+    recordHeld = new Promise(() => {});
+    key(row('a.txt')!, { key: 'Enter' });
+    key(document, { key: 'ArrowRight' });
+
+    await previews({ name: 'b.txt', position: '2 of 2' });
+    await shows(shown);
   });
 
   describe('of an encrypted file', () => {
@@ -553,6 +667,18 @@ describe('the shelf page\'s rows', () => {
       await locked(true);
     });
 
+    it('keeps the preview open as Escape cancels its prompt, which dims nothing more', async () => {
+      key(row('b.txt')!, { key: 'Enter' });
+      await locked(true);
+      const dimming = Array.from(document.querySelectorAll('[data-testid="modal-backdrop"]'), (each) => !each.classList.contains('bg-transparent'));
+      expect(dimming).toEqual([true, false]);
+
+      key(document, { key: 'Escape' });
+
+      await locked(false);
+      expect(previewed()).toEqual({ name: 'b.txt', position: '2 of 2' });
+    });
+
     it('shows it locked when it is moved on to or the page reloaded, asking nothing', async () => {
       key(row('a.txt')!, { key: 'Enter' });
       await previews({ name: 'a.txt', position: '1 of 2' });
@@ -569,7 +695,7 @@ describe('the shelf page\'s rows', () => {
 
     it('is saved, and shown, by Download of one too large to show unasked, with one prompt for both', async () => {
       stored = await encryptBlob(new Blob(['the secret']), 'pw', 'text/plain', 10);
-      rootFiles = [file('a.txt'), { ...file('b.txt'), encrypted: true, sizeBytes: 100 * 1024 * 1024 + 1 }];
+      rootFiles = [file('a.txt'), { ...file('b.txt'), encrypted: true, sizeBytes: LIMIT + 1 }];
       act(() => root.unmount());
       await renderAt('/shelves/docs');
       await vi.waitFor(() => expect(row('b.txt')).not.toBeNull());
