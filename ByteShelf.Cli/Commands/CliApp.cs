@@ -877,7 +877,7 @@ namespace ByteShelf.Cli.Commands
         {
             string shelf = arguments.Required(0, "shelf");
             string name = arguments.Required(1, "name");
-            ShelfKeyPermission permission = PermissionNames.ParseKey(arguments.Required(2, "access"));
+            ShelfPermission permission = PermissionNames.ParseKey(arguments.Required(2, "access"));
             arguments.EnsureAllUsed();
             Print(await (await ShelfAsync(shelf, cancellationToken)).CreateKeyAsync(name, permission, cancellationToken), ByteShelfJsonContext.Default.CreatedShelfKey, TextFormat.CreatedKey);
         }
@@ -886,7 +886,7 @@ namespace ByteShelf.Cli.Commands
         {
             Guid keyId = KeyId(arguments.Required(0, "key-id"));
             string shelf = arguments.Required(1, "shelf");
-            ShelfKeyPermission permission = PermissionNames.ParseKey(arguments.Required(2, "access"));
+            ShelfPermission permission = PermissionNames.ParseKey(arguments.Required(2, "access"));
             arguments.EnsureAllUsed();
             ShelfKeyGrantInfo granted = await (await ShelfAsync(shelf, cancellationToken)).SetKeyGrantAsync(keyId, permission, cancellationToken);
             Print(granted, ByteShelfJsonContext.Default.ShelfKeyGrantInfo, TextFormat.KeyGrant);

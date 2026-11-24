@@ -97,7 +97,7 @@ namespace ByteShelf.Server.Tests.Storage
         [Fact]
         public async Task CreateLink_AddOnlyKeyAsksToOverwrite_Returns403()
         {
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.AddOnly);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.AddOnly);
 
             HttpResponseMessage response = await key.PostAsJsonAsync("/api/shelves/docs/upload-link", new CreateUploadLinkRequest { Path = "/a.txt", Overwrite = true });
 
@@ -107,7 +107,7 @@ namespace ByteShelf.Server.Tests.Storage
         [Fact]
         public async Task CreateLink_ReadKey_Returns403()
         {
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.Read);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.Read);
 
             HttpResponseMessage response = await key.PostAsJsonAsync("/api/shelves/docs/upload-link", new CreateUploadLinkRequest { Path = "/a.txt" });
 
@@ -117,7 +117,7 @@ namespace ByteShelf.Server.Tests.Storage
         [Fact]
         public async Task Link_FromAnAddOnlyKey_PathTaken_Returns409AndKeepsTheFile()
         {
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.AddOnly);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.AddOnly);
             UploadLink link = await CreateLinkAsync(key, new CreateUploadLinkRequest { Path = "/a.txt" });
             (await PutAsync(link, "first")).EnsureSuccessStatusCode();
 
@@ -155,7 +155,7 @@ namespace ByteShelf.Server.Tests.Storage
         [Fact]
         public async Task Link_KeyDeletedSince_Returns404()
         {
-            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite);
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfPermission.ReadWrite);
             using HttpClient key = _host.CreateKeyClient(created.Secret);
             UploadLink link = await CreateLinkAsync(key, new CreateUploadLinkRequest { Path = "/a.txt" });
             (await _host.AdminClient.DeleteAsync($"/api/keys/{created.Key.Id}/grants/docs")).EnsureSuccessStatusCode();

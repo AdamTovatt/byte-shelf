@@ -10,7 +10,7 @@ import {
   setGrant,
   setKeyGrant,
   type ShelfAccessPermission,
-  type ShelfKeyPermission,
+  type ShelfPermission,
 } from '../services/accessService';
 
 export function useGrants(shelf: string) {
@@ -66,7 +66,7 @@ export function useRemoveGrant() {
 export function useCreateKey(shelf: string) {
   const invalidate = useInvalidateAccess();
   return useMutation({
-    mutationFn: ({ name, permission }: { name: string; permission: ShelfKeyPermission }) => createKey(shelf, name, permission),
+    mutationFn: ({ name, permission }: { name: string; permission: ShelfPermission }) => createKey(shelf, name, permission),
     onSuccess: invalidate,
   });
 }
@@ -75,7 +75,7 @@ export function useCreateKey(shelf: string) {
 export function useSetKeyGrant() {
   const invalidate = useInvalidateAccess();
   return useMutation({
-    mutationFn: ({ shelf, keyId, permission }: { shelf: string; keyId: string; permission: ShelfKeyPermission }) => setKeyGrant(shelf, keyId, permission),
+    mutationFn: ({ shelf, keyId, permission }: { shelf: string; keyId: string; permission: ShelfPermission }) => setKeyGrant(shelf, keyId, permission),
     onSuccess: invalidate,
   });
 }

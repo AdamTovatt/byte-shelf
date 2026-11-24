@@ -143,7 +143,7 @@ namespace ByteShelf.Server.Tests.Storage
             Shelf shelf = await ShelfService.CreateAsync("backups", null);
             User user = await CreateUserAsync("user@example.com");
             await GrantService.SetAsync(shelf, user.Id, ShelfAccessPermission.Read);
-            CreatedShelfKey key = await KeyService.CreateAsync(shelf, "app", ShelfKeyPermission.Read);
+            CreatedShelfKey key = await KeyService.CreateAsync(shelf, "app", ShelfPermission.Read);
 
             await ShelfService.DeleteAsync(shelf);
 

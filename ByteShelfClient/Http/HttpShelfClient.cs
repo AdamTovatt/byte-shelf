@@ -484,7 +484,7 @@ namespace ByteShelfClient.Http
             return _connection.SendAsync(HttpMethod.Get, $"{_base}/keys", ByteShelfJsonContext.Default.IReadOnlyListShelfKeyInfo, cancellationToken);
         }
 
-        public Task<CreatedShelfKey> CreateKeyAsync(string name, ShelfKeyPermission permission, CancellationToken cancellationToken = default)
+        public Task<CreatedShelfKey> CreateKeyAsync(string name, ShelfPermission permission, CancellationToken cancellationToken = default)
         {
             ShelfKeys.ValidatePermission(permission);
             return _connection.SendAsync(
@@ -496,7 +496,7 @@ namespace ByteShelfClient.Http
                 cancellationToken);
         }
 
-        public Task<ShelfKeyGrantInfo> SetKeyGrantAsync(Guid keyId, ShelfKeyPermission permission, CancellationToken cancellationToken = default)
+        public Task<ShelfKeyGrantInfo> SetKeyGrantAsync(Guid keyId, ShelfPermission permission, CancellationToken cancellationToken = default)
         {
             ShelfKeys.ValidatePermission(permission);
             return _connection.SendAsync(

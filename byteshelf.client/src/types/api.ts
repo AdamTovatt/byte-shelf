@@ -4921,7 +4921,7 @@ export interface components {
         };
         CreateShelfKeyRequest: {
             name: string;
-            permission: components["schemas"]["ShelfKeyPermission"];
+            permission: components["schemas"]["ShelfPermission"];
         };
         CreateShelfRequest: {
             name: string;
@@ -5226,7 +5226,7 @@ export interface components {
             permission: components["schemas"]["ShelfAccessPermission"];
         };
         SetShelfKeyGrantRequest: {
-            permission: components["schemas"]["ShelfKeyPermission"];
+            permission: components["schemas"]["ShelfPermission"];
         };
         ShelfAccessGrant: {
             /** Format: uuid */
@@ -5304,7 +5304,7 @@ export interface components {
             /** Format: uuid */
             shelfId: string;
             shelfName: string;
-            permission: components["schemas"]["ShelfKeyPermission"];
+            permission: components["schemas"]["ShelfPermission"];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -5318,8 +5318,6 @@ export interface components {
             /** Format: date-time */
             createdAt: string;
         };
-        /** @enum {string} */
-        ShelfKeyPermission: "read" | "addOnly" | "readWrite";
         ShelfLink: {
             /** Format: uuid */
             id: string;

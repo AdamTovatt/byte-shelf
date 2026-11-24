@@ -12,9 +12,9 @@ namespace ByteShelfCommon
         /// <summary>The longest name a key can have.</summary>
         public const int MaxNameLength = 100;
 
-        /// <summary>Refuses a permission that is none of <see cref="ShelfKeyPermission"/>'s values.</summary>
+        /// <summary>Refuses a permission that is none of <see cref="ShelfPermission"/>'s values.</summary>
         /// <exception cref="ArgumentException"><paramref name="permission"/> is none of the values.</exception>
-        public static void ValidatePermission(ShelfKeyPermission permission)
+        public static void ValidatePermission(ShelfPermission permission)
         {
             if (!Enum.IsDefined(permission))
             {

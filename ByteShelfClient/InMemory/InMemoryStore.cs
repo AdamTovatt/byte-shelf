@@ -134,7 +134,7 @@ namespace ByteShelfClient.InMemory
         /// <summary>
         /// Gives the key the shelf, or changes its permission there; the same permission changes nothing.
         /// </summary>
-        public KeyGrantRow SetKeyGrant(KeyRow key, InMemoryShelf shelf, ShelfKeyPermission permission)
+        public KeyGrantRow SetKeyGrant(KeyRow key, InMemoryShelf shelf, ShelfPermission permission)
         {
             KeyGrantRow? grant = key.Grants.FirstOrDefault(candidate => candidate.ShelfId == shelf.Id);
             if (grant == null)
@@ -211,7 +211,7 @@ namespace ByteShelfClient.InMemory
         {
             public required Guid KeyId { get; init; }
             public required Guid ShelfId { get; init; }
-            public required ShelfKeyPermission Permission { get; set; }
+            public required ShelfPermission Permission { get; set; }
             public required DateTimeOffset CreatedAt { get; init; }
             public required DateTimeOffset UpdatedAt { get; set; }
         }

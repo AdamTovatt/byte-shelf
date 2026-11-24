@@ -181,7 +181,7 @@ namespace ByteShelf.Server.Tests.Cli
         private async Task<string> CreateKeyAsync(string shelf)
         {
             using ConfiguredClientSource admin = Process();
-            return (await (await admin.OpenAsync(CancellationToken.None)).Shelf(shelf).CreateKeyAsync("job", ShelfKeyPermission.Read)).Secret;
+            return (await (await admin.OpenAsync(CancellationToken.None)).Shelf(shelf).CreateKeyAsync("job", ShelfPermission.Read)).Secret;
         }
 
         /// <summary>The kept session still works for a fresh process with the real clock.</summary>

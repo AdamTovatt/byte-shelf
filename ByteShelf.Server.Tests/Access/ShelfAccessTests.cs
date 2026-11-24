@@ -19,23 +19,23 @@ namespace ByteShelf.Server.Tests.Access
         private static readonly StoreAtPath Overwrite = new StoreAtPath("/a.txt", Overwrite: true, Description: null);
         private static readonly ContentSwap Swap = new ContentSwap(Guid.NewGuid(), new string('a', 64));
 
-        public static TheoryData<UploadTarget, ShelfKeyPermission> StartersUploadsItMayStillStore => new TheoryData<UploadTarget, ShelfKeyPermission>
+        public static TheoryData<UploadTarget, ShelfPermission> StartersUploadsItMayStillStore => new TheoryData<UploadTarget, ShelfPermission>
         {
-            { NewFile, ShelfKeyPermission.AddOnly },
-            { Overwrite, ShelfKeyPermission.ReadWrite },
-            { Swap, ShelfKeyPermission.ReadWrite },
+            { NewFile, ShelfPermission.AddOnly },
+            { Overwrite, ShelfPermission.ReadWrite },
+            { Swap, ShelfPermission.ReadWrite },
         };
 
-        public static TheoryData<UploadTarget, ShelfKeyPermission> StartersUploadsItMayNoLongerStore => new TheoryData<UploadTarget, ShelfKeyPermission>
+        public static TheoryData<UploadTarget, ShelfPermission> StartersUploadsItMayNoLongerStore => new TheoryData<UploadTarget, ShelfPermission>
         {
-            { NewFile, ShelfKeyPermission.Read },
-            { Overwrite, ShelfKeyPermission.AddOnly },
-            { Swap, ShelfKeyPermission.AddOnly },
+            { NewFile, ShelfPermission.Read },
+            { Overwrite, ShelfPermission.AddOnly },
+            { Swap, ShelfPermission.AddOnly },
         };
 
         [Theory]
         [MemberData(nameof(StartersUploadsItMayStillStore))]
-        public void RequireUpload_ItsStarterThatMayStillStoreIt_Passes(UploadTarget target, ShelfKeyPermission permission)
+        public void RequireUpload_ItsStarterThatMayStillStoreIt_Passes(UploadTarget target, ShelfPermission permission)
         {
             ShelfAccess access = ShelfAccess.ForKey(Shelf, Starter, permission);
 
@@ -44,7 +44,7 @@ namespace ByteShelf.Server.Tests.Access
 
         [Theory]
         [MemberData(nameof(StartersUploadsItMayNoLongerStore))]
-        public void RequireUpload_ItsStarterThatMayNoLongerStoreIt_IsRefused(UploadTarget target, ShelfKeyPermission permission)
+        public void RequireUpload_ItsStarterThatMayNoLongerStoreIt_IsRefused(UploadTarget target, ShelfPermission permission)
         {
             ShelfAccess access = ShelfAccess.ForKey(Shelf, Starter, permission);
 
@@ -54,7 +54,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public void RequireUpload_SomeoneElsesWithoutWrite_IsRefused()
         {
-            ShelfAccess access = ShelfAccess.ForKey(Shelf, Starter, ShelfKeyPermission.AddOnly);
+            ShelfAccess access = ShelfAccess.ForKey(Shelf, Starter, ShelfPermission.AddOnly);
 
             Assert.Throws<PermissionDeniedException>(() => access.RequireUpload(Upload("user:someone-else", NewFile)));
         }

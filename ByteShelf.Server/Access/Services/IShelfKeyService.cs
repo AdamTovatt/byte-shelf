@@ -16,16 +16,16 @@ namespace ByteShelf.Server.Access.Services
         /// <summary>Creates a key working on the shelf and answers its secret, which is never shown again.</summary>
         /// <exception cref="ArgumentException">The name or permission is not allowed.</exception>
         /// <exception cref="Shared.Errors.NotFoundException">The shelf has been deleted meanwhile.</exception>
-        Task<CreatedShelfKey> CreateAsync(Shelf shelf, string name, ShelfKeyPermission permission);
+        Task<CreatedShelfKey> CreateAsync(Shelf shelf, string name, ShelfPermission permission);
 
         /// <summary>The shelves the key works on, oldest grant first.</summary>
         /// <exception cref="Shared.Errors.NotFoundException">There is no such key.</exception>
         Task<IReadOnlyList<ShelfKeyGrantInfo>> GetGrantsAsync(Guid keyId);
 
         /// <summary>Gives the key the shelf, or changes what it may do there.</summary>
-        /// <exception cref="ArgumentException">The permission is not one of <see cref="ShelfKeyPermission"/>.</exception>
+        /// <exception cref="ArgumentException">The permission is not one of <see cref="ShelfPermission"/>.</exception>
         /// <exception cref="Shared.Errors.NotFoundException">There is no such key, or the shelf has been deleted meanwhile.</exception>
-        Task<ShelfKeyGrantInfo> SetGrantAsync(Shelf shelf, Guid keyId, ShelfKeyPermission permission);
+        Task<ShelfKeyGrantInfo> SetGrantAsync(Shelf shelf, Guid keyId, ShelfPermission permission);
 
         /// <summary>Takes the shelf from the key; the key is deleted when that was its last grant.</summary>
         /// <exception cref="Shared.Errors.NotFoundException">The key has no grant on the shelf.</exception>

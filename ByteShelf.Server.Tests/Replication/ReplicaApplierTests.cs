@@ -203,20 +203,20 @@ namespace ByteShelf.Server.Tests.Replication
         public async Task ApplyAsync_KeyGrantForTheSameKeyAndShelf_RemovesTheOther()
         {
             Shelf shelf = await CreateShelfAsync();
-            CreatedShelfKey created = await KeyService.CreateAsync(shelf, "app", ShelfKeyPermission.Read);
-            ShelfKeyGrant replicated = KeyGrant(created.Key.Id, shelf.Id, ShelfKeyPermission.ReadWrite);
+            CreatedShelfKey created = await KeyService.CreateAsync(shelf, "app", ShelfPermission.Read);
+            ShelfKeyGrant replicated = KeyGrant(created.Key.Id, shelf.Id, ShelfPermission.ReadWrite);
 
             await ApplyAsync(Entry(ChangeEntityType.ShelfKeyGrant, replicated.Id, replicated));
 
             ShelfKeyGrant? held = await Services.GetRequiredService<IShelfKeyGrantRepository>().GetAsync(shelf.Id, created.Key.Id);
-            Assert.Equal((replicated.Id, ShelfKeyPermission.ReadWrite), (held?.Id, held?.Permission));
+            Assert.Equal((replicated.Id, ShelfPermission.ReadWrite), (held?.Id, held?.Permission));
         }
 
         [Fact]
         public async Task ApplyAsync_KeyWithAnothersSecret_RemovesTheOtherAndItsGrants()
         {
             Shelf shelf = await CreateShelfAsync();
-            CreatedShelfKey existing = await KeyService.CreateAsync(shelf, "old", ShelfKeyPermission.Read);
+            CreatedShelfKey existing = await KeyService.CreateAsync(shelf, "old", ShelfPermission.Read);
             ShelfKey replicated = new ShelfKey
             {
                 Id = Guid.NewGuid(),
@@ -238,8 +238,8 @@ namespace ByteShelf.Server.Tests.Replication
             Shelf docs = await CreateShelfAsync("docs");
             Shelf photos = await CreateShelfAsync("photos");
             ShelfKey key = new ShelfKey { Id = Guid.NewGuid(), Name = "app", SecretSha256 = new string('c', 64), CreatedAt = TestInstants.Now };
-            ShelfKeyGrant onDocs = KeyGrant(key.Id, docs.Id, ShelfKeyPermission.Read);
-            ShelfKeyGrant onPhotos = KeyGrant(key.Id, photos.Id, ShelfKeyPermission.AddOnly);
+            ShelfKeyGrant onDocs = KeyGrant(key.Id, docs.Id, ShelfPermission.Read);
+            ShelfKeyGrant onPhotos = KeyGrant(key.Id, photos.Id, ShelfPermission.AddOnly);
 
             await ApplyAsync(
                 Entry(ChangeEntityType.ShelfKey, key.Id, key),
@@ -247,7 +247,7 @@ namespace ByteShelf.Server.Tests.Replication
                 Entry(ChangeEntityType.ShelfKeyGrant, onPhotos.Id, onPhotos));
 
             Assert.Equal(
-                new[] { ("docs", ShelfKeyPermission.Read), ("photos", ShelfKeyPermission.AddOnly) },
+                new[] { ("docs", ShelfPermission.Read), ("photos", ShelfPermission.AddOnly) },
                 (await KeyService.GetGrantsAsync(key.Id)).Select(grant => (grant.ShelfName, grant.Permission)).OrderBy(grant => grant.ShelfName));
         }
 
@@ -265,7 +265,7 @@ namespace ByteShelf.Server.Tests.Replication
         public async Task ApplyAsync_KeysRemoval_RemovesTheGrantsItStillHasHere()
         {
             Shelf shelf = await CreateShelfAsync();
-            CreatedShelfKey created = await KeyService.CreateAsync(shelf, "app", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await KeyService.CreateAsync(shelf, "app", ShelfPermission.Read);
 
             await ApplyAsync(Removal(ChangeEntityType.ShelfKey, created.Key.Id));
 
@@ -373,7 +373,7 @@ namespace ByteShelf.Server.Tests.Replication
             };
         }
 
-        private static ShelfKeyGrant KeyGrant(Guid keyId, Guid shelfId, ShelfKeyPermission permission)
+        private static ShelfKeyGrant KeyGrant(Guid keyId, Guid shelfId, ShelfPermission permission)
         {
             return new ShelfKeyGrant
             {

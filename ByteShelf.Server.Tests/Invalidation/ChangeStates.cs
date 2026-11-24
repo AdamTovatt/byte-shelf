@@ -80,7 +80,7 @@ namespace ByteShelf.Server.Tests.Invalidation
                 Id = Guid.NewGuid(),
                 KeyId = Guid.NewGuid(),
                 ShelfId = shelfId,
-                Permission = ShelfKeyPermission.Read,
+                Permission = ShelfPermission.Read,
                 CreatedAt = TestInstants.Now,
                 UpdatedAt = TestInstants.Now,
             };

@@ -25,13 +25,13 @@ namespace ByteShelf.Server.Access.Models
         }
 
         /// <summary>A key's access by its grant's permission on the shelf.</summary>
-        public static ShelfAccess ForKey(Shelf shelf, ShelfCaller caller, ShelfKeyPermission permission)
+        public static ShelfAccess ForKey(Shelf shelf, ShelfCaller caller, ShelfPermission permission)
         {
             IReadOnlySet<ShelfOperation> allowed = permission switch
             {
-                ShelfKeyPermission.Read => ReadOnly,
-                ShelfKeyPermission.AddOnly => AddOnly,
-                ShelfKeyPermission.ReadWrite => ReadWrite,
+                ShelfPermission.Read => ReadOnly,
+                ShelfPermission.AddOnly => AddOnly,
+                ShelfPermission.ReadWrite => ReadWrite,
                 _ => throw new InvalidOperationException($"No access is defined for a {permission} key."),
             };
 

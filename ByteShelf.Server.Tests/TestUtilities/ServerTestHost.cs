@@ -99,7 +99,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
         }
 
         /// <summary>Creates a key to <paramref name="shelf"/> as the admin, and answers it with its secret.</summary>
-        public async Task<CreatedShelfKey> CreateKeyAsync(string shelf, ShelfKeyPermission permission)
+        public async Task<CreatedShelfKey> CreateKeyAsync(string shelf, ShelfPermission permission)
         {
             HttpResponseMessage response = await AdminClient.PostAsJsonAsync(
                 $"/api/shelves/{shelf}/keys", new CreateShelfKeyRequest { Name = "test program", Permission = permission });
@@ -108,7 +108,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
         }
 
         /// <summary>A client sending a new key to <paramref name="shelf"/> with <paramref name="permission"/>.</summary>
-        public async Task<HttpClient> CreateKeyClientAsync(string shelf, ShelfKeyPermission permission)
+        public async Task<HttpClient> CreateKeyClientAsync(string shelf, ShelfPermission permission)
         {
             return CreateKeyClient((await CreateKeyAsync(shelf, permission)).Secret);
         }

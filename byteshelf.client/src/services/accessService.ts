@@ -4,7 +4,7 @@ import type { components } from '../types/api';
 export type ShelfAccessGrant = components['schemas']['ShelfAccessGrant'];
 export type ShelfAccessPermission = components['schemas']['ShelfAccessPermission'];
 export type ShelfKeyInfo = components['schemas']['ShelfKeyInfo'];
-export type ShelfKeyPermission = components['schemas']['ShelfKeyPermission'];
+export type ShelfPermission = components['schemas']['ShelfPermission'];
 export type ShelfKeyGrantInfo = components['schemas']['ShelfKeyGrantInfo'];
 export type CreatedShelfKey = components['schemas']['CreatedShelfKey'];
 
@@ -24,7 +24,7 @@ export function fetchKeys(shelf: string): Promise<ShelfKeyInfo[]> {
   return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/keys', { params: { path: { shelf } } }));
 }
 
-export function createKey(shelf: string, name: string, permission: ShelfKeyPermission): Promise<CreatedShelfKey> {
+export function createKey(shelf: string, name: string, permission: ShelfPermission): Promise<CreatedShelfKey> {
   return unwrapResponse(apiClient.POST('/api/shelves/{shelf}/keys', { params: { path: { shelf } }, body: { name, permission } }));
 }
 
@@ -34,7 +34,7 @@ export function fetchKeyGrants(keyId: string): Promise<ShelfKeyGrantInfo[]> {
 }
 
 /** Gives an existing key the shelf, or changes what it may do there. */
-export function setKeyGrant(shelf: string, keyId: string, permission: ShelfKeyPermission): Promise<ShelfKeyGrantInfo> {
+export function setKeyGrant(shelf: string, keyId: string, permission: ShelfPermission): Promise<ShelfKeyGrantInfo> {
   return unwrapResponse(apiClient.PUT('/api/keys/{keyId}/grants/{shelf}', { params: { path: { keyId, shelf } }, body: { permission } }));
 }
 

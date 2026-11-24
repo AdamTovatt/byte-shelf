@@ -46,7 +46,7 @@ namespace ByteShelf.Server.Access.Services
         }
 
         /// <inheritdoc />
-        public async Task<CreatedShelfKey> CreateAsync(Shelf shelf, string name, ShelfKeyPermission permission)
+        public async Task<CreatedShelfKey> CreateAsync(Shelf shelf, string name, ShelfPermission permission)
         {
             string trimmedName = DisplayText.Validate(name, ShelfKeys.MaxNameLength, "A key's name");
             ShelfKeys.ValidatePermission(permission);
@@ -96,7 +96,7 @@ namespace ByteShelf.Server.Access.Services
         }
 
         /// <inheritdoc />
-        public async Task<ShelfKeyGrantInfo> SetGrantAsync(Shelf shelf, Guid keyId, ShelfKeyPermission permission)
+        public async Task<ShelfKeyGrantInfo> SetGrantAsync(Shelf shelf, Guid keyId, ShelfPermission permission)
         {
             ShelfKeys.ValidatePermission(permission);
 

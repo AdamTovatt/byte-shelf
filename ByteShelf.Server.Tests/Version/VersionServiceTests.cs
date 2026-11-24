@@ -124,7 +124,7 @@ namespace ByteShelf.Server.Tests.Version
         {
             await using ServerTestHost host = await ServerTestHost.StartAsync();
             await host.CreateShelfAsync("docs");
-            string secret = (await host.CreateKeyAsync("docs", ShelfKeyPermission.Read)).Secret;
+            string secret = (await host.CreateKeyAsync("docs", ShelfPermission.Read)).Secret;
             using HttpClient client = asBearer ? host.CreateClient(secret) : host.CreateKeyClient(secret);
 
             ServerVersion? release = await client.GetFromJsonAsync<ServerVersion>("/api/version/release");

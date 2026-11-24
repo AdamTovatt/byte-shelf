@@ -45,10 +45,10 @@ namespace ByteShelf.Server.Tests.Mcp
         }
 
         [Theory]
-        [InlineData(ShelfKeyPermission.Read)]
-        [InlineData(ShelfKeyPermission.AddOnly)]
-        [InlineData(ShelfKeyPermission.ReadWrite)]
-        public async Task ListTools_ForAKey_OffersWhatItsPermissionAllowsAndNeverAdminOrLocalFileTools(ShelfKeyPermission permission)
+        [InlineData(ShelfPermission.Read)]
+        [InlineData(ShelfPermission.AddOnly)]
+        [InlineData(ShelfPermission.ReadWrite)]
+        public async Task ListTools_ForAKey_OffersWhatItsPermissionAllowsAndNeverAdminOrLocalFileTools(ShelfPermission permission)
         {
             await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", permission));
 
@@ -56,8 +56,8 @@ namespace ByteShelf.Server.Tests.Mcp
 
             IEnumerable<string> expected = permission switch
             {
-                ShelfKeyPermission.Read => ReadTools,
-                ShelfKeyPermission.AddOnly => ReadTools.Concat(AddTools),
+                ShelfPermission.Read => ReadTools,
+                ShelfPermission.AddOnly => ReadTools.Concat(AddTools),
                 _ => ReadTools.Concat(AddTools).Concat(WriteTools),
             };
             Assert.Equal(expected.Order(StringComparer.Ordinal), tools.Select(tool => tool.Name).Order(StringComparer.Ordinal));
@@ -66,7 +66,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task Connect_Instructions_NameTheKeysShelfAndAccess()
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.AddOnly));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.AddOnly));
 
             Assert.Contains("one shelf, \"docs\", which every tool works on when you leave shelf out", Regex.Replace(client.ServerInstructions!, @"\s+", " "), StringComparison.Ordinal);
             Assert.Contains("The key's access is add-only", client.ServerInstructions, StringComparison.Ordinal);
@@ -75,7 +75,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task Connect_Instructions_NameTheServersRelease()
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read));
 
             string release = typeof(VersionService).Assembly.GetName().Version!.ToString(3);
             Assert.Contains($"This server is the ByteShelf server itself, release {release}, reached with a shelf key.", client.ServerInstructions, StringComparison.Ordinal);
@@ -84,7 +84,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task ListTools_KeyReadingOneShelfAndAddingToAnother_OffersWhatEitherAllows()
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyOnBothAsync(ShelfKeyPermission.Read, ShelfKeyPermission.AddOnly));
+            await using McpClient client = await ConnectAsync(await CreateKeyOnBothAsync(ShelfPermission.Read, ShelfPermission.AddOnly));
 
             IList<McpClientTool> tools = await client.ListToolsAsync();
 
@@ -94,7 +94,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task Connect_KeyOnTwoShelves_InstructionsNameEachWithItsAccessAndStoreOnlyWhereItMay()
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyOnBothAsync(ShelfKeyPermission.Read, ShelfKeyPermission.AddOnly));
+            await using McpClient client = await ConnectAsync(await CreateKeyOnBothAsync(ShelfPermission.Read, ShelfPermission.AddOnly));
             string instructions = client.ServerInstructions!;
 
             Assert.Contains("give every tool the shelf to work on", instructions, StringComparison.Ordinal);
@@ -109,7 +109,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task Connect_KeyReadingTwoShelves_InstructionsShowNoStoring()
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyOnBothAsync(ShelfKeyPermission.Read, ShelfKeyPermission.Read));
+            await using McpClient client = await ConnectAsync(await CreateKeyOnBothAsync(ShelfPermission.Read, ShelfPermission.Read));
 
             Assert.DoesNotContain("-T ./q3.pdf", client.ServerInstructions, StringComparison.Ordinal);
         }
@@ -117,7 +117,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task CallTool_KeyOnTwoShelves_IsRefusedOnTheShelfThatDoesNotAllowIt()
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyOnBothAsync(ShelfKeyPermission.Read, ShelfKeyPermission.AddOnly));
+            await using McpClient client = await ConnectAsync(await CreateKeyOnBothAsync(ShelfPermission.Read, ShelfPermission.AddOnly));
 
             CallToolResult onOther = await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["shelf"] = "other", ["path"] = "/a.txt", ["text"] = "hello" });
             CallToolResult onDocs = await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["shelf"] = "docs", ["path"] = "/a.txt", ["text"] = "hello" });
@@ -131,7 +131,7 @@ namespace ByteShelf.Server.Tests.Mcp
         public async Task CallTool_ListShelvesWithAKeyOnTwoShelves_ListsExactlyThose()
         {
             await _host.CreateShelfAsync("hidden");
-            await using McpClient client = await ConnectAsync(await CreateKeyOnBothAsync(ShelfKeyPermission.Read, ShelfKeyPermission.AddOnly));
+            await using McpClient client = await ConnectAsync(await CreateKeyOnBothAsync(ShelfPermission.Read, ShelfPermission.AddOnly));
 
             CallToolResult listed = await client.CallToolAsync("list_shelves", new Dictionary<string, object?>());
 
@@ -142,7 +142,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task Connect_Instructions_NameEveryToolOffered()
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.ReadWrite));
 
             IList<McpClientTool> tools = await client.ListToolsAsync();
 
@@ -152,7 +152,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task ListTools_OnAReplica_OffersOnlyTheReadingToolsAndSaysWhy()
         {
-            string secret = await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite);
+            string secret = await CreateKeyAsync("docs", ShelfPermission.ReadWrite);
             await TestReplicas.MarkAsReplicaAsync(_host.Services);
 
             await using McpClient client = await ConnectAsync(secret);
@@ -167,7 +167,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [InlineData(false)]
         public async Task CallTools_WithTheKeyAsBearerOrHeader_ActOnTheKeysShelf(bool asBearer)
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite), asBearer);
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.ReadWrite), asBearer);
 
             CallToolResult stored = await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["shelf"] = "docs", ["path"] = "/notes/a.txt", ["text"] = "hello" });
             CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["shelf"] = "docs", ["path"] = "/notes/a.txt" });
@@ -183,7 +183,7 @@ namespace ByteShelf.Server.Tests.Mcp
             await StoreAsync("/q3.pdf", TestMedia.Pdf(pages: 3, title: "Q3 report"), "application/pdf");
             await _host.Services.ReadMetadataAsync();
 
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read), asBearer: true);
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read), asBearer: true);
             string info = TextOf(await client.CallToolAsync("get_info", new Dictionary<string, object?> { ["path"] = "/q3.pdf" }));
             string found = TextOf(await client.CallToolAsync("search_files", new Dictionary<string, object?> { ["text"] = "q3 report", ["minPageCount"] = 3 }));
 
@@ -199,7 +199,7 @@ namespace ByteShelf.Server.Tests.Mcp
             await _host.Services.SetFileDocumentAsync(file.Id, "{\"caption\":\"An apple\",\"rating\":4.5,\"due\":\"2026-03-01T14:30:00Z\",\"done\":false,\"undeclared\":1}");
             await _host.Services.RecordContentDocumentAsync(file.Sha256, "{\"width\":10}");
 
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read), asBearer: true);
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read), asBearer: true);
             string info = TextOf(await client.CallToolAsync("get_info", new Dictionary<string, object?> { ["path"] = "/a.txt" }));
 
             Assert.EndsWith(
@@ -222,7 +222,7 @@ namespace ByteShelf.Server.Tests.Mcp
             string note = new string('x', 1000);
             await _host.Services.SetFileDocumentAsync(file.Id, $"{{\"note\":\"{note}\"}}");
 
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read), asBearer: true);
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read), asBearer: true);
             string info = TextOf(await client.CallToolAsync("get_info", new Dictionary<string, object?> { ["path"] = "/a.txt" }));
 
             Assert.EndsWith($"  Note (note): {note}", info, StringComparison.Ordinal);
@@ -235,7 +235,7 @@ namespace ByteShelf.Server.Tests.Mcp
             string note = string.Concat(Enumerable.Repeat("x", 999)) + "🎈 and more";
             await _host.Services.SetFileDocumentAsync(file.Id, $"{{\"note\":\"{note}\"}}");
 
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read), asBearer: true);
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read), asBearer: true);
             string info = TextOf(await client.CallToolAsync("get_info", new Dictionary<string, object?> { ["path"] = "/a.txt" }));
 
             Assert.EndsWith($"  Note (note): {new string('x', 999)}… ({note.Length} characters in all)", info, StringComparison.Ordinal);
@@ -253,7 +253,7 @@ namespace ByteShelf.Server.Tests.Mcp
             await _host.Services.SetFileDocumentAsync(second.Id, "{\"rating\":5,\"done\":true}");
             await _host.Services.SetFileDocumentAsync(third.Id, "{\"rating\":5}");
 
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read), asBearer: true);
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read), asBearer: true);
             string found = TextOf(await client.CallToolAsync(tool, new Dictionary<string, object?> { ["pluginFields"] = new[] { "test-plugin.rating=4..5", "test-plugin.done=true" } }));
 
             Assert.Equal(["/a/a.txt", "/a/b.txt"], PathsIn(found));
@@ -264,7 +264,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [InlineData("find_duplicates")]
         public async Task SearchTool_FilterThatCannotBeRead_IsRefusedSayingSo(string tool)
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read), asBearer: true);
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read), asBearer: true);
 
             CallToolResult refused = await client.CallToolAsync(tool, new Dictionary<string, object?> { ["pluginFields"] = new[] { "rating" } });
 
@@ -302,7 +302,7 @@ namespace ByteShelf.Server.Tests.Mcp
             }
 
             await _host.Services.ReadMetadataAsync();
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read), asBearer: true);
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read), asBearer: true);
 
             string videos = TextOf(await client.CallToolAsync(tool, new Dictionary<string, object?>
             {
@@ -321,7 +321,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task CallTools_ShelfLeftOut_ActOnTheKeysShelf()
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.ReadWrite));
 
             AssertSucceeded(await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["path"] = "/a.txt", ["text"] = "keys shelf" }));
             CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/a.txt" });
@@ -334,7 +334,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task CallTool_DownloadDeletedBinaryFile_PointsToGetDeleted()
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.ReadWrite));
             AssertSucceeded(await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["path"] = "/a.bin", ["base64"] = Convert.ToBase64String(new byte[] { 0xff, 0xfe, 0x00 }) }));
             TrashEntry deleted = (await (await _host.AdminClient.DeleteAsync("/api/shelves/docs/files?path=/a.bin")).Content.ReadFromJsonAsync<TrashEntry>())!;
 
@@ -347,7 +347,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task CallTool_DownloadABinaryFile_PointsToShareFile()
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.ReadWrite));
             AssertSucceeded(await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["path"] = "/a.bin", ["base64"] = Convert.ToBase64String(new byte[] { 0xff, 0xfe, 0x00 }) }));
 
             CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/a.bin" });
@@ -361,7 +361,7 @@ namespace ByteShelf.Server.Tests.Mcp
         public async Task CallTool_DownloadAnImage_AnswersItAsAnImage()
         {
             byte[] png = { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0xFF };
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.ReadWrite));
             AssertSucceeded(await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["path"] = "/a.png", ["base64"] = Convert.ToBase64String(png) }));
 
             CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/a.png" });
@@ -378,7 +378,7 @@ namespace ByteShelf.Server.Tests.Mcp
             byte[] png = TestImages.PhotoLikePng(2400, 1600);
             Assert.True(png.Length > ByteShelfMcpTools.MaxInlineImageBytes);
             await StoreAsync("/a.png", png, "image/png");
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read));
 
             CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/a.png" });
 
@@ -397,7 +397,7 @@ namespace ByteShelf.Server.Tests.Mcp
         public async Task CallTool_DownloadASmallImageOfAKindModelsCannotTake_AnswersAPreview()
         {
             await StoreAsync("/scan.bmp", TestImages.Bmp(300, 200), "image/bmp");
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read));
 
             CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/scan.bmp" });
 
@@ -411,7 +411,7 @@ namespace ByteShelf.Server.Tests.Mcp
         {
             const string svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\"/>";
             await StoreAsync("/logo.svg", Encoding.UTF8.GetBytes(svg), "image/svg+xml");
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read));
 
             CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/logo.svg" });
 
@@ -424,7 +424,7 @@ namespace ByteShelf.Server.Tests.Mcp
         public async Task CallTool_DownloadAnImageItCannotDecode_AnswersOnlyHowToFetchItWhole()
         {
             await StoreAsync("/a.heic", TestImages.HeicHeaderOnly(ByteShelfMcpTools.MaxInlineImageBytes + 1), "image/heic");
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read));
 
             CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/a.heic" });
 
@@ -438,7 +438,7 @@ namespace ByteShelf.Server.Tests.Mcp
             byte[] png = TestImages.BlankRgbaPng(9000, 9000);
             Assert.True(png.Length > ByteShelfMcpTools.MaxInlineImageBytes);
             await StoreAsync("/huge.png", png, "image/png");
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read));
 
             CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/huge.png" });
 
@@ -450,7 +450,7 @@ namespace ByteShelf.Server.Tests.Mcp
         public async Task CallTool_DownloadAnImageOverThePreviewCap_IsRefusedUnread()
         {
             await StoreAsync("/a.png", new byte[ImagePreview.MaxSourceBytes + 1], "image/png");
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read));
 
             CallToolResult read = await client.CallToolAsync("download_file", new Dictionary<string, object?> { ["path"] = "/a.png" });
 
@@ -464,7 +464,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task CallTool_MissingARequiredArgument_NamesIt()
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.ReadWrite));
 
             CallToolResult shared = await client.CallToolAsync("share_file", new Dictionary<string, object?> { ["expiresIn"] = "1h" });
 
@@ -475,7 +475,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task CallTool_MoveAndSetDescriptionWithLists_ApplyEachItem()
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.ReadWrite));
             AssertSucceeded(await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["path"] = "/a.txt", ["text"] = "a" }));
             AssertSucceeded(await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["path"] = "/b.txt", ["text"] = "b" }));
 
@@ -498,7 +498,7 @@ namespace ByteShelf.Server.Tests.Mcp
         public async Task CallTool_UploadBase64_StoresTheBytes()
         {
             byte[] bytes = { 0x89, 0x50, 0x4E, 0x47, 0x00, 0xFF, 0xFE, 0x0A };
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.AddOnly));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.AddOnly));
 
             CallToolResult stored = await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["shelf"] = "docs", ["path"] = "/pics/a.png", ["base64"] = Convert.ToBase64String(bytes) });
 
@@ -509,7 +509,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task CallTool_UploadBase64OverTheCap_IsRefusedAndStoresNothing()
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.AddOnly));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.AddOnly));
 
             CallToolResult result = await client.CallToolAsync(
                 "upload_file", new Dictionary<string, object?> { ["shelf"] = "docs", ["path"] = "/big.bin", ["base64"] = Convert.ToBase64String(new byte[ByteShelfMcpTools.MaxInlineBytes + 1]) });
@@ -525,7 +525,7 @@ namespace ByteShelf.Server.Tests.Mcp
             // The tools reach the API at http://localhost/ (the test's self address), so a link put on
             // that one rather than on the address the agent called shows.
             Uri publicAddress = new Uri("http://shelf.example.test/");
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite), endpoint: new Uri(publicAddress, "mcp"));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.ReadWrite), endpoint: new Uri(publicAddress, "mcp"));
             AssertSucceeded(await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["shelf"] = "docs", ["path"] = "/a.txt", ["text"] = "shared" }));
 
             CallToolResult shared = await client.CallToolAsync("share_file", new Dictionary<string, object?> { ["shelf"] = "docs", ["path"] = "/a.txt" });
@@ -541,7 +541,7 @@ namespace ByteShelf.Server.Tests.Mcp
         public async Task CallTool_ReadKeySharesListsAndRevokesALink_LinkServesTheFileThenNoLonger()
         {
             (await _host.AdminClient.PutAsync("/api/shelves/docs/content?path=/a.txt", new StringContent("once"))).EnsureSuccessStatusCode();
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read));
 
             CallToolResult shared = await client.CallToolAsync("share_file", new Dictionary<string, object?> { ["path"] = "/a.txt", ["expiresIn"] = "5m" });
             string url = new Uri(TextOf(shared).Split(Environment.NewLine)[0]).PathAndQuery;
@@ -560,7 +560,7 @@ namespace ByteShelf.Server.Tests.Mcp
         public async Task CallTool_CreateUploadLinkWithAnAddOnlyKey_AnswersALinkThatStoresTheFileWithoutTheKey()
         {
             Uri publicAddress = new Uri("http://shelf.example.test/");
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.AddOnly), endpoint: new Uri(publicAddress, "mcp"));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.AddOnly), endpoint: new Uri(publicAddress, "mcp"));
 
             CallToolResult created = await client.CallToolAsync(
                 "create_upload_link", new Dictionary<string, object?> { ["path"] = "/in/q3.pdf", ["description"] = "Q3 report" });
@@ -574,10 +574,10 @@ namespace ByteShelf.Server.Tests.Mcp
         }
 
         [Theory]
-        [InlineData(ShelfKeyPermission.Read, false, null)]
-        [InlineData(ShelfKeyPermission.AddOnly, true, "never over a file already there")]
-        [InlineData(ShelfKeyPermission.ReadWrite, true, "add &overwrite=true to replace a file")]
-        public async Task Instructions_GiveCurlCommandsForWhatTheKeyMayDoOnTheAddressTheAgentCalled(ShelfKeyPermission permission, bool stores, string? overwriting)
+        [InlineData(ShelfPermission.Read, false, null)]
+        [InlineData(ShelfPermission.AddOnly, true, "never over a file already there")]
+        [InlineData(ShelfPermission.ReadWrite, true, "add &overwrite=true to replace a file")]
+        public async Task Instructions_GiveCurlCommandsForWhatTheKeyMayDoOnTheAddressTheAgentCalled(ShelfPermission permission, bool stores, string? overwriting)
         {
             await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", permission), endpoint: new Uri("http://shelf.example.test/mcp"));
             string instructions = client.ServerInstructions!;
@@ -586,7 +586,7 @@ namespace ByteShelf.Server.Tests.Mcp
             Assert.Contains($"-o q3.pdf {content}", instructions, StringComparison.Ordinal);
             Assert.Equal(stores, instructions.Contains($"-T ./q3.pdf {content}", StringComparison.Ordinal));
             Assert.Equal(stores, instructions.Contains("give upload_file the contents", StringComparison.Ordinal));
-            Assert.Equal(permission == ShelfKeyPermission.ReadWrite, instructions.Contains("&overwrite=true", StringComparison.Ordinal));
+            Assert.Equal(permission == ShelfPermission.ReadWrite, instructions.Contains("&overwrite=true", StringComparison.Ordinal));
             if (overwriting != null)
             {
                 Assert.Contains(overwriting, instructions, StringComparison.Ordinal);
@@ -598,7 +598,7 @@ namespace ByteShelf.Server.Tests.Mcp
         {
             await using ServerTestHost host = await ServerTestHost.StartAsync(services => services.AddSingleton(new PublicAddress("https://files.example.com/shelf")));
             await host.CreateShelfAsync("docs");
-            string secret = (await host.CreateKeyAsync("docs", ShelfKeyPermission.Read)).Secret;
+            string secret = (await host.CreateKeyAsync("docs", ShelfPermission.Read)).Secret;
 
             await using McpClient client = await ConnectAsync(secret, endpoint: new Uri("http://shelf.example.test/mcp"), host: host);
 
@@ -608,7 +608,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task CallTool_AnotherShelf_IsNotFound()
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.ReadWrite));
 
             CallToolResult result = await client.CallToolAsync("list_directory", new Dictionary<string, object?> { ["shelf"] = "other" });
 
@@ -620,7 +620,7 @@ namespace ByteShelf.Server.Tests.Mcp
         public async Task CallTool_AddOnlyKeyOverwriting_IsRefusedByTheApi()
         {
             await StoreAsync("/a.txt", Encoding.UTF8.GetBytes("kept"), "text/plain");
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.AddOnly));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.AddOnly));
 
             CallToolResult result = await client.CallToolAsync(
                 "upload_file", new Dictionary<string, object?> { ["shelf"] = "docs", ["path"] = "/a.txt", ["text"] = "wiped", ["overwrite"] = true });
@@ -633,7 +633,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task CallTool_WithALocalPath_SaysTheServerCannotReachTheAgentsFiles()
         {
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.ReadWrite));
 
             CallToolResult result = await client.CallToolAsync("upload_file", new Dictionary<string, object?> { ["shelf"] = "docs", ["path"] = "/a.txt", ["localPath"] = "/etc/hostname" });
 
@@ -646,7 +646,7 @@ namespace ByteShelf.Server.Tests.Mcp
         {
             await StoreAsync("/a.txt", Encoding.UTF8.GetBytes("kept"), "text/plain");
             (await _host.AdminClient.DeleteAsync("/api/shelves/docs/files?path=/a.txt")).EnsureSuccessStatusCode();
-            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read));
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfPermission.Read));
 
             McpProtocolException exception = await Assert.ThrowsAsync<McpProtocolException>(
                 () => client.CallToolAsync("empty_trash", new Dictionary<string, object?> { ["shelf"] = "docs" }).AsTask());
@@ -685,7 +685,7 @@ namespace ByteShelf.Server.Tests.Mcp
         [Fact]
         public async Task Post_WithAKeyThatReachesNoShelf_Returns403()
         {
-            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfPermission.Read);
             // The grant alone goes, past ShelfKeyRemoval, as a replica holds a key whose grant is still to come.
             using (IServiceScope scope = _host.Services.CreateScope())
             await using (IDbTransactionSession session = await scope.ServiceProvider.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync())
@@ -738,13 +738,13 @@ namespace ByteShelf.Server.Tests.Mcp
             Assert.True(result.IsError != true, $"The tool failed: {TextOf(result)}");
         }
 
-        private async Task<string> CreateKeyAsync(string shelf, ShelfKeyPermission permission)
+        private async Task<string> CreateKeyAsync(string shelf, ShelfPermission permission)
         {
             return (await _host.CreateKeyAsync(shelf, permission)).Secret;
         }
 
         /// <summary>A key made on "docs" with <paramref name="onDocs"/>, then given "other" with <paramref name="onOther"/>.</summary>
-        private async Task<string> CreateKeyOnBothAsync(ShelfKeyPermission onDocs, ShelfKeyPermission onOther)
+        private async Task<string> CreateKeyOnBothAsync(ShelfPermission onDocs, ShelfPermission onOther)
         {
             CreatedShelfKey created = await _host.CreateKeyAsync("docs", onDocs);
             (await _host.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = onOther })).EnsureSuccessStatusCode();
