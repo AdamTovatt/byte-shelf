@@ -55,8 +55,9 @@ before trusting what was piped.
 `encrypt` encrypts a file, or a folder and every file under it, with a password that never leaves
 the machine, and `decrypt` removes it; either can be run again to finish one that stopped. Each file
 keeps its id, and its old contents are deleted at once, never kept in the trash or on replicas (a
-backup taken before still holds them); a file changed since the run listed it is left out. A folder
-holding a file encrypted with another password is refused before anything changes. Each file costs a
+backup taken before still holds them, and a browser that showed them may keep them in its own cache);
+a file changed since the run listed it is left out. A folder holding a file encrypted with another
+password is refused before anything changes. Each file costs a
 password derivation of about a second, and a run again checks each file already encrypted the same
 way, so a large folder takes a while. Files put under an encrypted folder are encrypted with its
 password, checked first, and `put --encrypt` encrypts a file elsewhere with a new one. `get` saves an

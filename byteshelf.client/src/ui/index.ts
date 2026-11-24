@@ -8,6 +8,7 @@ export { Button, type ButtonProps } from './components/ui/Button';
 export { ButtonGroup, type ButtonGroupProps, type ButtonGroupOption } from './components/ui/ButtonGroup';
 export { Card, type CardProps } from './components/ui/Card';
 export { CopyField, type CopyFieldProps } from './components/ui/CopyField';
+export { CustomScroll, type CustomScrollProps } from './components/ui/CustomScroll';
 export { Divider, type DividerProps } from './components/ui/Divider';
 export { Dropdown, DropdownItem, type DropdownProps, type DropdownItemProps } from './components/ui/Dropdown';
 export { DropdownOptionRow, type DropdownOptionRowProps } from './components/ui/DropdownOptionRow';

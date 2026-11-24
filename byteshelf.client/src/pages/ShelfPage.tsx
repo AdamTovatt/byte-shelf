@@ -29,12 +29,17 @@ import { PREFETCHED_SUBFOLDERS, useCreateDirectory, useDeleteEntry, useDuplicate
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useCreateDownloadLink } from '../hooks/useLinkQueries';
 import { useSelection, type SelectionClickModifiers } from '../hooks/useSelection';
+import { useFoundFiles } from '../hooks/useFoundFiles';
 import { useFilePicker } from '../hooks/useFilePicker';
 import { MobileTopBarActions, MobileTopBarOverlay } from '../components/layout/MobileTopBar';
 import { useUploads } from '../hooks/useUploads';
 import { encryptionActions, useEncryption } from '../hooks/useEncryption';
-import { fileOpening } from '../components/fileOpening';
+import { openFile, opensInTab, saveFiles } from '../components/fileOpening';
+import { PreviewOverPage } from '../components/preview/PreviewOverPage';
+import { useShelfPreview } from '../hooks/useShelfPreview';
+import { isTypingTarget } from '../lib/keys';
 import { liveContent } from '../services/contentService';
+import { fileReading, openable } from '../services/fileReading';
 import { showActionToast } from '../components/actionToast';
 import { NameAndReason, NameLine } from '../components/MiddleTruncatedName';
 import { reasonOf, runOrToastNamed, toastNamedFailure } from '../components/nameToasts';
@@ -46,7 +51,7 @@ import { joinPath, parentPath, pathFromRoute, relativeTo, shelfRoute } from '../
 import { copyWhenReady } from '../lib/clipboard';
 import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
-import { directoryEntry, entrySizeBytes, nameOrCount, type DuplicateGroup, type Entry, type ShelfFile } from '../services/shelfService';
+import { directoryEntry, entrySizeBytes, nameOrCount, type DuplicateGroup, type DuplicateSearchResults, type Entry, type FileSearchResults, type ShelfFile } from '../services/shelfService';
 import { SearchOptions } from '../components/SearchOptions';
 import { NO_SEARCH_FILTERS, isSearch, searchCriteria } from '../lib/searchFilters';
 
@@ -61,7 +66,9 @@ export function ShelfPage() {
   const { data: listing, isLoading, error } = useListing(shelf, path);
   const uploads = useUploads(shelf);
   const encryption = useEncryption(shelf);
-  const opening = fileOpening(liveContent(shelf), encryption.contents);
+  const { decryption } = encryption;
+  const reading = useMemo(() => fileReading(liveContent(shelf), decryption), [shelf, decryption]);
+  const openableHere = (file: ShelfFile) => openable({ file, reading });
   const deleteEntry = useDeleteEntry(shelf);
   const restore = useRestoreDeletion(shelf);
   const createDownloadLink = useCreateDownloadLink(shelf);
@@ -102,10 +109,11 @@ export function ShelfPage() {
     if (files.length > 0) void upload(files);
   }
 
-  /** Opens a row: a folder by going into it, a file in a new tab. */
+  /** Opens a row: a folder by going into it, a file in the preview when a viewer takes it, else in a new tab. */
   function open(entry: Entry): void {
     if (entry.kind === 'directory') navigate(shelfRoute(shelf, entry.value.path));
-    else void opening.open(entry.value);
+    else if (preview.showsInPreview(entry.value)) preview.open(entry.value);
+    else void openFile(openableHere(entry.value));
   }
 
   /**
@@ -191,7 +199,14 @@ export function ShelfPage() {
   const selected = entries.filter((entry) => selection.isSelected(entry.value.id));
   const selectedFiles = selected.flatMap((entry) => (entry.kind === 'file' ? [entry.value] : []));
   const drag = useEntryDragAndDrop({ shelf, entries, selected });
-  const dialogOpen = creatingDirectory || renaming !== null || moving !== null || describing !== null || detailing !== null;
+
+  // The preview goes through the files shown: the folder's own, or the search's results so far.
+  const foundFiles = useFoundFiles(found, filesOfResults);
+  const duplicateFiles = useFoundFiles(duplicates, filesOfGroups);
+  const shownFiles = !searching ? { files: listing?.files ?? [] } : filters.duplicates ? duplicateFiles : foundFiles;
+  const preview = useShelfPreview(shelf, shownFiles, reading);
+
+  const dialogOpen = preview.isOpen || creatingDirectory || renaming !== null || moving !== null || describing !== null || detailing !== null;
 
   // ⌘A or Ctrl+A selects every row, unless a field has the keys; Escape clears the selection. A
   // dialog keeps both for itself.
@@ -226,9 +241,11 @@ export function ShelfPage() {
           onSelectClick: (modifiers) => selection.handleSelectClick(entry.value.id, modifiers),
           onToggle: () => selection.toggle(entry.value.id),
         } : undefined}
+        opensIn={entry.kind === 'file' && preview.showsInPreview(entry.value) ? 'preview' : 'tab'}
         onOpen={() => open(entry)}
+        onOpenInTab={entry.kind === 'file' && opensInTab(entry.value) ? () => void openFile(openableHere(entry.value)) : undefined}
         onPrefetch={entry.kind === 'directory' ? () => prefetchListing(entry.value.path) : undefined}
-        onDownload={entry.kind === 'file' ? () => void opening.save([entry.value]) : undefined}
+        onDownload={entry.kind === 'file' ? () => void saveFiles([openableHere(entry.value)]) : undefined}
         onDescribe={entry.kind === 'file' ? () => setDescribing(entry.value) : undefined}
         onShowDetails={entry.kind === 'file' ? () => setDetailing(entry.value) : undefined}
         onCopyLink={entry.kind === 'file' && !encrypted ? () => void copyLink(entry.value) : undefined}
@@ -290,7 +307,7 @@ export function ShelfPage() {
   const selectionActions = {
     count: selection.count,
     sizeBytes: selected.reduce((total, entry) => total + entrySizeBytes(entry), 0),
-    onDownload: selectedFiles.length === selected.length ? () => void opening.save(selectedFiles) : undefined,
+    onDownload: selectedFiles.length === selected.length ? () => void saveFiles(selectedFiles.map(openableHere)) : undefined,
     onMove: () => setMoving(selected),
     onDelete: () => void remove(selected),
     onClear: clearSelection,
@@ -396,9 +413,19 @@ export function ShelfPage() {
       {moving && <MoveDialog shelf={shelf} entries={moving} onClose={() => setMoving(null)} />}
       {describing && <DescriptionDialog shelf={shelf} file={describing} onClose={() => setDescribing(null)} />}
       {detailing && <FileDetailsDialog shelf={shelf} file={detailing} onClose={() => setDetailing(null)} />}
-      {encryption.dialog}
+      <PreviewOverPage preview={preview} detailsOn={shelf}>{encryption.dialog}</PreviewOverPage>
     </div>
   );
+}
+
+/** The files on a page of a search. */
+function filesOfResults(page: FileSearchResults): ShelfFile[] {
+  return page.files;
+}
+
+/** The files on a page of a search for duplicates, a group after another. */
+function filesOfGroups(page: DuplicateSearchResults): ShelfFile[] {
+  return page.groups.flatMap((group) => group.files);
 }
 
 /** How long typing must pause before a search is sent. */
@@ -435,11 +462,6 @@ function DuplicateGroupList({ group, row }: { group: DuplicateGroup; row: (file:
       </CardList>
     </section>
   );
-}
-
-/** Whether a key pressed here belongs to a field, as ⌘A selecting its text does. */
-function isTypingTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 }
 
 interface SelectionBarProps {
@@ -494,7 +516,11 @@ interface EntryRowProps {
   label?: string;
   /** Given, the row selects on a click and opens on a double-click; otherwise a click opens it. */
   selection?: RowSelection;
+  /** Where a file opens: over the page, or in a tab of its own. */
+  opensIn: 'preview' | 'tab';
   onOpen: () => void;
+  /** For a file a tab shows. */
+  onOpenInTab?: () => void;
   /** For a folder: fetch what it holds ahead, as the pointer or focus reaches the row. */
   onPrefetch?: () => void;
   onDownload?: () => void;
@@ -509,11 +535,11 @@ interface EntryRowProps {
   onDelete: () => void;
 }
 
-function EntryRow({ entry, label, selection, onOpen, onPrefetch, onDownload, onDescribe, onShowDetails, onCopyLink, onEncrypt, onRemoveEncryption, onRename, onMove, onDelete }: EntryRowProps) {
+function EntryRow({ entry, label, selection, opensIn, onOpen, onOpenInTab, onPrefetch, onDownload, onDescribe, onShowDetails, onCopyLink, onEncrypt, onRemoveEncryption, onRename, onMove, onDelete }: EntryRowProps) {
   const isFile = entry.kind === 'file';
   const name = entry.value.name;
   const selected = selection?.selected ?? false;
-  const openName = isFile ? `Open ${name} in a new tab` : `Open the folder ${name}`;
+  const openName = isFile ? `Open ${name}${opensIn === 'tab' ? ' in a new tab' : ''}` : `Open the folder ${name}`;
 
   // A selected row takes a translucent wash of the selection blue behind its usual text, so the text
   // keeps its colours, and `data-active` lets its list hide the lines beside it.
@@ -540,7 +566,7 @@ function EntryRow({ entry, label, selection, onOpen, onPrefetch, onDownload, onD
             selection.onToggle();
           }
         } : undefined}
-        title={selection ? `${openName}: double-click or press Enter` : isFile ? 'Opens in a new tab' : undefined}
+        title={selection ? `${openName}: double-click or press Enter` : isFile && opensIn === 'tab' ? 'Opens in a new tab' : undefined}
         aria-label={selection ? label ?? name : openName}
         aria-pressed={selection ? selected : undefined}
         className="flex min-w-0 flex-1 select-none items-center gap-3 rounded-lg px-2 py-2 text-left"
@@ -555,6 +581,7 @@ function EntryRow({ entry, label, selection, onOpen, onPrefetch, onDownload, onD
         )}
       </button>
       <Dropdown align="right" trigger={<IconButton variant="ghost" size="sm" icon={iconMap.more} aria-label={`Actions for ${name}`} />}>
+        {onOpenInTab && <DropdownItem icon={<Icon icon={iconMap.openInTab} size={16} />} onClick={onOpenInTab}>Open in new tab</DropdownItem>}
         {onDownload && <DropdownItem icon={<Icon icon={iconMap.download} size={16} />} onClick={onDownload}>Download</DropdownItem>}
         {onCopyLink && <DropdownItem icon={<Icon icon={iconMap.copy} size={16} />} onClick={onCopyLink}>Copy link</DropdownItem>}
         {onShowDetails && <DropdownItem icon={<Icon icon={iconMap.info} size={16} />} onClick={onShowDetails}>Details</DropdownItem>}

@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { AuthProvider, useAuth } from './AuthContext';
 import { clearTokens, saveTokens } from '../services/authService';
 import { folderPasswordKey, rememberPassword, rememberedPassword } from '../lib/encryption/passwords';
@@ -11,11 +11,22 @@ import { inAnHour, stubServer } from '../test/fakeServer';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+/** The tokens of a session of the user `sub`, the `renewal`th of it. */
+function tokensOf(sub: string, renewal = 1) {
+  return { token: `h.${btoa(JSON.stringify({ sub, renewal }))}.s`, expiresAt: inAnHour(), refreshToken: `${sub}-${renewal}` };
+}
+
+/** Another tab saves a session, or ends it: heard here, as a tab that slept hears it, once it has. */
+function heard(): void {
+  act(() => window.dispatchEvent(new StorageEvent('storage', { key: 'byteshelf_auth_refresh_token' })));
+}
+
 const key = folderPasswordKey('docs', 'folder-1');
 
 describe('kept passwords and the session', () => {
   let root: Root;
   let auth: ReturnType<typeof useAuth>;
+  let reloaded: MockInstance;
 
   function Probe() {
     auth = useAuth();
@@ -26,7 +37,8 @@ describe('kept passwords and the session', () => {
     localStorage.clear();
     sessionStorage.clear();
     installFakeWebLocks();
-    saveTokens({ token: 't', expiresAt: inAnHour(), refreshToken: 'r' });
+    saveTokens(tokensOf('ada'));
+    reloaded = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
     stubServer(async () => new Response(null, { status: 204 }));
     rememberPassword(key, 'pw');
     root = createRoot(document.createElement('div'));
@@ -36,6 +48,7 @@ describe('kept passwords and the session', () => {
   afterEach(() => {
     act(() => root.unmount());
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('forgets them on sign-out', async () => {
@@ -64,11 +77,39 @@ describe('kept passwords and the session', () => {
   });
 
   it('forgets them when another tab signs out, and keeps them when it only renews', () => {
-    act(() => window.dispatchEvent(new StorageEvent('storage', { key: 'byteshelf_auth_refresh_token' })));
+    saveTokens(tokensOf('ada', 2));
+    heard();
     expect(rememberedPassword(key)).toBe('pw');
 
     clearTokens();
-    act(() => window.dispatchEvent(new StorageEvent('storage', { key: 'byteshelf_auth_refresh_token' })));
+    heard();
     expect(rememberedPassword(key)).toBeNull();
+    expect(reloaded).not.toHaveBeenCalled();
+  });
+
+  it('forgets them, and starts the page anew, when another tab has signed in as someone else', () => {
+    saveTokens(tokensOf('bob'));
+    heard();
+
+    expect(rememberedPassword(key)).toBeNull();
+    expect(reloaded).toHaveBeenCalledTimes(1);
+  });
+
+  it('goes on as another tab renews the session of someone who signed in here', () => {
+    act(() => auth.login(tokensOf('bob')));
+    saveTokens(tokensOf('bob', 2));
+    heard();
+
+    expect(reloaded).not.toHaveBeenCalled();
+  });
+
+  it('shows the app, without starting anew, as another tab signs in where no one was', () => {
+    clearTokens();
+    heard();
+    saveTokens(tokensOf('bob'));
+    heard();
+
+    expect(auth.isAuthenticated).toBe(true);
+    expect(reloaded).not.toHaveBeenCalled();
   });
 });

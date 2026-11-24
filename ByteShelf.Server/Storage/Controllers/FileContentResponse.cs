@@ -9,7 +9,9 @@ namespace ByteShelf.Server.Storage.Controllers
     /// the ETag is the contents' SHA-256, so <c>If-None-Match</c> and <c>If-Range</c> work as well.
     /// Whatever the stored type, the browser is told not to sniff it, and everything but a PDF is
     /// sandboxed so it runs nothing, so an uploaded page or image cannot act with this server's origin,
-    /// even when a cookie another subdomain planted chose whose upload it is. No shared cache keeps it.
+    /// even when a cookie another subdomain planted chose whose upload it is. No shared cache keeps it, and
+    /// a browser that does asks before using it again: encrypting or decrypting a file swaps the contents
+    /// at the same address.
     /// </summary>
     internal static class FileContentResponse
     {
@@ -28,7 +30,8 @@ namespace ByteShelf.Server.Storage.Controllers
             controller.Response.Headers[HeaderNames.XContentTypeOptions] = "nosniff";
 
             // Per caller (a session, a key, or a link's holder): a shared cache must never hand it to another.
-            controller.Response.Headers[HeaderNames.CacheControl] = "private";
+            // Unchanged contents answer 304 by their ETag, so asking again costs no download.
+            controller.Response.Headers[HeaderNames.CacheControl] = "private, no-cache";
             if (!IsPdf(content.File.ContentType))
             {
                 controller.Response.Headers[HeaderNames.ContentSecurityPolicy] = "sandbox; default-src 'none'";

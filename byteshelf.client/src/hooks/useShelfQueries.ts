@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { QUERY_RETRIES } from '../lib/queryClient';
 import { queryKeys } from '../lib/queryKeys';
 import type { SearchCriteria } from '../lib/searchFilters';
 import {
@@ -9,6 +10,8 @@ import {
   deleteFile,
   deleteShelf,
   emptyTrash,
+  fetchDeletion,
+  fetchFile,
   fetchFileMetadata,
   fetchListing,
   fetchShelf,
@@ -22,7 +25,9 @@ import {
   setDescription,
   updateShelf,
   type Entry,
+  type ShelfFile,
 } from '../services/shelfService';
+import { isNotFound } from '../services/apiClient';
 import { joinPath, parentPath } from '../lib/shelfPaths';
 import { getErrorMessage } from '../ui';
 
@@ -103,6 +108,38 @@ export function useDuplicateSearch(shelf: string, under: string, criteria: Searc
     (after) => findDuplicates(shelf, under, criteria, after),
     enabled,
   );
+}
+
+/**
+ * A live file's record, refetched as the shelf changes, so a file moved elsewhere is still found and
+ * one that is gone fails with the server's 404. `listed`, the record a list on the page already holds,
+ * stands in until the first answer; one fetched before is not kept to stand in instead, which the list
+ * may be newer than: of a file encrypted since, it would show the encrypted bytes. Idle while `id` is null.
+ */
+export function useFile(shelf: string, id: string | null, listed?: ShelfFile) {
+  return useQuery({
+    queryKey: queryKeys.shelfContents.file(shelf, id ?? ''),
+    queryFn: () => fetchFile(shelf, id!),
+    enabled: id !== null,
+    placeholderData: listed,
+    gcTime: 0,
+    retry: unlessNotThere,
+  });
+}
+
+/** What a deletion took, refetched as the shelf changes; one restored or purged fails with the server's 404. Idle while `deletionId` is null. */
+export function useDeletion(shelf: string, deletionId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.shelfContents.deletion(shelf, deletionId ?? ''),
+    queryFn: () => fetchDeletion(shelf, deletionId!),
+    enabled: deletionId !== null,
+    retry: unlessNotThere,
+  });
+}
+
+/** Asks again, as for any query, unless the server said it is not there. */
+function unlessNotThere(failures: number, error: Error): boolean {
+  return failures < QUERY_RETRIES && !isNotFound(error);
 }
 
 /**

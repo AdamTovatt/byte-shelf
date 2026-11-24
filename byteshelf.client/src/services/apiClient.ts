@@ -15,6 +15,11 @@ export class ApiError extends Error {
   }
 }
 
+/** Whether the server refused because what was asked for is not there. */
+export function isNotFound(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404;
+}
+
 interface ApiFetchResult<T> {
   data?: T;
   error?: unknown;

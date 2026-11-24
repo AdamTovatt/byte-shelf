@@ -8,6 +8,7 @@ import { encryptionActions, useEncryption } from './useEncryption';
 import { createCheck, decryptBlob, encryptBlob } from '../lib/encryption/age';
 import { folderPasswordKey, rememberPassword, rememberedPassword, filePasswordKey } from '../lib/encryption/passwords';
 import { liveContent, type ContentSource } from '../services/contentService';
+import { fileReading, unlockedContents } from '../services/fileReading';
 import type { EncryptedFolder } from '../services/encryptionService';
 import type { Entry, ShelfDirectory, ShelfFile } from '../services/shelfService';
 import { fill, press, textOf as messageText } from '../test/dom';
@@ -81,19 +82,19 @@ vi.mock('../services/encryptionService', () => {
   };
 });
 
-vi.mock('../services/contentService', () => ({
+vi.mock('../services/contentService', async (original) => ({
+  ...(await original<typeof import('../services/contentService')>()),
   liveContent: () => ({
     navigationUrl: async () => '',
     read: async (id: string) => shelf.files.get(id)!.content,
+    open: async (id: string, signal: AbortSignal) => {
+      shelf.headerReads.push(id);
+      signal.addEventListener('abort', () => shelf.headerReadsEnded.push(id));
+      await shelf.gate;
+      return shelf.files.get(id)!.content.stream();
+    },
     encryptedFolderOf: (file: ShelfFile) => shelf.folderFor(file.path),
   }),
-  readContent: async (_shelf: string, id: string) => shelf.files.get(id)!.content,
-  openContent: async (_shelf: string, id: string, signal: AbortSignal) => {
-    shelf.headerReads.push(id);
-    signal.addEventListener('abort', () => shelf.headerReadsEnded.push(id));
-    await shelf.gate;
-    return shelf.files.get(id)!.content.stream();
-  },
 }));
 
 function directory(path: string, encrypted = false): ShelfDirectory {
@@ -112,13 +113,23 @@ async function file(path: string, text: string, password?: string): Promise<Shel
   return created;
 }
 
-/** A deletion's files as the fake shelf holds them, stored in `encryptedBy`; each read is added to `reads`. */
+/** The signal the last contents of a deletion's file were opened with. */
+let opened: AbortSignal;
+
+/** A deletion's files as the fake shelf holds them, stored in `encryptedBy`; each one whose contents are opened is added to `reads`. */
 function deletedSource(encryptedBy: EncryptedFolder | null, reads: string[] = []): ContentSource {
   return {
     navigationUrl: async () => '',
-    read: async (id) => {
+    read: async () => {
+      throw new Error('An encrypted file is decrypted as it is downloaded.');
+    },
+    readRange: async () => {
+      throw new Error('An encrypted file is read whole.');
+    },
+    open: async (id, signal) => {
       reads.push(id);
-      return shelf.files.get(id)!.content;
+      opened = signal;
+      return shelf.files.get(id)!.content.stream();
     },
     encryptedFolderOf: async () => encryptedBy,
   };
@@ -148,6 +159,11 @@ describe('encryption in the browser', () => {
   function Probe() {
     encryption = useEncryption('docs', FAST);
     return <>{encryption.dialog}</>;
+  }
+
+  /** A file's contents, its password asked for when it is locked. */
+  function contents(secret: ShelfFile, source: ContentSource): Promise<Blob | null> {
+    return unlockedContents(fileReading(source, encryption.decryption), secret);
   }
 
   /** Starts `operation`, then waits for the password dialog it opens. */
@@ -180,6 +196,7 @@ describe('encryption in the browser', () => {
   afterEach(() => {
     act(() => root.unmount());
     document.body.innerHTML = '';
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -199,11 +216,183 @@ describe('encryption in the browser', () => {
     const secret = await file('/secret.txt', 'contents', 'right');
     rememberPassword(filePasswordKey('docs', undefined, secret.id), 'stale');
 
-    const { answer: asked } = await untilAsked(() => encryption.contents(secret, liveContent('docs')));
+    const { answer: asked } = await untilAsked(() => contents(secret, liveContent('docs')));
 
     expect(rememberedPassword(filePasswordKey('docs', undefined, secret.id))).toBeNull();
     await press('Cancel');
     await asked;
+  });
+
+  it('reads a file only with a kept password that opens it, asking for none and reading nothing while there is none', async () => {
+    const secret = await file('/secret.txt', 'contents', 'right');
+    const reads: string[] = [];
+    const source = deletedSource(null, reads);
+
+    expect(await encryption.decryption.read(secret, source)).toBeNull();
+    expect(reads).toEqual([]);
+
+    rememberPassword(filePasswordKey('docs', undefined, secret.id), 'stale');
+    expect(await encryption.decryption.read(secret, source)).toBeNull();
+    expect(opened.aborted).toBe(true);
+    expect(rememberedPassword(filePasswordKey('docs', undefined, secret.id))).toBeNull();
+    rememberPassword(filePasswordKey('docs', undefined, secret.id), 'right');
+    const contents = await encryption.decryption.read(secret, source);
+    expect([contents!.type, await contents!.text()]).toEqual(['text/plain', 'contents']);
+
+    await act(async () => {});
+    expect(document.body.querySelector('form')).toBeNull();
+  });
+
+  it('stops reading a file once its read is aborted', async () => {
+    const secret = await file('/secret.txt', 'contents', 'right');
+    rememberPassword(filePasswordKey('docs', undefined, secret.id), 'right');
+    const reading = new AbortController();
+    let opening = false;
+    const header = (await shelf.files.get(secret.id)!.content.arrayBuffer()).slice(0, -1);
+    const source: ContentSource = {
+      ...deletedSource(null),
+      // Never past its header, as a slow download, and failing as it is aborted, as one does.
+      open: async (_id, signal) => new ReadableStream({
+        start: (controller) => {
+          opening = true;
+          controller.enqueue(new Uint8Array(header));
+          signal.addEventListener('abort', () => controller.error(signal.reason));
+        },
+      }),
+    };
+
+    const read = encryption.decryption.read(secret, source, reading.signal).catch((error: Error) => error.name);
+    await vi.waitFor(() => expect(opening).toBe(true));
+    reading.abort();
+
+    expect(await read).toBe('AbortError');
+  });
+
+  it('unlocks a file with the password asked for, from the one opening of it that checked the password', async () => {
+    const secret = await file('/secret.txt', 'contents', 'right');
+    const reads: string[] = [];
+
+    const { answer } = await untilAsked(() => encryption.decryption.unlock(secret, deletedSource(null, reads)));
+    fill('Password', 'right');
+    await press('Unlock');
+
+    expect(await new Response(await answer).text()).toBe('contents');
+    expect(rememberedPassword(filePasswordKey('docs', undefined, secret.id))).toBe('right');
+    expect(reads).toEqual([secret.id]);
+  });
+
+  it('unlocks a file with the password kept, asking for none', async () => {
+    const secret = await file('/secret.txt', 'contents', 'right');
+    rememberPassword(filePasswordKey('docs', undefined, secret.id), 'right');
+
+    expect(await new Response(await encryption.decryption.unlock(secret, deletedSource(null))).text()).toBe('contents');
+
+    expect(document.body.querySelector('form')).toBeNull();
+  });
+
+  it('unlocks a file where no password can be kept', async () => {
+    const secret = await file('/secret.txt', 'contents', 'right');
+    vi.stubGlobal('sessionStorage', {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('No storage.');
+      },
+    });
+
+    const { answer } = await untilAsked(() => contents(secret, deletedSource(null)));
+    fill('Password', 'right');
+    await press('Unlock');
+
+    expect(await (await answer)!.text()).toBe('contents');
+    expect(rememberedPassword(filePasswordKey('docs', undefined, secret.id))).toBeNull();
+  });
+
+  /** A file's source whose download goes on for ever, as a large one's does, with the password kept; `cancelled` hears it stop. */
+  function endlessSource(secret: ShelfFile, cancelled = () => {}): ContentSource {
+    rememberPassword(filePasswordKey('docs', undefined, secret.id), 'right');
+    const stored = shelf.files.get(secret.id)!.content;
+    return {
+      ...deletedSource(null),
+      open: async (_id, signal) => {
+        opened = signal;
+        const reader = stored.stream().getReader();
+        return new ReadableStream({
+          pull: async (controller) => {
+            const { value } = await reader.read();
+            if (value) controller.enqueue(value);
+          },
+          cancel: cancelled,
+        });
+      },
+    };
+  }
+
+  it('downloads no more of an unlocked file once its contents are cancelled', async () => {
+    const secret = await file('/secret.txt', 'contents', 'right');
+    const cancelled = vi.fn();
+
+    await (await encryption.decryption.unlock(secret, endlessSource(secret, cancelled)))!.cancel();
+
+    await vi.waitFor(() => expect(cancelled).toHaveBeenCalledTimes(1));
+  });
+
+  it('downloads no more of an unlocked file once its unlocking is aborted', async () => {
+    const secret = await file('/secret.txt', 'contents', 'right');
+    const unlocking = new AbortController();
+    await encryption.decryption.unlock(secret, endlessSource(secret), unlocking.signal);
+    expect(opened.aborted).toBe(false);
+
+    unlocking.abort();
+
+    expect(opened.aborted).toBe(true);
+  });
+
+  it('ends the check of a password still running as the prompt is cancelled', async () => {
+    const secret = await file('/secret.txt', 'contents', 'right');
+    const source = deletedSource(null);
+    let checking = false;
+    source.open = (_id, signal) => {
+      opened = signal;
+      checking = true;
+      return new Promise(() => {});
+    };
+
+    const { answer } = await untilAsked(() => encryption.decryption.unlock(secret, source));
+    fill('Password', 'right');
+    await press('Unlock');
+    await vi.waitFor(() => expect(checking).toBe(true));
+    await press('Cancel');
+
+    expect(await answer).toBeNull();
+    expect(opened.aborted).toBe(true);
+  });
+
+  it('takes back a prompt whose unlocking is aborted, and opens none for one aborted before', async () => {
+    const secret = await file('/secret.txt', 'contents', 'right');
+    const asking = new AbortController();
+    const { answer } = await untilAsked(() => encryption.decryption.unlock(secret, deletedSource(null), asking.signal));
+
+    await act(async () => asking.abort());
+
+    expect(await answer).toBeNull();
+    expect(document.body.querySelector('form')).toBeNull();
+    await act(async () => expect(await encryption.decryption.unlock(secret, deletedSource(null), asking.signal)).toBeNull());
+    expect(document.body.querySelector('form')).toBeNull();
+  });
+
+  it('cancels a prompt another takes the place of, which stays open', async () => {
+    const [first, second] = [await file('/first.txt', 'one', 'right'), await file('/second.txt', 'two', 'right')];
+    const { answer: replaced } = await untilAsked(() => encryption.decryption.unlock(first, deletedSource(null)));
+
+    let answer: Promise<ReadableStream<Uint8Array> | null>;
+    await act(async () => void (answer = encryption.decryption.unlock(second, deletedSource(null))));
+
+    expect(await replaced).toBeNull();
+    expect(document.body.textContent).toContain('Unlock second.txt');
+    fill('Password', 'right');
+    await press('Unlock');
+    expect(await new Response(await answer!).text()).toBe('two');
+    expect(document.body.querySelector('form')).toBeNull();
   });
 
   it('opens a file read from a deletion with the kept password of the folder it was stored in, asking for none', async () => {
@@ -212,9 +401,9 @@ describe('encryption in the browser', () => {
     rememberPassword(folderPasswordKey('docs', vault.id), 'pw');
     const reads: string[] = [];
 
-    const opened = await encryption.contents(secret, deletedSource({ directory: vault, check: shelf.checks.get(vault.id)! }, reads));
+    const read = await contents(secret, deletedSource({ directory: vault, check: shelf.checks.get(vault.id)! }, reads));
 
-    expect(await opened!.text()).toBe('trashed contents');
+    expect(await read!.text()).toBe('trashed contents');
     expect(reads).toEqual([secret.id]);
     expect(document.body.querySelector('form')).toBeNull();
   });
@@ -223,7 +412,7 @@ describe('encryption in the browser', () => {
     const vault = await encryptedFolder('/vault', 'pw');
     const secret = await file('/vault/secret.txt', 'trashed contents', 'pw');
 
-    const { answer: asked } = await untilAsked(() => encryption.contents(secret, deletedSource({ directory: vault, check: shelf.checks.get(vault.id)! })));
+    const { answer: asked } = await untilAsked(() => contents(secret, deletedSource({ directory: vault, check: shelf.checks.get(vault.id)! })));
     fill('Password', 'pw');
     await press('Unlock');
 

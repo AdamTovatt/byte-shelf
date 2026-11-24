@@ -23,14 +23,15 @@ export interface UploadRequest {
 /** Stores a file; a failed chunk aborts the upload, so its reservation against the quota is released at once. */
 export async function uploadFile(request: UploadRequest): Promise<ShelfFile> {
   const { shelf, path, file, overwrite, encrypted = false, onProgress, signal } = request;
-  const contentType = file.type || 'application/octet-stream';
+  // Sent only when the browser has one: without a type, the server's own rule types the file by its name.
+  const contentType = file.type || undefined;
 
   if (file.size <= CHUNK_BYTES) {
     const query = new URLSearchParams({ path, overwrite: String(overwrite) });
     if (encrypted) query.set('encrypted', 'true');
     const response = await authorizedFetch(apiUrl('/api/shelves/{shelf}/content', { shelf }, query), {
       method: 'PUT',
-      headers: { 'Content-Type': contentType },
+      headers: contentType ? { 'Content-Type': contentType } : undefined,
       body: file,
       signal,
     });

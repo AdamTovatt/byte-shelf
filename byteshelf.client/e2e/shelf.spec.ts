@@ -95,3 +95,71 @@ test('a folder encrypted in the browser keeps its files encrypted and opens them
   expect(saved.suggestedFilename()).toBe('note.txt');
   expect(await readFile((await saved.path())!, 'utf8')).toBe('for my eyes only');
 });
+
+// What only a browser shows for the preview: an image it decodes itself, loaded with the
+// session's cookie, the history and a reload, and a file decrypted in the page to be shown there.
+test('a file opens in a preview over the shelf, and an encrypted one once it is unlocked', async ({ browser }) => {
+  // Encrypts and decrypts three times, each slow on purpose.
+  test.slow();
+  const page = await signIn(browser);
+  await page.getByRole('button', { name: 'New shelf' }).click();
+  await page.getByLabel('Name').fill('preview');
+  await page.getByRole('button', { name: 'Create' }).click();
+  await expect(page).toHaveURL('/shelves/preview');
+  const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  await page.getByTestId('file-input').setInputFiles([
+    { name: 'note.txt', mimeType: 'text/plain', buffer: Buffer.from('the note') },
+    { name: 'pixel.png', mimeType: 'image/png', buffer: pixel },
+    { name: 'todo.txt', mimeType: 'text/plain', buffer: Buffer.from('the last') },
+  ]);
+  await expect(page.getByText('Uploaded todo.txt')).toBeVisible();
+
+  const preview = page.getByRole('dialog', { name: 'note.txt' });
+  await page.getByRole('button', { name: 'note.txt', exact: true }).dblclick();
+  await expect(preview.getByText('the note')).toBeVisible();
+  await page.keyboard.press('ArrowRight');
+  const among = page.getByRole('dialog', { name: 'pixel.png' });
+  const image = among.getByRole('img', { name: 'pixel.png' });
+  await expect(image).toHaveJSProperty('naturalWidth', 1);
+
+  // Tab goes around within it, past the step buttons only a phone shows.
+  await among.getByRole('button', { name: 'Close' }).focus();
+  await page.keyboard.press('Tab');
+  await expect(among.getByRole('button', { name: 'Previous file' })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(among.getByRole('button', { name: 'Close' })).toBeFocused();
+  const size = page.viewportSize()!;
+  await page.setViewportSize({ width: 400, height: 800 });
+  await among.getByRole('button', { name: 'Next file' }).click();
+  await expect(page.getByRole('dialog', { name: 'todo.txt' }).getByText('the last')).toBeVisible();
+  await page.getByRole('button', { name: 'Previous file' }).click();
+  await page.setViewportSize(size);
+  await page.reload();
+  await expect(image).toHaveJSProperty('naturalWidth', 1);
+  await page.goBack();
+  await expect(page).toHaveURL('/shelves/preview');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Actions for note.txt' }).click();
+  await page.getByRole('button', { name: 'Encrypt' }).click();
+  await page.getByLabel('Password', { exact: true }).fill('correct horse');
+  await page.getByLabel('Password again').fill('correct horse');
+  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByRole('button', { name: 'Encrypt' }).click();
+  await expect(page.getByText('Encrypting note.txt: done')).toBeVisible({ timeout: 30_000 });
+
+  // A browser that showed the plain contents shows them decrypted from the new ones, never from its cache.
+  await page.getByRole('button', { name: 'note.txt', exact: true }).dblclick();
+  await expect(preview.getByText('the note')).toBeVisible({ timeout: 30_000 });
+
+  // Another tab never had the password: reached by the arrow keys the file waits to be unlocked.
+  const reader = await signIn(browser);
+  await reader.goto('/shelves/preview');
+  await reader.getByRole('button', { name: 'pixel.png', exact: true }).dblclick();
+  await reader.keyboard.press('ArrowLeft');
+  const locked = reader.getByRole('dialog', { name: 'note.txt', exact: true });
+  await locked.getByRole('button', { name: 'Unlock' }).click();
+  await reader.getByLabel('Password', { exact: true }).fill('correct horse');
+  await reader.getByRole('dialog', { name: 'Unlock note.txt' }).getByRole('button', { name: 'Unlock' }).click();
+  await expect(locked.getByText('the note')).toBeVisible({ timeout: 30_000 });
+});

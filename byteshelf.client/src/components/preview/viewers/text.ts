@@ -1,0 +1,47 @@
+import type { Viewer } from '../../../lib/preview/viewerRegistry';
+import { TextViewer } from './TextViewer';
+
+/** Text, and the other types that are written as text. */
+export const TEXT: Viewer = {
+  id: 'text',
+  mediaTypes: [
+    'text/*',
+    'application/json',
+    'application/ld+json',
+    'application/geo+json',
+    'application/manifest+json',
+    'application/x-ndjson',
+    'application/jsonl',
+    'application/xml',
+    'application/xhtml+xml',
+    'application/atom+xml',
+    'application/rss+xml',
+    'application/javascript',
+    'application/x-javascript',
+    'application/ecmascript',
+    'application/typescript',
+    'application/yaml',
+    'application/x-yaml',
+    'application/toml',
+    'application/sql',
+    'application/x-sql',
+    'application/graphql',
+    'application/x-sh',
+    'application/x-shellscript',
+    'application/x-httpd-php',
+    'application/x-perl',
+    'application/x-python',
+    'application/x-ruby',
+    'application/x-tex',
+    'application/x-latex',
+    'application/x-subrip',
+  ],
+  extensions: [
+    '.txt', '.log', '.md', '.markdown', '.rst', '.tex', '.csv', '.tsv', '.json', '.jsonl', '.ndjson', '.geojson', '.xml', '.yaml', '.yml', '.toml',
+    '.ini', '.cfg', '.conf', '.env', '.properties', '.editorconfig', '.gitignore', '.diff', '.patch', '.srt', '.vtt', '.html', '.css', '.scss', '.less',
+    '.js', '.mjs', '.cjs', '.jsx', '.ts', '.tsx', '.vue', '.svelte', '.cs', '.csproj', '.sln', '.java', '.kt', '.scala', '.groovy', '.gradle', '.py',
+    '.rb', '.php', '.pl', '.lua', '.r', '.go', '.rs', '.swift', '.dart', '.c', '.h', '.cc', '.cpp', '.hpp', '.m', '.sh', '.bash', '.zsh', '.fish',
+    '.ps1', '.bat', '.cmd', '.sql', '.graphql', '.proto', '.tf',
+  ],
+  component: TextViewer,
+};

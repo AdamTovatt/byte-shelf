@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../lib/queryKeys';
-import { ApiError } from '../services/apiClient';
+import { isNotFound } from '../services/apiClient';
 import { createDownloadLink, fetchLinks, revokeLink } from '../services/linkService';
 
 export function useLinks(shelf: string) {
@@ -33,7 +33,7 @@ export function useRevokeLink(shelf: string) {
       try {
         await revokeLink(shelf, linkId);
       } catch (error) {
-        if (!(error instanceof ApiError && error.status === 404)) throw error;
+        if (!isNotFound(error)) throw error;
       }
     },
     onSettled: invalidate,

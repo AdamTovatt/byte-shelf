@@ -102,6 +102,24 @@ describe('uploads', () => {
     expect(bodies).toEqual([expect.objectContaining({ path: '/big', encrypted: true })]);
   });
 
+  it('sends the type the browser gives a file, and none when it gives none, so the server types it by its name', async () => {
+    const types: unknown[] = [];
+    stubServer(async (request) => {
+      const path = new URL(request.url).pathname;
+      if (request.method === 'PUT' && path.endsWith('/content')) types.push(request.headers.get('Content-Type'));
+      if (request.method === 'POST' && path.endsWith('/uploads')) types.push(((await request.json()) as { contentType?: string }).contentType ?? null);
+      return acceptingServer(request);
+    });
+    const big = new Uint8Array(CHUNK_BYTES + 1);
+
+    await uploadFile({ shelf: 'docs', path: '/a.png', file: new Blob(['a'], { type: 'image/png' }), overwrite: false });
+    await uploadFile({ shelf: 'docs', path: '/b.md', file: new Blob(['b']), overwrite: false });
+    await uploadFile({ shelf: 'docs', path: '/c.mp4', file: new Blob([big], { type: 'video/mp4' }), overwrite: false });
+    await uploadFile({ shelf: 'docs', path: '/d.heic', file: new Blob([big]), overwrite: false });
+
+    expect(types).toEqual(['image/png', null, 'video/mp4', null]);
+  });
+
   it('aborts the upload when a chunk fails, and throws the failure', async () => {
     const sent = stubServer(async (request) => {
       if (request.method === 'PUT') return json({ message: 'Disk full.', code: 'quota_exceeded' }, 507);

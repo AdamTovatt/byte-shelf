@@ -20,10 +20,10 @@ namespace ByteShelf.Server.Storage.Controllers
     [Route(ShelfRoute)]
     public class EntriesController : ShelfControllerBase
     {
-        /// <summary>The contents route where the token may come in a cookie, for a browser's plain navigation.</summary>
         /// <summary>Where a shelf's entries are, <c>{shelf}</c> its name; MCP's instructions name it in their curl commands.</summary>
         internal const string ShelfRoute = "api/shelves/{shelf}";
 
+        /// <summary>The contents route where the token may come in a cookie, for what a browser loads by itself (<see cref="AuthSetup.CookieTokenPath"/>).</summary>
         private const string OpenContentRoute = AuthSetup.CookieTokenPath + "/{shelf}/content";
 
         private readonly IDirectoryService _directoryService;
@@ -196,7 +196,8 @@ namespace ByteShelf.Server.Storage.Controllers
         /// <summary>
         /// Streams a file's contents, as <see cref="FileContentResponse"/> describes. Also served under
         /// <see cref="AuthSetup.CookieTokenPath"/>, where a signed-in browser's token may come in a
-        /// cookie, so the web UI opens or saves a file by navigating to it, with no public link.
+        /// cookie, so the web UI opens or saves a file by navigating to it, and previews one in an element that
+        /// loads it, with no public link.
         /// </summary>
         [HttpGet("content")]
         [HttpHead("content")]

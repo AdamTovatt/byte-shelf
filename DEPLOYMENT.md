@@ -165,11 +165,15 @@ credential, are outside the limits.
   sends `X-Accel-Buffering: no`.
 - Pass `Authorization` through for `/mcp` and `/api` (nginx does by default): MCP clients send their
   shelf key there.
-- Serve over HTTPS, at the server's own paths (no path prefix the proxy strips): the web UI opens and
-  saves files under `/api/open` with the session's token in a `Secure` cookie scoped to that path,
-  which a browser keeps only over HTTPS. Over plain HTTP it falls back to reading each file whole into
-  the page, which works but holds large files in memory. Do not log request or response headers at
-  the proxy: that cookie carries the token, as `Authorization` does.
+- Serve over HTTPS, at the server's own paths (no path prefix the proxy strips): the web UI opens,
+  previews and saves files under `/api/open` with the session's token in a `Secure` cookie scoped to
+  that path, which a browser keeps only over HTTPS. Over plain HTTP it falls back to reading each
+  file whole into the page, which works but holds large files in memory. Do not log request or
+  response headers at the proxy: that cookie carries the token, as `Authorization` does.
+- Leave framing and loading to the page itself: a proxy that adds `X-Frame-Options: DENY` or
+  `frame-ancestors 'none'` to what is under `/api/open` (`SAMEORIGIN` and `'self'` work), or a
+  `Content-Security-Policy` that does not allow frames and media from `'self'` and `blob:`, and images
+  from those and `data:`, breaks the web UI's previews.
 - Passkeys need the browser to reach the server at `APP_BASE_URL`'s host, over HTTPS (or plain HTTP
   to localhost): a passkey is made for that host and works on no other.
 - Allow long request lines: a path of up to 4096 characters travels in the query string,

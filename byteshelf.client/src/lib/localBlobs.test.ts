@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { showBlob, showsInTab } from './localBlobs';
+import { elementUrl, showBlob, showsInTab } from './localBlobs';
 
 describe('decrypted files in a tab', () => {
   afterEach(() => vi.restoreAllMocks());
@@ -47,5 +47,42 @@ describe('decrypted files in a tab', () => {
     vi.spyOn(window, 'open').mockReturnValue(null);
 
     expect(showBlob(new Blob(['a'], { type: 'text/plain' }), 'a.txt')).toBe(false);
+  });
+});
+
+describe('a blob an element of the page loads', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it.each(['image/png', 'application/pdf', 'video/mp4', 'application/octet-stream'])('has a blob URL for %s, until it is released', async (type) => {
+    const revoked: string[] = [];
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation((url) => void revoked.push(url));
+
+    const { url, release } = await elementUrl(new Blob(['a'], { type }));
+
+    expect(url).toMatch(/^blob:/);
+    expect(revoked).toEqual([]);
+    release();
+    expect(revoked).toEqual([url]);
+  });
+
+  // "Open image in new tab" on a blob: URL would run an SVG's scripts as the app; on a data: URL it cannot.
+  it.each(['image/svg+xml', 'Image/SVG+XML; charset=utf-8', 'text/html', 'application/xhtml+xml', 'application/xml; charset=utf-8', 'application/json', 'model/gltf+json', 'image/heic'])('has a data: URL for %s', async (type) => {
+    const created = vi.spyOn(URL, 'createObjectURL');
+
+    const { url } = await elementUrl(new Blob(['<svg/>'], { type }));
+
+    expect(url).toMatch(/^data:/);
+    expect(created).not.toHaveBeenCalled();
+  });
+
+  // As large as they get, which a data: URL of does not load; a tab saves untyped bytes rather than run them.
+  it.each(['model/gltf-binary', 'application/javascript', 'font/woff2', 'multipart/x-mixed-replace', ''])('has a blob: URL of untyped bytes for %s', async (type) => {
+    const created = vi.spyOn(URL, 'createObjectURL');
+
+    const { url } = await elementUrl(new Blob(['bytes'], { type }));
+
+    expect(url).toMatch(/^blob:/);
+    const [loaded] = created.mock.calls[0] as [Blob];
+    expect([loaded.type, await loaded.text()]).toEqual(['application/octet-stream', 'bytes']);
   });
 });

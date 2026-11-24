@@ -44,7 +44,7 @@ read it as `range_not_satisfiable`); a path that is not allowed is a 400.
 | `GET directories/encryption?path=` | The encrypted directory a file at `path` (existing or not) would be under, with its `check`; `encryptedBy` is null for none. See "Encryption" below. |
 | `PUT directories/encryption?path=` | Encrypts a directory with the body's `check` (base64 of an age file of at most `FileEncryption.MaxCheckBytes`); 400 for a check that is not one, 409 when it is encrypted already or inside or above an encrypted directory. |
 | `DELETE directories/encryption?path=` | Stops encrypting a directory; 409 when it is not encrypted itself. |
-| `GET content?path=` (and `HEAD`) | Streams the contents (`HEAD`: only the headers); `Range`, `If-None-Match` and `If-Range` work, the ETag is the SHA-256: a range starting at or past the end is a 416 with `Content-Range: bytes */{length}`, and an `If-Range` naming other contents answers the whole file (200). Served with `X-Content-Type-Options: nosniff`, `Cache-Control: private` and, except for a PDF (Chrome's viewer does not run sandboxed), a sandboxing `Content-Security-Policy`. `download=true` adds a file name. Also served at `/api/open/{shelf}/content`, where a signed-in browser's token may come in a cookie (see "Opening in a browser" below). |
+| `GET content?path=` (and `HEAD`) | Streams the contents (`HEAD`: only the headers); `Range`, `If-None-Match` and `If-Range` work, the ETag is the SHA-256: a range starting at or past the end is a 416 with `Content-Range: bytes */{length}`, and an `If-Range` naming other contents answers the whole file (200). Served with `X-Content-Type-Options: nosniff`, `Cache-Control: private, no-cache` (a browser may keep the contents, and asks again before using them: a swap below changes what the same address answers) and, except for a PDF (Chrome's viewer does not run sandboxed), a sandboxing `Content-Security-Policy`. `download=true` adds a file name. Also served at `/api/open/{shelf}/content`, where a signed-in browser's token may come in a cookie (see "Opening in a browser" below). |
 | `POST download-link?path=&expiresInMinutes=` | A link to the contents that works without a token for `expiresInMinutes` (1 to 10080, 1440 by default), to share the file, with its `id` to revoke it by (see below). Making one is a read; 400 for a lifetime outside those bounds, 409 for an encrypted file. |
 | `PUT content?path=&overwrite=&encrypted=` | Stores the body in one request. Needs `Content-Length` (411 without); the `Content-Type` is stored, or without one the type the path's extension names (`ContentTypes.ForUpload`), so `curl -T` stores a PDF as one. `encrypted=true` marks the body as an age file (400 when it does not start as one). 409 when the path is taken and `overwrite` is not set, or for a plain file under an encrypted directory; 507 over quota. |
 | `POST upload-link` | A link that stores one file sent to it without a token, from the body's `path`, `overwrite`, `description` and `expiresInMinutes` (1 to 1440, 15 by default), with its `id` to revoke it by; see "Upload links" below. Needs `Add`, or `Write` with `overwrite`; 400 for the root or a request `CreateUploadLinkRequest.Normalize` refuses, 409 for a path under an encrypted directory or over an encrypted file. |
@@ -63,10 +63,10 @@ read it as `range_not_satisfiable`); a path that is not allowed is a 400.
 
 ## Opening in a browser (`AuthSetup.CookieTokenPath`)
 
-A new tab or a save is a plain navigation, which cannot send an `Authorization` header. So the web UI
-opens and saves a file at `/api/open/{shelf}/content`, and one in the trash at
-`/api/open/{shelf}/trash/{deletionId}/content`: the paths under `/api/open`, where the session's access token
-may instead come in the `__Secure-access_token` cookie (EasyReasy.Auth's `CookieTokenPaths`; its README's
+A new tab or a save is a plain navigation, and an image, a player or a frame on a page loads its file by
+itself: neither can send an `Authorization` header. So the web UI opens, previews and saves a file at
+`/api/open/{shelf}/content`, and one in the trash at `/api/open/{shelf}/trash/{deletionId}/content`: the
+paths under `/api/open`, where the session's access token may instead come in the `__Secure-access_token` cookie (EasyReasy.Auth's `CookieTokenPaths`; its README's
 "Opening Files in a New Tab (token in a cookie)"). The built-in sign-in and renewal set the cookie, `HttpOnly`, `Secure`,
 `SameSite=Strict`, host-only, with `Path=/api/open` and the token's own lifetime; a failed renewal
 and signing out clear it. It is read only on `GET` and `HEAD`, only without an `Authorization`
@@ -265,7 +265,8 @@ confirmed cannot be undone: it must flip the file's encryption, and it must name
 contents still have, so a change made since they were read is never lost (409 otherwise). Its change
 log entry (`swapped`) points the row at the new contents, and a replica removes the old ones as soon
 as it applies it, the one exception to replicas keeping what the primary drops for their own restore
-window ([Replication](../Replication/Replication.md)). A backup taken before still holds them.
+window ([Replication](../Replication/Replication.md)). A backup taken before still holds them, and a
+browser that showed the plain contents may still hold them in its own cache, out of the server's reach.
 
 ## Moves (`FileService`, `DirectoryService`)
 
