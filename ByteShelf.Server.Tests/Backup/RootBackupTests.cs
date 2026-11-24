@@ -1,18 +1,16 @@
+using System.Data.Common;
 using System.IO.Compression;
 using System.Runtime.Versioning;
 using ByteShelf.Server.Backup.Models;
 using ByteShelf.Server.Backup.Services;
 using ByteShelf.Server.ChangeLog.Models;
-using ByteShelf.Server.Metadata.Repositories;
-using ByteShelf.Server.Metadata.Services;
+using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.IO;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using EasyReasy.Database.Mapping;
-using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using StoredObjects = ByteShelf.Server.Storage.Services.ObjectStore;
 
@@ -33,7 +31,7 @@ namespace ByteShelf.Server.Tests.Backup
 
         public override async Task DisposeAsync()
         {
-            SqliteConnection.ClearAllPools();
+            RootFolder.At(_restored).Database.Release();
             foreach (string file in BackupFiles())
             {
                 File.Delete(file);
@@ -342,16 +340,6 @@ namespace ByteShelf.Server.Tests.Backup
             return Directory.GetFiles(Path.GetDirectoryName(_zipPath)!, Path.GetFileName(_zipPath) + "*");
         }
 
-        /// <summary>Stores a photo of <paramref name="camera"/>'s, read by the server and by a plugin.</summary>
-        private async Task<ShelfFile> StoreReadPhotoAsync(Shelf shelf, string camera)
-        {
-            ShelfFile photo = await StoreAsync(shelf, "/photo.jpg", TestMedia.Photo(make: camera), "image/jpeg");
-            await Services.GetRequiredService<MetadataReading>().RunAsync(CancellationToken.None);
-            Assert.Equal(camera, (await Services.GetRequiredService<IObjectMetadataRepository>().GetBySha256Async(photo.Sha256))?.Metadata.Camera);
-            Assert.True(await Services.RecordContentDocumentAsync(photo.Sha256, $"{{\"camera\":\"{camera}\"}}"));
-            return photo;
-        }
-
         private static async Task AssertNothingReadAsync(RootFolder root, ShelfFile photo, string camera)
         {
             Assert.Equal(0, await CountAsync(root, $"SELECT COUNT(*) FROM object_metadata WHERE sha256 = '{photo.Sha256}'"));
@@ -371,8 +359,7 @@ namespace ByteShelf.Server.Tests.Backup
 
         private static async Task<long> CountAsync(RootFolder root, string sql)
         {
-            await using SqliteConnection connection = new SqliteConnection(RootFolder.ConnectionStringFor(root.DatabasePath, pooling: false));
-            await connection.OpenAsync();
+            await using DbConnection connection = await new DatabaseFile(root.DatabasePath, pooling: false).OpenConnectionAsync();
             return await connection.QuerySingleAsync<long>(sql);
         }
     }

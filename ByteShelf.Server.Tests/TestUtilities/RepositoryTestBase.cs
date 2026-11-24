@@ -8,7 +8,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
     public abstract class RepositoryTestBase : IAsyncLifetime
     {
         protected TestRoot TestRoot { get; private set; } = null!;
-        protected DbDataSource DataSource => TestRoot.DataSource;
+        protected DbDataSource DataSource => TestRoot.Root.Database;
         protected IDbSessionFactory SessionFactory => TestRoot.SessionFactory;
         protected FakeTimeProvider Clock { get; } = new FakeTimeProvider(TestInstants.Now);
 

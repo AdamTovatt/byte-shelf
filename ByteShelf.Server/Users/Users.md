@@ -148,8 +148,8 @@ database yet is created and migrated for `--create-user` only (`StartsARoot`), s
 be made before the first start, and removed again when the command does not finish; the other
 commands refuse it. Passwords come from `IPasswordReader`: stdin when redirected, else typed twice at
 the terminal, never an argument. A new user's email and name, and a user to change, are checked before the password is asked
-for. Closing the connections before it exits means that with the server stopped SQLite removes the
-`-wal` and `-shm` files it made rather than leaving them owned by whoever ran it.
+for. Closing the connections once its work is done means that with the server stopped SQLite removes the
+`-wal` and `-shm` files it made, which whoever ran it would own.
 
 ## Cleanup
 

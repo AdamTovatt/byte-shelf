@@ -2,6 +2,7 @@ using System.Text;
 using ByteShelf.Server.Access.Services;
 using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.ChangeLog.Services;
+using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
@@ -120,6 +121,16 @@ namespace ByteShelf.Server.Tests.TestUtilities
         {
             StartUploadRequest request = new StartUploadRequest { Path = path, SizeBytes = contents.Length, ContentType = contentType, Encrypted = encrypted };
             return UploadService.StoreAsync(shelf, request, Uploader, new MemoryStream(contents), CancellationToken.None);
+        }
+
+        /// <summary>Stores a photo of <paramref name="camera"/>'s, read by the server and by a plugin.</summary>
+        protected async Task<ShelfFile> StoreReadPhotoAsync(Shelf shelf, string camera)
+        {
+            ShelfFile photo = await StoreAsync(shelf, "/photo.jpg", TestMedia.Photo(make: camera), "image/jpeg");
+            await Services.ReadMetadataAsync();
+            Assert.Equal(camera, (await Services.GetRequiredService<IObjectMetadataRepository>().GetBySha256Async(photo.Sha256))?.Metadata.Camera);
+            Assert.True(await Services.RecordContentDocumentAsync(photo.Sha256, $"{{\"camera\":\"{camera}\"}}"));
+            return photo;
         }
 
         /// <summary>Stores <see cref="BytesOfBoth"/> as a plain file and as an encrypted one.</summary>

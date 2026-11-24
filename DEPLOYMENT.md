@@ -334,6 +334,44 @@ after `--backup` is not given or `BYTESHELF_ROOT` is not set.
 A zip of a stopped server's root is a complete copy too. Restoring either onto a primary makes its
 replicas take a whole copy once they notice, which [Backup](ByteShelf.Server/Backup/Backup.md) explains.
 
+## Deleted data
+
+What is deleted from the database, or replaced in it, is overwritten with zeros (SQLite's `secure_delete`), on
+a primary and on its replicas: what was read from a file goes as the file is encrypted in place, and a file's
+row once it is purged from the trash. The write goes to the write-ahead log, `byteshelf.db-wal`, and reaches
+`byteshelf.db` at SQLite's next checkpoint, after some 1,000 pages of writes or when the database is closed, as
+it is when the server is stopped normally; until then the old bytes are still in `byteshelf.db`.
+
+The change log keeps what its entries said until they are compacted, up to about 30 days
+([Background work](#background-work)): a deleted file's name and description, a replaced password's hash, and
+the SHA-256 and size of the plain contents of a file encrypted since. What was read from contents it forgets at
+once, but for part of the contents' SHA-256, in the entry of the removal.
+
+This covers the database's rows and nothing else. It does not reach:
+
+- **`byteshelf.db-wal`** itself: the old bytes may stay there until SQLite writes over them or the database is
+  closed.
+- **A row's earlier place**: when SQLite splits a full page it moves rows to another, and may leave a copy
+  of one in the first page's unused space until that is written over. Deleting the row clears only where it
+  is, so a few in ten thousand deleted rows leave such a copy.
+- **What was deleted without it**, by an earlier version of the server or by another program: the bytes
+  stay until SQLite writes over the space they were in.
+- **Files outside the database**, which are removed and never overwritten, so the file system may keep their
+  bytes: the contents under `objects/` of deleted files and the plain contents of a file encrypted in place,
+  a backup's copy of the database (`<zip>.db.partial`), and what a file was shortened by. Backups made earlier
+  keep what they have.
+
+The second and third go when the database is rebuilt, which the server never does by itself, since it takes
+as long as the database is large. With the server stopped, as the user it runs as, with SQLite's own
+command-line tool:
+
+```bash
+SQLITE_TMPDIR="$BYTESHELF_ROOT" sqlite3 "$BYTESHELF_ROOT/byteshelf.db" 'VACUUM;'
+```
+
+It writes two more copies of the database while it runs, one of them in a temporary folder, which
+`SQLITE_TMPDIR` puts inside the root, where no other user reaches it; the root's disk needs room for both.
+
 ## Background work
 
 The server cleans up after itself: hourly it removes abandoned uploads, staging leftovers, the trash

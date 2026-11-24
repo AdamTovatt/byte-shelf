@@ -1,5 +1,5 @@
+using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.IO;
-using Microsoft.Data.Sqlite;
 
 namespace ByteShelf.Server.Shared.Root
 {
@@ -19,6 +19,7 @@ namespace ByteShelf.Server.Shared.Root
         {
             Path = path;
             DatabasePath = System.IO.Path.Combine(path, DatabaseFileName);
+            Database = new DatabaseFile(DatabasePath);
             ObjectsPath = System.IO.Path.Combine(path, ObjectsFolderName);
             StagingPath = System.IO.Path.Combine(path, StagingFolderName);
             KeysPath = System.IO.Path.Combine(path, KeysFolderName);
@@ -36,30 +37,12 @@ namespace ByteShelf.Server.Shared.Root
 
         public string KeysPath { get; }
 
-        /// <summary>The connection string for <see cref="DatabasePath"/>.</summary>
-        public string ConnectionString => ConnectionStringFor(DatabasePath);
-
-        /// <summary>
-        /// The connection string for a ByteShelf database at <paramref name="databasePath"/>. Foreign keys
-        /// are switched on here rather than by a pragma on one connection, because SQLite holds that
-        /// setting per connection and a pooled connection that never ran the pragma would ignore every
-        /// foreign key. Without <paramref name="pooling"/>, closing the last connection releases the file,
-        /// for a copy that is moved or deleted next.
-        /// </summary>
-        public static string ConnectionStringFor(string databasePath, bool pooling = true)
-        {
-            return new SqliteConnectionStringBuilder
-            {
-                DataSource = databasePath,
-                ForeignKeys = true,
-                Pooling = pooling,
-                DefaultTimeout = 30,
-            }.ToString();
-        }
+        /// <summary>The database at <see cref="DatabasePath"/>, opened through this alone.</summary>
+        public DatabaseFile Database { get; }
 
         /// <summary>
         /// The root a server at <paramref name="path"/> would have, of which nothing is made or opened: for
-        /// registering the server's services without running them.
+        /// registering the server's services without running them, and for removing one.
         /// </summary>
         public static RootFolder At(string path)
         {

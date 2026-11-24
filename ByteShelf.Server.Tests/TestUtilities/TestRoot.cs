@@ -2,7 +2,6 @@ using System.Data.Common;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Root;
 using EasyReasy.Database;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace ByteShelf.Server.Tests.TestUtilities
@@ -21,13 +20,10 @@ namespace ByteShelf.Server.Tests.TestUtilities
         private TestRoot(RootFolder root)
         {
             Root = root;
-            DataSource = DataSources.Create(root.ConnectionString);
-            SessionFactory = new DbSessionFactory(DataSource);
+            SessionFactory = new DbSessionFactory(root.Database);
         }
 
         public RootFolder Root { get; }
-
-        public DbDataSource DataSource { get; }
 
         public IDbSessionFactory SessionFactory { get; }
 
@@ -41,8 +37,8 @@ namespace ByteShelf.Server.Tests.TestUtilities
 
         public async ValueTask DisposeAsync()
         {
-            await DataSource.DisposeAsync();
-            SqliteConnection.ClearAllPools();
+            // This root's pooled connections alone: another test may be using its own.
+            Root.Database.Release();
 
             if (Directory.Exists(Root.Path))
             {
@@ -52,8 +48,6 @@ namespace ByteShelf.Server.Tests.TestUtilities
 
         private static string CreateTemplateDatabase()
         {
-            DatabaseTypeHandlers.RegisterAll();
-
             // One template per run; earlier runs' templates are left over only because nothing deletes
             // a template while the run still copies it.
             if (Directory.Exists(RootsPath))
@@ -65,18 +59,17 @@ namespace ByteShelf.Server.Tests.TestUtilities
             }
 
             RootFolder template = RootFolder.Open(Path.Combine(RootsPath, "template-" + Guid.NewGuid().ToString("N")));
-            DatabaseMigrator.RunMigrations(template.ConnectionString, NullLogger.Instance);
+            DatabaseMigrator.RunMigrations(template.Database, NullLogger.Instance);
 
             // Fold the write-ahead log into the file, so copying the file alone copies everything.
-            using (SqliteConnection connection = new SqliteConnection(template.ConnectionString))
+            using (DbConnection connection = template.Database.OpenConnection())
             {
-                connection.Open();
-                using SqliteCommand command = connection.CreateCommand();
+                using DbCommand command = connection.CreateCommand();
                 command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
                 command.ExecuteNonQuery();
             }
 
-            SqliteConnection.ClearAllPools();
+            template.Database.Release();
             return template.DatabasePath;
         }
     }

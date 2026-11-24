@@ -17,7 +17,7 @@ namespace ByteShelf.Server.Tests.Storage
 
         protected override void ConfigureServices(IServiceCollection services)
         {
-            _sessionFactory = new FailingCommitSessionFactory(TestRoot.DataSource);
+            _sessionFactory = new FailingCommitSessionFactory(TestRoot.Root.Database);
             services.AddSingleton<IDbSessionFactory>(_sessionFactory);
         }
 

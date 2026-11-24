@@ -7,7 +7,6 @@ using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging;
 
 namespace ByteShelf.Server.Tests.Backup
@@ -29,7 +28,7 @@ namespace ByteShelf.Server.Tests.Backup
         public async Task DisposeAsync()
         {
             await _host.DisposeAsync();
-            SqliteConnection.ClearAllPools();
+            RootFolder.At(_restored).Database.Release();
             File.Delete(_zipPath);
             if (Directory.Exists(_restored))
             {

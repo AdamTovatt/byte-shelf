@@ -49,8 +49,10 @@ plaintext, and metadata read from it would leak what encryption hides. Such file
 keep about the file itself it still has.
 
 **What was read from plaintext never outlives it** in the tables and the log, whichever reader read it.
-What a row held may stay on the database file's free pages until SQLite writes over them, as what any
-deleted row held; a backup's copy has none of it ([Backup](../Backup/Backup.md)).
+In the database file it is overwritten as any deleted or changed row is: every connection to a database,
+a replica's and a command's too, is opened by `DatabaseFile` with `secure_delete` on, which zeros what is
+no longer held and the pages that frees, in `byteshelf.db` from SQLite's next checkpoint. DEPLOYMENT.md
+says [what that does not reach](../../DEPLOYMENT.md#deleted-data), such as the write-ahead log.
 
 - A file encrypted in place drops what was read from its plain contents in the swap's transaction
   (`FileRepository.SwapContentAsync`, the one way to swap contents, for a backup too, through

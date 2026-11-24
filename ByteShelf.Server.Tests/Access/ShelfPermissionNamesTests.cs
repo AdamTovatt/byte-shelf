@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
@@ -5,7 +6,7 @@ using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
-using Microsoft.Data.Sqlite;
+using EasyReasy.Database.Mapping;
 
 namespace ByteShelf.Server.Tests.Access
 {
@@ -79,11 +80,8 @@ namespace ByteShelf.Server.Tests.Access
 
         private async Task<string?> ScalarAsync(string sql)
         {
-            await using SqliteConnection connection = new SqliteConnection(_host.TestRoot.Root.ConnectionString);
-            await connection.OpenAsync();
-            await using SqliteCommand command = connection.CreateCommand();
-            command.CommandText = sql;
-            return (string?)await command.ExecuteScalarAsync();
+            await using DbConnection connection = await _host.TestRoot.Root.Database.OpenConnectionAsync();
+            return await connection.ExecuteScalarAsync<string?>(sql);
         }
     }
 }

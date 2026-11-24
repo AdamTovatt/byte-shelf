@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Net;
 using System.Net.Http.Json;
 using ByteShelf.Server.ChangeLog.Models;
@@ -8,7 +9,7 @@ using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Services;
 using ByteShelfCommon;
-using Microsoft.Data.Sqlite;
+using EasyReasy.Database.Mapping;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -265,7 +266,7 @@ namespace ByteShelf.Server.Tests.Users
         public async Task AnyCommand_OnADatabaseAMigrationBehind_FailsWithoutMigratingIt()
         {
             const string CountApplied = "SELECT COUNT(*) FROM SchemaVersions";
-            long applied = (long)(await ExecuteAsync(CountApplied))!;
+            long applied = (await ExecuteAsync(CountApplied))!.Value;
             await ExecuteAsync("DELETE FROM SchemaVersions WHERE SchemaVersionID = (SELECT MAX(SchemaVersionID) FROM SchemaVersions)");
             RecordingLoggerFactory logs = new RecordingLoggerFactory();
 
@@ -299,7 +300,7 @@ namespace ByteShelf.Server.Tests.Users
             Assert.Equal(RootCommand.Done, exitCode);
             RootFolder root = RootFolder.OpenExisting(folder);
             Assert.False(File.Exists(root.DatabasePath + "-wal"));
-            Assert.True(DatabaseMigrator.IsUpToDate(root.ConnectionString));
+            Assert.True(DatabaseMigrator.IsUpToDate(root.Database));
             await using ServiceProvider services = RootCommand.BuildServices(ServerSettings.Open(root), NullLoggerFactory.Instance);
             await using AsyncServiceScope scope = services.CreateAsyncScope();
             User? created = await scope.ServiceProvider.GetRequiredService<IUserService>().GetUserByEmailAsync(NewEmail);
@@ -404,13 +405,10 @@ namespace ByteShelf.Server.Tests.Users
         }
 
         /// <summary>Runs <paramref name="sql"/> on the host's database and answers the first value it returns, if any.</summary>
-        private async Task<object?> ExecuteAsync(string sql)
+        private async Task<long?> ExecuteAsync(string sql)
         {
-            await using SqliteConnection connection = new SqliteConnection(_host.TestRoot.Root.ConnectionString);
-            await connection.OpenAsync();
-            await using SqliteCommand command = connection.CreateCommand();
-            command.CommandText = sql;
-            return await command.ExecuteScalarAsync();
+            await using DbConnection connection = await _host.TestRoot.Root.Database.OpenConnectionAsync();
+            return await connection.ExecuteScalarAsync<long?>(sql);
         }
 
         private Task<int> RunAsync(Passwords passwords, params string[] args)

@@ -1,0 +1,187 @@
+using System.Data.Common;
+using System.Text;
+using ByteShelf.Server.Shared.Database;
+using ByteShelf.Server.Storage.Models;
+using ByteShelf.Server.Tests.TestUtilities;
+using ByteShelfCommon;
+using EasyReasy.Database.Mapping;
+using Microsoft.Data.Sqlite;
+using SQLitePCL;
+
+namespace ByteShelf.Server.Tests.Shared
+{
+    /// <summary>What every connection to a database has, and that what is deleted leaves the file.</summary>
+    public sealed class DatabaseFileTests : ServiceTestBase
+    {
+        [Fact]
+        public async Task Open_EveryWay_OverwritesWhatIsDeletedAndChecksForeignKeys()
+        {
+            DatabaseFile unpooled = new DatabaseFile(TestRoot.Root.DatabasePath, pooling: false);
+
+            DbConnection openedAfterCreation = TestRoot.Root.Database.CreateConnection();
+            await openedAfterCreation.OpenAsync();
+
+            await AssertSettingsAsync(openedAfterCreation);
+            await AssertSettingsAsync(await TestRoot.Root.Database.OpenConnectionAsync());
+            await AssertSettingsAsync(TestRoot.Root.Database.OpenConnection());
+            await AssertSettingsAsync(await unpooled.OpenConnectionAsync());
+            await using DbCommand command = TestRoot.Root.Database.CreateCommand("PRAGMA secure_delete");
+            Assert.Equal(1L, await command.ExecuteScalarAsync());
+        }
+
+        /// <summary>For a copy that is moved or deleted next: SQLite removes its other files as the last connection closes.</summary>
+        [Fact]
+        public async Task Close_Unpooled_LeavesNoWriteAheadLog()
+        {
+            string copy = TestRoot.Root.DatabasePath + ".copy";
+            await using (DbCommand snapshot = TestRoot.Root.Database.CreateCommand($"VACUUM INTO '{copy}'"))
+            {
+                await snapshot.ExecuteNonQueryAsync();
+            }
+
+            await using (DbConnection connection = await new DatabaseFile(copy, pooling: false).OpenConnectionAsync())
+            {
+                await connection.ExecuteAsync("PRAGMA journal_mode = WAL");
+                await connection.ExecuteAsync("CREATE TABLE written (id INTEGER)");
+                Assert.True(File.Exists(copy + "-wal"));
+            }
+
+            Assert.False(File.Exists(copy + "-wal"));
+        }
+
+        /// <summary>A pooled connection left without the settings goes back to the pool so.</summary>
+        [Fact]
+        public async Task Open_FromThePool_OverwritesWhatIsDeletedAndChecksForeignKeys()
+        {
+            DbConnection[] first = await OpenThreeAsync();
+            sqlite3?[] handles = first.Select(HandleOf).ToArray();
+            foreach (DbConnection connection in first)
+            {
+                await connection.ExecuteAsync("PRAGMA secure_delete = OFF; PRAGMA foreign_keys = OFF");
+                await connection.DisposeAsync();
+            }
+
+            DbConnection[] again = await OpenThreeAsync();
+
+            Assert.Equal(handles.ToHashSet(), again.Select(HandleOf).ToHashSet());
+            foreach (DbConnection connection in again)
+            {
+                await AssertSettingsAsync(connection);
+            }
+        }
+
+        [Fact]
+        public async Task Release_ClosesThePooledConnectionsOfItsDatabaseAlone()
+        {
+            DatabaseFile other = new DatabaseFile(TestRoot.Root.DatabasePath + ".other");
+            sqlite3? released = await PoolOneAsync(TestRoot.Root.Database);
+            sqlite3? kept = await PoolOneAsync(other);
+
+            TestRoot.Root.Database.Release();
+
+            Assert.True(released!.IsClosed);
+            Assert.False(kept!.IsClosed);
+            other.Delete();
+            Assert.True(kept.IsClosed);
+            Assert.Empty(Directory.EnumerateFiles(TestRoot.Root.Path, "*.other*"));
+        }
+
+        [Fact]
+        public async Task Open_TheSameConnectionAgain_OverwritesWhatIsDeletedAndChecksForeignKeys()
+        {
+            await using DbConnection connection = await TestRoot.Root.Database.OpenConnectionAsync();
+            await connection.ExecuteAsync("PRAGMA secure_delete = OFF; PRAGMA foreign_keys = OFF");
+            await connection.CloseAsync();
+
+            await connection.OpenAsync();
+
+            await AssertSettingsAsync(connection);
+        }
+
+        [Fact]
+        public async Task EncryptInPlace_WhatWasReadFromThePlainContents_IsNotInTheDatabaseFileOnceCheckpointed()
+        {
+            const string camera = "RecognisableCamera";
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile photo = await StoreReadPhotoAsync(shelf, camera);
+
+            // On pages that are their table's only one: a split page may keep a copy of a row it moved, which
+            // is SQLite's (DEPLOYMENT.md, Deleted data) and would make this test depend on where rows fall.
+            List<long> pages = await PagesHoldingAsync(camera);
+            Assert.NotEmpty(pages);
+            Assert.Empty(pages.Except(await RootPagesAsync()));
+
+            await EncryptInPlaceAsync(shelf, photo);
+
+            Assert.Empty(await PagesHoldingAsync(camera));
+        }
+
+        /// <summary>The pages a long value is on beside its row are freed with it, which overwrites them too.</summary>
+        [Fact]
+        public async Task EncryptInPlace_WhatAPluginReadOnPagesOfItsOwn_IsNotInTheDatabaseFileOnceCheckpointed()
+        {
+            const string end = "RecognisableEnd";
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "plain contents");
+            Assert.True(await Services.RecordContentDocumentAsync(file.Sha256, $"{{\"text\":\"{new string('x', 20_000)}{end}\"}}"));
+            List<long> pages = await PagesHoldingAsync(end);
+            Assert.NotEmpty(pages);
+            Assert.Empty(pages.Intersect(await RootPagesAsync()));
+
+            await EncryptInPlaceAsync(shelf, file);
+
+            Assert.Empty(await PagesHoldingAsync(end));
+        }
+
+        /// <summary>Asserts what every open connection has, and disposes <paramref name="connection"/>.</summary>
+        private static async Task AssertSettingsAsync(DbConnection connection)
+        {
+            await using DbConnection disposed = connection;
+            Assert.Equal(1L, await connection.ExecuteScalarAsync<long>("PRAGMA secure_delete"));
+            Assert.Equal(1L, await connection.ExecuteScalarAsync<long>("PRAGMA foreign_keys"));
+        }
+
+        /// <summary>A connection to <paramref name="database"/> that has gone back to its pool.</summary>
+        private static async Task<sqlite3?> PoolOneAsync(DatabaseFile database)
+        {
+            await using DbConnection connection = await database.OpenConnectionAsync();
+            await connection.ExecuteAsync("CREATE TABLE written (id INTEGER)");
+            return HandleOf(connection);
+        }
+
+        /// <summary>Held together, so they are three.</summary>
+        private async Task<DbConnection[]> OpenThreeAsync()
+        {
+            DatabaseFile database = TestRoot.Root.Database;
+            return [await database.OpenConnectionAsync(), await database.OpenConnectionAsync(), await database.OpenConnectionAsync()];
+        }
+
+        /// <summary>SQLite's own connection under <paramref name="connection"/>.</summary>
+        private static sqlite3? HandleOf(DbConnection connection)
+        {
+            return ((SqliteConnection)connection).Handle;
+        }
+
+        /// <summary>The database file's pages with <paramref name="text"/> on them, once everything in the write-ahead log is written into it.</summary>
+        private async Task<List<long>> PagesHoldingAsync(string text)
+        {
+            await using DbConnection connection = await TestRoot.Root.Database.OpenConnectionAsync();
+            long pageSize = await connection.ExecuteScalarAsync<long>("PRAGMA page_size");
+
+            // Its first column is whether a reader held it up.
+            Assert.Equal(0L, await connection.ExecuteScalarAsync<long>("PRAGMA wal_checkpoint(TRUNCATE)"));
+            byte[] file = await File.ReadAllBytesAsync(TestRoot.Root.DatabasePath);
+            return file.Chunk((int)pageSize)
+                .Select((page, index) => (Number: index + 1L, Text: Encoding.Latin1.GetString(page)))
+                .Where(page => page.Text.Contains(text, StringComparison.OrdinalIgnoreCase))
+                .Select(page => page.Number)
+                .ToList();
+        }
+
+        private async Task<IReadOnlyList<long>> RootPagesAsync()
+        {
+            await using DbConnection connection = await TestRoot.Root.Database.OpenConnectionAsync();
+            return (await connection.QueryAsync<long>("SELECT rootpage FROM sqlite_master")).ToList();
+        }
+    }
+}
