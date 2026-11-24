@@ -15,6 +15,12 @@ namespace ByteShelf.Server.Metadata.Repositories
         /// <summary>What a plugin keeps about a file, or the version of what it removed; null when it never kept anything.</summary>
         Task<FilePluginMetadata?> GetAsync(string pluginId, Guid fileId, IDbSession? session = null);
 
+        /// <summary>A plugin's rows by file id after <paramref name="afterFileId"/>, at most <paramref name="limit"/>.</summary>
+        Task<IReadOnlyList<FilePluginMetadata>> GetOfPluginAsync(string pluginId, Guid? afterFileId, int limit, IDbSession session);
+
+        /// <summary>Removes a plugin's rows with the versions they kept, each logged as purged; answers how many.</summary>
+        Task<int> DeleteOfPluginAsync(string pluginId, DateTimeOffset at, IDbSession session);
+
         /// <summary>
         /// Writes a plugin's document about a file, or removes it with a null <paramref name="document"/>, over
         /// the version <paramref name="expectedVersion"/>, null for a first write; answers the row as written,
@@ -39,9 +45,6 @@ namespace ByteShelf.Server.Metadata.Repositories
         /// still be to come in the same transaction, whose foreign keys are then deferred.
         /// </summary>
         Task UpsertReplicatedAsync(FilePluginMetadata metadata, string action, DateTimeOffset at, IDbSession session);
-
-        /// <summary>Removes, logged as purged, every row whose file never came in a transaction that deferred the foreign keys.</summary>
-        Task DeleteWithoutFileAsync(DateTimeOffset at, IDbSession session);
 
         /// <summary>Removes a row, logged as purged; false when there was none.</summary>
         Task<bool> DeleteByIdAsync(Guid id, DateTimeOffset at, IDbSession session);

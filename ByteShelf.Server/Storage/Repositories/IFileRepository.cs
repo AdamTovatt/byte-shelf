@@ -37,8 +37,9 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <summary>
         /// Points a live file at other contents in place, keeping its id, name, type and description, while
         /// its contents are still <paramref name="expectedSha256"/>; null when it is not live or they are
-        /// not. Logged as <see cref="ChangeLog.Models.ChangeAction.Swapped"/>. Removing the old object is
-        /// the caller's, once this commits.
+        /// not. Logged as <see cref="ChangeLog.Models.ChangeAction.Swapped"/>, after what was read from the old
+        /// contents was removed and before what plugins keep about the file is logged again. Removing the old
+        /// object is the caller's, once this commits.
         /// </summary>
         Task<FileRecord?> SwapContentAsync(Guid id, string expectedSha256, string sha256, long sizeBytes, bool encrypted, DateTimeOffset at, IDbSession session);
 

@@ -19,6 +19,10 @@ CREATE TABLE content_plugin_metadata (
 
 CREATE INDEX idx_content_plugin_metadata_sha256 ON content_plugin_metadata (sha256);
 
+-- The version of the server's own reader that read the row: what another version read is read again, as a plugin's is.
+-- 1 read every row from before versions were kept (ObjectMetadata.ReaderVersion).
+ALTER TABLE object_metadata ADD COLUMN reader_version INTEGER NOT NULL DEFAULT 1;
+
 -- About a file, whatever its contents. A null document was removed: its row stays, so a version is never given twice. It goes with the file's row, and nothing logs that: a replica keeps the document of
 -- a file purged on its primary for as long as it keeps the file in its own trash.
 CREATE TABLE file_plugin_metadata (
@@ -32,3 +36,34 @@ CREATE TABLE file_plugin_metadata (
 
 -- For the cascade, which looks a removed file's rows up by it.
 CREATE INDEX idx_file_plugin_metadata_file ON file_plugin_metadata (file_id);
+
+-- The values of the fields an installed plugin declares in its documents, for search and listings, one row a field that has
+-- one: taken from a document whenever it is written or applied from a primary (PluginFieldValueRepository), never logged or
+-- replicated, and gone with it. Which fields are declared is a server's own, so a replica takes its own.
+CREATE TABLE plugin_field_value (
+    plugin_id TEXT NOT NULL,
+    field TEXT NOT NULL,
+    sha256 TEXT,                   -- of a document about contents, else null
+    file_id TEXT,                  -- of a document about a file, else null
+    text_fold TEXT,                -- a text, as search compares it
+    number REAL,
+    instant TEXT,
+    flag INTEGER CHECK (flag IN (0, 1)),
+    searched INTEGER NOT NULL CHECK (searched IN (0, 1)), -- whether a search's free text matches text_fold
+    listed TEXT,                   -- the value as listings carry it, a ByteShelfCommon.PluginFieldValue; null when they do not
+    CONSTRAINT plugin_field_value_one_document CHECK ((sha256 IS NULL) <> (file_id IS NULL)),
+    CONSTRAINT plugin_field_value_one_value CHECK ((text_fold IS NOT NULL) + (number IS NOT NULL) + (instant IS NOT NULL) + (flag IS NOT NULL) = 1),
+    FOREIGN KEY (plugin_id, sha256) REFERENCES content_plugin_metadata (plugin_id, sha256) ON DELETE CASCADE,
+    FOREIGN KEY (plugin_id, file_id) REFERENCES file_plugin_metadata (plugin_id, file_id) ON DELETE CASCADE
+);
+
+-- For the cascades, and for looking a file's values up by its id and its contents.
+CREATE UNIQUE INDEX idx_plugin_field_value_contents ON plugin_field_value (sha256, plugin_id, field);
+CREATE UNIQUE INDEX idx_plugin_field_value_file ON plugin_field_value (file_id, plugin_id, field);
+
+-- The fields the values above were taken by, as each plugin declared them: a plugin that declares others at startup, or is
+-- gone, has its values taken again, or dropped (PluginFieldIndex).
+CREATE TABLE plugin_declared_fields (
+    plugin_id TEXT PRIMARY KEY,
+    fields TEXT NOT NULL
+);

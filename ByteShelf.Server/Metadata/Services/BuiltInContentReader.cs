@@ -5,7 +5,7 @@ namespace ByteShelf.Server.Metadata.Services
 {
     /// <summary>
     /// The server's own reader: <see cref="MetadataReader"/>, whose findings go to <c>object_metadata</c>.
-    /// It has no version, as its table has none: contents with a row are read.
+    /// Contents another <see cref="MetadataReader.Version"/> read are read again.
     /// </summary>
     internal sealed class BuiltInContentReader : ContentReader
     {
@@ -23,7 +23,7 @@ namespace ByteShelf.Server.Metadata.Services
 
         public override Task<IReadOnlyList<string>> GetUnreadAsync(string? after, int limit)
         {
-            return _repository.GetUnreadAsync(ReadMediaTypes.All, after, limit);
+            return _repository.GetUnreadAsync(MetadataReader.Version, ReadMediaTypes.All, after, limit);
         }
 
         public override Task<RecordReading> ReadAsync(Stream contents, CancellationToken cancellationToken)
@@ -33,7 +33,7 @@ namespace ByteShelf.Server.Metadata.Services
 
         private RecordReading Record(ContentMetadata found)
         {
-            return (sha256, at, session) => _repository.RecordAsync(ObjectMetadata.Of(sha256, at, found), session);
+            return (sha256, at, session) => _repository.RecordAsync(ObjectMetadata.Of(sha256, MetadataReader.Version, at, found), session);
         }
     }
 }

@@ -17,6 +17,9 @@ namespace ByteShelf.Server.Metadata.Services
     /// </summary>
     public static partial class MetadataReader
     {
+        /// <summary>Raised when what it reads changes: contents an earlier version read are read again.</summary>
+        public const int Version = 1;
+
         /// <summary>
         /// The most code points a title or camera keeps; what a file carries past that is cut. The
         /// database holds the same limit (v0012), as <c>length()</c> counts.

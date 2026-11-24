@@ -1,4 +1,7 @@
 using ByteShelf.Server.ChangeLog.Models;
+using ByteShelf.Server.Metadata.Models;
+using ByteShelf.Server.Metadata.Repositories;
+using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
 using ByteShelf.Server.Tests.TestUtilities;
@@ -73,6 +76,7 @@ namespace ByteShelf.Server.Tests.Storage
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "now");
+            await Services.SetFileDocumentAsync(file.Id, "{}");
             long before = await ChangeLog.GetLatestSequenceAsync();
 
             FileRecord? swapped;
@@ -86,6 +90,53 @@ namespace ByteShelf.Server.Tests.Storage
             FileRecord kept = (await Files.GetByIdAsync(file.Id))!;
             Assert.Equal((file.Sha256, false), (kept.Sha256, kept.Encrypted));
             Assert.Equal(before, await ChangeLog.GetLatestSequenceAsync());
+        }
+
+        [Fact]
+        public async Task SwapContentAsync_FileInTheTrash_ChangesAndLogsNothing()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
+            await FileService.DeleteFileAsync(shelf, EntryReference.ForId(file.Id));
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            await using (IDbTransactionSession session = await TestRoot.SessionFactory.CreateSessionWithTransactionAsync())
+            {
+                Assert.Null(await Files.SwapContentAsync(file.Id, file.Sha256, Sha256Of("new"), 3, encrypted: true, TestInstants.Now, session));
+                await session.CommitAsync();
+            }
+
+            Assert.Equal(file.Sha256, (await Files.GetByIdAsync(file.Id))!.Sha256);
+            Assert.Equal(before, await ChangeLog.GetLatestSequenceAsync());
+        }
+
+        [Fact]
+        public async Task SwapContentAsync_FileWithMetadata_RemovesItsReadingsThenSwapsItThenLogsItsDocumentsAgain()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "plain");
+            await Services.RecordContentDocumentAsync(file.Sha256, "{\"text\":\"plain\"}");
+            await Services.InTransactionAsync((provider, session) => provider.GetRequiredService<IObjectMetadataRepository>()
+                .RecordAsync(ObjectMetadata.Of(file.Sha256, MetadataReader.Version, TestInstants.Now, new ContentMetadata { Title = "plain" }), session));
+            await Services.SetFileDocumentAsync(file.Id, "{\"kept\":true}");
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            await using (IDbTransactionSession session = await TestRoot.SessionFactory.CreateSessionWithTransactionAsync())
+            {
+                await Files.SwapContentAsync(file.Id, file.Sha256, Sha256Of("new"), 3, encrypted: true, TestInstants.Now, session);
+                await session.CommitAsync();
+            }
+
+            Assert.Null(await Services.GetContentDocumentAsync(file.Sha256));
+            Assert.Null(await Services.GetRequiredService<IObjectMetadataRepository>().GetBySha256Async(file.Sha256));
+            Assert.Equal(
+                [
+                    (ChangeEntityType.ObjectMetadata, ChangeAction.Purged),
+                    (ChangeEntityType.ContentPluginMetadata, ChangeAction.Purged),
+                    (ChangeEntityType.File, ChangeAction.Swapped),
+                    (ChangeEntityType.FilePluginMetadata, ChangeAction.Updated),
+                ],
+                (await ChangeLog.GetAfterAsync(before, 100)).Select(entry => (entry.EntityType, entry.Action)));
         }
     }
 }

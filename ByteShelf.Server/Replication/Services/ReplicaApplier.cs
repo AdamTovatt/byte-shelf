@@ -34,7 +34,6 @@ namespace ByteShelf.Server.Replication.Services
     public sealed class ReplicaApplier
     {
         private readonly IReadOnlyList<EntityHandler> _handlers;
-        private readonly IFilePluginMetadataRepository _filePluginMetadataRepository;
         private readonly IReplicationCopyRepository _copyRepository;
         private readonly TimeProvider _timeProvider;
 
@@ -54,7 +53,6 @@ namespace ByteShelf.Server.Replication.Services
             IReplicationCopyRepository copyRepository,
             TimeProvider timeProvider)
         {
-            _filePluginMetadataRepository = filePluginMetadataRepository;
             _copyRepository = copyRepository;
             _timeProvider = timeProvider;
 
@@ -99,13 +97,7 @@ namespace ByteShelf.Server.Replication.Services
                 new EntityHandler(
                     ChangeEntityType.FilePluginMetadata,
                     "file_plugin_metadata",
-                    async (entry, at, session, changes) =>
-                    {
-                        // Its file may be written by a later entry of the same transaction, or not at all
-                        // (SettleAsync).
-                        await filePluginMetadataRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<FilePluginMetadata>(entry.Payload!), entry.Action, at, session);
-                        changes.FileDocumentWritten();
-                    },
+                    (entry, at, session, _) => filePluginMetadataRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<FilePluginMetadata>(entry.Payload!), entry.Action, at, session),
                     filePluginMetadataRepository.DeleteByIdAsync),
                 new EntityHandler(
                     ChangeEntityType.Passkey,
@@ -170,8 +162,8 @@ namespace ByteShelf.Server.Replication.Services
 
         /// <summary>
         /// Applies <paramref name="entries"/> in order, noting in <paramref name="changes"/> what is left
-        /// to do. <see cref="SettleAsync"/> follows the last call in the same transaction, whose commit a
-        /// document without its file would otherwise fail.
+        /// to do. <see cref="SettleAsync"/> follows the last call in the same transaction, whose commit a row
+        /// without its owner would otherwise fail.
         /// </summary>
         /// <exception cref="ReplicaOutdatedException">An entry is of a type this build does not know.</exception>
         /// <exception cref="PrimaryFailedException">An entry's state is in a shape this build does not take, as from a primary on another version.</exception>
@@ -195,6 +187,7 @@ namespace ByteShelf.Server.Replication.Services
                     try
                     {
                         await handler.WriteAsync(entry, now, session, changes);
+                        changes.Written(handler.EntityType);
                     }
                     catch (JsonException exception)
                     {
@@ -230,17 +223,25 @@ namespace ByteShelf.Server.Replication.Services
         }
 
         /// <summary>
-        /// Settles what only a transaction's last entry decides; called once, after it. A plugin's document
-        /// about a file may come before its file (a copy holds each entity's newest entry, and the file may
-        /// have changed after the document), so only now is one without a file passed over. Its file was
-        /// purged, or passed over itself for contents the primary no longer holds, and then the swap that made
-        /// it so logs its documents again after it (<see cref="IFilePluginMetadataRepository.LogAgainAsync"/>).
+        /// Settles what only a transaction's last entry decides; called once, after it. A row that goes with an
+        /// owner may come before it (a copy holds each entity's newest entry, and the owner may have changed
+        /// after the row), so only now is one without its owner passed over. A plugin's document about a file:
+        /// its file was purged, or passed over itself for contents the primary no longer holds, and then the
+        /// swap that made it so logs its documents again after it (<see cref="IFilePluginMetadataRepository.LogAgainAsync"/>).
         /// </summary>
         public async Task SettleAsync(IDbSession session, AppliedChanges changes)
         {
-            if (changes.DocumentsMayLackFiles)
+            DateTimeOffset now = _timeProvider.GetUtcNow();
+            foreach (EntityHandler handler in _handlers.Where(handler => changes.WrittenTypes.Contains(handler.EntityType)))
             {
-                await _filePluginMetadataRepository.DeleteWithoutFileAsync(_timeProvider.GetUtcNow(), session);
+                if (ChangeEntityType.OwnerOf(handler.EntityType) is { } owner)
+                {
+                    string ownerTable = _handlers.First(candidate => candidate.EntityType == owner.EntityType).Table;
+                    foreach (Guid id in await _copyRepository.GetIdsWithoutOwnerAsync(owner, ownerTable, session))
+                    {
+                        await RemoveAsync(handler, id, now, session, changes);
+                    }
+                }
             }
         }
 

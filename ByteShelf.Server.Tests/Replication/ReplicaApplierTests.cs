@@ -4,6 +4,7 @@ using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Access.Repositories;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.Metadata.Models;
+using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Replication;
 using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared.Auth;
@@ -248,6 +249,18 @@ namespace ByteShelf.Server.Tests.Replication
             Assert.Equal(
                 new[] { ("docs", ShelfKeyPermission.Read), ("photos", ShelfKeyPermission.AddOnly) },
                 (await KeyService.GetGrantsAsync(key.Id)).Select(grant => (grant.ShelfName, grant.Permission)).OrderBy(grant => grant.ShelfName));
+        }
+
+        [Fact]
+        public async Task ApplyAsync_ReadingFromAPrimaryThatKeepsNoVersions_IsVersionOnes()
+        {
+            string sha256 = new string('a', 64);
+            Guid id = ObjectMetadata.IdFor(sha256);
+
+            await ApplyAsync(Entry(ChangeEntityType.ObjectMetadata, id, new { Id = id, Sha256 = sha256, ReadAt = TestInstants.Now, Metadata = new { Camera = "Nikon" } }));
+
+            ObjectMetadata applied = (await Services.GetRequiredService<IObjectMetadataRepository>().GetBySha256Async(sha256))!;
+            Assert.Equal((1, "Nikon"), (applied.ReaderVersion, applied.Metadata.Camera));
         }
 
         [Fact]

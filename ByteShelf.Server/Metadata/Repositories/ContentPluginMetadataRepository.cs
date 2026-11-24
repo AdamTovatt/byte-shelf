@@ -29,11 +29,13 @@ namespace ByteShelf.Server.Metadata.Repositories
             $"{UpsertSql.OnIdConflict($"{InsertIntoSql} SELECT {ValuesSql} WHERE {PlainContents.HeldByLiveFile("@Sha256")}")} WHERE content_plugin_metadata.reader_version <> excluded.reader_version";
 
         private readonly IChangeLogRepository _changeLog;
+        private readonly IPluginFieldValueRepository _fieldValues;
 
-        public ContentPluginMetadataRepository(DbDataSource dataSource, IDbSessionFactory sessionFactory, IChangeLogRepository changeLog)
+        public ContentPluginMetadataRepository(DbDataSource dataSource, IDbSessionFactory sessionFactory, IChangeLogRepository changeLog, IPluginFieldValueRepository fieldValues)
             : base(dataSource, sessionFactory)
         {
             _changeLog = changeLog;
+            _fieldValues = fieldValues;
         }
 
         /// <inheritdoc />
@@ -71,6 +73,30 @@ namespace ByteShelf.Server.Metadata.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<IReadOnlyList<ContentPluginMetadata>> GetOfPluginAsync(string pluginId, string? afterSha256, int limit, IDbSession session)
+        {
+            // Before any there is, rather than a null the index could not start at.
+            string after = afterSha256 ?? string.Empty;
+            string query = $@"
+                SELECT {SelectColumns} FROM content_plugin_metadata
+                WHERE plugin_id = @{nameof(pluginId)} AND sha256 > @{nameof(after)}
+                ORDER BY sha256
+                LIMIT @{nameof(limit)}";
+
+            IEnumerable<ContentPluginMetadataEntity> entities = await session.Connection.QueryAsync<ContentPluginMetadataEntity>(
+                query, new { pluginId, after, limit }, transaction: session.Transaction);
+
+            return entities.Select(entity => entity.ToDomain()).ToList();
+        }
+
+        /// <inheritdoc />
+        public async Task<int> DeleteOfPluginAsync(string pluginId, DateTimeOffset at, IDbSession session)
+        {
+            string query = $"DELETE FROM content_plugin_metadata WHERE plugin_id = @{nameof(pluginId)} RETURNING id";
+            return await _changeLog.DeleteAndLogAsync(ChangeEntityType.ContentPluginMetadata, query, new { pluginId }, at, session);
+        }
+
+        /// <inheritdoc />
         public async Task<bool> RecordAsync(ContentPluginMetadata metadata, IDbSession session)
         {
             bool isNew = await GetAsync(metadata.PluginId, metadata.Sha256, session) == null;
@@ -80,8 +106,7 @@ namespace ByteShelf.Server.Metadata.Repositories
                 return false;
             }
 
-            string action = isNew ? ChangeAction.Added : ChangeAction.Updated;
-            await _changeLog.AppendAsync(ChangeEntityType.ContentPluginMetadata, metadata.Id, action, metadata, metadata.ReadAt, session);
+            await WrittenAsync(metadata, isNew ? ChangeAction.Added : ChangeAction.Updated, metadata.ReadAt, session);
             return true;
         }
 
@@ -101,7 +126,7 @@ namespace ByteShelf.Server.Metadata.Repositories
         public async Task UpsertReplicatedAsync(ContentPluginMetadata metadata, string action, DateTimeOffset at, IDbSession session)
         {
             await session.Connection.ExecuteAsync(UpsertReplicatedSql, Parameters(metadata), transaction: session.Transaction);
-            await _changeLog.AppendAsync(ChangeEntityType.ContentPluginMetadata, metadata.Id, action, metadata, at, session);
+            await WrittenAsync(metadata, action, at, session);
         }
 
         /// <inheritdoc />
@@ -109,6 +134,13 @@ namespace ByteShelf.Server.Metadata.Repositories
         {
             string query = $"DELETE FROM content_plugin_metadata WHERE id = @{nameof(id)} RETURNING id";
             return await _changeLog.DeleteAndLogAsync(ChangeEntityType.ContentPluginMetadata, query, new { id }, at, session) > 0;
+        }
+
+        /// <summary>What every write of a row is followed by: its fields' values are taken, and it is logged.</summary>
+        private async Task WrittenAsync(ContentPluginMetadata metadata, string action, DateTimeOffset at, IDbSession session)
+        {
+            await _fieldValues.TakeAsync(metadata, session);
+            await _changeLog.AppendAsync(ChangeEntityType.ContentPluginMetadata, metadata.Id, action, metadata, at, session);
         }
 
         private static object Parameters(ContentPluginMetadata row)

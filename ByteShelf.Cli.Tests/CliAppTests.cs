@@ -718,6 +718,73 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
+        public async Task Stat_FieldsAPluginDeclares_PrintsThemUnderIt()
+        {
+            await UploadAsync("/a.txt", "a");
+            await Docs.SetPluginDocumentAsync("/a.txt", "notes", PluginDocument.Parse("{\"caption\":\"two\\nlines\",\"rating\":4,\"done\":true}"), null);
+
+            CliRun run = await RunAsync("stat", "docs:/a.txt");
+
+            string[] expected = ["Notes (notes)", "  Caption (caption): two", "    lines", "  Rating (rating): 4", "  Done (done): yes"];
+            Assert.EndsWith(string.Join(Environment.NewLine, expected), run.Output.TrimEnd(), StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Stat_PluginWithNoFieldThatHasAValue_PrintsNothingOfIt()
+        {
+            await UploadAsync("/a.txt", "a");
+            await Docs.SetPluginDocumentAsync("/a.txt", "notes", PluginDocument.Parse("{\"undeclared\":1}"), null);
+
+            CliRun run = await RunAsync("stat", "docs:/a.txt");
+
+            Assert.DoesNotContain("Notes", run.Output, StringComparison.Ordinal);
+        }
+
+        [Theory]
+        [InlineData("find")]
+        [InlineData("find-duplicates")]
+        public async Task Find_SeveralPluginFields_FindsTheFilesThatMeetThemAll(string command)
+        {
+            foreach ((string path, string document) in new[]
+            {
+                ("/a.txt", "{\"rating\":4,\"due\":\"2026-01-01T00:00:00Z\"}"),
+                ("/b.txt", "{\"rating\":5,\"due\":\"2026-01-01T00:00:00Z\"}"),
+                ("/c.txt", "{\"rating\":5}"),
+            })
+            {
+                await UploadAsync(path, "same");
+                await Docs.SetPluginDocumentAsync(path, "notes", PluginDocument.Parse(document), null);
+            }
+
+            CliRun run = await RunAsync(command, "docs", "--plugin-field", "notes.rating=4..", "--plugin-field", "notes.due=2026-01-01..2026-01-02");
+
+            Assert.Equal(CliApp.Succeeded, run.ExitCode);
+            Assert.Contains("/a.txt", run.Output, StringComparison.Ordinal);
+            Assert.Contains("/b.txt", run.Output, StringComparison.Ordinal);
+            Assert.DoesNotContain("/c.txt", run.Output, StringComparison.Ordinal);
+        }
+
+        [Theory]
+        [InlineData("rating")]
+        [InlineData("notes.rating=x")]
+        public async Task Find_PluginFieldThatIsNoFilter_FailsAsMisuse(string filter)
+        {
+            CliRun run = await RunAsync("find", "docs", "--plugin-field", filter);
+
+            Assert.Equal(CliApp.Misused, run.ExitCode);
+            Assert.Contains("is not a filter on a plugin's field", run.Error, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task Find_PluginFieldNotDeclared_FailsNamingWhatIs()
+        {
+            CliRun run = await RunAsync("find", "docs", "--plugin-field", "notes.width");
+
+            Assert.Equal(CliApp.Failed, run.ExitCode);
+            Assert.Contains("it declares: caption, rating, due, done", run.Error, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public async Task Stat_AFileOrADirectory_PrintsItsRecord()
         {
             ShelfFile file = await UploadAsync("/a/b.txt", "b");

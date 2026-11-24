@@ -7,7 +7,8 @@ namespace ByteShelf.Server.Storage.Services
     /// <summary>The one place storage rows become the contract types clients see.</summary>
     public static class StorageContracts
     {
-        public static ShelfFile ToShelfFile(FileRecord file, string directoryPath)
+        /// <param name="pluginFields">The values of plugins' fields a listing carries; null for a file that is not listed, or has none.</param>
+        public static ShelfFile ToShelfFile(FileRecord file, string directoryPath, ListedFields? pluginFields = null)
         {
             return new ShelfFile
             {
@@ -23,22 +24,18 @@ namespace ByteShelf.Server.Storage.Services
                 UpdatedAt = file.UpdatedAt,
                 Description = file.Description,
                 Encrypted = file.Encrypted,
+                PluginFields = pluginFields,
             };
         }
 
-        /// <summary>What was read from a file's contents, and whether they are read at all; <see cref="FileMetadata.None"/> for a file never read.</summary>
-        public static FileMetadata ToFileMetadata(bool readable, ObjectMetadata? read)
+        /// <summary>What was read from a file's contents, whether they are read at all, and what plugins keep.</summary>
+        public static FileMetadata ToFileMetadata(bool readable, ObjectMetadata? read, IReadOnlyDictionary<string, PluginFileMetadata> plugins)
         {
-            if (read == null)
-            {
-                return readable ? new FileMetadata { Readable = true } : FileMetadata.None;
-            }
-
-            ContentMetadata metadata = read.Metadata;
+            ContentMetadata metadata = read?.Metadata ?? ContentMetadata.None;
             return new FileMetadata
             {
                 Readable = readable,
-                ReadAt = read.ReadAt,
+                ReadAt = read?.ReadAt,
                 TakenAt = metadata.TakenAt,
                 Latitude = metadata.Latitude,
                 Longitude = metadata.Longitude,
@@ -46,6 +43,7 @@ namespace ByteShelf.Server.Storage.Services
                 PageCount = metadata.PageCount,
                 Title = metadata.Title,
                 Camera = metadata.Camera,
+                Plugins = plugins,
             };
         }
 

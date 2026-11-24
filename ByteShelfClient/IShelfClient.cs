@@ -45,10 +45,25 @@ namespace ByteShelfClient
         /// <summary>
         /// What the file's contents say about it, as the server read them after the file was stored. Its
         /// <see cref="FileMetadata.ReadAt"/> is null before then, and for good for an encrypted file or a
-        /// type the server does not read (<see cref="FileMetadata.Readable"/> false); always
-        /// <see cref="FileMetadata.None"/> from the in-memory client, which reads no contents.
+        /// type the server does not read (<see cref="FileMetadata.Readable"/> false), and always from the
+        /// in-memory client, which reads no contents. Beside it, what installed plugins keep about the file
+        /// (<see cref="FileMetadata.Plugins"/>).
         /// </summary>
         Task<FileMetadata> GetFileMetadataAsync(EntryReference file, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Writes the document the installed plugin <paramref name="plugin"/> keeps about a file, whole, or
+        /// removes it with null, and answers what the plugin keeps about the file then.
+        /// <paramref name="expectedVersion"/> is the version it replaces
+        /// (<see cref="PluginFileMetadata.FileVersion"/>), a removed one's included, null for a first write;
+        /// another version there is a conflict. Not found for a plugin that is not installed. Needs write
+        /// access, and moves no <see cref="ShelfFile.UpdatedAt"/>.
+        /// </summary>
+        /// <remarks>
+        /// The document stays when the file is encrypted, readable by the server and whoever may read the shelf,
+        /// so it must hold nothing read from the file's contents.
+        /// </remarks>
+        Task<PluginFileMetadata> SetPluginDocumentAsync(EntryReference file, string plugin, PluginDocument? document, int? expectedVersion, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Stores <paramref name="content"/>, read from its current position to its end, as the file at

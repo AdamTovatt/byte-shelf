@@ -15,8 +15,8 @@ namespace ByteShelf.Server.Tests.Replication
 {
     /// <summary>
     /// What plugins keep about files and their contents on a replica: the documents arrive whatever the
-    /// order their files come in, and nothing read from plaintext outlives it there. Neither server has the
-    /// plugin installed, which changes nothing.
+    /// order their files come in, and nothing read from plaintext outlives it there. The primary does not have
+    /// the plugin installed, which changes nothing; the replica does, and takes its fields' values itself.
     /// </summary>
     public sealed class PluginMetadataReplicationTests : IAsyncLifetime
     {
@@ -56,6 +56,54 @@ namespace ByteShelf.Server.Tests.Replication
             await pair.Primary.Services.RemoveFileDocumentAsync(file.Id);
             await pair.SyncAsync();
             Assert.Equal((null, "{\"width\":10}"), await DocumentsOnReplicaAsync(pair, file));
+        }
+
+        [Fact]
+        public async Task Sync_DocumentWrittenManyTimes_EndsWithTheLastWhereverAPageEndsAndIsInTheLogOnce()
+        {
+            ReplicationPair pair = await StartAsync(pageSize: 1);
+            ShelfFile file = await pair.PutOnPrimaryAsync("docs", "/a.txt", "a");
+            await pair.PairAsync();
+            await pair.SyncAsync();
+            await pair.Primary.Services.SetFileDocumentAsync(file.Id, "{\"rating\":1}");
+            await pair.SyncAsync();
+
+            await pair.Primary.Services.SetFileDocumentAsync(file.Id, "{\"rating\":2}");
+            await pair.Primary.Services.SetFileDocumentAsync(file.Id, "{\"rating\":3}");
+            await pair.SyncOnceAsync();
+            await pair.Primary.Services.SetFileDocumentAsync(file.Id, Rating);
+            await pair.SyncAsync();
+
+            Assert.Equal(Rating, await pair.Replica.Services.GetFileDocumentAsync(file.Id));
+            Assert.Equal(["/a.txt"], await FindOnReplicaAsync(pair, "test-plugin.rating=4"));
+            foreach (ServerTestHost server in new[] { pair.Primary, pair.Replica })
+            {
+                await using IDbSession session = await server.TestRoot.SessionFactory.CreateSessionAsync();
+                Assert.Equal(1, await TestQueries.CountAsync(session, $"change_log WHERE entity_type = '{ChangeEntityType.FilePluginMetadata}' AND payload IS NOT NULL"));
+            }
+        }
+
+        [Fact]
+        public async Task Sync_DocumentsOfAPluginTheReplicaHas_AreFoundThereByTheirFields()
+        {
+            ReplicationPair pair = await StartAsync();
+            ShelfFile copied = await pair.PutOnPrimaryAsync("docs", "/a.txt", "a");
+            await pair.Primary.Services.SetFileDocumentAsync(copied.Id, Rating);
+            await pair.PairAsync();
+            await pair.SyncAsync();
+            ShelfFile followed = await pair.PutOnPrimaryAsync("docs", "/b.txt", "b");
+            await pair.Primary.Services.SetFileDocumentAsync(followed.Id, Rating);
+            await pair.Primary.Services.RecordContentDocumentAsync(followed.Sha256, "{\"width\":10}");
+            await pair.SyncAsync();
+
+            Assert.Equal(["/a.txt", "/b.txt"], await FindOnReplicaAsync(pair, "test-plugin.rating=4"));
+            Assert.Equal(["/b.txt"], await FindOnReplicaAsync(pair, "test-plugin.width=10"));
+
+            await pair.Primary.Services.SetFileDocumentAsync(copied.Id, "{\"rating\":5}");
+            await pair.Primary.Services.RemoveFileDocumentAsync(followed.Id);
+            await pair.SyncAsync();
+            Assert.Equal(["/a.txt"], await FindOnReplicaAsync(pair, "test-plugin.rating"));
+            Assert.Empty(await FindOnReplicaAsync(pair, "test-plugin.rating=4"));
         }
 
         [Fact]
@@ -338,7 +386,7 @@ namespace ByteShelf.Server.Tests.Replication
 
         private async Task<ReplicationPair> StartAsync(int? pageSize = null, Func<HttpMessageHandler, HttpMessageHandler>? wrapPrimary = null)
         {
-            ReplicationPair pair = await ReplicationPair.StartAsync(wrapPrimary, pageSize: pageSize);
+            ReplicationPair pair = await ReplicationPair.StartAsync(wrapPrimary, pageSize: pageSize, replicaPlugin: TestMetadataPlugins.Declaration);
             _pairs.Add(pair);
             await pair.CreateShelfAsync("docs");
             return pair;
@@ -349,7 +397,7 @@ namespace ByteShelf.Server.Tests.Replication
         {
             ShelfFile file = await pair.Primary.PutAsAdminAsync("docs", "/a.pdf", SecretPdf, "application/pdf");
             await pair.Primary.Services.ReadMetadataAsync();
-            Assert.True(await pair.Primary.Services.RecordContentDocumentAsync(file.Sha256, "{\"text\":\"Q3 secret\"}"));
+            Assert.True(await pair.Primary.Services.RecordContentDocumentAsync(file.Sha256, "{\"words\":\"Q3 secret\"}"));
             await AssertReadingsAsync(pair.Primary, file, readings: 2);
             return file;
         }
@@ -358,6 +406,13 @@ namespace ByteShelf.Server.Tests.Replication
         {
             using IServiceScope scope = pair.Replica.Services.CreateScope();
             return await scope.ServiceProvider.GetRequiredService<IFileRepository>().GetByIdAsync(file.Id);
+        }
+
+        private static async Task<IEnumerable<string>> FindOnReplicaAsync(ReplicationPair pair, string filter)
+        {
+            using HttpClient replica = await pair.SignInOnReplicaAsync();
+            FileSearchResults? found = await replica.GetFromJsonAsync<FileSearchResults>($"/api/shelves/docs/search?pluginFields={filter}");
+            return found!.Files.Select(file => file.Path);
         }
 
         private static async Task<(string? File, string? Content)> DocumentsOnReplicaAsync(ReplicationPair pair, ShelfFile file)
@@ -372,6 +427,7 @@ namespace ByteShelf.Server.Tests.Replication
             using IServiceScope scope = host.Services.CreateScope();
             await using IDbSession session = await scope.ServiceProvider.GetRequiredService<IDbSessionFactory>().CreateSessionAsync();
             Assert.Equal(0, await TestQueries.CountAsync(session, "change_log WHERE instr(payload, 'Q3 secret') > 0"));
+            Assert.Equal(0, await TestQueries.CountAsync(session, $"plugin_field_value WHERE sha256 = '{file.Sha256}' OR instr(text_fold, 'q3 secret') > 0 OR instr(listed, 'Q3 secret') > 0"));
             Assert.Equal(0, await TestQueries.CountAsync(session, "replication_copy WHERE instr(payload, 'Q3 secret') > 0"));
         }
 

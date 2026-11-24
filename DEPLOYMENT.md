@@ -88,6 +88,19 @@ again if the user is not created. The others refuse such a root rather than crea
 path. Exit codes: 0 done, 1 refused or failed (the reason is logged), 2 the arguments are wrong or
 `BYTESHELF_ROOT` is not set.
 
+## Forgetting a plugin
+
+A plugin that is uninstalled keeps what it kept about files, for it to come back to. To delete it for good:
+
+```
+ByteShelf.Server --forget-plugin <plugin id>
+```
+
+It runs as the user commands do, with the server running or stopped, and answers the same exit codes. It
+deletes what the plugin read from contents and its documents about files, and replicas follow; a replica
+refuses it. Uninstall the plugin first, or it reads the contents again
+([Metadata](ByteShelf.Server/Metadata/Metadata.md)).
+
 ## Environment variables
 
 | Variable | Required | Meaning |

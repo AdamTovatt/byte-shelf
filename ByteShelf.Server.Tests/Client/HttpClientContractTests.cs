@@ -21,7 +21,7 @@ namespace ByteShelf.Server.Tests.Client
 
         public override async Task InitializeAsync()
         {
-            _host = await ServerTestHost.StartAsync();
+            _host = await ServerTestHost.StartAsync(services => new TestMetadataPlugins(TestMetadataPlugins.Declaration).AddTo(services));
             await base.InitializeAsync();
         }
 

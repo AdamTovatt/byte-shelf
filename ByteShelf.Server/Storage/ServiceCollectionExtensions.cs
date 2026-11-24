@@ -34,6 +34,7 @@ namespace ByteShelf.Server.Storage
             services.AddScoped<ObjectCollector>();
             services.AddScoped<IShelfService, ShelfService>();
             services.AddScoped<ITrashService, TrashService>();
+            services.AddScoped<ListedFiles>();
             services.AddScoped<IFileService, FileService>();
             services.AddScoped<IDirectoryService, DirectoryService>();
             services.AddScoped<EntryBatches>();

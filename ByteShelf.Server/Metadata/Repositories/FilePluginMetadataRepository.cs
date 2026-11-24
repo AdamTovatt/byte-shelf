@@ -25,11 +25,13 @@ namespace ByteShelf.Server.Metadata.Repositories
         private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict(InsertSql);
 
         private readonly IChangeLogRepository _changeLog;
+        private readonly IPluginFieldValueRepository _fieldValues;
 
-        public FilePluginMetadataRepository(DbDataSource dataSource, IDbSessionFactory sessionFactory, IChangeLogRepository changeLog)
+        public FilePluginMetadataRepository(DbDataSource dataSource, IDbSessionFactory sessionFactory, IChangeLogRepository changeLog, IPluginFieldValueRepository fieldValues)
             : base(dataSource, sessionFactory)
         {
             _changeLog = changeLog;
+            _fieldValues = fieldValues;
         }
 
         /// <inheritdoc />
@@ -45,6 +47,30 @@ namespace ByteShelf.Server.Metadata.Repositories
 
                 return entity?.ToDomain();
             }, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<IReadOnlyList<FilePluginMetadata>> GetOfPluginAsync(string pluginId, Guid? afterFileId, int limit, IDbSession session)
+        {
+            // Before any there is, rather than a null the index could not start at.
+            Guid after = afterFileId ?? Guid.Empty;
+            string query = $@"
+                SELECT {SelectColumns} FROM file_plugin_metadata
+                WHERE plugin_id = @{nameof(pluginId)} AND file_id > @{nameof(after)}
+                ORDER BY file_id
+                LIMIT @{nameof(limit)}";
+
+            IEnumerable<FilePluginMetadataEntity> entities = await session.Connection.QueryAsync<FilePluginMetadataEntity>(
+                query, new { pluginId, after, limit }, transaction: session.Transaction);
+
+            return entities.Select(entity => entity.ToDomain()).ToList();
+        }
+
+        /// <inheritdoc />
+        public async Task<int> DeleteOfPluginAsync(string pluginId, DateTimeOffset at, IDbSession session)
+        {
+            string query = $"DELETE FROM file_plugin_metadata WHERE plugin_id = @{nameof(pluginId)} RETURNING id";
+            return await _changeLog.DeleteAndLogAsync(ChangeEntityType.FilePluginMetadata, query, new { pluginId }, at, session);
         }
 
         /// <inheritdoc />
@@ -64,8 +90,7 @@ namespace ByteShelf.Server.Metadata.Repositories
                 return null;
             }
 
-            string action = expectedVersion == null ? ChangeAction.Added : ChangeAction.Updated;
-            await _changeLog.AppendAsync(ChangeEntityType.FilePluginMetadata, metadata.Id, action, metadata, at, session);
+            await WrittenAsync(metadata, expectedVersion == null ? ChangeAction.Added : ChangeAction.Updated, at, session);
             return metadata;
         }
 
@@ -76,7 +101,7 @@ namespace ByteShelf.Server.Metadata.Repositories
             {
                 FilePluginMetadata copy = FilePluginMetadata.Of(source.PluginId, toFileId, source.Version, source.Document);
                 await session.Connection.ExecuteAsync(InsertSql, Parameters(copy), transaction: session.Transaction);
-                await _changeLog.AppendAsync(ChangeEntityType.FilePluginMetadata, copy.Id, ChangeAction.Added, copy, at, session);
+                await WrittenAsync(copy, ChangeAction.Added, at, session);
             }
         }
 
@@ -93,18 +118,7 @@ namespace ByteShelf.Server.Metadata.Repositories
         public async Task UpsertReplicatedAsync(FilePluginMetadata metadata, string action, DateTimeOffset at, IDbSession session)
         {
             await session.Connection.ExecuteAsync(UpsertReplicatedSql, Parameters(metadata), transaction: session.Transaction);
-            await _changeLog.AppendAsync(ChangeEntityType.FilePluginMetadata, metadata.Id, action, metadata, at, session);
-        }
-
-        /// <inheritdoc />
-        public async Task DeleteWithoutFileAsync(DateTimeOffset at, IDbSession session)
-        {
-            string query = @"
-                DELETE FROM file_plugin_metadata
-                WHERE NOT EXISTS (SELECT 1 FROM file WHERE file.id = file_plugin_metadata.file_id)
-                RETURNING id";
-
-            await _changeLog.DeleteAndLogAsync(ChangeEntityType.FilePluginMetadata, query, new { }, at, session);
+            await WrittenAsync(metadata, action, at, session);
         }
 
         /// <inheritdoc />
@@ -122,6 +136,13 @@ namespace ByteShelf.Server.Metadata.Repositories
                 query, new { fileId }, transaction: session.Transaction);
 
             return entities.Select(entity => entity.ToDomain()).ToList();
+        }
+
+        /// <summary>What every write of a row is followed by: its fields' values are taken, and it is logged.</summary>
+        private async Task WrittenAsync(FilePluginMetadata metadata, string action, DateTimeOffset at, IDbSession session)
+        {
+            await _fieldValues.TakeAsync(metadata, session);
+            await _changeLog.AppendAsync(ChangeEntityType.FilePluginMetadata, metadata.Id, action, metadata, at, session);
         }
 
         private static object Parameters(FilePluginMetadata row)

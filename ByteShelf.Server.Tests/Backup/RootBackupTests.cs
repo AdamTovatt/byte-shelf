@@ -3,6 +3,7 @@ using System.Runtime.Versioning;
 using ByteShelf.Server.Backup.Models;
 using ByteShelf.Server.Backup.Services;
 using ByteShelf.Server.ChangeLog.Models;
+using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Shared.IO;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Models;
@@ -10,6 +11,7 @@ using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using EasyReasy.Database.Mapping;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using StoredObjects = ByteShelf.Server.Storage.Services.ObjectStore;
 
@@ -145,6 +147,42 @@ namespace ByteShelf.Server.Tests.Backup
             Assert.Equal(1, await CountAsync(restored, $"SELECT COUNT(*) FROM file WHERE id = '{plain.Id}' AND sha256 = '{swapped.Sha256}' AND encrypted = 1"));
             Assert.True(new StoredObjects(restored).Exists(swapped.Sha256));
             Assert.Equal(1, await CountAsync(restored, $"SELECT COUNT(*) FROM change_log WHERE entity_id = '{plain.Id}' AND action = '{ChangeAction.Swapped}'"));
+        }
+
+        [Fact]
+        public async Task WriteAsync_PhotoEncryptedInPlaceAfterTheSnapshot_HoldsNothingReadFromItAndLogsItsDocumentsAfterTheSwap()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile photo = await StoreReadPhotoAsync(shelf, "Nikon");
+            await Services.SetFileDocumentAsync(photo.Id, "{\"kept\":true}");
+
+            await RootBackup.WriteAsync(TestRoot.Root, _zipPath, () => EncryptInPlaceAsync(shelf, photo), CancellationToken.None);
+
+            RootFolder restored = Restore();
+            await AssertNothingReadAsync(restored, photo, "Nikon");
+            Assert.Equal(
+                1,
+                await CountAsync(restored, $@"
+                    SELECT COUNT(*) FROM change_log AS swapped
+                    JOIN change_log AS document ON document.sequence > swapped.sequence AND document.entity_type = '{ChangeEntityType.FilePluginMetadata}'
+                    WHERE swapped.entity_id = '{photo.Id}' AND swapped.action = '{ChangeAction.Swapped}'"));
+        }
+
+        [Fact]
+        public async Task WriteAsync_PhotoInTheTrashRestoredAndEncryptedInPlaceAfterTheSnapshot_HoldsNothingReadFromIt()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile photo = await StoreReadPhotoAsync(shelf, "Nikon");
+            TrashEntry deleted = await FileService.DeleteFileAsync(shelf, EntryReference.ForId(photo.Id));
+
+            BackupSummary summary = await RootBackup.WriteAsync(TestRoot.Root, _zipPath, async () =>
+            {
+                await TrashService.RestoreAsync(shelf, deleted.DeletionId);
+                await EncryptInPlaceAsync(shelf, photo);
+            }, CancellationToken.None);
+
+            Assert.Equal(1, summary.FilesPurgedMeanwhile);
+            await AssertNothingReadAsync(Restore(), photo, "Nikon");
         }
 
         [Fact]
@@ -301,6 +339,26 @@ namespace ByteShelf.Server.Tests.Backup
         private string[] BackupFiles()
         {
             return Directory.GetFiles(Path.GetDirectoryName(_zipPath)!, Path.GetFileName(_zipPath) + "*");
+        }
+
+        /// <summary>Stores a photo of <paramref name="camera"/>'s, read by the server and by a plugin.</summary>
+        private async Task<ShelfFile> StoreReadPhotoAsync(Shelf shelf, string camera)
+        {
+            ShelfFile photo = await StoreAsync(shelf, "/photo.jpg", TestMedia.Photo(make: camera), "image/jpeg");
+            await Services.GetRequiredService<MetadataReading>().RunAsync(CancellationToken.None);
+            await Services.RecordContentDocumentAsync(photo.Sha256, $"{{\"camera\":\"{camera}\"}}");
+            return photo;
+        }
+
+        private static async Task AssertNothingReadAsync(RootFolder root, ShelfFile photo, string camera)
+        {
+            Assert.Equal(0, await CountAsync(root, $"SELECT COUNT(*) FROM object_metadata WHERE sha256 = '{photo.Sha256}'"));
+            Assert.Equal(0, await CountAsync(root, $"SELECT COUNT(*) FROM content_plugin_metadata WHERE sha256 = '{photo.Sha256}'"));
+            Assert.Equal(0, await CountAsync(root, $"SELECT COUNT(*) FROM change_log WHERE payload LIKE '%{camera}%'"));
+
+            // Nor in what rows left behind on the database's pages, which the zip has as they are.
+            string database = System.Text.Encoding.Latin1.GetString(await File.ReadAllBytesAsync(root.DatabasePath));
+            Assert.DoesNotContain(camera, database, StringComparison.OrdinalIgnoreCase);
         }
 
         private RootFolder Restore()

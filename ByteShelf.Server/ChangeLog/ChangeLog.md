@@ -7,11 +7,13 @@ row holds the entity's type and id, a descriptive action, and the entity's whole
 JSON (`null` once the entity is gone). Applying a row is an upsert or a delete by id, so applying it
 twice is harmless.
 
-What was read from contents, by the server or a plugin's reader, is the one kind of entity whose
-earlier states the log forgets when it is removed (`ChangeEntityType.ForgetsRemovedStates`): its
-entries' payloads are blanked in the removal's transaction, so each reads as a removal. A photo encrypted in place loses its row at once,
-and its position and camera must not stay in the log, on the primary or a replica, for the
-compaction window below.
+What was read from contents, by the server or a plugin's reader, and what a plugin keeps about a file are
+the kinds of entity whose earlier states the log forgets when one changes or is removed
+(`ChangeEntityType.ForgetsEarlierStates`): its earlier entries' payloads are blanked in the transaction that
+logs the new one, so each reads as a removal, and a replica that replays one meets the newest after it. A
+photo encrypted in place loses its row at once, and its position and camera must not stay in the log, on the
+primary or a replica, for the compaction window below. A plugin's document may be 64 KiB and written any
+number of times, so its earlier states would grow the log without a bound.
 
 Download and upload links (`shelf_link`) are not logged: each server keeps the links it signed
 itself, and the database removes one with what it names ([Storage](../Storage/Storage.md#links-shelf_link-linkservice)).

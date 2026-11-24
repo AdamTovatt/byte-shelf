@@ -11,6 +11,12 @@ namespace ByteShelf.Server.Metadata.Models
 
         public required string Sha256 { get; init; }
 
+        /// <summary>
+        /// The version of <see cref="Services.MetadataReader"/> that read them; 1 for a row, or a primary's
+        /// log entry, from before versions were kept.
+        /// </summary>
+        public int ReaderVersion { get; init; } = 1;
+
         /// <summary>When the contents were read.</summary>
         public required DateTimeOffset ReadAt { get; init; }
 
@@ -25,9 +31,9 @@ namespace ByteShelf.Server.Metadata.Models
             return new Guid(Convert.FromHexString(sha256.AsSpan(0, 32)));
         }
 
-        public static ObjectMetadata Of(string sha256, DateTimeOffset readAt, ContentMetadata metadata)
+        public static ObjectMetadata Of(string sha256, int readerVersion, DateTimeOffset readAt, ContentMetadata metadata)
         {
-            return new ObjectMetadata { Id = IdFor(sha256), Sha256 = sha256, ReadAt = readAt, Metadata = metadata };
+            return new ObjectMetadata { Id = IdFor(sha256), Sha256 = sha256, ReaderVersion = readerVersion, ReadAt = readAt, Metadata = metadata };
         }
     }
 }

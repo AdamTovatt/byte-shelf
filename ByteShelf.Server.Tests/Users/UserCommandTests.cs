@@ -254,7 +254,7 @@ namespace ByteShelf.Server.Tests.Users
 
             Assert.Equal(RootCommand.Done, exitCode);
             Assert.False(File.Exists(_host.TestRoot.Root.DatabasePath + "-wal"));
-            await using ServiceProvider services = UserCommand.BuildServices(_host.TestRoot.Root, NullLoggerFactory.Instance);
+            await using ServiceProvider services = RootCommand.BuildServices(ServerSettings.Open(_host.TestRoot.Root), NullLoggerFactory.Instance);
             await using AsyncServiceScope scope = services.CreateAsyncScope();
             IReadOnlyList<ChangeLogEntry> changes = await scope.ServiceProvider.GetRequiredService<IChangeLogRepository>().GetAfterAsync(before, 100);
             Assert.NotEmpty(changes);
@@ -300,7 +300,7 @@ namespace ByteShelf.Server.Tests.Users
             RootFolder root = RootFolder.OpenExisting(folder);
             Assert.False(File.Exists(root.DatabasePath + "-wal"));
             Assert.True(DatabaseMigrator.IsUpToDate(root.ConnectionString));
-            await using ServiceProvider services = UserCommand.BuildServices(root, NullLoggerFactory.Instance);
+            await using ServiceProvider services = RootCommand.BuildServices(ServerSettings.Open(root), NullLoggerFactory.Instance);
             await using AsyncServiceScope scope = services.CreateAsyncScope();
             User? created = await scope.ServiceProvider.GetRequiredService<IUserService>().GetUserByEmailAsync(NewEmail);
             Assert.Equal([UserRoles.Admin], created?.Roles);

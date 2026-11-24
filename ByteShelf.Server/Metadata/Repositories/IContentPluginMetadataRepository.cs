@@ -5,7 +5,7 @@ namespace ByteShelf.Server.Metadata.Repositories
 {
     /// <summary>
     /// The <c>content_plugin_metadata</c> table. Every write logs the change in the caller's transaction, and
-    /// a removal blanks the row's earlier states in the log (<see cref="ChangeLog.Models.ChangeEntityType.ForgetsRemovedStates"/>).
+    /// a write or removal blanks the row's earlier states in the log (<see cref="ChangeLog.Models.ChangeEntityType.ForgetsEarlierStates"/>).
     /// </summary>
     public interface IContentPluginMetadataRepository
     {
@@ -18,6 +18,12 @@ namespace ByteShelf.Server.Metadata.Repositories
         /// after <paramref name="after"/>, in order, each once, at most <paramref name="limit"/> of them.
         /// </summary>
         Task<IReadOnlyList<string>> GetUnreadAsync(string pluginId, int readerVersion, MediaTypeSet mediaTypes, string? after, int limit, IDbSession? session = null);
+
+        /// <summary>A plugin's rows by SHA-256 after <paramref name="afterSha256"/>, at most <paramref name="limit"/>.</summary>
+        Task<IReadOnlyList<ContentPluginMetadata>> GetOfPluginAsync(string pluginId, string? afterSha256, int limit, IDbSession session);
+
+        /// <summary>Removes a plugin's rows, each logged as purged; answers how many.</summary>
+        Task<int> DeleteOfPluginAsync(string pluginId, DateTimeOffset at, IDbSession session);
 
         /// <summary>
         /// Writes what was read, over what another version of the reader read; false, changing nothing, when

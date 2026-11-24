@@ -20,10 +20,14 @@ namespace ByteShelf.Server.Metadata
             services.AddScoped<IObjectMetadataRepository, ObjectMetadataRepository>();
             services.AddScoped<IContentPluginMetadataRepository, ContentPluginMetadataRepository>();
             services.AddScoped<IFilePluginMetadataRepository, FilePluginMetadataRepository>();
+            services.AddScoped<IPluginFieldValueRepository, PluginFieldValueRepository>();
+            services.AddScoped<PluginFieldIndex>();
             services.AddScoped<MetadataUpkeep>();
+            services.AddScoped<FileMetadataService>();
             services.AddScoped<ContentReaders>();
             services.AddScoped<MetadataReading>();
 
+            services.AddHostedService<PluginFieldIndexStartup>();
             services.AddHostedService<MetadataReadingWorker>();
 
             return services;

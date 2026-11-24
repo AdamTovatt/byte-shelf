@@ -5,10 +5,15 @@ namespace ByteShelfCommon
     /// stored: a photo's time, place and camera, a video's length, a PDF's title and pages.
     /// Each part is null when the contents do not carry it. An encrypted file has none, since the
     /// server never sees its contents; nor does any file of the in-memory client, which reads nothing.
+    /// Beside it, <see cref="Plugins"/> has what plugins keep, which any of those may still have.
     /// </summary>
     public sealed class FileMetadata
     {
-        /// <summary>None read, nor to be: what an encrypted file, one of a type not read, and the in-memory client's files have.</summary>
+        private static readonly IReadOnlyDictionary<string, PluginFileMetadata> NoPlugins = new Dictionary<string, PluginFileMetadata>();
+
+        private readonly IReadOnlyDictionary<string, PluginFileMetadata>? _plugins;
+
+        /// <summary>None read, nor to be, and nothing kept by a plugin.</summary>
         public static readonly FileMetadata None = new FileMetadata();
 
         /// <summary>
@@ -46,5 +51,16 @@ namespace ByteShelfCommon
 
         /// <summary>The camera or phone, as its make and model. Search matches it as it does the file's name.</summary>
         public string? Camera { get; init; }
+
+        /// <summary>
+        /// What each installed plugin keeps about the file, by the plugin's id, for those that keep or have kept
+        /// anything: a document about the file's contents, read in the background, and one about the file itself.
+        /// </summary>
+        /// <remarks>Empty, too, from a server that keeps nothing for plugins, whose answer does not have it.</remarks>
+        public IReadOnlyDictionary<string, PluginFileMetadata> Plugins
+        {
+            get => _plugins ?? NoPlugins;
+            init => _plugins = value;
+        }
     }
 }

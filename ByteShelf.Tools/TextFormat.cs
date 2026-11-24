@@ -80,11 +80,12 @@ namespace ByteShelf.Tools
             return Lines(FileLines(file));
         }
 
-        /// <summary>The file or directory as get_info and stat show it: a file's record with what its contents say.</summary>
-        public static string Info(Entry entry, FileMetadata? metadata)
+        /// <summary>The file or directory as get_info and stat show it: a file's record with what its contents say and the fields plugins declare.</summary>
+        /// <param name="maxFieldText">The most characters a plugin's text is shown with, for a reader who pays for each; null for all.</param>
+        public static string Info(Entry entry, FileMetadata? metadata, int? maxFieldText = null)
         {
             return entry.File is ShelfFile file && metadata != null
-                ? Lines(FileLines(file).Concat(MetadataLines(file, metadata)))
+                ? Lines(FileLines(file).Concat(MetadataLines(file, metadata)).Concat(PluginLines(metadata, maxFieldText)))
                 : Entry(entry);
         }
 
@@ -130,6 +131,44 @@ namespace ByteShelf.Tools
             }
 
             return lines;
+        }
+
+        /// <summary>Each plugin's declared fields that have a value, under its name and the id a filter names it by.</summary>
+        private static IEnumerable<string> PluginLines(FileMetadata metadata, int? maxFieldText)
+        {
+            foreach ((string id, PluginFileMetadata plugin) in metadata.Plugins.OrderBy(plugin => plugin.Key, StringComparer.Ordinal))
+            {
+                if (plugin.Fields.Count == 0)
+                {
+                    continue;
+                }
+
+                yield return $"{plugin.Name} ({id})";
+                foreach (PluginFieldEntry field in plugin.Fields)
+                {
+                    string value = Cut(Value(field.Value), maxFieldText).ReplaceLineEndings(Environment.NewLine + "    ");
+                    yield return $"  {field.Label} ({field.Name}): {value}";
+                }
+            }
+        }
+
+        private static string Value(PluginFieldValue value)
+        {
+            return value.Text
+                ?? value.Number?.ToString("R", CultureInfo.InvariantCulture)
+                ?? (value.Date is DateTimeOffset date ? Time(date) : value.Flag == true ? "yes" : "no");
+        }
+
+        private static string Cut(string text, int? length)
+        {
+            if (length is not int kept || text.Length <= kept)
+            {
+                return text;
+            }
+
+            // Not between the two halves of one character.
+            int end = char.IsHighSurrogate(text[kept - 1]) ? kept - 1 : kept;
+            return string.Create(CultureInfo.InvariantCulture, $"{text[..end]}… ({text.Length} characters in all)");
         }
 
         /// <summary>A length to play, such as <c>25:00:00</c>, <c>1:05:09</c> or <c>3:07</c>, rounded to the second.</summary>

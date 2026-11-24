@@ -880,6 +880,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/shelves/{shelf}/files/plugin-metadata": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: {
+                    path?: string;
+                    id?: string;
+                    plugin?: string;
+                };
+                header?: never;
+                path: {
+                    shelf: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["SetPluginMetadataRequest"];
+                    "text/json": components["schemas"]["SetPluginMetadataRequest"];
+                    "application/*+json": components["schemas"]["SetPluginMetadataRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["PluginFileMetadata"];
+                        "application/json": components["schemas"]["PluginFileMetadata"];
+                        "text/json": components["schemas"]["PluginFileMetadata"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Not Found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+                /** @description Conflict */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["ErrorResponse"];
+                        "application/json": components["schemas"]["ErrorResponse"];
+                        "text/json": components["schemas"]["ErrorResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/shelves/{shelf}/files/move": {
         parameters: {
             query?: never;
@@ -1173,6 +1255,7 @@ export interface paths {
                     maxDurationSeconds?: number;
                     minPageCount?: number;
                     maxPageCount?: number;
+                    pluginFields?: string[];
                 };
                 header?: never;
                 path: {
@@ -1255,6 +1338,7 @@ export interface paths {
                     maxDurationSeconds?: number;
                     minPageCount?: number;
                     maxPageCount?: number;
+                    pluginFields?: string[];
                 };
                 header?: never;
                 path: {
@@ -4941,6 +5025,9 @@ export interface components {
             pageCount?: number | null;
             title?: string | null;
             camera?: string | null;
+            plugins?: {
+                [key: string]: components["schemas"]["PluginFileMetadata"];
+            };
         };
         FileSearchResults: {
             files: components["schemas"]["ShelfFile"][];
@@ -5026,6 +5113,37 @@ export interface components {
         PathEncryption: {
             encryptedBy?: components["schemas"]["EncryptedFolder"];
         };
+        /** @enum {string} */
+        PluginDocumentSubject: "contents" | "file";
+        PluginFieldEntry: {
+            name: string;
+            label: string;
+            kind: components["schemas"]["PluginFieldKind"];
+            document: components["schemas"]["PluginDocumentSubject"];
+            value: components["schemas"]["PluginFieldValue"];
+        };
+        /** @enum {string} */
+        PluginFieldKind: "text" | "number" | "date" | "flag";
+        PluginFieldValue: {
+            readonly text?: string | null;
+            /** Format: double */
+            readonly number?: number | null;
+            /** Format: date-time */
+            readonly date?: string | null;
+            readonly flag?: boolean | null;
+        };
+        PluginFileMetadata: {
+            name: string;
+            contentsDocument?: {
+                [key: string]: unknown;
+            } | null;
+            fileDocument?: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: int32 */
+            fileVersion?: number | null;
+            fields: components["schemas"]["PluginFieldEntry"][];
+        };
         PluginList: {
             plugins: components["schemas"]["PluginView"][];
             skipped: components["schemas"]["SkippedPlugin"][] | null;
@@ -5096,6 +5214,13 @@ export interface components {
         SetFolderEncryptionRequest: {
             check: string;
         };
+        SetPluginMetadataRequest: {
+            document: {
+                [key: string]: unknown;
+            } | null;
+            /** Format: int32 */
+            expectedVersion?: number | null;
+        };
         SetShelfAccessRequest: {
             permission: components["schemas"]["ShelfAccessPermission"];
         };
@@ -5149,6 +5274,11 @@ export interface components {
             updatedAt: string;
             description?: string | null;
             encrypted: boolean;
+            pluginFields?: {
+                [key: string]: {
+                    [key: string]: components["schemas"]["PluginFieldValue"];
+                };
+            } | null;
         };
         ShelfInfo: {
             /** Format: uuid */

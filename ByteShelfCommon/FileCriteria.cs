@@ -11,6 +11,9 @@ namespace ByteShelfCommon
     /// </summary>
     public class FileCriteria
     {
+        /// <summary>The most <see cref="PluginFields"/> one search may have.</summary>
+        public const int MaxPluginFields = 20;
+
         /// <summary>Criteria to set with an object initializer.</summary>
         public FileCriteria()
         {
@@ -38,6 +41,7 @@ namespace ByteShelfCommon
             MaxDurationSeconds = criteria.MaxDurationSeconds;
             MinPageCount = criteria.MinPageCount;
             MaxPageCount = criteria.MaxPageCount;
+            PluginFields = criteria.PluginFields;
         }
 
         /// <summary>The directory to search, everything under it included; the shelf's root when null.</summary>
@@ -45,7 +49,7 @@ namespace ByteShelfCommon
 
         /// <summary>
         /// Text the file's name or description contains, ignoring case, or the title or camera its
-        /// contents carry (<see cref="FileMetadata"/>).
+        /// contents carry (<see cref="FileMetadata"/>), or a field a plugin declares to be searched.
         /// </summary>
         public string? Text { get; init; }
 
@@ -108,6 +112,14 @@ namespace ByteShelfCommon
         public int? MaxPageCount { get; init; }
 
         /// <summary>
+        /// What the fields plugins declare must meet, every one of them, at most <see cref="MaxPluginFields"/>;
+        /// none when empty. A filter on a plugin that is not installed, a field it does not declare or a
+        /// condition of another kind than the field's is refused.
+        /// </summary>
+        /// <remarks>A list rather than <c>[]</c>: the server's query binding fills the collection that is there.</remarks>
+        public IReadOnlyList<PluginFieldFilter> PluginFields { get; init; } = new List<PluginFieldFilter>();
+
+        /// <summary>
         /// These criteria checked and put the way they are compared: <see cref="Under"/> always set,
         /// <see cref="Text"/> folded, <see cref="ContentType"/> and <see cref="Sha256"/> lowercase, and
         /// blank text as not set. Durations and page counts are inclusive ranges, and a duration a
@@ -146,6 +158,17 @@ namespace ByteShelfCommon
                 throw new ArgumentException("The smallest duration or page count is above the largest.");
             }
 
+            if (PluginFields.Count > MaxPluginFields)
+            {
+                throw new ArgumentException($"A search takes at most {MaxPluginFields} filters on plugins' fields.");
+            }
+
+            // As a query string's pluginFields= is bound.
+            if (PluginFields.Any(filter => filter == null))
+            {
+                throw new ArgumentException("A filter on a plugin's field is missing.");
+            }
+
             return new FileCriteria
             {
                 Under = Under == null ? ShelfPath.Root : ShelfPath.Normalize(Under),
@@ -166,6 +189,7 @@ namespace ByteShelfCommon
                 MaxDurationSeconds = MaxDurationSeconds,
                 MinPageCount = MinPageCount,
                 MaxPageCount = MaxPageCount,
+                PluginFields = PluginFields.Select(filter => filter.Normalize()).ToList(),
             };
         }
 
@@ -230,6 +254,11 @@ namespace ByteShelfCommon
             AddQueryPart(parts, "maxDurationSeconds", MaxDurationSeconds?.ToString("R", CultureInfo.InvariantCulture));
             AddQueryPart(parts, "minPageCount", MinPageCount?.ToString(CultureInfo.InvariantCulture));
             AddQueryPart(parts, "maxPageCount", MaxPageCount?.ToString(CultureInfo.InvariantCulture));
+            foreach (PluginFieldFilter filter in PluginFields)
+            {
+                AddQueryPart(parts, "pluginFields", filter.ToString());
+            }
+
             return parts;
         }
 

@@ -58,7 +58,12 @@ namespace ByteShelf.Server.Replication.Services
 
             return await RootCommand.RunAsync(rootPath, logger, change.StartsARoot, async root =>
             {
-                await using ServiceProvider services = BuildServices(root, address, loggerFactory, configureServices);
+                ServerSettings settings = ServerSettings.Open(root) with { PublicAddress = address };
+                await using ServiceProvider services = RootCommand.BuildServices(settings, loggerFactory, services =>
+                {
+                    services.AddReplicationPairing(settings.Replication);
+                    configureServices?.Invoke(services);
+                });
                 await using AsyncServiceScope scope = services.CreateAsyncScope();
                 return await change.ApplyAsync(scope.ServiceProvider);
             });
@@ -88,21 +93,6 @@ namespace ByteShelf.Server.Replication.Services
                 _ => null,
             };
             return arguments.AllTaken ? change : null;
-        }
-
-        /// <summary>The services the API's replication goes through, on <paramref name="root"/>, without the web host.</summary>
-        private static ServiceProvider BuildServices(RootFolder root, PublicAddress address, ILoggerFactory loggerFactory, Action<IServiceCollection>? configureServices)
-        {
-            ServiceCollection services = new ServiceCollection();
-            services.AddSingleton(loggerFactory);
-            services.AddLogging();
-
-            // No email leaves a replication command.
-            ServerSettings settings = ServerSettings.Open(root) with { PublicAddress = address };
-            Program.AddDomainServices(services, settings);
-            services.AddReplicationPairing(settings.Replication);
-            configureServices?.Invoke(services);
-            return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         }
 
         /// <summary>One replication command, which says what it did.</summary>

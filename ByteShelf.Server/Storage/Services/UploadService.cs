@@ -413,13 +413,10 @@ namespace ByteShelf.Server.Storage.Services
         {
             (FileRecord file, string path) = await GetSwappableAsync(upload.ShelfId, swap, upload.Encrypted, session);
 
-            await _metadataUpkeep.SwappingAsync(file.Id, swap.Sha256, now, session);
-
             // The repository's own guard on the SHA-256 holds even for a caller that skipped the check above.
             FileRecord swapped = await _fileRepository.SwapContentAsync(file.Id, swap.Sha256, sha256, upload.SizeBytes, upload.Encrypted, now, session)
                 ?? throw ChangedSinceRead(path);
 
-            await _metadataUpkeep.SwappedAsync(swapped.Id, now, session);
             return StorageContracts.ToShelfFile(swapped, ShelfPath.GetParent(path));
         }
 

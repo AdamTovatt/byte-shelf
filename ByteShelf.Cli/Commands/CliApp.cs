@@ -25,7 +25,7 @@ namespace ByteShelf.Cli.Commands
         private const string OrPasswordFile = " or in a file with --password-file";
 
         /// <summary>The usage of find and find-duplicates: the criteria <see cref="Criteria"/> reads, then the paging.</summary>
-        private const string CriteriaUsage = "<shelf>[:<path>] [<text>] [--type <content-type>|'<type>/*'] [--min-size <bytes>] [--max-size <bytes>] [--created-from <time>] [--created-before <time>] [--updated-from <time>] [--updated-before <time>] [--sha256 <hex>] [--has-description|--no-description] [--taken-from <time>] [--taken-before <time>] [--has-gps] [--min-duration <seconds>] [--max-duration <seconds>] [--min-pages <n>] [--max-pages <n>] [--limit <n>] [--after <cursor>]";
+        private const string CriteriaUsage = "<shelf>[:<path>] [<text>] [--type <content-type>|'<type>/*'] [--min-size <bytes>] [--max-size <bytes>] [--created-from <time>] [--created-before <time>] [--updated-from <time>] [--updated-before <time>] [--sha256 <hex>] [--has-description|--no-description] [--taken-from <time>] [--taken-before <time>] [--has-gps] [--min-duration <seconds>] [--max-duration <seconds>] [--min-pages <n>] [--max-pages <n>] [--plugin-field <filter>...] [--limit <n>] [--after <cursor>]";
 
         private readonly IClientSource _clients;
         private readonly Terminal _terminal;
@@ -59,7 +59,7 @@ namespace ByteShelf.Cli.Commands
                 new Command(Section.Shelves, "shelf delete", "<shelf>", "delete an empty shelf, trash included", DeleteShelfAsync),
 
                 new Command(Section.Files, "ls", "<shelf>[:<path>]", "what a directory holds", ListAsync),
-                new Command(Section.Files, "stat", "<shelf>:<path>", "a file's record with what the server read from its contents (when and where it was taken, the camera, its length, a PDF's title and pages), or a directory's record", StatAsync),
+                new Command(Section.Files, "stat", "<shelf>:<path>", "a file's record with what the server read from its contents (when and where it was taken, the camera, its length, a PDF's title and pages) and the fields plugins declare, or a directory's record", StatAsync),
                 new Command(Section.Files, "tree", "<shelf>[:<path>] [--depth <n>] [--limit <n>] [--after <cursor>]", "everything under a directory, by path, at any depth or down to --depth levels", TreeAsync),
                 new Command(Section.Files, "put", "<local-file>|<local-folder>|- <shelf>:<path> [--overwrite] [--type <content-type>] [--description <text>] [--encrypt] [--password-file <file>]", "store a file, - for stdin, or a whole folder; a path ending in / keeps the local name; encrypted with the folder's password under an encrypted folder, or with a new one given --encrypt", PutAsync),
                 new Command(Section.Files, "get", "<shelf>:<path> [<local-file>|<local-folder>|-] [--overwrite] [--decrypt] [--password-file <file>]", "save a file, - for stdout, or a whole directory; an encrypted file is saved as its age bytes, named .age in a folder, unless --decrypt or --password-file decrypts it", GetAsync),
@@ -73,7 +73,7 @@ namespace ByteShelf.Cli.Commands
                     Section.Files,
                     "find",
                     CriteriaUsage,
-                    "files under a directory whose name, description, or the title or camera its contents carry holds <text>, ignoring case, and that meet every option; --no-description finds the files left to describe; the --taken, --has-gps, duration and page options ask what the server read from the contents; times are ISO 8601, local without an offset",
+                    "files under a directory whose name, description, the title or camera its contents carry, or a field a plugin declares to be searched holds <text>, ignoring case, and that meet every option; --no-description finds the files left to describe; the --taken, --has-gps, duration and page options ask what the server read from the contents; --plugin-field, which may be given several times, asks about a field a plugin declares: 'plugin.field' has it, '!plugin.field' has not, 'plugin.field~text', 'plugin.field=1..5', 'plugin.field=2026-01-01..2026-02-01' in UTC, 'plugin.field=true'; other times are ISO 8601, local without an offset",
                     FindAsync),
                 new Command(
                     Section.Files,
@@ -658,6 +658,7 @@ namespace ByteShelf.Cli.Commands
                 MaxDurationSeconds = arguments.Seconds("--max-duration"),
                 MinPageCount = arguments.Count("--min-pages"),
                 MaxPageCount = arguments.Count("--max-pages"),
+                PluginFields = arguments.Values("--plugin-field").Select(PluginFieldFilter.Parse).ToList(),
             };
         }
 

@@ -12,7 +12,7 @@ namespace ByteShelf.Server.Metadata.Services
                 new BuiltInContentReader(objectMetadata),
                 .. plugins.All
                     .Where(plugin => plugin.Reader != null)
-                    .Select(plugin => new PluginContentReader(plugin.Id, plugin.Reader!, pluginMetadata)),
+                    .Select(plugin => new PluginContentReader(plugin.Declaration.Id, plugin.Reader!, pluginMetadata)),
             ];
         }
 

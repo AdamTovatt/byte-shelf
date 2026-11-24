@@ -41,11 +41,14 @@ namespace ByteShelf.Tools.Mcp
         /// <summary>The image kinds download_file answers as images, as the descriptions and messages name them; <see cref="ImageTypeOf"/> recognises them.</summary>
         internal const string InlineImageKinds = "PNG, JPEG, GIF or WebP";
 
+        /// <summary>The most characters of a plugin's text get_info shows.</summary>
+        internal const int MaxFieldTextLength = 1000;
+
         private const string ShelfDescription = "The shelf's name; leave it out only when you reach one shelf (list_shelves shows them).";
 
         // The criteria search_files and find_duplicates share (FileCriteria), described once for both.
         private const string UnderDescription = "The directory to search under; / (the default) for the whole shelf.";
-        private const string TextDescription = "Text the file's name or description contains, ignoring case, or the title or camera its contents carry.";
+        private const string TextDescription = "Text the file's name or description contains, ignoring case, or the title or camera its contents carry, or a field a plugin declares to be searched.";
         private const string ContentTypeDescription = "A media type such as application/pdf, or a family such as image/*.";
         private const string MinSizeDescription = "The fewest bytes.";
         private const string MaxSizeDescription = "The most bytes.";
@@ -62,6 +65,7 @@ namespace ByteShelf.Tools.Mcp
         private const string MaxDurationDescription = "The most seconds a video plays (read from QuickTime and MP4 files).";
         private const string MinPageCountDescription = "The fewest pages a PDF has.";
         private const string MaxPageCountDescription = "The most pages a PDF has.";
+        private const string PluginFieldsDescription = "What fields the server's plugins declare must meet, every one of them, each written as plugin.field (it has a value), !plugin.field (it has none), plugin.field~text (its text contains that, ignoring case), plugin.field=1..5 (a number between the two, both included; leave either out, or give one number), plugin.field=2026-01-01..2026-02-01 (an instant from one and before the other, each a UTC date or an ISO 8601 time with an offset) or plugin.field=true or =false (a flag). get_info shows the fields a file has.";
         private const string AfterDescription = "The cursor a previous page ended with, for the next page.";
 
         /// <summary>Why a tool never reads an encrypted file's contents, after the file's path.</summary>
@@ -126,7 +130,7 @@ namespace ByteShelf.Tools.Mcp
 
         [McpServerTool(Name = "get_info", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
         [ToolNeeds(ToolNeed.Read)]
-        [Description("A file's record (id, size, content type, SHA-256, times) with what its contents say (when a photo or video was taken, where, with what camera, how long it plays, a PDF's title and pages), or a directory's id.")]
+        [Description("A file's record (id, size, content type, SHA-256, times) with what its contents say (when a photo or video was taken, where, with what camera, how long it plays, a PDF's title and pages) and the fields the server's plugins keep about it, each with the plugin's id and the field's name a filter names them by and a long text cut short, or a directory's id.")]
         public Task<string> GetInfoAsync(
             [Description("The file's or directory's path.")] string path,
             [Description(ShelfDescription)] string? shelf = null,
@@ -135,7 +139,7 @@ namespace ByteShelf.Tools.Mcp
             return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) =>
             {
                 (Entry entry, FileMetadata? metadata) = await Entries.GetWithMetadataAsync(shelfClient, path, cancellationToken);
-                return TextFormat.Info(entry, metadata);
+                return TextFormat.Info(entry, metadata, MaxFieldTextLength);
             });
         }
 
@@ -267,34 +271,39 @@ namespace ByteShelf.Tools.Mcp
             [Description(MaxDurationDescription)] double? maxDurationSeconds = null,
             [Description(MinPageCountDescription)] int? minPageCount = null,
             [Description(MaxPageCountDescription)] int? maxPageCount = null,
+            [Description(PluginFieldsDescription)] string[]? pluginFields = null,
             [Description("Files per page, 1 to 1000; 100 by default.")] int? limit = null,
             [Description(AfterDescription)] string? after = null,
             [Description(ShelfDescription)] string? shelf = null,
             CancellationToken cancellationToken = default)
         {
-            FileCriteria criteria = Criteria(
-                under: under,
-                text: text,
-                contentType: contentType,
-                minSizeBytes: minSizeBytes,
-                maxSizeBytes: maxSizeBytes,
-                createdFrom: createdFrom,
-                createdBefore: createdBefore,
-                updatedFrom: updatedFrom,
-                updatedBefore: updatedBefore,
-                sha256: sha256,
-                hasDescription: hasDescription,
-                takenFrom: takenFrom,
-                takenBefore: takenBefore,
-                hasGps: hasGps,
-                minDurationSeconds: minDurationSeconds,
-                maxDurationSeconds: maxDurationSeconds,
-                minPageCount: minPageCount,
-                maxPageCount: maxPageCount);
+            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) =>
+            {
+                FileCriteria criteria = Criteria(
+                    under: under,
+                    text: text,
+                    contentType: contentType,
+                    minSizeBytes: minSizeBytes,
+                    maxSizeBytes: maxSizeBytes,
+                    createdFrom: createdFrom,
+                    createdBefore: createdBefore,
+                    updatedFrom: updatedFrom,
+                    updatedBefore: updatedBefore,
+                    sha256: sha256,
+                    hasDescription: hasDescription,
+                    takenFrom: takenFrom,
+                    takenBefore: takenBefore,
+                    hasGps: hasGps,
+                    minDurationSeconds: minDurationSeconds,
+                    maxDurationSeconds: maxDurationSeconds,
+                    minPageCount: minPageCount,
+                    maxPageCount: maxPageCount,
+                    pluginFields: pluginFields);
 
-            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.SearchResults(
-                await shelfClient.SearchAsync(new FileSearch(criteria) { Limit = limit, After = after }, cancellationToken),
-                MoreAfter));
+                return TextFormat.SearchResults(
+                    await shelfClient.SearchAsync(new FileSearch(criteria) { Limit = limit, After = after }, cancellationToken),
+                    MoreAfter);
+            });
         }
 
         [McpServerTool(Name = "find_duplicates", ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
@@ -319,37 +328,43 @@ namespace ByteShelf.Tools.Mcp
             [Description(MaxDurationDescription)] double? maxDurationSeconds = null,
             [Description(MinPageCountDescription)] int? minPageCount = null,
             [Description(MaxPageCountDescription)] int? maxPageCount = null,
+            [Description(PluginFieldsDescription)] string[]? pluginFields = null,
             [Description("Groups per page, 1 to 1000; 100 by default.")] int? limit = null,
             [Description(AfterDescription)] string? after = null,
             [Description(ShelfDescription)] string? shelf = null,
             CancellationToken cancellationToken = default)
         {
-            FileCriteria criteria = Criteria(
-                under: under,
-                text: text,
-                contentType: contentType,
-                minSizeBytes: minSizeBytes,
-                maxSizeBytes: maxSizeBytes,
-                createdFrom: createdFrom,
-                createdBefore: createdBefore,
-                updatedFrom: updatedFrom,
-                updatedBefore: updatedBefore,
-                sha256: sha256,
-                hasDescription: hasDescription,
-                takenFrom: takenFrom,
-                takenBefore: takenBefore,
-                hasGps: hasGps,
-                minDurationSeconds: minDurationSeconds,
-                maxDurationSeconds: maxDurationSeconds,
-                minPageCount: minPageCount,
-                maxPageCount: maxPageCount);
+            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) =>
+            {
+                FileCriteria criteria = Criteria(
+                    under: under,
+                    text: text,
+                    contentType: contentType,
+                    minSizeBytes: minSizeBytes,
+                    maxSizeBytes: maxSizeBytes,
+                    createdFrom: createdFrom,
+                    createdBefore: createdBefore,
+                    updatedFrom: updatedFrom,
+                    updatedBefore: updatedBefore,
+                    sha256: sha256,
+                    hasDescription: hasDescription,
+                    takenFrom: takenFrom,
+                    takenBefore: takenBefore,
+                    hasGps: hasGps,
+                    minDurationSeconds: minDurationSeconds,
+                    maxDurationSeconds: maxDurationSeconds,
+                    minPageCount: minPageCount,
+                    maxPageCount: maxPageCount,
+                    pluginFields: pluginFields);
 
-            return RunOnShelfAsync(shelf, cancellationToken, async (shelfClient, _) => TextFormat.Duplicates(
-                await shelfClient.FindDuplicatesAsync(new DuplicateSearch(criteria) { Limit = limit, After = after == null ? null : DuplicateCursor.Parse(after) }, cancellationToken),
-                MoreAfter));
+                return TextFormat.Duplicates(
+                    await shelfClient.FindDuplicatesAsync(new DuplicateSearch(criteria) { Limit = limit, After = after == null ? null : DuplicateCursor.Parse(after) }, cancellationToken),
+                    MoreAfter);
+            });
         }
 
         /// <summary>The criteria search_files and find_duplicates both take, from their parameters.</summary>
+        /// <exception cref="ArgumentException">One of <paramref name="pluginFields"/> is no filter on a plugin's field.</exception>
         private static FileCriteria Criteria(
             string under,
             string? text,
@@ -368,7 +383,8 @@ namespace ByteShelf.Tools.Mcp
             double? minDurationSeconds,
             double? maxDurationSeconds,
             int? minPageCount,
-            int? maxPageCount)
+            int? maxPageCount,
+            string[]? pluginFields)
         {
             return new FileCriteria
             {
@@ -390,6 +406,7 @@ namespace ByteShelf.Tools.Mcp
                 MaxDurationSeconds = maxDurationSeconds,
                 MinPageCount = minPageCount,
                 MaxPageCount = maxPageCount,
+                PluginFields = (pluginFields ?? []).Select(PluginFieldFilter.Parse).ToList(),
             };
         }
 

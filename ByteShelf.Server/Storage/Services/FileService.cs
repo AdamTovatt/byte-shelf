@@ -1,5 +1,3 @@
-using ByteShelf.Server.Metadata.Models;
-using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
@@ -17,30 +15,33 @@ namespace ByteShelf.Server.Storage.Services
 
         private readonly IDbSessionFactory _sessionFactory;
         private readonly IFileRepository _fileRepository;
-        private readonly IObjectMetadataRepository _metadataRepository;
         private readonly ShelfTree _shelfTree;
         private readonly ShelfEncryption _encryption;
         private readonly ObjectStore _objectStore;
         private readonly ITrashService _trashService;
+        private readonly ListedFiles _listedFiles;
+        private readonly IMetadataPlugins _plugins;
         private readonly TimeProvider _timeProvider;
 
         public FileService(
             IDbSessionFactory sessionFactory,
             IFileRepository fileRepository,
-            IObjectMetadataRepository metadataRepository,
             ShelfTree shelfTree,
             ShelfEncryption encryption,
             ObjectStore objectStore,
             ITrashService trashService,
+            ListedFiles listedFiles,
+            IMetadataPlugins plugins,
             TimeProvider timeProvider)
         {
             _sessionFactory = sessionFactory;
             _fileRepository = fileRepository;
-            _metadataRepository = metadataRepository;
             _shelfTree = shelfTree;
             _encryption = encryption;
             _objectStore = objectStore;
             _trashService = trashService;
+            _listedFiles = listedFiles;
+            _plugins = plugins;
             _timeProvider = timeProvider;
         }
 
@@ -49,18 +50,6 @@ namespace ByteShelf.Server.Storage.Services
         {
             FileRecord file = await _shelfTree.GetFileAsync(shelf.Id, reference);
             return await _shelfTree.ToShelfFileAsync(file);
-        }
-
-        /// <inheritdoc />
-        public async Task<FileMetadata> GetMetadataAsync(Shelf shelf, EntryReference reference)
-        {
-            FileRecord file = await _shelfTree.GetFileAsync(shelf.Id, reference);
-
-            // The row is the contents', which an encrypted file's are not to be read for, even when a
-            // plain file holds the same bytes.
-            bool readable = !file.Encrypted && ReadMediaTypes.All.Includes(ContentTypes.MediaTypeOf(file.ContentType));
-            ObjectMetadata? read = readable ? await _metadataRepository.GetBySha256Async(file.Sha256) : null;
-            return StorageContracts.ToFileMetadata(readable, read);
         }
 
         /// <inheritdoc />
@@ -147,12 +136,13 @@ namespace ByteShelf.Server.Storage.Services
         public async Task<FileSearchResults> SearchAsync(Shelf shelf, FileSearch search)
         {
             FileSearch normalized = search.Normalize();
+            _plugins.Installed.Check(normalized.PluginFields);
             DirectoryRecord directory = await _shelfTree.GetDirectoryAsync(shelf.Id, EntryReference.ForPath(normalized.Under!));
 
             // One more than a page, to tell whether another page follows without a count.
             int limit = normalized.Limit!.Value;
             IReadOnlyList<(FileRecord File, string Path)> found = await _fileRepository.SearchAsync(directory.Id, normalized.Under!, normalized, limit + 1);
-            List<ShelfFile> files = found.Take(limit).Select(row => StorageContracts.ToShelfFile(row.File, ShelfPath.GetParent(row.Path))).ToList();
+            IReadOnlyList<ShelfFile> files = await _listedFiles.OfAsync(found.Take(limit).ToList());
 
             return new FileSearchResults
             {
@@ -165,6 +155,7 @@ namespace ByteShelf.Server.Storage.Services
         public async Task<DuplicateSearchResults> FindDuplicatesAsync(Shelf shelf, DuplicateSearch search)
         {
             DuplicateSearch normalized = search.Normalize();
+            _plugins.Installed.Check(normalized.PluginFields);
             DirectoryRecord directory = await _shelfTree.GetDirectoryAsync(shelf.Id, EntryReference.ForPath(normalized.Under!));
 
             // One group more than a page, to tell whether another page follows without a count.

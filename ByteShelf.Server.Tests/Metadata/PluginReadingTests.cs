@@ -9,7 +9,6 @@ using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using EasyReasy.Database;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace ByteShelf.Server.Tests.Metadata
 {
@@ -363,6 +362,19 @@ namespace ByteShelf.Server.Tests.Metadata
         }
 
         [Fact]
+        public async Task RecordAsync_TheServersOwnVersionHasRecordedThemAlready_ChangesAndLogsNothing()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
+            Assert.True(await RecordOwnAsync(file.Sha256));
+            long before = await ChangeLog.GetLatestSequenceAsync();
+
+            Assert.False(await RecordOwnAsync(file.Sha256));
+
+            Assert.Equal(before, await ChangeLog.GetLatestSequenceAsync());
+        }
+
+        [Fact]
         public async Task RecordAsync_TheVersionHasRecordedThemAlready_ChangesAndLogsNothing()
         {
             Shelf shelf = await CreateShelfAsync();
@@ -474,7 +486,7 @@ namespace ByteShelf.Server.Tests.Metadata
 
         protected override void ConfigureServices(IServiceCollection services)
         {
-            services.Replace(ServiceDescriptor.Singleton<IMetadataPlugins>(_plugins));
+            _plugins.AddTo(services);
         }
 
         private IContentPluginMetadataRepository Rows => Services.GetRequiredService<IContentPluginMetadataRepository>();
@@ -493,7 +505,8 @@ namespace ByteShelf.Server.Tests.Metadata
 
         private static MetadataPlugin Plugin(TestDocumentReader reader, string id)
         {
-            return new MetadataPlugin(id, new MetadataPluginReader(reader));
+            PluginField text = new PluginField("text", "Text", PluginFieldKind.Text, PluginDocumentSubject.Contents, searched: true, listed: true);
+            return new MetadataPlugin(new PluginDeclaration(id, id, [text]), new MetadataPluginReader(reader));
         }
 
         private static (int Read, int Failed) Counts(MetadataReadingSummary summary)
@@ -504,7 +517,7 @@ namespace ByteShelf.Server.Tests.Metadata
         private Task<bool> RecordOwnAsync(string sha256)
         {
             return Services.InTransactionAsync((provider, session) => provider.GetRequiredService<IObjectMetadataRepository>()
-                .RecordAsync(ObjectMetadata.Of(sha256, TestInstants.Now, new ContentMetadata { Camera = "Nikon" }), session));
+                .RecordAsync(ObjectMetadata.Of(sha256, MetadataReader.Version, TestInstants.Now, new ContentMetadata { Camera = "Nikon" }), session));
         }
 
         /// <summary>No reader's row of the contents is left, and nothing in the whole log holds <paramref name="plaintext"/>.</summary>
@@ -513,6 +526,7 @@ namespace ByteShelf.Server.Tests.Metadata
             await using IDbSession session = await Services.GetRequiredService<IDbSessionFactory>().CreateSessionAsync();
             Assert.Equal(0, await TestQueries.CountAsync(session, $"object_metadata WHERE sha256 = '{sha256}'"));
             Assert.Equal(0, await TestQueries.CountAsync(session, $"content_plugin_metadata WHERE sha256 = '{sha256}'"));
+            Assert.Equal(0, await TestQueries.CountAsync(session, $"plugin_field_value WHERE sha256 = '{sha256}' OR instr(text_fold, '{plaintext}') > 0 OR instr(listed, '{plaintext}') > 0"));
             Assert.Equal(0, await TestQueries.CountAsync(session, $"change_log WHERE instr(payload, '{plaintext}') > 0"));
         }
     }

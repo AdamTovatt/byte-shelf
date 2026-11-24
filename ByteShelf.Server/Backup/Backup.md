@@ -13,7 +13,9 @@ it never migrates the database or creates folders there, and it refuses a zip pa
    were swapped meanwhile (encrypted or decrypted in place, which removes the old ones at once) is
    backed up with the contents it holds now, its snapshot row pointed at them and logged as swapped. The
    other files on that object were purged by the server, so they are purged from the snapshot through
-   `FileRepository`, logged as the server logged them.
+   `FileRepository`, logged as the server logged them. What was read from contents that no plain file in
+   the backup holds then goes too: their plaintext may be gone for having been encrypted. What
+   goes from the snapshot is overwritten in it (`secure_delete`), since the zip has its pages as they are.
 3. **The snapshot itself**, without uploads in progress (their staged bytes are not copied), as
    `byteshelf.db`, then every file in `keys/`.
 

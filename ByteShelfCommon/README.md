@@ -10,15 +10,18 @@ AOT-compatible.
 |---|---|
 | `ShelfInfo` | A shelf with its quota and usage. |
 | `CreateShelfRequest`, `UpdateShelfRequest` | Creates a shelf, and replaces its name and quota. |
-| `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps, description, and whether its contents are encrypted (`Encrypted`). |
+| `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps, description, whether its contents are encrypted (`Encrypted`), and in listings the values of the fields plugins declare for them (`PluginFields`). |
 | `SetDescriptionRequest`, `FileDescription` | Setting a file's description, and its rules. |
-| `FileCriteria` | Which of a shelf's files a search looks at: the directory, text, type, sizes, times, SHA-256, whether it has a description, and what the server read from the contents (taken times, a GPS position, durations, page counts), checked by `NormalizeCriteria`. Both searches below take their criteria from it. |
+| `FileCriteria` | Which of a shelf's files a search looks at: the directory, text, type, sizes, times, SHA-256, whether it has a description, and what the server read from the contents (taken times, a GPS position, durations, page counts) or plugins keep (`PluginFields`), checked by `NormalizeCriteria`. Both searches below take their criteria from it. |
 | `FileSearch`, `FileSearchResults` | The files that meet the criteria, a page at a time by path, and one page of them. |
 | `DuplicateSearch`, `DuplicateSearchResults`, `DuplicateGroup`, `DuplicateCursor` | The groups of plain, non-empty files with the same contents among those that meet the criteria, a page of groups at a time, most repeated bytes first, and where a page ended. `DuplicateSearchResults.Page` groups, orders and pages them, for the server and the in-memory client alike. |
 | `DownloadLink` | A link to a file's contents that works without a token until it runs out or is revoked, with its id, and the bounds of its lifetime (`Lifetime`: a day by default, at most 7 days). |
 | `UploadLink`, `CreateUploadLinkRequest`, `NormalizedUploadLinkRequest` | A link that stores one file sent to it without a token, with its id, and asking for one (`Lifetime`: 15 minutes by default, at most 24 hours). |
 | `ShelfLink`, `ShelfLinkKind`, `LinkMaker`, `LinkMakerKind` | A download or upload link as listed, to revoke by its id: what it reaches, who made it, and when it runs out. |
-| `FileMetadata` | What the server read from a file's contents (when and where a photo was taken, the camera, a video's length, a PDF's title and pages), and whether it reads that file at all (`Readable`). |
+| `FileMetadata` | What the server read from a file's contents (when and where a photo was taken, the camera, a video's length, a PDF's title and pages), whether it reads that file at all (`Readable`), and what plugins keep about it (`Plugins`). |
+| `PluginDeclaration`, `PluginField`, `PluginFieldKind`, `PluginDocumentSubject`, `InstalledPlugins` | A plugin with the fields it declares in its documents, and the plugins a server has, which a filter is checked against. |
+| `PluginFileMetadata`, `PluginFieldEntry`, `PluginFieldValue`, `SetPluginMetadataRequest` | What one plugin keeps about a file, with its declared fields and their values, and writing its document about the file. |
+| `PluginFieldFilter`, `PluginFieldCondition` | A search's criterion on a field a plugin declares. |
 | `PluginDocument` | What a plugin keeps about a file or its contents: one JSON object, which is how it is written in JSON. |
 | `MediaTypePattern` | One media type or a family such as `image/*`, and which media types it covers. |
 | `LinkLifetime` | One kind of link's lifetime rule: its default, its bounds and `Normalize`. |
@@ -63,6 +66,15 @@ AOT-compatible.
 - `PluginDocument.Parse` checks a plugin's document, and its JSON converter does the same for one that
   is sent: one JSON object, nested at most 32 deep, of at most 64 KiB, counted in UTF-8 without
   whitespace and with its text as itself rather than as escapes.
+- `PluginField` and `PluginDeclaration` check what a plugin declares: its id (`PluginDeclaration.IsId`:
+  lowercase letters, digits and hyphens), a field's name (a letter, then
+  letters, digits, hyphens and underscores, 64 at most), one of each name, and that only text is searched.
+  `PluginFieldValue.Of` reads a field's value from a document, ignoring one of another JSON type.
+- `PluginFieldFilter.Parse` reads a filter: `plugin.field` has a value, `!plugin.field` has none,
+  `plugin.field~text` contains the text as search compares it, `plugin.field=1..5` is a number between two
+  (both included; either may be left out, and `plugin.field=4` is that number),
+  `plugin.field=2026-01-01..2026-02-01` an instant from one and before another (each a UTC date, or a time with
+  an offset; either may be left out), and `plugin.field=true` or `=false` a flag. A search takes at most 20.
 - `ContentHash` checks a SHA-256 named in a request (64 hex digits, in either case) and answers it
   lowercase, as the server stores it.
 - `ContentTypes` checks the media type stored with a file, and `ForUpload` picks it when an upload

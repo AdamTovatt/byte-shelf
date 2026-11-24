@@ -34,7 +34,7 @@ release the server runs to any signed-in user or key. Admins also drive replicat
 it: `GetReplicationAsync` (the replicas and how far behind each is, or the primary followed),
 `CreatePairingCodeAsync`, `FollowPrimaryAsync`, `RemoveReplicaAsync` and `PromoteAsync`. `IShelfClient` works on one shelf:
 list a directory or its whole tree, search, find duplicates (`FindDuplicatesAsync`), read what the
-server read from a file's contents (`GetFileMetadataAsync`), upload, open (part of a file with
+server read from a file's contents and what plugins keep (`GetFileMetadataAsync`, `SetPluginDocumentAsync`), upload, open (part of a file with
 `OpenReadRangeAsync`), describe (many files in
 one request with `SetDescriptionsAsync`), share by a link, make an upload
 link, encrypt directories and swap a file's contents in place (`SwapContentAsync`), create
@@ -177,9 +177,13 @@ same process with its pairing code, after which it refuses writes until promoted
 copies no data, and it is never behind.
 
 File metadata (`GetFileMetadataAsync`: when a photo was taken, a PDF's title and so on) is read only
-by the server, with libraries this package does not carry. In memory every file's metadata is
-`FileMetadata.None`, a search criterion about it (`TakenFrom`, `HasGps`, durations, page counts)
+by the server, with libraries this package does not carry. In memory every file has none, a search criterion about it (`TakenFrom`, `HasGps`, durations, page counts)
 matches no file, and search text matches no title or camera.
+
+What plugins keep about files works in memory: pass the `plugins` it has, each a `PluginDeclaration` with its
+fields. `SetPluginDocumentAsync` writes a plugin's document about a file, `GetFileMetadataAsync` answers it
+(`Plugins`), and listings and `FileSearch.PluginFields` work on its declared fields. Documents about files'
+contents, which a plugin's reader writes on the server, it has none of.
 
 There is no server, so `GetServerVersionAsync`, which over HTTP answers the release the server runs,
 answers this package's own version, with a deploy id that stays the same for the client's life.

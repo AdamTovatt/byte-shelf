@@ -35,10 +35,10 @@ namespace ByteShelf.Server.ChangeLog.Repositories
                 INSERT INTO change_log (entity_type, entity_id, action, payload, created_at)
                 VALUES (@{nameof(entityType)}, @{nameof(entityId)}, @{nameof(action)}, @{nameof(payload)}, @{nameof(createdAt)})";
 
-            if (state == null && ChangeEntityType.ForgetsRemovedStates(entityType))
+            if (ChangeEntityType.ForgetsEarlierStates(entityType))
             {
-                // Each earlier entry then reads as a removal, which a follower replaying it applies
-                // harmlessly before the removal itself.
+                // Each earlier entry then reads as a removal, which a follower replaying it applies harmlessly
+                // before this one: there is always one after it, written with the blanking.
                 string forgetQuery = $@"
                     UPDATE change_log SET payload = NULL
                     WHERE entity_type = @{nameof(entityType)} AND entity_id = @{nameof(entityId)} AND payload IS NOT NULL";
@@ -119,7 +119,7 @@ namespace ByteShelf.Server.ChangeLog.Repositories
             // The newest entry of a row that went with its owner, unlogged, would stay for good.
             string goneWithOwner = string.Concat(ChangeEntityType.Owned.Select(owned => $@"
                        OR (entity_type = '{owned.Key}'
-                           AND NOT EXISTS (SELECT 1 FROM {owned.Value.Table} WHERE id = change_log.entity_id))"));
+                           AND NOT EXISTS (SELECT 1 FROM {owned.Value.OwnedTable} WHERE id = change_log.entity_id))"));
 
             string deleteQuery = $@"
                 DELETE FROM change_log

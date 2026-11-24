@@ -1,5 +1,6 @@
 using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Metadata.Repositories;
+using ByteShelf.Server.Metadata.Services;
 using ByteShelfCommon;
 using EasyReasy.Database;
 using Microsoft.Extensions.DependencyInjection;
@@ -49,6 +50,13 @@ namespace ByteShelf.Server.Tests.TestUtilities
         {
             using IServiceScope scope = services.CreateScope();
             return (await scope.ServiceProvider.GetRequiredService<IContentPluginMetadataRepository>().GetAsync(plugin, sha256))?.Document?.Json;
+        }
+
+        /// <summary>Brings plugins' fields in step with what is installed, as the server's start does.</summary>
+        public static async Task StartPluginFieldIndexAsync(this IServiceProvider services)
+        {
+            using IServiceScope scope = services.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<PluginFieldIndex>().BringUpToDateAsync(CancellationToken.None);
         }
 
         /// <summary>Does something in a scope and transaction of its own.</summary>

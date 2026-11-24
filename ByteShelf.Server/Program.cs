@@ -7,6 +7,7 @@ using ByteShelf.Server.Invalidation;
 using ByteShelf.Server.Jobs;
 using ByteShelf.Server.Mcp;
 using ByteShelf.Server.Metadata;
+using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Plugins;
 using ByteShelf.Server.Plugins.Services;
 using ByteShelf.Server.Replication;
@@ -92,6 +93,17 @@ namespace ByteShelf.Server
                     args,
                     EnvironmentVariables.ByteShelfRoot.GetValueOrDefault(),
                     EnvironmentVariables.AppBaseUrl.GetValueOrDefault(),
+                    loggerFactory).GetAwaiter().GetResult();
+                return;
+            }
+
+            if (PluginMetadataCommand.Flags.Any(args.Contains))
+            {
+                // Only BYTESHELF_ROOT is read.
+                using ILoggerFactory loggerFactory = CreateStartupLoggerFactory();
+                Environment.ExitCode = PluginMetadataCommand.RunAsync(
+                    args,
+                    EnvironmentVariables.ByteShelfRoot.GetValueOrDefault(),
                     loggerFactory).GetAwaiter().GetResult();
                 return;
             }
@@ -306,6 +318,10 @@ namespace ByteShelf.Server
                 // A cursor travels as the text it writes (bytes:sha256), in a query and in JSON alike,
                 // not as the record it is in C#.
                 options.MapType<DuplicateCursor>(() => new OpenApiSchema { Type = "string" });
+
+                // So does a filter on a plugin's field, and a plugin's document is the object it holds.
+                options.MapType<PluginFieldFilter>(() => new OpenApiSchema { Type = "string" });
+                options.MapType<PluginDocument>(() => new OpenApiSchema { Type = "object", AdditionalProperties = new OpenApiSchema() });
             });
 
             return mvc;

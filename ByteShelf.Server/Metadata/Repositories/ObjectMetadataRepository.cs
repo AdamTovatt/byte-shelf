@@ -14,6 +14,7 @@ namespace ByteShelf.Server.Metadata.Repositories
         private const string SelectColumns = $@"
             id,
             sha256,
+            reader_version AS {nameof(ObjectMetadataEntity.ReaderVersion)},
             read_at AS {nameof(ObjectMetadataEntity.ReadAt)},
             taken_at AS {nameof(ObjectMetadataEntity.TakenAt)},
             latitude,
@@ -24,14 +25,15 @@ namespace ByteShelf.Server.Metadata.Repositories
             camera";
 
         private const string InsertIntoSql =
-            "INSERT INTO object_metadata (id, sha256, read_at, taken_at, latitude, longitude, duration_seconds, page_count, title, title_fold, camera, camera_fold)";
+            "INSERT INTO object_metadata (id, sha256, reader_version, read_at, taken_at, latitude, longitude, duration_seconds, page_count, title, title_fold, camera, camera_fold)";
 
         private const string ValuesSql =
-            "@Id, @Sha256, @ReadAt, @TakenAt, @Latitude, @Longitude, @DurationSeconds, @PageCount, @Title, @TitleFold, @Camera, @CameraFold";
+            "@Id, @Sha256, @ReaderVersion, @ReadAt, @TakenAt, @Latitude, @Longitude, @DurationSeconds, @PageCount, @Title, @TitleFold, @Camera, @CameraFold";
 
         private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict($"{InsertIntoSql} VALUES ({ValuesSql})");
 
-        private static readonly string RecordSql = $"{InsertIntoSql} SELECT {ValuesSql} WHERE {PlainContents.HeldByLiveFile("@Sha256")} ON CONFLICT DO NOTHING";
+        private static readonly string RecordSql =
+            $"{UpsertSql.OnIdConflict($"{InsertIntoSql} SELECT {ValuesSql} WHERE {PlainContents.HeldByLiveFile("@Sha256")}")} WHERE object_metadata.reader_version <> excluded.reader_version";
 
         private readonly IChangeLogRepository _changeLog;
 
@@ -56,14 +58,18 @@ namespace ByteShelf.Server.Metadata.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<IReadOnlyList<string>> GetUnreadAsync(MediaTypeSet mediaTypes, string? after, int limit, IDbSession? session = null)
+        public async Task<IReadOnlyList<string>> GetUnreadAsync(int readerVersion, MediaTypeSet mediaTypes, string? after, int limit, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>
             {
-                string query = PlainContents.UnreadSql(mediaTypes, "EXISTS (SELECT 1 FROM object_metadata WHERE object_metadata.sha256 = file.sha256)");
+                string query = PlainContents.UnreadSql(mediaTypes, $@"
+                    EXISTS (
+                        SELECT 1 FROM object_metadata
+                        WHERE object_metadata.sha256 = file.sha256
+                          AND object_metadata.reader_version = @{nameof(readerVersion)})");
 
                 IEnumerable<string> hashes = await dbSession.Connection.QueryAsync<string>(
-                    query, new { after, limit }, transaction: dbSession.Transaction);
+                    query, new { readerVersion, after, limit }, transaction: dbSession.Transaction);
 
                 return (IReadOnlyList<string>)hashes.ToList();
             }, session);
@@ -72,13 +78,15 @@ namespace ByteShelf.Server.Metadata.Repositories
         /// <inheritdoc />
         public async Task<bool> RecordAsync(ObjectMetadata metadata, IDbSession session)
         {
-            int inserted = await session.Connection.ExecuteAsync(RecordSql, Parameters(metadata), transaction: session.Transaction);
-            if (inserted == 0)
+            bool isNew = await GetBySha256Async(metadata.Sha256, session) == null;
+            int written = await session.Connection.ExecuteAsync(RecordSql, Parameters(metadata), transaction: session.Transaction);
+            if (written == 0)
             {
                 return false;
             }
 
-            await _changeLog.AppendAsync(ChangeEntityType.ObjectMetadata, metadata.Id, ChangeAction.Added, metadata, metadata.ReadAt, session);
+            string action = isNew ? ChangeAction.Added : ChangeAction.Updated;
+            await _changeLog.AppendAsync(ChangeEntityType.ObjectMetadata, metadata.Id, action, metadata, metadata.ReadAt, session);
             return true;
         }
 
@@ -117,6 +125,7 @@ namespace ByteShelf.Server.Metadata.Repositories
             {
                 row.Id,
                 row.Sha256,
+                row.ReaderVersion,
                 row.ReadAt,
                 metadata.TakenAt,
                 metadata.Latitude,
@@ -134,6 +143,7 @@ namespace ByteShelf.Server.Metadata.Repositories
         {
             public Guid Id { get; set; }
             public string Sha256 { get; set; } = string.Empty;
+            public int ReaderVersion { get; set; }
             public DateTimeOffset ReadAt { get; set; }
             public DateTimeOffset? TakenAt { get; set; }
             public double? Latitude { get; set; }
@@ -149,6 +159,7 @@ namespace ByteShelf.Server.Metadata.Repositories
                 {
                     Id = Id,
                     Sha256 = Sha256,
+                    ReaderVersion = ReaderVersion,
                     ReadAt = ReadAt,
                     Metadata = new ContentMetadata
                     {

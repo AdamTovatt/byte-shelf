@@ -65,7 +65,7 @@ namespace ByteShelfClient.InMemory
                 {
                     Directory = shelf.ToShelfDirectory(listed),
                     Directories = shelf.LiveChildDirectories(listed.Id).OrderBy(child => child.Name, StoredOrder.Instance).Select(shelf.ToListedDirectory).ToList(),
-                    Files = shelf.LiveFilesIn(listed.Id).OrderBy(file => file.Name, StoredOrder.Instance).Select(shelf.ToShelfFile).ToList(),
+                    Files = shelf.LiveFilesIn(listed.Id).OrderBy(file => file.Name, StoredOrder.Instance).Select(shelf.ToListedFile).ToList(),
                     EncryptedBy = shelf.ToEncryptedFolder(shelf.EncryptedFolderOf(listed.Id)),
                 };
             });
@@ -85,7 +85,7 @@ namespace ByteShelfClient.InMemory
                 return DirectoryTree.Page(
                     shelf.ToShelfDirectory(under),
                     directories.Select(shelf.ToShelfDirectory).Where(entry => IsAfter(entry.Path, normalized.After)),
-                    files.Select(shelf.ToShelfFile).Where(entry => IsAfter(entry.Path, normalized.After)),
+                    files.Select(shelf.ToListedFile).Where(entry => IsAfter(entry.Path, normalized.After)),
                     normalized.Limit!.Value);
             });
         }
@@ -103,9 +103,43 @@ namespace ByteShelfClient.InMemory
             // Only the server reads contents, with libraries this package does not carry.
             return Run(cancellationToken, shelf =>
             {
-                shelf.GetFile(file);
-                return FileMetadata.None;
+                FileNode node = shelf.GetFile(file);
+                Dictionary<string, PluginFileMetadata> plugins = _store.Plugins.All
+                    .Where(plugin => node.Plugins.ContainsKey(plugin.Id))
+                    .ToDictionary(plugin => plugin.Id, plugin => Kept(plugin, node), StringComparer.Ordinal);
+                return plugins.Count == 0 ? FileMetadata.None : new FileMetadata { Plugins = plugins };
             });
+        }
+
+        public Task<PluginFileMetadata> SetPluginDocumentAsync(EntryReference file, string plugin, PluginDocument? document, int? expectedVersion, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(file);
+            ArgumentNullException.ThrowIfNull(plugin);
+
+            // As the server's FileMetadataService.SetPluginDocumentAsync.
+            return Write(cancellationToken, shelf =>
+            {
+                PluginDeclaration declared = _store.Plugins.Find(plugin) ?? throw InMemoryErrors.NotFound($"There is no plugin '{plugin}' on this server.");
+                FileNode node = shelf.GetFile(file);
+                int? version = node.Plugins.GetValueOrDefault(plugin)?.Version;
+                if (version != expectedVersion)
+                {
+                    throw InMemoryErrors.Conflict($"What the plugin '{plugin}' keeps about '{file}' has changed since it was read: read it again, then write it.");
+                }
+
+                if (version != null || document != null)
+                {
+                    node.Plugins[plugin] = new PluginRow((version ?? 0) + 1, document);
+                }
+
+                return Kept(declared, node);
+            });
+        }
+
+        private static PluginFileMetadata Kept(PluginDeclaration plugin, FileNode node)
+        {
+            PluginRow? row = node.Plugins.GetValueOrDefault(plugin.Id);
+            return PluginFileMetadata.Of(plugin, contentsDocument: null, row?.Document, row?.Version);
         }
 
         public async Task<ShelfFile> UploadAsync(string path, Stream content, UploadOptions? options = null, CancellationToken cancellationToken = default)
@@ -215,7 +249,7 @@ namespace ByteShelfClient.InMemory
                 // The one-more-than-a-page paging here is also in DirectoryTree.Page and the server's
                 // FileService; left as is, since sharing it would reshape working code for a few lines.
                 List<ShelfFile> found = Found(shelf, normalized)
-                    .Select(shelf.ToShelfFile)
+                    .Select(shelf.ToListedFile)
                     .Where(file => IsAfter(file.Path, normalized.After))
                     .OrderBy(file => file.Path, StoredOrder.Instance)
                     .Take(normalized.Limit!.Value + 1)
@@ -242,11 +276,15 @@ namespace ByteShelfClient.InMemory
         }
 
         /// <summary>The live files under the criteria's directory, at any depth, that meet them all: what a search finds.</summary>
-        private static IEnumerable<FileNode> Found(InMemoryShelf shelf, FileCriteria normalized)
+        private IEnumerable<FileNode> Found(InMemoryShelf shelf, FileCriteria normalized)
         {
+            IReadOnlyList<(PluginFieldFilter Filter, PluginDeclaration Plugin, PluginField Field)> filters =
+                InMemoryErrors.Checked(() => _store.Plugins.Check(normalized.PluginFields));
+
             DirectoryNode under = shelf.GetDirectory(normalized.Under!);
             HashSet<Guid> directories = shelf.LiveSubtree(under).Select(directory => directory.Id).ToHashSet();
-            return shelf.Files.Where(file => file.IsLive && directories.Contains(file.DirectoryId) && Matches(normalized, file));
+            return shelf.Files.Where(file => file.IsLive && directories.Contains(file.DirectoryId) && Matches(normalized, file)
+                && filters.All(asked => asked.Filter.Condition.Matches(file.ValueOf(asked.Plugin, asked.Field))));
         }
 
         public Task<Stream> OpenReadAsync(EntryReference file, CancellationToken cancellationToken = default)
@@ -555,7 +593,7 @@ namespace ByteShelfClient.InMemory
                 }
 
                 List<ShelfDirectory> taken = shelf.Directories.Where(directory => directory.DeletionId == deletionId).Select(shelf.ToShelfDirectory).ToList();
-                List<ShelfFile> takenFiles = shelf.Files.Where(file => file.DeletionId == deletionId).Select(shelf.ToShelfFile).ToList();
+                List<ShelfFile> takenFiles = shelf.Files.Where(file => file.DeletionId == deletionId).Select(shelf.ToListedFile).ToList();
 
                 // A directory's own encryption counts, as it was the folder its files were stored in.
                 TrashEntry deletion = ToTrashEntry(shelf, deletionId);
@@ -877,6 +915,9 @@ namespace ByteShelfClient.InMemory
                 UpdatedAt = now,
                 Description = upload.Description ?? replaced?.Description,
                 Encrypted = upload.Encrypted,
+                Plugins = replaced == null
+                    ? new Dictionary<string, PluginRow>(StringComparer.Ordinal)
+                    : new Dictionary<string, PluginRow>(replaced.Plugins, StringComparer.Ordinal),
             };
 
             shelf.Files.Add(stored);
@@ -892,14 +933,16 @@ namespace ByteShelfClient.InMemory
         /// <summary>Whether a file meets every criterion of a normalized search but where it is, as the server's query decides.</summary>
         /// <remarks>
         /// No file here has metadata, which only the server reads, so a criterion about it matches none,
-        /// and text matches no title or camera.
+        /// and text matches no title or camera. Fields plugins declare in their documents about files are here.
         /// </remarks>
-        private static bool Matches(FileCriteria search, FileNode file)
+        private bool Matches(FileCriteria search, FileNode file)
         {
             return !search.AsksForMetadata()
                 && (search.Text == null
                     || FileCriteria.Fold(file.Name).Contains(search.Text, StringComparison.Ordinal)
-                    || (file.Description != null && FileCriteria.Fold(file.Description).Contains(search.Text, StringComparison.Ordinal)))
+                    || (file.Description != null && FileCriteria.Fold(file.Description).Contains(search.Text, StringComparison.Ordinal))
+                    || _store.Plugins.All.Any(plugin => plugin.Fields.Any(field => field.Searched
+                        && (file.ValueOf(plugin, field)?.FoldedText()?.Contains(search.Text, StringComparison.Ordinal) ?? false))))
                 && search.MatchesContentType(file.ContentType)
                 && (search.MinSizeBytes == null || file.Content.LongLength >= search.MinSizeBytes)
                 && (search.MaxSizeBytes == null || file.Content.LongLength <= search.MaxSizeBytes)

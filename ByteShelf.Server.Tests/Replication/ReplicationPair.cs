@@ -36,10 +36,11 @@ namespace ByteShelf.Server.Tests.Replication
             TimeSpan? idleTimeout = null,
             int? pageSize = null,
             TimeProvider? primaryClock = null,
-            bool withPasskeys = false)
+            bool withPasskeys = false,
+            PluginDeclaration? replicaPlugin = null)
         {
             ServerTestHost primary = withPasskeys ? await ServerTestHost.StartWithPasskeysAsync() : await ServerTestHost.StartAsync();
-            return new ReplicationPair(primary, await StartServerToFollowAsync(primary, wrapPrimary, idleTimeout, pageSize, primaryClock, withPasskeys));
+            return new ReplicationPair(primary, await StartServerToFollowAsync(primary, wrapPrimary, idleTimeout, pageSize, primaryClock, withPasskeys, replicaPlugin));
         }
 
         /// <summary>
@@ -52,7 +53,8 @@ namespace ByteShelf.Server.Tests.Replication
             TimeSpan? idleTimeout = null,
             int? pageSize = null,
             TimeProvider? primaryClock = null,
-            bool withPasskeys = false)
+            bool withPasskeys = false,
+            PluginDeclaration? plugin = null)
         {
             void Configure(IServiceCollection services)
             {
@@ -68,6 +70,11 @@ namespace ByteShelf.Server.Tests.Replication
                     IdleTimeout = idleTimeout ?? defaults.IdleTimeout,
                     PageSize = pageSize ?? defaults.PageSize,
                 }));
+
+                if (plugin != null)
+                {
+                    new TestMetadataPlugins(plugin).AddTo(services);
+                }
 
                 if (primaryClock != null)
                 {

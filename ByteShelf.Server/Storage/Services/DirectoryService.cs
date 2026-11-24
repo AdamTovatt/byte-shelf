@@ -15,6 +15,7 @@ namespace ByteShelf.Server.Storage.Services
         private readonly ShelfTree _shelfTree;
         private readonly ShelfEncryption _encryption;
         private readonly ITrashService _trashService;
+        private readonly ListedFiles _listedFiles;
         private readonly TimeProvider _timeProvider;
 
         public DirectoryService(
@@ -24,6 +25,7 @@ namespace ByteShelf.Server.Storage.Services
             ShelfTree shelfTree,
             ShelfEncryption encryption,
             ITrashService trashService,
+            ListedFiles listedFiles,
             TimeProvider timeProvider)
         {
             _sessionFactory = sessionFactory;
@@ -32,6 +34,7 @@ namespace ByteShelf.Server.Storage.Services
             _shelfTree = shelfTree;
             _encryption = encryption;
             _trashService = trashService;
+            _listedFiles = listedFiles;
             _timeProvider = timeProvider;
         }
 
@@ -52,7 +55,7 @@ namespace ByteShelf.Server.Storage.Services
                     Directories = directories
                         .Select(child => StorageContracts.ToListedDirectory(child, ShelfPath.Combine(path, child.Directory.Name)))
                         .ToList(),
-                    Files = files.Select(file => StorageContracts.ToShelfFile(file, path)).ToList(),
+                    Files = await _listedFiles.OfAsync(files.Select(file => (file, ShelfPath.Combine(path, file.Name))).ToList(), session),
                     EncryptedBy = await _encryption.DescribeFolderOfAsync(directory.Id, session),
                 };
             }
@@ -117,7 +120,7 @@ namespace ByteShelf.Server.Storage.Services
                 return DirectoryTree.Page(
                     StorageContracts.ToShelfDirectory(directory, under),
                     directories.Select(row => StorageContracts.ToShelfDirectory(row.Directory, row.Path)),
-                    files.Select(row => StorageContracts.ToShelfFile(row.File, ShelfPath.GetParent(row.Path))),
+                    await _listedFiles.OfAsync(files, session),
                     limit);
             }
         }

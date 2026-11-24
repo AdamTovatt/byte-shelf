@@ -34,7 +34,7 @@ namespace ByteShelf.Server.Tests.Mcp
 
         public async Task InitializeAsync()
         {
-            _host = await ServerTestHost.StartAsync();
+            _host = await ServerTestHost.StartAsync(services => new TestMetadataPlugins(TestMetadataPlugins.Declaration).AddTo(services));
             (await _host.AdminClient.PostAsJsonAsync("/api/shelves", new CreateShelfRequest { Name = "docs" })).EnsureSuccessStatusCode();
             (await _host.AdminClient.PostAsJsonAsync("/api/shelves", new CreateShelfRequest { Name = "other" })).EnsureSuccessStatusCode();
         }
@@ -190,6 +190,63 @@ namespace ByteShelf.Server.Tests.Mcp
             Assert.Contains("pages        3", info, StringComparison.Ordinal);
             Assert.Contains("title        Q3 report", info, StringComparison.Ordinal);
             Assert.StartsWith("/q3.pdf", found, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task GetInfo_FieldsPluginsDeclare_AreShownUnderTheirPlugin()
+        {
+            ShelfFile file = await StoreAsync("/a.txt", "a"u8.ToArray(), "text/plain");
+            await _host.Services.SetFileDocumentAsync(file.Id, "{\"caption\":\"An apple\",\"rating\":4.5,\"due\":\"2026-03-01T14:30:00Z\",\"done\":false,\"undeclared\":1}");
+            await _host.Services.RecordContentDocumentAsync(file.Sha256, "{\"width\":10}");
+
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read), asBearer: true);
+            string info = TextOf(await client.CallToolAsync("get_info", new Dictionary<string, object?> { ["path"] = "/a.txt" }));
+
+            Assert.EndsWith(
+                string.Join(
+                    Environment.NewLine,
+                    "Test plugin (test-plugin)",
+                    "  Caption (caption): An apple",
+                    "  Rating (rating): 4.5",
+                    "  Due (due): 2026-03-01 14:30 UTC",
+                    "  Done (done): no",
+                    "  Width (width): 10"),
+                info,
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task GetInfo_LongTextOfAPlugin_IsCut()
+        {
+            ShelfFile file = await StoreAsync("/a.txt", "a"u8.ToArray(), "text/plain");
+            string note = string.Concat(Enumerable.Repeat("x", 999)) + "🎈 and more";
+            await _host.Services.SetFileDocumentAsync(file.Id, $"{{\"note\":\"{note}\"}}");
+
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read), asBearer: true);
+            string info = TextOf(await client.CallToolAsync("get_info", new Dictionary<string, object?> { ["path"] = "/a.txt" }));
+
+            Assert.EndsWith($"  Note (note): {new string('x', 999)}… ({note.Length} characters in all)", info, StringComparison.Ordinal);
+        }
+
+        [Theory]
+        [InlineData("search_files")]
+        [InlineData("find_duplicates")]
+        public async Task SearchTool_FiltersOnPluginsFields_AreAllAskedOfTheServer(string tool)
+        {
+            ShelfFile first = await StoreAsync("/a/a.txt", "same"u8.ToArray(), "text/plain");
+            ShelfFile second = await StoreAsync("/a/b.txt", "same"u8.ToArray(), "text/plain");
+            ShelfFile third = await StoreAsync("/a/c.txt", "same"u8.ToArray(), "text/plain");
+            await _host.Services.SetFileDocumentAsync(first.Id, "{\"rating\":4,\"done\":true}");
+            await _host.Services.SetFileDocumentAsync(second.Id, "{\"rating\":5,\"done\":true}");
+            await _host.Services.SetFileDocumentAsync(third.Id, "{\"rating\":5}");
+
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read), asBearer: true);
+            string found = TextOf(await client.CallToolAsync(tool, new Dictionary<string, object?> { ["pluginFields"] = new[] { "test-plugin.rating=4..5", "test-plugin.done=true" } }));
+            CallToolResult refused = await client.CallToolAsync(tool, new Dictionary<string, object?> { ["pluginFields"] = new[] { "rating" } });
+
+            Assert.Equal(["/a/a.txt", "/a/b.txt"], PathsIn(found));
+            Assert.True(refused.IsError);
+            Assert.Contains("'rating' is not a filter on a plugin's field", TextOf(refused), StringComparison.Ordinal);
         }
 
         [Theory]
@@ -643,9 +700,9 @@ namespace ByteShelf.Server.Tests.Mcp
             return Regex.Matches(answer, @"/[ab]/[\w.]+").Select(match => match.Value).Order(StringComparer.Ordinal).ToList();
         }
 
-        private async Task StoreAsync(string path, byte[] content, string contentType)
+        private Task<ShelfFile> StoreAsync(string path, byte[] content, string contentType)
         {
-            await _host.PutAsAdminAsync("docs", path, content, contentType);
+            return _host.PutAsAdminAsync("docs", path, content, contentType);
         }
 
         private static string TextOf(CallToolResult result)

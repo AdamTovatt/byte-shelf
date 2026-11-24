@@ -57,13 +57,23 @@ namespace ByteShelf.Server.Replication.Repositories
         public async Task<IReadOnlyList<Guid>> GetIdsMissingAsync(string entityType, string table, EntityOwner? owner, IDbSession session)
         {
             string ownerCopied = owner == null ? string.Empty : $@"
-                  AND {owner.Column} IN (SELECT entity_id FROM replication_copy WHERE entity_type = @ownerType)";
+                  AND {owner.OwnedColumn} IN (SELECT entity_id FROM replication_copy WHERE entity_type = @ownerType)";
 
             string query = $@"
                 SELECT id FROM {table}
                 WHERE id NOT IN (SELECT entity_id FROM replication_copy WHERE entity_type = @{nameof(entityType)}){ownerCopied}";
 
             return (await session.Connection.QueryAsync<Guid>(query, new { entityType, ownerType = owner?.EntityType }, transaction: session.Transaction)).ToList();
+        }
+
+        /// <inheritdoc />
+        public async Task<IReadOnlyList<Guid>> GetIdsWithoutOwnerAsync(EntityOwner owner, string ownerTable, IDbSession session)
+        {
+            string query = $@"
+                SELECT id FROM {owner.OwnedTable}
+                WHERE NOT EXISTS (SELECT 1 FROM {ownerTable} WHERE {ownerTable}.id = {owner.OwnedTable}.{owner.OwnedColumn})";
+
+            return (await session.Connection.QueryAsync<Guid>(query, transaction: session.Transaction)).ToList();
         }
     }
 }

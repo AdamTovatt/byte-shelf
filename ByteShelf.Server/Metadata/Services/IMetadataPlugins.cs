@@ -1,3 +1,5 @@
+using ByteShelfCommon;
+
 namespace ByteShelf.Server.Metadata.Services
 {
     /// <summary>The installed plugins, as far as metadata goes: everything metadata knows of plugins comes from here.</summary>
@@ -5,5 +7,8 @@ namespace ByteShelf.Server.Metadata.Services
     {
         /// <summary>Every installed plugin, which stays the same while the server runs.</summary>
         IReadOnlyList<MetadataPlugin> All { get; }
+
+        /// <summary>What they declare.</summary>
+        InstalledPlugins Installed => new InstalledPlugins(All.Select(plugin => plugin.Declaration));
     }
 }
