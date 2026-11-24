@@ -3,7 +3,7 @@ import { PasswordDialog } from '../components/PasswordDialog';
 import { useShowDialog } from '../contexts/DialogHost';
 import type { AskPassword } from '../lib/encryption/askPassword';
 
-/** The one password prompt of a page. */
+/** The one password prompt of what uses it, such as a page. */
 export function usePasswordPrompt(): AskPassword {
   const show = useShowDialog();
   /** Takes back the prompt shown, if any. */
@@ -15,7 +15,7 @@ export function usePasswordPrompt(): AskPassword {
         resolve(null);
         return;
       }
-      // One prompt shows: the one this replaces is answered, or whoever awaits it would for good.
+      // One of its prompts shows: the one this replaces is answered, or whoever awaits it would for good.
       takeBack.current();
 
       // Set as it closes, and not by a password check still running when its prompt was cancelled.

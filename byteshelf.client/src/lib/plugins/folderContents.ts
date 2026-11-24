@@ -58,7 +58,7 @@ export function folderContents({ shelf, folder, reading, store, changed, open }:
       return { ...reader, close };
     },
     store: (path, contents, signal) => changing(async () => {
-      const stored = await store(folder, at(path), contents, { asking: leaving.signal, storing: signal });
+      const stored = await store(folder, at(path), contents, { overwrite: true, asking: leaving.signal, storing: signal });
       if (!stored) throw noPasswordGiven();
       return stored;
     }),

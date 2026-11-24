@@ -8,6 +8,9 @@ import { readStoredValue, removeStoredValue, session, writeStoredValue } from '.
 
 const PREFIX = 'byteshelf.password.';
 
+/** What a kept password was last found to match, in the page's memory alone: finding that takes about two seconds. */
+const matches = new Map<string, { password: string; check: string }>();
+
 /** Where an encrypted folder's password is kept. */
 export function folderPasswordKey(shelf: string, folderId: string): string {
   return `${PREFIX}${shelf}/${folderId}`;
@@ -27,12 +30,25 @@ export function rememberPassword(key: string, password: string): void {
   writeStoredValue(key, password, session);
 }
 
+/** Whether `password`, kept under `key`, is known to be the one a folder's `check` was made with. */
+export function hasMatched(key: string, password: string, check: string): boolean {
+  const known = matches.get(key);
+  return known?.password === password && known.check === check;
+}
+
+/** Has `password`, kept under `key`, known to be the one `check` was made with. */
+export function rememberMatch(key: string, password: string, check: string): void {
+  matches.set(key, { password, check });
+}
+
 export function forgetPassword(key: string): void {
+  matches.delete(key);
   removeStoredValue(key, session);
 }
 
 /** Forgets every password this tab kept, as signing out does. */
 export function forgetPasswords(): void {
+  matches.clear();
   try {
     removePasswords(sessionStorage);
   } catch {

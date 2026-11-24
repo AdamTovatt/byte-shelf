@@ -89,3 +89,16 @@ export async function submitPassword(password: string): Promise<void> {
   fill('Password', password);
   await act(async () => document.querySelector('form')!.requestSubmit());
 }
+
+/** Drops `files` on `target`. */
+export async function dropFiles(target: Element, files: File[]): Promise<void> {
+  const event = new Event('drop', { bubbles: true, cancelable: true });
+  Object.assign(event, { dataTransfer: { files, types: ['Files'] } });
+  await act(async () => void target.dispatchEvent(event));
+}
+
+/** Gives `files` as the ones picked in the browser's file picker. */
+export async function giveFiles(input: HTMLInputElement, files: File[]): Promise<void> {
+  Object.defineProperty(input, 'files', { value: files, configurable: true });
+  await act(async () => void input.dispatchEvent(new Event('change', { bubbles: true })));
+}

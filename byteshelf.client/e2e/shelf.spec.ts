@@ -16,6 +16,14 @@ async function signIn(browser: Browser): Promise<Page> {
   return page;
 }
 
+/** Uploads files into the folder shown, through the browser's file picker. */
+async function upload(page: Page, files: { name: string; mimeType: string; buffer: Buffer }[]): Promise<void> {
+  const picker = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByRole('button', { name: 'Upload file' }).click();
+  await (await picker).setFiles(files);
+}
+
 /** What the server holds of a file, as the page's session reads it. */
 function storedText(page: Page, url: string): Promise<string> {
   return page.evaluate(async (at) => {
@@ -39,14 +47,14 @@ test('a file uploaded in one tab appears in another and downloads intact', async
   // Creating the shelf makes its contents stale too, and that news may reach the watcher just after
   // the first upload and bring it in. Once the first file shows, no earlier news is left, so only
   // the second upload's own can bring the second file in.
-  async function upload(name: string, text: string): Promise<void> {
-    await uploader.getByTestId('file-input').setInputFiles({ name, mimeType: 'text/plain', buffer: Buffer.from(text) });
+  async function uploadWatched(name: string, text: string): Promise<void> {
+    await upload(uploader, [{ name, mimeType: 'text/plain', buffer: Buffer.from(text) }]);
     await expect(uploader.getByText(`Uploaded ${name}`)).toBeVisible();
     await expect(watcher.getByRole('button', { name, exact: true })).toBeVisible({ timeout: 15_000 });
   }
 
-  await upload('first.txt', 'the first file');
-  await upload('hello.txt', 'hello from the browser test');
+  await uploadWatched('first.txt', 'the first file');
+  await uploadWatched('hello.txt', 'hello from the browser test');
 
   const download = watcher.waitForEvent('download');
   await watcher.getByRole('button', { name: 'Actions for hello.txt' }).click();
@@ -82,7 +90,7 @@ test('a folder encrypted in the browser keeps its files encrypted and opens them
   // This tab unlocked the folder by encrypting it, so the upload asks for nothing.
   await owner.getByRole('button', { name: 'secret', exact: true }).dblclick();
   await expect(owner).toHaveURL('/shelves/vault/files/secret');
-  await owner.getByTestId('file-input').setInputFiles({ name: 'note.txt', mimeType: 'text/plain', buffer: Buffer.from('for my eyes only') });
+  await upload(owner, [{ name: 'note.txt', mimeType: 'text/plain', buffer: Buffer.from('for my eyes only') }]);
   await expect(owner.getByText('Uploaded note.txt')).toBeVisible({ timeout: 15_000 });
   const stored = await storedText(owner, '/api/shelves/vault/content?path=/secret/note.txt');
   expect(stored.startsWith('age-encryption.org/v1\n')).toBe(true);
@@ -112,7 +120,7 @@ test('a file opens in a preview over the shelf, and an encrypted one once it is 
   await page.getByRole('button', { name: 'Create' }).click();
   await expect(page).toHaveURL('/shelves/preview');
   const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
-  await page.getByTestId('file-input').setInputFiles([
+  await upload(page, [
     { name: 'note.txt', mimeType: 'text/plain', buffer: Buffer.from('the note') },
     { name: 'pixel.png', mimeType: 'image/png', buffer: pixel },
     { name: 'todo.txt', mimeType: 'text/plain', buffer: Buffer.from('the last') },
@@ -178,7 +186,7 @@ test('a Markdown file is previewed by the plugin that takes it', async ({ browse
   await page.getByRole('button', { name: 'Create' }).click();
   await expect(page).toHaveURL('/shelves/plugins');
   const text = '# Title\n\n| Name | Size |\n| --- | --- |\n| a.txt | 1 |\n\n<b>markup</b> [web](https://elsewhere.test) [near](other.md)\n';
-  await page.getByTestId('file-input').setInputFiles({ name: 'notes.md', mimeType: 'text/markdown', buffer: Buffer.from(text) });
+  await upload(page, [{ name: 'notes.md', mimeType: 'text/markdown', buffer: Buffer.from(text) }]);
   await expect(page.getByText('Uploaded notes.md')).toBeVisible();
 
   await page.getByRole('button', { name: 'notes.md', exact: true }).dblclick();

@@ -31,6 +31,7 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useCreateDownloadLink } from '../hooks/useLinkQueries';
 import { useSelection, type SelectionClickModifiers } from '../hooks/useSelection';
 import { useFoundFiles } from '../hooks/useFoundFiles';
+import { useUploadFiles } from '../contexts/UploadHost';
 import { useFilePicker } from '../hooks/useFilePicker';
 import { MobileTopBarActions, MobileTopBarOverlay } from './layout/MobileTopBar';
 import { encryptionActions } from '../hooks/useEncryption';
@@ -52,6 +53,7 @@ import { useEntryDragAndDrop } from '../hooks/useEntryDragAndDrop';
 import { formatBytes, formatTime } from '../lib/format';
 import type { FolderType } from '../lib/plugins/folderType';
 import { folderTypeOf } from '../lib/plugins/folderTypeLookup';
+import { listedFolder } from '../lib/openFolder';
 import { folderListingRoute, joinPath, parentPath, relativeTo, shelfRoute } from '../lib/shelfPaths';
 import { copyWhenReady } from '../lib/clipboard';
 import { runOrToast } from '../lib/utils';
@@ -72,15 +74,17 @@ interface FolderListingProps {
 // The listing's toasts and dialogs stay here rather than in modules of their own: each is small and serves
 // it alone, so apart they would only be moved, not made simpler or shared.
 /** What is in a directory, uploading into it, and renaming, moving and deleting what is there. */
-export function FolderListing({ shelf, path, work: { passwords, encryption, reading, uploads, fileActions }, toViewer }: FolderListingProps) {
+export function FolderListing({ shelf, path, work: { encryption, reading, fileActions }, toViewer }: FolderListingProps) {
   const navigate = useNavigate();
   const { plugins } = usePluginHost();
   const { data: listing, isLoading, error } = useListing(shelf, path);
+  const folder = listing ? listedFolder(listing) : null;
   const openableHere = (file: ShelfFile) => openable({ file, reading });
   const overlayOpen = useIsOverlayOpen();
   const deleteEntry = useDeleteEntry(shelf);
   const restore = useRestoreDeletion(shelf);
   const createDownloadLink = useCreateDownloadLink(shelf);
+  const uploadFiles = useUploadFiles();
   const [creatingDirectory, setCreatingDirectory] = useState(false);
   const [renaming, setRenaming] = useState<Entry | null>(null);
   const [moving, setMoving] = useState<Entry[] | null>(null);
@@ -98,23 +102,19 @@ export function FolderListing({ shelf, path, work: { passwords, encryption, read
   const found = useFileSearch(shelf, path, criteria, isSearch(settledText, filters) && !filters.duplicates);
   const duplicates = useDuplicateSearch(shelf, path, criteria, filters.duplicates);
 
-  /** Uploads into this folder; in an encrypted one, encrypted with its password, asked for if this tab has not unlocked it. */
-  async function upload(files: File[]): Promise<void> {
-    const folder = listing?.encryptedBy;
-    if (!folder) return uploads.upload(files, path);
-    await runOrToast(async () => {
-      const password = await passwords.folderPassword(folder);
-      if (password !== null) uploads.upload(files, path, password);
-    }, 'Could not upload');
-  }
+  const picker = useFilePicker();
 
-  const picker = useFilePicker((files) => void upload(files));
+  function pickFiles(): void {
+    if (folder) picker.open((files) => uploadFiles(shelf, folder, files));
+  }
 
   function onDrop(event: DragEvent<HTMLDivElement>): void {
     event.preventDefault();
     setDragging(false);
     const files = Array.from(event.dataTransfer.files);
-    if (files.length > 0) void upload(files);
+    if (files.length === 0) return;
+    if (folder) uploadFiles(shelf, folder, files);
+    else toast.error('Could not upload: this folder has not been read');
   }
 
   /** Opens a row: a folder by going into it, a file in the preview when a viewer shows it or one still loading may, else in a new tab. */
@@ -307,7 +307,7 @@ export function FolderListing({ shelf, path, work: { passwords, encryption, read
 
   const addItems = (
     <>
-      <DropdownItem icon={<Icon icon={iconMap.upload} size={16} />} onClick={picker.open}>Upload file</DropdownItem>
+      <DropdownItem icon={<Icon icon={iconMap.upload} size={16} />} disabled={!folder} onClick={pickFiles}>Upload file</DropdownItem>
       <DropdownItem icon={<Icon icon={iconMap.folder} size={16} />} onClick={() => setCreatingDirectory(true)}>New folder</DropdownItem>
     </>
   );

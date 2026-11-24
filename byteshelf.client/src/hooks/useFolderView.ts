@@ -4,7 +4,7 @@ import { folderSuffixOf, folderTypeOf, type FoundFolderType } from '../lib/plugi
 import type { FolderType } from '../lib/plugins/folderType';
 import { asksForListing, nameOf, shelfRoute } from '../lib/shelfPaths';
 import { isNotFound } from '../services/apiClient';
-import type { OpenFolder } from '../lib/openFolder';
+import { listedFolder, type OpenFolder } from '../lib/openFolder';
 import type { ShelfPasswords } from '../services/shelfPasswords';
 import { useFolderLock } from './useFolderLock';
 import { usePluginHost, usePluginsAwaited } from './usePluginHost';
@@ -73,7 +73,7 @@ export function useFolderView(shelf: string, path: string, folderPassword: Shelf
     if (isNotFound(error)) return { as: 'listing', toViewer: null };
     // By whether it ever failed, as a listing that then shows asks again, and there is no error meanwhile.
     if (!listing) return errorUpdateCount > 0 ? { as: 'listing', toViewer: null } : { as: 'opening' };
-    const folder = { directory: listing.directory, encryptedBy: listing.encryptedBy ?? null };
+    const folder = listedFolder(listing);
     return { as: 'viewer', ...opened.found, folder, onFailed: () => setKept({ ...opened, failedOn: folder.directory.id }) };
   }
 

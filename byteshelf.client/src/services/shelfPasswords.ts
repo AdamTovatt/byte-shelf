@@ -4,7 +4,7 @@
 import { eitherAborts } from '../lib/abort';
 import { checkMatches, openWith } from '../lib/encryption/age';
 import type { AskPassword } from '../lib/encryption/askPassword';
-import { filePasswordKey, folderPasswordKey, forgetPassword, rememberPassword, rememberedPassword } from '../lib/encryption/passwords';
+import { filePasswordKey, folderPasswordKey, forgetPassword, hasMatched, rememberMatch, rememberPassword, rememberedPassword } from '../lib/encryption/passwords';
 import { streamBlob } from '../lib/streamBlob';
 import { liveContent, type ContentSource } from './contentService';
 import type { EncryptedFolder } from './encryptionService';
@@ -106,7 +106,12 @@ export function shelfPasswords(shelf: string, ask: AskPassword): ShelfPasswords 
   };
 
   return {
-    folderPassword: ({ directory, check }, signal) => passwordFor(folderPasswordKey(shelf, directory.id), directory.name, (given) => checkMatches(check, given), signal),
+    folderPassword: async ({ directory, check }, signal) => {
+      const key = folderPasswordKey(shelf, directory.id);
+      const password = await passwordFor(key, directory.name, async (given) => hasMatched(key, given, check) || checkMatches(check, given), signal);
+      if (password !== null) rememberMatch(key, password, check);
+      return password;
+    },
     filePassword: (file, signal) => passwordFor(filePasswordKey(shelf, undefined, file.id), file.name, (given) => opens(file, given), signal),
     leftPassword: (directory, files) => passwordFor(folderPasswordKey(shelf, directory.id), directory.name, async (given) => {
       for (const file of files) {

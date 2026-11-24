@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DialogHost } from './contexts/DialogHost';
+import { UploadHost } from './contexts/UploadHost';
 import { LoginPage } from './pages/LoginPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
@@ -35,12 +36,14 @@ function ProtectedRoute() {
   }
 
   return (
-    <AppShell>
-      {/* As a page is left, so is what plugins draw in it. */}
-      <CleanupBoundary>
-        <Outlet />
-      </CleanupBoundary>
-    </AppShell>
+    <UploadHost>
+      <AppShell>
+        {/* As a page is left, so is what plugins draw in it. */}
+        <CleanupBoundary>
+          <Outlet />
+        </CleanupBoundary>
+      </AppShell>
+    </UploadHost>
   );
 }
 

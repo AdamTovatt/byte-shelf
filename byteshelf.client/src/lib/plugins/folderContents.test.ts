@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { folderContents, type ClosableFolderContents, type FolderAccess } from './folderContents';
 import type { ContentSource } from '../../services/contentService';
-import type { StoreSignals } from '../../services/fileStoring';
+import type { StoreOptions } from '../../services/fileStoring';
 import { saveTokens } from '../../services/authService';
 import { queryKeys } from '../queryKeys';
 import { installFakeWebLocks } from '../../test/fakeWebLocks';
@@ -145,7 +145,7 @@ describe('a folder\'s contents, as its viewer has them', () => {
   /** A store that, as the real one, gives up what it asks for, and goes on until it is ended or finished. */
   function keepStoring(): { finish: () => void } {
     let finish: () => void = () => undefined;
-    store.mockImplementation((_, path, _contents, { asking, storing }: StoreSignals = {}) => new Promise((resolve, reject) => {
+    store.mockImplementation((_, path, _contents, { asking, storing }: StoreOptions) => new Promise((resolve, reject) => {
       finish = () => resolve(asking?.aborted && path.endsWith('locked.txt') ? null : shelfFile('stored', { path }));
       storing?.addEventListener('abort', () => reject(storing.reason as Error));
     }));
