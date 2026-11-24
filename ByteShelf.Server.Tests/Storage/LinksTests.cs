@@ -103,7 +103,7 @@ namespace ByteShelf.Server.Tests.Storage
         [Fact]
         public async Task List_AddOnlyKey_SeesOnlyItsOwnNamedAsTheKey()
         {
-            ShelfAccess key = await KeyAccessAsync(ShelfKeyPermission.AddOnly);
+            ShelfAccess key = await KeyAccessAsync(ShelfPermission.AddOnly);
             UploadLink own = await UploadLinks.CreateAsync(key, new CreateUploadLinkRequest { Path = "/a.txt" }.Normalize());
             await UploadLinks.CreateAsync(_admin, new CreateUploadLinkRequest { Path = "/b.txt" }.Normalize());
 
@@ -164,7 +164,7 @@ namespace ByteShelf.Server.Tests.Storage
         public async Task Revoke_SomeoneElsesLinkByOneWhoMayWrite_EndsIt()
         {
             ShelfAccess writer = await GrantedAsync("writer@byteshelf.test", ShelfAccessPermission.ReadWrite);
-            ShelfAccess key = await KeyAccessAsync(ShelfKeyPermission.AddOnly);
+            ShelfAccess key = await KeyAccessAsync(ShelfPermission.AddOnly);
             UploadLink link = await UploadLinks.CreateAsync(key, new CreateUploadLinkRequest { Path = "/a.txt" }.Normalize());
 
             await LinkService.RevokeAsync(writer, link.Id);
@@ -186,7 +186,7 @@ namespace ByteShelf.Server.Tests.Storage
         [Fact]
         public async Task KeyDeleted_RemovesItsLinks()
         {
-            ShelfAccess key = await KeyAccessAsync(ShelfKeyPermission.AddOnly);
+            ShelfAccess key = await KeyAccessAsync(ShelfPermission.AddOnly);
             await UploadLinks.CreateAsync(key, new CreateUploadLinkRequest { Path = "/a.txt" }.Normalize());
 
             await KeyService.DeleteAsync(key.Caller.Key!.Id);
@@ -197,16 +197,16 @@ namespace ByteShelf.Server.Tests.Storage
         [Fact]
         public async Task Open_KeyLosesTheLinksShelfButKeepsAnother_StopsUntilTheShelfIsGivenBack()
         {
-            ShelfAccess key = await KeyAccessAsync(ShelfKeyPermission.AddOnly);
+            ShelfAccess key = await KeyAccessAsync(ShelfPermission.AddOnly);
             Guid keyId = key.Caller.Key!.Id;
-            await KeyService.SetGrantAsync(await CreateShelfAsync("other"), keyId, ShelfKeyPermission.AddOnly);
+            await KeyService.SetGrantAsync(await CreateShelfAsync("other"), keyId, ShelfPermission.AddOnly);
             UploadLink link = await UploadLinks.CreateAsync(key, new CreateUploadLinkRequest { Path = "/a.txt" }.Normalize());
 
             await KeyService.RemoveGrantAsync(_shelf, keyId);
 
             await Assert.ThrowsAsync<NotFoundException>(() => UploadLinks.OpenAsync(TokenOf(link.Url), "gone"));
 
-            await KeyService.SetGrantAsync(_shelf, keyId, ShelfKeyPermission.AddOnly);
+            await KeyService.SetGrantAsync(_shelf, keyId, ShelfPermission.AddOnly);
 
             Assert.Equal(_shelf.Id, (await UploadLinks.OpenAsync(TokenOf(link.Url), "gone")).Access.Shelf.Id);
         }
@@ -276,7 +276,7 @@ namespace ByteShelf.Server.Tests.Storage
             return await AccessAsync(ShelfCaller.ForUser(user));
         }
 
-        private async Task<ShelfAccess> KeyAccessAsync(ShelfKeyPermission permission)
+        private async Task<ShelfAccess> KeyAccessAsync(ShelfPermission permission)
         {
             CreatedShelfKey created = await KeyService.CreateAsync(_shelf, "backup job", permission);
             ShelfKey key = (await Services.GetRequiredService<IShelfKeyRepository>().GetByIdAsync(created.Key.Id))!;

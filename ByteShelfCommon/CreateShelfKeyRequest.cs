@@ -7,6 +7,6 @@ namespace ByteShelfCommon
         public required string Name { get; init; }
 
         /// <summary>What the key may do on the shelf it is created on.</summary>
-        public required ShelfKeyPermission Permission { get; init; }
+        public required ShelfPermission Permission { get; init; }
     }
 }

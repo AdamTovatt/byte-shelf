@@ -288,7 +288,7 @@ namespace ByteShelf.Server.Tests.ChangeLog
             Shelf shelf = await CreateShelfAsync();
             User user = await CreateUserAsync("user@example.com");
             await GrantService.SetAsync(shelf, user.Id, ShelfAccessPermission.Read);
-            await KeyService.CreateAsync(shelf, "app", ShelfKeyPermission.Read);
+            await KeyService.CreateAsync(shelf, "app", ShelfPermission.Read);
             long before = await ChangeLog.GetLatestSequenceAsync();
 
             await ShelfService.DeleteAsync(shelf);

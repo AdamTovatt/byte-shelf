@@ -3,7 +3,8 @@
 One-way: a primary is paired with replicas, each of which keeps a whole copy of it and follows it.
 A server is a replica while it has a `replication_source` row; otherwise it is a primary, with or
 without replicas. A replica has no replicas of its own. The rest of the server asks
-`ReplicationState.AllowsWritesAsync` rather than looking for the row.
+`ReplicationState` rather than looking for the row, and clients learn it from each shelf's info
+(`ShelfInfo.OnReplica`).
 
 The replica does all the calling: it pulls the primary's change log and the bytes of its files. The
 primary never calls a replica, so a replica needs to reach the primary's public URL and nothing needs

@@ -13,7 +13,7 @@ namespace ByteShelfCommon
         public required string ShelfName { get; init; }
 
         /// <summary>What the key may do on the shelf.</summary>
-        public required ShelfKeyPermission Permission { get; init; }
+        public required ShelfPermission Permission { get; init; }
 
         /// <summary>When the key was given the shelf.</summary>
         public required DateTimeOffset CreatedAt { get; init; }

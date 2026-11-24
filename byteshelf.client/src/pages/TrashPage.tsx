@@ -9,7 +9,7 @@ import { NameLine } from '../components/MiddleTruncatedName';
 import { ShelfHeader } from '../components/ShelfHeader';
 import { saveFiles } from '../components/fileOpening';
 import { FilePreview } from '../components/preview/FilePreview';
-import { useEncryption } from '../hooks/useEncryption';
+import { useShelfPasswords } from '../hooks/useShelfPasswords';
 import { useTrashPreview } from '../hooks/useTrashPreview';
 import { useEmptyTrash, useRestoreDeletion, useTrash } from '../hooks/useShelfQueries';
 import { deletedFile, openable } from '../services/fileReading';
@@ -32,8 +32,8 @@ export function TrashPage() {
 function TrashOf({ shelf }: { shelf: string }) {
   const { data: trash, isLoading, error } = useTrash(shelf);
   const restore = useRestoreDeletion(shelf);
-  const encryption = useEncryption(shelf);
-  const preview = useTrashPreview(shelf, encryption.decryption);
+  const { decryption } = useShelfPasswords(shelf);
+  const preview = useTrashPreview(shelf, decryption);
   const [emptying, setEmptying] = useState(false);
 
   function onRestore(entry: TrashEntry): Promise<void> {
@@ -46,7 +46,7 @@ function TrashOf({ shelf }: { shelf: string }) {
   /** Saves the file a file deletion took, as the files page saves a live one. */
   function onDownload(entry: TrashEntry): Promise<void> {
     return runOrToast(async () => {
-      const taken = deletedFile(shelf, await fetchDeletion(shelf, entry.deletionId), encryption.decryption);
+      const taken = deletedFile(shelf, await fetchDeletion(shelf, entry.deletionId), decryption);
       if (!taken) throw new Error(`${entry.path} is no longer in the trash.`);
       await saveFiles([openable(taken)]);
     }, 'Could not save the file');

@@ -1,3 +1,4 @@
+using ByteShelf.Server.Access.Models;
 using ByteShelf.Server.Storage.Models;
 using ByteShelfCommon;
 
@@ -13,11 +14,11 @@ namespace ByteShelf.Server.Storage.Services
         /// <exception cref="Shared.Errors.NotFoundException">There is none.</exception>
         Task<Shelf> GetByIdAsync(Guid id);
 
-        /// <summary>Each of <paramref name="shelves"/> with its usage, in the order given.</summary>
-        Task<IReadOnlyList<ShelfInfo>> GetInfosAsync(IReadOnlyList<Shelf> shelves);
+        /// <summary>Each shelf of <paramref name="accesses"/> with its usage and what the caller may do there, in the order given.</summary>
+        Task<IReadOnlyList<ShelfInfo>> GetInfosAsync(IReadOnlyList<ShelfAccess> accesses);
 
-        /// <summary>A shelf with its usage.</summary>
-        Task<ShelfInfo> GetInfoAsync(Shelf shelf);
+        /// <summary>The shelf of <paramref name="access"/> with its usage and what the caller may do there.</summary>
+        Task<ShelfInfo> GetInfoAsync(ShelfAccess access);
 
         /// <summary>Creates a shelf with its root directory.</summary>
         /// <exception cref="Shared.Errors.ConflictException">The name is taken.</exception>

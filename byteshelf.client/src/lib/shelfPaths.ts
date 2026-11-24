@@ -59,6 +59,19 @@ export function shelfRoute(shelf: string, path: string = ROOT_PATH): string {
   return names.length > 0 ? `${shelfBase(shelf)}/files/${names.join('/')}` : shelfBase(shelf);
 }
 
+const VIEW_PARAM = 'view';
+const LISTING_VIEW = 'contents';
+
+/** The browser route of a folder's own listing, where its type has a viewer that shows it otherwise. */
+export function folderListingRoute(shelf: string, path: string): string {
+  return `${shelfRoute(shelf, path)}?${VIEW_PARAM}=${LISTING_VIEW}`;
+}
+
+/** Whether a folder's route asks for its own listing, as `folderListingRoute` does. */
+export function asksForListing(query: URLSearchParams): boolean {
+  return query.get(VIEW_PARAM) === LISTING_VIEW;
+}
+
 /** The browser route of one of a shelf's pages; its files open at the root directory. */
 export function shelfViewRoute(shelf: string, view: ShelfView): string {
   return view === 'files' ? shelfBase(shelf) : `${shelfBase(shelf)}/${view}`;

@@ -2,7 +2,7 @@ using ByteShelfCommon;
 
 namespace ByteShelf.Tools
 {
-    /// <summary>The words for access and key permissions, read and printed the same way.</summary>
+    /// <summary>The words for permissions, read and printed the same way.</summary>
     internal static class PermissionNames
     {
         private static readonly Dictionary<string, ShelfAccessPermission> Access = new Dictionary<string, ShelfAccessPermission>(StringComparer.Ordinal)
@@ -11,11 +11,11 @@ namespace ByteShelf.Tools
             ["read-write"] = ShelfAccessPermission.ReadWrite,
         };
 
-        private static readonly Dictionary<string, ShelfKeyPermission> Key = new Dictionary<string, ShelfKeyPermission>(StringComparer.Ordinal)
+        private static readonly Dictionary<string, ShelfPermission> Key = new Dictionary<string, ShelfPermission>(StringComparer.Ordinal)
         {
-            ["read"] = ShelfKeyPermission.Read,
-            ["add-only"] = ShelfKeyPermission.AddOnly,
-            ["read-write"] = ShelfKeyPermission.ReadWrite,
+            ["read"] = ShelfPermission.Read,
+            ["add-only"] = ShelfPermission.AddOnly,
+            ["read-write"] = ShelfPermission.ReadWrite,
         };
 
         public static string AccessWords => string.Join("|", Access.Keys);
@@ -27,7 +27,7 @@ namespace ByteShelf.Tools
             return Access.First(pair => pair.Value == permission).Key;
         }
 
-        public static string Of(ShelfKeyPermission permission)
+        public static string Of(ShelfPermission permission)
         {
             return Key.First(pair => pair.Value == permission).Key;
         }
@@ -41,9 +41,9 @@ namespace ByteShelf.Tools
         }
 
         /// <exception cref="UsageException">It is not one of <see cref="KeyWords"/>.</exception>
-        public static ShelfKeyPermission ParseKey(string word)
+        public static ShelfPermission ParseKey(string word)
         {
-            return Key.TryGetValue(word, out ShelfKeyPermission permission)
+            return Key.TryGetValue(word, out ShelfPermission permission)
                 ? permission
                 : throw new UsageException($"'{word}' is not a key's access; give {KeyWords}.");
         }

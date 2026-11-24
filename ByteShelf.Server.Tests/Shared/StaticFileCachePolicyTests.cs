@@ -63,10 +63,14 @@ namespace ByteShelf.Server.Tests.Shared
             AssertNotCached(response);
         }
 
-        [Fact]
-        public async Task DeepLinkIntoTheWebUi_AnswersThePageUncached()
+        [Theory]
+        [InlineData("/shelves/docs/notes")]
+        [InlineData("/shelves/docs/files/v1.2")]
+        [InlineData("/shelves/docs/files/Trip.album")]
+        [InlineData("/shelves/docs/files/My.notes/Trip.album")]
+        public async Task DeepLinkIntoTheWebUi_AnswersThePageUncached(string path)
         {
-            HttpResponseMessage response = await _client.GetAsync("/shelves/docs/notes");
+            HttpResponseMessage response = await _client.GetAsync(path);
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             Assert.Equal("text/html", response.Content.Headers.ContentType?.MediaType);
@@ -74,10 +78,15 @@ namespace ByteShelf.Server.Tests.Shared
             AssertNotCached(response);
         }
 
-        [Fact]
-        public async Task UnknownApiRoute_Answers404RatherThanThePage()
+        [Theory]
+        [InlineData("/api/no-such-route")]
+        [InlineData("/api/shelves/docs/v1.2")]
+        [InlineData("/assets/index-old.js")]
+        [InlineData("/plugins/markdown/hash/plugin.js")]
+        [InlineData("/missing.png")]
+        public async Task WhatIsNoPage_Answers404RatherThanThePage(string path)
         {
-            HttpResponseMessage response = await _client.GetAsync("/api/no-such-route");
+            HttpResponseMessage response = await _client.GetAsync(path);
 
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
         }

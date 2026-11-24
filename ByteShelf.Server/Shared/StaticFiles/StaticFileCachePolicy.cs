@@ -51,13 +51,18 @@ namespace ByteShelf.Server.Shared.StaticFiles
         /// <summary>
         /// Registers a fallback that serves <c>index.html</c> for an unmatched GET or HEAD outside
         /// <c>/api</c>, with <see cref="ApplyNoCache"/> applied, so a deep link into the web UI loads
-        /// it. Anything else unmatched, an API typo above all, gets a 404 rather than the page.
+        /// it. Anything else unmatched, an API typo above all, gets a 404 rather than the page. So does
+        /// a path whose last name has a dot, a file that is not there, but under <c>/shelves</c>, where
+        /// the name is a folder's.
         /// Replaces <c>MapFallbackToFile</c>, which would bypass the <see cref="Apply"/> callback
         /// registered on <c>UseStaticFiles</c> and serve the shell with no cache headers.
         /// </summary>
         public static void MapSpaFallback(WebApplication app)
         {
-            app.MapFallback(async context =>
+            app.MapFallback(ServePageAsync);
+            app.MapFallback("/shelves/{*path}", ServePageAsync);
+
+            async Task ServePageAsync(HttpContext context)
             {
                 bool isPageRequest = (HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method))
                     && !context.Request.Path.StartsWithSegments("/api");
@@ -74,7 +79,7 @@ namespace ByteShelf.Server.Shared.StaticFiles
                 ApplyNoCache(context.Response);
                 context.Response.ContentType = "text/html";
                 await context.Response.SendFileAsync(indexPath);
-            });
+            }
         }
     }
 }

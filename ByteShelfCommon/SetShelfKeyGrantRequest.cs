@@ -4,6 +4,6 @@ namespace ByteShelfCommon
     public sealed class SetShelfKeyGrantRequest
     {
         /// <summary>What the key may do on the shelf.</summary>
-        public required ShelfKeyPermission Permission { get; init; }
+        public required ShelfPermission Permission { get; init; }
     }
 }

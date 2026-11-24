@@ -47,7 +47,7 @@ namespace ByteShelf.Server.Tests.Plugins
             string broken = _plugins.Add("broken", null);
             await using ServerTestHost host = await ServerTestHost.StartAsync(pluginsPath: _plugins.Path);
             await host.CreateShelfAsync("docs");
-            using HttpClient key = await host.CreateKeyClientAsync("docs", ShelfKeyPermission.Read);
+            using HttpClient key = await host.CreateKeyClientAsync("docs", ShelfPermission.Read);
 
             PluginList? admins = await host.AdminClient.GetFromJsonAsync<PluginList>("/api/plugins");
             Assert.Equal(("markdown", "Test markdown", "1.2.3"), Assert.Single(admins!.Plugins.Select(plugin => (plugin.Id, plugin.Name, plugin.Version))));
@@ -157,7 +157,7 @@ namespace ByteShelf.Server.Tests.Plugins
             _plugins.AddServerPlugin("server");
             await using ServerTestHost host = await ServerTestHost.StartAsync(pluginsPath: _plugins.Path);
             await host.CreateShelfAsync("docs");
-            using HttpClient key = await host.CreateKeyClientAsync("docs", ShelfKeyPermission.ReadWrite);
+            using HttpClient key = await host.CreateKeyClientAsync("docs", ShelfPermission.ReadWrite);
 
             Assert.Equal(HttpStatusCode.Unauthorized, (await host.AnonymousClient.GetAsync("/api/plugins/server/api/shelves")).StatusCode);
             Assert.Equal(HttpStatusCode.Unauthorized, (await key.GetAsync("/api/plugins/server/api/shelves")).StatusCode);

@@ -122,14 +122,14 @@ server.
 
 The app asks for the list once someone is signed in and imports each plugin's module
 (`lib/plugins/pluginHost.ts`), showing it once its stylesheet is there too. One whose module or
-stylesheet fails, whose default export is not made with `definePlugin`, or whose viewers or file
-actions lack what each must have (`partsOf` in `lib/plugins/pluginDefinition.ts`), adds nothing to
+stylesheet fails, whose default export is not made with `definePlugin`, or whose viewers, file
+actions or folder types lack what each must have (`partsOf` in `lib/plugins/pluginDefinition.ts`), adds nothing to
 the page and leaves no styles in it; the others are not affected, nor is its own server part, and
 admins see the reason on the Settings page. `index.html`'s import map
 (`byteshelf.client/build/sharedModules.ts`) has the browser resolve the modules plugins share with
 the app, so there is one React and one of each context.
 
-A module's default export is `definePlugin({ viewers, fileActions })`, from `@byteshelf/plugin`:
+A module's default export is `definePlugin({ viewers, fileActions, folderTypes })`, from `@byteshelf/plugin`:
 
 - **Viewers** show files in the preview, as the app's own do: `{ id, mediaTypes, extensions, component,
   unavailable? }`. `extensions` count only for files stored without a type
@@ -144,22 +144,50 @@ A module's default export is `definePlugin({ viewers, fileActions })`, from `@by
   are first read. What `run` throws is shown to the person, but for an `AbortError`, which says they gave
   up, as at that prompt. As the person leaves the shelf's files, its dialogs close and a read fails with
   an `AbortError`; `run` is not stopped, but a dialog it shows after that never appears.
+- **Folder types** are folders whose names end in a dot and a suffix: `{ suffix, label, icon, component
+  }`. `suffix` is at least two lowercase letters and digits, matched whatever their case; a name that is
+  only the suffix (`.album`) is a plain folder, and the first plugin by id has a suffix two declare. They
+  stay ordinary folders to everything else, and have a listing in the web UI too, which is shown instead
+  of a viewer that throws, and offers it again; it is tried again too as the folder is next opened. An
+  encrypted one's viewer shows once the folder is unlocked. The component, which may be a `lazy` one, as
+  the icon may, has everything under the breadcrumbs, in a flex column that fills what the page, at least
+  as tall as the window, has left there. It has no padding; `PageLayout` gives it the app's. It is
+  unmounted, losing what it holds unsaved, as the person leaves the folder or shows its contents, as the
+  folder is deleted, moved or renamed, as its encryption or its password changes, or another takes its
+  place. It gets the shelf, the folder, whether the person may write, and the folder's contents
+  (`FolderContents`), the same for as long as it is mounted: listing what is below it, storing and moving
+  files to paths in it, and, of the files it lists, deleting one, reading one, and opening one in the
+  preview, alone, or in a tab when nothing previews it. A read asks for no password, and of a file that is
+  locked fails with a `LockedError`, until the viewer asks to unlock it. A query whose key starts with
+  `queryKey` is asked again as anything on the shelf changes; **what is read of a file must not go into a
+  query**, which keeps its answer after the viewer is gone, but through `useLoaded`. A file dropped on the
+  viewer is refused unless it calls `preventDefault` on the `dragover` and the `drop`.
+  `byteshelf.client/e2e/albumPlugin/ui/plugin.js` is a small one, whole.
+
+A file a folder's viewer stores over moves to the trash. What is stored in an encrypted folder is encrypted
+with its password, and over a file with a password of its own with that one, which is asked for when none
+kept opens it; with none given, storing fails with an `AbortError`. It fails, sending nothing, once the
+folder is no longer at its path, or its encryption was removed or is now another folder's: what was to be
+encrypted there is never sent plain. Anything else is stored plain, so **what was made from a file with a
+password of its own must not be stored in a plain folder**, but over a file with that password: a smaller
+copy of an encrypted picture would be a plain one. Nor does encrypting a file touch the copies made of it
+before; encrypting the folder does.
 
 A plugin's module lives as long as the page does, which starts anew as the session ends: what it keeps
 in memory is never there for the next person to sign in. What it keeps in the browser's storage is,
 unless it removes it.
 
-In a viewer or a dialog of the plugin, `usePluginDocuments(file)` reads what it keeps about a live file: its
-document about the contents (`contents`, null for an encrypted file), and the one about the file (`file`)
-with its version, whose changes it follows. `useSetPluginDocument(file)` writes the latter as
-`{ document, expectedVersion }`: the whole of it, null to remove it, over the `fileVersion` the plugin read,
-null when there was none; another version there by now is an `ApiError` of status 409, and the documents are
-read again ([Metadata](../Metadata/Metadata.md)). Both know the plugin by what draws them, and throw
-elsewhere. **What was read from a file's plaintext must not go into the document about the file**, which is
-kept when the file is encrypted. For a file in the trash both fail.
+In a viewer, a folder type's too, or a dialog of the plugin, `usePluginDocuments(file)` reads what it keeps
+about a live file: its document about the contents (`contents`, null for an encrypted file), and the one
+about the file (`file`) with its version, whose changes it follows. `useSetPluginDocument(file)` writes the
+latter as `{ document, expectedVersion }`: the whole of it, null to remove it, over the `fileVersion` the
+plugin read, null when there was none; another version there by now is an `ApiError` of status 409, and the
+documents are read again ([Metadata](../Metadata/Metadata.md)). Both know the plugin by what draws them, and
+throw elsewhere. **What was read from a file's plaintext must not go into the document about the file**,
+which is kept when the file is encrypted. For a file in the trash both fail.
 
-Ids are apart within a plugin's viewers, and within its file actions. Every type is in
-`byteshelf.client/src/plugin/index.ts`.
+Ids are apart within a plugin's viewers, and within its file actions, as suffixes are within its folder
+types. Every type is in `byteshelf.client/src/plugin/index.ts`.
 
 ## Versions
 
@@ -177,8 +205,9 @@ a plugin built against it.
 
 An addition to the web UI's part raises nothing, and `--check-plugin`, which runs no module, sees nothing
 of it: on a server without it, a plugin that imports a new export fails as it loads, which the Settings
-page says, and one that uses a new member of a type there (`ContentReader`, `FileActionContext`) loads
-and fails in the viewer or action that does. Its server part runs either way.
+page says, and one that uses a new member of a type there (`ContentReader`, `FolderContents`) loads
+and fails in the viewer or action that does. A part of `definePlugin` that server does not know is not
+missed by anything: folders of a type show as plain ones. Its server part runs either way.
 
 How plugins are built, and their styles kept apart from the app's, is in
 [plugins/README.md](../../plugins/README.md).

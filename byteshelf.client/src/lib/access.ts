@@ -1,4 +1,4 @@
-import type { ShelfAccessPermission, ShelfKeyPermission } from '../services/accessService';
+import type { ShelfAccessPermission, ShelfPermission } from '../services/accessService';
 
 /** What a user may do on a shelf, as the choices read. */
 export const ACCESS_OPTIONS: { value: ShelfAccessPermission; label: string }[] = [
@@ -7,13 +7,13 @@ export const ACCESS_OPTIONS: { value: ShelfAccessPermission; label: string }[] =
 ];
 
 /** What a key may do on one of its shelves, as the choices read. */
-export const KEY_OPTIONS: { value: ShelfKeyPermission; label: string }[] = [
+export const KEY_OPTIONS: { value: ShelfPermission; label: string }[] = [
   { value: 'read', label: 'Read' },
   { value: 'addOnly', label: 'Add only' },
   { value: 'readWrite', label: 'Read and write' },
 ];
 
-export function keyPermissionLabel(permission: ShelfKeyPermission): string {
+export function keyPermissionLabel(permission: ShelfPermission): string {
   return KEY_OPTIONS.find((option) => option.value === permission)?.label ?? permission;
 }
 
@@ -21,7 +21,7 @@ export function keyPermissionLabel(permission: ShelfKeyPermission): string {
 export const NO_ACCESS = 'none';
 
 type AccessChoice = ShelfAccessPermission | typeof NO_ACCESS;
-type KeyAccessChoice = ShelfKeyPermission | typeof NO_ACCESS;
+type KeyAccessChoice = ShelfPermission | typeof NO_ACCESS;
 
 export const ACCESS_CHOICES: { value: AccessChoice; label: string }[] = [{ value: NO_ACCESS, label: 'None' }, ...ACCESS_OPTIONS];
 export const KEY_CHOICES: { value: KeyAccessChoice; label: string }[] = [{ value: NO_ACCESS, label: 'None' }, ...KEY_OPTIONS];

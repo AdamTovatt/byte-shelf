@@ -45,10 +45,10 @@ namespace ByteShelf.Server.Tests.Access
         }
 
         [Theory]
-        [InlineData(ShelfKeyPermission.Read, new[] { ShelfOperation.Read })]
-        [InlineData(ShelfKeyPermission.AddOnly, new[] { ShelfOperation.Read, ShelfOperation.Add })]
-        [InlineData(ShelfKeyPermission.ReadWrite, new[] { ShelfOperation.Read, ShelfOperation.Add, ShelfOperation.Write })]
-        public async Task ResolveAsync_Key_AllowsWhatTheKeySaysAndNeverAdministers(ShelfKeyPermission permission, ShelfOperation[] expected)
+        [InlineData(ShelfPermission.Read, new[] { ShelfOperation.Read })]
+        [InlineData(ShelfPermission.AddOnly, new[] { ShelfOperation.Read, ShelfOperation.Add })]
+        [InlineData(ShelfPermission.ReadWrite, new[] { ShelfOperation.Read, ShelfOperation.Add, ShelfOperation.Write })]
+        public async Task ResolveAsync_Key_AllowsWhatTheKeySaysAndNeverAdministers(ShelfPermission permission, ShelfOperation[] expected)
         {
             Shelf shelf = await CreateShelfAsync();
             CreatedShelfKey created = await KeyService.CreateAsync(shelf, "app", permission);
@@ -63,7 +63,7 @@ namespace ByteShelf.Server.Tests.Access
         {
             Shelf mine = await CreateShelfAsync("mine");
             Shelf other = await CreateShelfAsync("other");
-            CreatedShelfKey created = await KeyService.CreateAsync(other, "app", ShelfKeyPermission.ReadWrite);
+            CreatedShelfKey created = await KeyService.CreateAsync(other, "app", ShelfPermission.ReadWrite);
 
             ShelfCaller caller = ShelfCaller.ForKey((await KeyService.FindBySecretAsync(created.Secret))!);
 
@@ -111,7 +111,7 @@ namespace ByteShelf.Server.Tests.Access
         {
             await CreateShelfAsync("a");
             Shelf own = await CreateShelfAsync("b");
-            CreatedShelfKey created = await KeyService.CreateAsync(own, "app", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await KeyService.CreateAsync(own, "app", ShelfPermission.Read);
 
             IReadOnlyList<ShelfAccess> visible = await AccessResolver.GetAccessesAsync(ShelfCaller.ForKey((await KeyService.FindBySecretAsync(created.Secret))!));
 
@@ -124,8 +124,8 @@ namespace ByteShelf.Server.Tests.Access
             Shelf docs = await CreateShelfAsync("docs");
             Shelf backups = await CreateShelfAsync("backups");
             Shelf hidden = await CreateShelfAsync("hidden");
-            CreatedShelfKey created = await KeyService.CreateAsync(docs, "app", ShelfKeyPermission.Read);
-            await KeyService.SetGrantAsync(backups, created.Key.Id, ShelfKeyPermission.AddOnly);
+            CreatedShelfKey created = await KeyService.CreateAsync(docs, "app", ShelfPermission.Read);
+            await KeyService.SetGrantAsync(backups, created.Key.Id, ShelfPermission.AddOnly);
             ShelfCaller caller = ShelfCaller.ForKey((await KeyService.FindBySecretAsync(created.Secret))!);
 
             ShelfAccess onDocs = await AccessResolver.ResolveAsync(caller, docs);
@@ -142,8 +142,8 @@ namespace ByteShelf.Server.Tests.Access
             Shelf docs = await CreateShelfAsync("docs");
             Shelf backups = await CreateShelfAsync("backups");
             await CreateShelfAsync("hidden");
-            CreatedShelfKey created = await KeyService.CreateAsync(docs, "app", ShelfKeyPermission.ReadWrite);
-            await KeyService.SetGrantAsync(backups, created.Key.Id, ShelfKeyPermission.Read);
+            CreatedShelfKey created = await KeyService.CreateAsync(docs, "app", ShelfPermission.ReadWrite);
+            await KeyService.SetGrantAsync(backups, created.Key.Id, ShelfPermission.Read);
 
             IReadOnlyList<ShelfAccess> accesses = await AccessResolver.GetAccessesAsync(ShelfCaller.ForKey((await KeyService.FindBySecretAsync(created.Secret))!));
 
@@ -154,10 +154,10 @@ namespace ByteShelf.Server.Tests.Access
         public async Task ResolveAsync_KeysGrantChanged_AllowsTheNewPermissionAtOnce()
         {
             Shelf shelf = await CreateShelfAsync();
-            CreatedShelfKey created = await KeyService.CreateAsync(shelf, "app", ShelfKeyPermission.ReadWrite);
+            CreatedShelfKey created = await KeyService.CreateAsync(shelf, "app", ShelfPermission.ReadWrite);
             ShelfCaller caller = ShelfCaller.ForKey((await KeyService.FindBySecretAsync(created.Secret))!);
 
-            await KeyService.SetGrantAsync(shelf, created.Key.Id, ShelfKeyPermission.Read);
+            await KeyService.SetGrantAsync(shelf, created.Key.Id, ShelfPermission.Read);
 
             Assert.False((await AccessResolver.ResolveAsync(caller, shelf)).Allows(ShelfOperation.Add));
         }

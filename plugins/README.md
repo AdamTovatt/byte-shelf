@@ -47,4 +47,4 @@ here builds a server assembly.
   app's own elements, or depend on what the app's stylesheet happens to hold. One kept in a constant
   elsewhere is not seen. Preflight is off; the app's is there.
 - **Heavy code** is lazy (`import()`) inside the plugin, since its module is loaded at sign-in: a viewer's
-  component may be a `lazy` one, as `markdown`'s is.
+  component may be a `lazy` one, as `markdown`'s is, and so may a folder type's component and icon.

@@ -208,7 +208,7 @@ namespace ByteShelf.Server.Tests.Storage
         public async Task Links_ListedForAReadKey_AreItsOwnWithKindMakerAndExpiry()
         {
             await PutAsync("/a.txt", "a");
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.Read);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.Read);
             HttpResponseMessage made = await key.PostAsync("/api/shelves/docs/download-link?path=/a.txt&expiresInMinutes=5", null);
             DownloadLink own = (await made.Content.ReadFromJsonAsync<DownloadLink>())!;
             await CreateLinkAsync("/a.txt");

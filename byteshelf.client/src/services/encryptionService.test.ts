@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { saveTokens } from './authService';
-import { filesUnder } from './encryptionService';
+import { fetchEncryptedFolder, filesUnder } from './encryptionService';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
 
@@ -11,15 +11,32 @@ function file(name: string) {
   return { id: name, path: `/vault/${name}`, name };
 }
 
-describe('files under a folder', () => {
+beforeEach(() => {
+  localStorage.clear();
+  installFakeWebLocks();
+  saveTokens({ token: 't', expiresAt: inAnHour(), refreshToken: 'r' });
+});
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe('what encrypts a path', () => {
   beforeEach(() => {
-    localStorage.clear();
-    installFakeWebLocks();
-    saveTokens({ token: 't', expiresAt: inAnHour(), refreshToken: 'r' });
+    stubServer(async (request) => {
+      request.signal.throwIfAborted();
+      return json({ encryptedBy: { directory, check: 'check' } });
+    });
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  it('is the encrypted folder it is under', async () => {
+    expect(await fetchEncryptedFolder('docs', '/vault/a.txt')).toEqual({ directory, check: 'check' });
+  });
 
+  it('is asked for no longer as the signal aborts', async () => {
+    await expect(fetchEncryptedFolder('docs', '/vault/a.txt', AbortSignal.abort())).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+describe('files under a folder', () => {
   it('reads every page of the tree, following each page\'s cursor', async () => {
     const sent = stubServer(async (request) =>
       new URL(request.url).searchParams.get('after') === 'next'

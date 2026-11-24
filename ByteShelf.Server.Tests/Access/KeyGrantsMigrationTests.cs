@@ -29,10 +29,10 @@ namespace ByteShelf.Server.Tests.Access
     {
         private static readonly Guid Docs = Guid.Parse("10000000-0000-0000-0000-000000000001");
         private static readonly Guid Photos = Guid.Parse("10000000-0000-0000-0000-000000000002");
-        private static readonly OldKey Writer = new OldKey(Guid.Parse("20000000-0000-0000-0000-000000000001"), Docs, "writer", "read_write", ShelfKeyPermission.ReadWrite);
-        private static readonly OldKey Backup = new OldKey(Guid.Parse("20000000-0000-0000-0000-000000000002"), Photos, "backup", "add_only", ShelfKeyPermission.AddOnly);
-        private static readonly OldKey Reader = new OldKey(Guid.Parse("20000000-0000-0000-0000-000000000003"), Docs, "reader", "read", ShelfKeyPermission.Read);
-        private static readonly OldKey Deleted = new OldKey(Guid.Parse("20000000-0000-0000-0000-000000000004"), Docs, "deleted", "read", ShelfKeyPermission.Read);
+        private static readonly OldKey Writer = new OldKey(Guid.Parse("20000000-0000-0000-0000-000000000001"), Docs, "writer", "read_write", ShelfPermission.ReadWrite);
+        private static readonly OldKey Backup = new OldKey(Guid.Parse("20000000-0000-0000-0000-000000000002"), Photos, "backup", "add_only", ShelfPermission.AddOnly);
+        private static readonly OldKey Reader = new OldKey(Guid.Parse("20000000-0000-0000-0000-000000000003"), Docs, "reader", "read", ShelfPermission.Read);
+        private static readonly OldKey Deleted = new OldKey(Guid.Parse("20000000-0000-0000-0000-000000000004"), Docs, "deleted", "read", ShelfPermission.Read);
         private static readonly Guid LinkId = Guid.Parse("30000000-0000-0000-0000-000000000001");
 
         /// <summary>The keys the old log holds a state of: the three still there and the one purged since.</summary>
@@ -295,7 +295,7 @@ namespace ByteShelf.Server.Tests.Access
         }
 
         /// <param name="Column">The permission as the old <c>shelf_key.permission</c> held it.</param>
-        private sealed record OldKey(Guid Id, Guid ShelfId, string Name, string Column, ShelfKeyPermission Permission)
+        private sealed record OldKey(Guid Id, Guid ShelfId, string Name, string Column, ShelfPermission Permission)
         {
             public string SecretSha256 => Id.ToString("N").PadRight(64, '0');
 

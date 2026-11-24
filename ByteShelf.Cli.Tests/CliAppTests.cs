@@ -1289,7 +1289,7 @@ namespace ByteShelf.Cli.Tests
         public async Task KeyGrant_AnotherShelf_ListsTheKeyWithBothShelves()
         {
             await _clients.Client.CreateShelfAsync("photos");
-            CreatedShelfKey key = await Docs.CreateKeyAsync("job", ShelfKeyPermission.Read);
+            CreatedShelfKey key = await Docs.CreateKeyAsync("job", ShelfPermission.Read);
 
             CliRun granted = await RunAsync("key", "grant", key.Key.Id.ToString(), "photos", "add-only");
             CliRun listed = await RunAsync("keys", "photos");
@@ -1402,8 +1402,8 @@ namespace ByteShelf.Cli.Tests
         private async Task<CreatedShelfKey> KeyOnDocsAndPhotosAsync()
         {
             await _clients.Client.CreateShelfAsync("photos");
-            CreatedShelfKey key = await Docs.CreateKeyAsync("job", ShelfKeyPermission.Read);
-            await _clients.Client.Shelf("photos").SetKeyGrantAsync(key.Key.Id, ShelfKeyPermission.Read);
+            CreatedShelfKey key = await Docs.CreateKeyAsync("job", ShelfPermission.Read);
+            await _clients.Client.Shelf("photos").SetKeyGrantAsync(key.Key.Id, ShelfPermission.Read);
             return key;
         }
 

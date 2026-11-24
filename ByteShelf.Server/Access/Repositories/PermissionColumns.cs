@@ -25,24 +25,24 @@ namespace ByteShelf.Server.Access.Repositories
             };
         }
 
-        public static string ToColumn(ShelfKeyPermission permission)
+        public static string ToColumn(ShelfPermission permission)
         {
             return permission switch
             {
-                ShelfKeyPermission.Read => "read",
-                ShelfKeyPermission.AddOnly => "add_only",
-                ShelfKeyPermission.ReadWrite => "read_write",
+                ShelfPermission.Read => "read",
+                ShelfPermission.AddOnly => "add_only",
+                ShelfPermission.ReadWrite => "read_write",
                 _ => throw new ArgumentOutOfRangeException(nameof(permission), permission, "Not a shelf key permission."),
             };
         }
 
-        public static ShelfKeyPermission ToKeyPermission(string column)
+        public static ShelfPermission ToKeyPermission(string column)
         {
             return column switch
             {
-                "read" => ShelfKeyPermission.Read,
-                "add_only" => ShelfKeyPermission.AddOnly,
-                "read_write" => ShelfKeyPermission.ReadWrite,
+                "read" => ShelfPermission.Read,
+                "add_only" => ShelfPermission.AddOnly,
+                "read_write" => ShelfPermission.ReadWrite,
                 _ => throw new InvalidOperationException($"'{column}' is not a stored shelf key permission."),
             };
         }

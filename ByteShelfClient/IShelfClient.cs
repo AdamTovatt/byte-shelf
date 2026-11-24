@@ -271,11 +271,11 @@ namespace ByteShelfClient
 
         /// <summary>Creates a key for a program, working on this shelf, answering its secret, the one time it is shown; admins only.</summary>
         /// <exception cref="ArgumentException"><paramref name="permission"/> is none of the values (<see cref="ShelfKeys.ValidatePermission"/>), thrown before anything is sent.</exception>
-        Task<CreatedShelfKey> CreateKeyAsync(string name, ShelfKeyPermission permission, CancellationToken cancellationToken = default);
+        Task<CreatedShelfKey> CreateKeyAsync(string name, ShelfPermission permission, CancellationToken cancellationToken = default);
 
         /// <summary>Gives an existing key this shelf, or changes what it may do here; admins only.</summary>
         /// <exception cref="ArgumentException"><paramref name="permission"/> is none of the values (<see cref="ShelfKeys.ValidatePermission"/>), thrown before anything is sent.</exception>
-        Task<ShelfKeyGrantInfo> SetKeyGrantAsync(Guid keyId, ShelfKeyPermission permission, CancellationToken cancellationToken = default);
+        Task<ShelfKeyGrantInfo> SetKeyGrantAsync(Guid keyId, ShelfPermission permission, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Takes this shelf from a key, which stops working here; the key is deleted when this was its last

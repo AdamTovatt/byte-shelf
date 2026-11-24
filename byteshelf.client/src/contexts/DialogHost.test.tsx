@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { StrictMode, act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DialogHost, useShowDialog, type ShowDialog, type ShownDialog } from './DialogHost';
 import { button, press } from '../test/dom';
 
@@ -44,6 +44,7 @@ describe('dialogs shown by code', () => {
   afterEach(() => {
     act(() => root.unmount());
     document.body.innerHTML = '';
+    vi.restoreAllMocks();
   });
 
   it('are there in the order they were shown, each until it closes itself', async () => {
@@ -77,6 +78,52 @@ describe('dialogs shown by code', () => {
     await press('First');
 
     expect(button('Second')).toBe(second);
+  });
+
+  it('leave the page and the others there as one throws as it closes', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    let fails = false;
+    function Failing({ close }: { close: () => void }) {
+      useEffect(() => () => {
+        if (fails) throw new Error('It failed as it went.');
+      }, []);
+      return <button onClick={close}>First</button>;
+    }
+    act(() => void show((close) => <Failing close={close} />));
+    const second = showButton('Second');
+    fails = true;
+
+    await press('First');
+    expect(names()).toEqual(['Second']);
+
+    await press('Second');
+    await second.closed;
+    expect(names()).toEqual([]);
+  });
+
+  it('leave the others there as one throws as it closes, though they would too', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    // Without StrictMode, where they would as they are drawn too.
+    act(() => root.render(<DialogHost><Page /></DialogHost>));
+    let drawn = 0;
+    function Failing({ name, close }: { name: string; close: () => void }) {
+      useEffect(() => {
+        drawn++;
+        return () => {
+          // Not for ever, which would be tried for as long.
+          if (drawn < 50) throw new Error('It failed as it went.');
+        };
+      }, []);
+      return <button onClick={close}>{name}</button>;
+    }
+    act(() => void show((close) => <Failing name="First" close={close} />));
+    act(() => void show((close) => <Failing name="Second" close={close} />));
+
+    await press('First');
+
+    expect(names()).toEqual(['Second']);
+    expect(drawn).toBe(3);
+    drawn = 50;
   });
 
   it('close as the page that showed them is left, which shows no more', async () => {

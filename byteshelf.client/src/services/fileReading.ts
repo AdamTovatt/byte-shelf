@@ -51,9 +51,12 @@ export function deletedFile(shelf: string, { deletion, tree, encryptedBy }: Dele
 }
 
 /** A file's whole contents, its password asked for when it is locked; null when it was not given. */
-export async function unlockedContents({ read, unlock }: FileReading, file: ShelfFile, signal?: AbortSignal): Promise<Blob | null> {
-  const contents = await read(file, signal);
-  if (contents) return contents;
+export async function unlockedContents(reading: FileReading, file: ShelfFile, signal?: AbortSignal): Promise<Blob | null> {
+  return await reading.read(file, signal) ?? unlockWhole(reading, file, signal);
+}
+
+/** A locked file's whole contents, its password asked for; null when it was not given. */
+export async function unlockWhole({ unlock }: FileReading, file: ShelfFile, signal?: AbortSignal): Promise<Blob | null> {
   const unlocked = await unlock(file, signal);
   return unlocked && streamBlob(unlocked, file.contentType);
 }

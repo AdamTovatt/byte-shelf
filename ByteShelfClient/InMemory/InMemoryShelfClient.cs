@@ -742,7 +742,7 @@ namespace ByteShelfClient.InMemory
                 shelf => _store.Keys.Where(key => key.Grants.Any(grant => grant.ShelfId == shelf.Id)).Select(_store.ToInfo).ToList());
         }
 
-        public Task<CreatedShelfKey> CreateKeyAsync(string name, ShelfKeyPermission permission, CancellationToken cancellationToken = default)
+        public Task<CreatedShelfKey> CreateKeyAsync(string name, ShelfPermission permission, CancellationToken cancellationToken = default)
         {
             ShelfKeys.ValidatePermission(permission);
             return Write(cancellationToken, shelf =>
@@ -757,7 +757,7 @@ namespace ByteShelfClient.InMemory
             });
         }
 
-        public Task<ShelfKeyGrantInfo> SetKeyGrantAsync(Guid keyId, ShelfKeyPermission permission, CancellationToken cancellationToken = default)
+        public Task<ShelfKeyGrantInfo> SetKeyGrantAsync(Guid keyId, ShelfPermission permission, CancellationToken cancellationToken = default)
         {
             ShelfKeys.ValidatePermission(permission);
             return Write(cancellationToken, shelf => _store.ToInfo(_store.SetKeyGrant(_store.GetKey(keyId), shelf, permission)));

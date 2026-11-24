@@ -1,15 +1,25 @@
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Breadcrumbs, Dropdown, DropdownItem, IconButton, iconMap, type BreadcrumbItem } from '../ui';
+import { MENU_TICK_SIZE } from '../ui/components/ui/menuPanelStyles';
 import { useShelf } from '../hooks/useShelfQueries';
 import { describeUsage } from '../lib/format';
 import { pathSegments, ROOT_PATH, shelfRoute, shelfViewRoute, type ShelfView } from '../lib/shelfPaths';
+
+/** What the header's menu offers besides the shelf's pages. */
+export interface HeaderMenuItem {
+  label: string;
+  /** Draws its icon, `size` wide. */
+  icon: (size: number) => ReactNode;
+  onChoose: () => void;
+}
 
 interface ShelfHeaderProps {
   shelf: string;
   view: ShelfView;
   /** The directory shown, for the breadcrumbs. */
   path?: string;
+  menuItem?: HeaderMenuItem;
   /** Wraps the crumb of each folder in the trail, the shelf's root included, such as to drop onto it. */
   wrapFolderCrumb?: (folderPath: string, crumb: ReactNode) => ReactNode;
 }
@@ -31,7 +41,7 @@ function folderOfCrumbKey(key: string): string | null {
  * the shelf's links for anyone else) with the current one ticked, and under them how much the shelf
  * holds.
  */
-export function ShelfHeader({ shelf, view, path = ROOT_PATH, wrapFolderCrumb }: ShelfHeaderProps) {
+export function ShelfHeader({ shelf, view, path = ROOT_PATH, menuItem, wrapFolderCrumb }: ShelfHeaderProps) {
   const navigate = useNavigate();
   const { data: info } = useShelf(shelf);
 
@@ -68,6 +78,7 @@ export function ShelfHeader({ shelf, view, path = ROOT_PATH, wrapFolderCrumb }: 
               {VIEW_LABELS[value]}
             </DropdownItem>
           ))}
+          {menuItem && <DropdownItem icon={menuItem.icon(MENU_TICK_SIZE)} onClick={menuItem.onChoose}>{menuItem.label}</DropdownItem>}
         </Dropdown>
       </div>
       {info && <p className="text-body-sm text-muted">{describeUsage(info)}</p>}

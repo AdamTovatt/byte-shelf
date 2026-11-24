@@ -9,7 +9,7 @@ function action(id: string, showsFor: FileAction['showsFor']): FileAction {
 }
 
 function plugin(id: string, fileActions: FileAction[]): RunningPlugin {
-  return { id, viewers: [], fileActions };
+  return { id, viewers: [], fileActions, folderTypes: [] };
 }
 
 describe('a file\'s actions', () => {

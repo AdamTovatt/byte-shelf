@@ -8,7 +8,7 @@ AOT-compatible.
 
 | Type | What it is |
 |---|---|
-| `ShelfInfo` | A shelf with its quota and usage. |
+| `ShelfInfo`, `ShelfPermission` | A shelf with its quota and usage, what the caller may do with its files, and whether the server is a replica. `ShelfPermission` is also what a key's grant gives. |
 | `CreateShelfRequest`, `UpdateShelfRequest` | Creates a shelf, and replaces its name and quota. |
 | `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps, description, whether its contents are encrypted (`Encrypted`), and in listings the values of the fields plugins declare for them (`PluginFields`). |
 | `SetDescriptionRequest`, `FileDescription` | Setting a file's description, and its rules. |
@@ -34,8 +34,8 @@ AOT-compatible.
 | `TrashEntry`, `TrashEntryKind` | A deletion that can still be restored. |
 | `ShelfAccessGrant`, `SetShelfAccessRequest`, `ShelfAccessPermission` | A user's access to a shelf, and giving it. |
 | `ShelfGrants` | `ValidatePermission`, which refuses a value that is no `ShelfAccessPermission`. |
-| `ShelfKeyInfo`, `ShelfKeyGrantInfo`, `CreateShelfKeyRequest`, `CreatedShelfKey`, `SetShelfKeyGrantRequest`, `ShelfKeyPermission` | A program's key with the shelves it works on and what it may do on each, creating one on a shelf, and giving it another. |
-| `ShelfKeys` | The `X-Api-Key` header a key is sent in, the secret's prefix, which also tells a key sent as the bearer token from a session token, and `ValidatePermission`, which refuses a value that is no `ShelfKeyPermission`. |
+| `ShelfKeyInfo`, `ShelfKeyGrantInfo`, `CreateShelfKeyRequest`, `CreatedShelfKey`, `SetShelfKeyGrantRequest` | A program's key with the shelves it works on and what it may do on each, creating one on a shelf, and giving it another. |
+| `ShelfKeys` | The `X-Api-Key` header a key is sent in, the secret's prefix, which also tells a key sent as the bearer token from a session token, and `ValidatePermission`, which refuses a value that is no `ShelfPermission`. |
 | `EntryReference` | Names a file or directory by path or by id; a path or an id converts to one. |
 | `UserInfo`, `CreateUserRequest`, `UpdateRolesRequest`, `UpdatePasswordRequest`, `UserRoles` | Users and changing them. |
 | `RequestPasswordResetRequest`, `CompletePasswordResetRequest` | Asking for a reset link, and using it. |

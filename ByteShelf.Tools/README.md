@@ -19,7 +19,7 @@ the same words:
 | `EncryptedFiles` | What a download does with an encrypted file: saves it as the age file it is (named `.age` when the download picks the name), decrypts it with a password, or leaves it out. |
 | `Encrypting` | Encrypting and decrypting what is stored, in place, for the CLI's `encrypt` and `decrypt`: a directory first, then each file swapped for its encrypted or decrypted contents, keeping its id. Run again, it finishes a run that stopped. |
 | `LinkLifetimes` | A link's lifetime as written: `30m`, `12h`, `7d`. |
-| `PermissionNames` | The words for access and key permissions. |
+| `PermissionNames` | The words for permissions. |
 | `Replicas` | A replica named by id or name, for the CLI's `replication forget` and the server's `--forget`; none or several sharing the name is refused with where they are listed. |
 | `TextFormat` | How results read as text, in the terminal and in answers to an agent. |
 | `Failure` | What to say when something fails, ending with the server's error code. |

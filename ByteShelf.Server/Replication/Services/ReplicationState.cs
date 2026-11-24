@@ -19,7 +19,13 @@ namespace ByteShelf.Server.Replication.Services
         /// <summary>Whether this server takes writes: false on a replica, which takes changes only from its primary.</summary>
         public async Task<bool> AllowsWritesAsync()
         {
-            return await _sourceRepository.GetAsync() == null;
+            return !await IsReplicaAsync();
+        }
+
+        /// <summary>Whether this server is a replica.</summary>
+        public async Task<bool> IsReplicaAsync()
+        {
+            return await _sourceRepository.GetAsync() != null;
         }
 
         /// <summary>Throws on a replica, for a write its API or the server's own commands would make.</summary>

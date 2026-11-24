@@ -356,6 +356,35 @@ namespace ByteShelf.Server.Tests.Client
         }
 
         [Fact]
+        public async Task GetInfoAsync_AnAdminOnAPrimary_AllowsEverything()
+        {
+            AssertAllowsEverything(await Shelf.GetInfoAsync());
+        }
+
+        [Fact]
+        public async Task GetShelvesAsync_AnAdminOnAPrimary_AllowsEverything()
+        {
+            AssertAllowsEverything(Assert.Single(await Client.GetShelvesAsync()));
+        }
+
+        [Fact]
+        public async Task CreateShelfAsync_AnAdminOnAPrimary_AllowsEverything()
+        {
+            AssertAllowsEverything(await Client.CreateShelfAsync("backups"));
+        }
+
+        [Fact]
+        public async Task UpdateAsync_AnAdminOnAPrimary_AllowsEverything()
+        {
+            AssertAllowsEverything(await Shelf.UpdateAsync("papers", quotaBytes: null));
+        }
+
+        private static void AssertAllowsEverything(ShelfInfo info)
+        {
+            Assert.Equal((ShelfPermission.ReadWrite, false), (info.Permission, info.OnReplica));
+        }
+
+        [Fact]
         public async Task CreateShelfAsync_NameTaken_ThrowsConflict()
         {
             ByteShelfException exception = await RefusalOf(Client.CreateShelfAsync("docs"));
@@ -509,20 +538,20 @@ namespace ByteShelf.Server.Tests.Client
         [Fact]
         public async Task CreateKeyAsync_ThenGetKeys_ListsItByItsTrimmedName()
         {
-            CreatedShelfKey created = await Shelf.CreateKeyAsync("  backup agent ", ShelfKeyPermission.AddOnly);
+            CreatedShelfKey created = await Shelf.CreateKeyAsync("  backup agent ", ShelfPermission.AddOnly);
 
             ShelfKeyInfo listed = Assert.Single(await Shelf.GetKeysAsync());
 
             Assert.StartsWith(ShelfKeys.SecretPrefix, created.Secret, StringComparison.Ordinal);
             Assert.Equal((created.Key.Id, "backup agent"), (listed.Id, listed.Name));
             ShelfKeyGrantInfo grant = Assert.Single(listed.Grants);
-            Assert.Equal((created.Key.Id, "docs", ShelfKeyPermission.AddOnly), (grant.KeyId, grant.ShelfName, grant.Permission));
+            Assert.Equal((created.Key.Id, "docs", ShelfPermission.AddOnly), (grant.KeyId, grant.ShelfName, grant.Permission));
         }
 
         [Fact]
         public async Task CreateKeyAsync_NameWithAControlCharacter_ThrowsInvalidRequest()
         {
-            ByteShelfException exception = await RefusalOf(Shelf.CreateKeyAsync("tab\there", ShelfKeyPermission.Read));
+            ByteShelfException exception = await RefusalOf(Shelf.CreateKeyAsync("tab\there", ShelfPermission.Read));
 
             Assert.Equal(ErrorCodes.InvalidRequest, exception.Code);
         }
@@ -530,7 +559,7 @@ namespace ByteShelf.Server.Tests.Client
         [Fact]
         public async Task RemoveKeyGrantAsync_ItsLastShelf_DeletesTheKey()
         {
-            CreatedShelfKey created = await Shelf.CreateKeyAsync("app", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await Shelf.CreateKeyAsync("app", ShelfPermission.Read);
 
             await Shelf.RemoveKeyGrantAsync(created.Key.Id);
 
@@ -541,7 +570,7 @@ namespace ByteShelf.Server.Tests.Client
         [Fact]
         public async Task RemoveKeyGrantAsync_ThenAgain_ThrowsNotFound()
         {
-            CreatedShelfKey created = await Shelf.CreateKeyAsync("app", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await Shelf.CreateKeyAsync("app", ShelfPermission.Read);
             await Shelf.RemoveKeyGrantAsync(created.Key.Id);
 
             Assert.Equal(ErrorCodes.NotFound, (await RefusalOf(Shelf.RemoveKeyGrantAsync(created.Key.Id))).Code);
@@ -551,13 +580,13 @@ namespace ByteShelf.Server.Tests.Client
         public async Task SetKeyGrantAsync_AnotherShelf_ListsTheKeyOnBothWithEachPermission()
         {
             await Client.CreateShelfAsync("photos");
-            CreatedShelfKey created = await Shelf.CreateKeyAsync("app", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await Shelf.CreateKeyAsync("app", ShelfPermission.Read);
 
-            ShelfKeyGrantInfo given = await Client.Shelf("photos").SetKeyGrantAsync(created.Key.Id, ShelfKeyPermission.AddOnly);
+            ShelfKeyGrantInfo given = await Client.Shelf("photos").SetKeyGrantAsync(created.Key.Id, ShelfPermission.AddOnly);
 
-            Assert.Equal((created.Key.Id, "photos", ShelfKeyPermission.AddOnly), (given.KeyId, given.ShelfName, given.Permission));
+            Assert.Equal((created.Key.Id, "photos", ShelfPermission.AddOnly), (given.KeyId, given.ShelfName, given.Permission));
             Assert.Equal(
-                new[] { ("docs", ShelfKeyPermission.Read), ("photos", ShelfKeyPermission.AddOnly) },
+                new[] { ("docs", ShelfPermission.Read), ("photos", ShelfPermission.AddOnly) },
                 (await Client.GetKeyGrantsAsync(created.Key.Id)).Select(grant => (grant.ShelfName, grant.Permission)).Order());
             Assert.Equal(created.Key.Id, Assert.Single(await Client.Shelf("photos").GetKeysAsync()).Id);
             Assert.Equal(2, Assert.Single(await Shelf.GetKeysAsync()).Grants.Count);
@@ -566,18 +595,18 @@ namespace ByteShelf.Server.Tests.Client
         [Fact]
         public async Task SetKeyGrantAsync_ShelfItHas_ChangesThePermission()
         {
-            CreatedShelfKey created = await Shelf.CreateKeyAsync("app", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await Shelf.CreateKeyAsync("app", ShelfPermission.Read);
 
-            await Shelf.SetKeyGrantAsync(created.Key.Id, ShelfKeyPermission.ReadWrite);
+            await Shelf.SetKeyGrantAsync(created.Key.Id, ShelfPermission.ReadWrite);
 
-            Assert.Equal(ShelfKeyPermission.ReadWrite, Assert.Single(await Client.GetKeyGrantsAsync(created.Key.Id)).Permission);
+            Assert.Equal(ShelfPermission.ReadWrite, Assert.Single(await Client.GetKeyGrantsAsync(created.Key.Id)).Permission);
         }
 
         [Fact]
         public async Task CreateKeyAsync_UndefinedPermission_ThrowsArgumentExceptionBeforeSending()
         {
             // Thrown from the call itself, before a task is answered, so before anything is sent.
-            Assert.Throws<ArgumentException>(() => { _ = Shelf.CreateKeyAsync("app", (ShelfKeyPermission)42); });
+            Assert.Throws<ArgumentException>(() => { _ = Shelf.CreateKeyAsync("app", (ShelfPermission)42); });
 
             Assert.Empty(await Shelf.GetKeysAsync());
         }
@@ -585,17 +614,17 @@ namespace ByteShelf.Server.Tests.Client
         [Fact]
         public async Task SetKeyGrantAsync_UndefinedPermission_ThrowsArgumentExceptionBeforeSending()
         {
-            CreatedShelfKey created = await Shelf.CreateKeyAsync("app", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await Shelf.CreateKeyAsync("app", ShelfPermission.Read);
 
-            Assert.Throws<ArgumentException>(() => { _ = Shelf.SetKeyGrantAsync(created.Key.Id, (ShelfKeyPermission)42); });
+            Assert.Throws<ArgumentException>(() => { _ = Shelf.SetKeyGrantAsync(created.Key.Id, (ShelfPermission)42); });
 
-            Assert.Equal(ShelfKeyPermission.Read, Assert.Single(await Client.GetKeyGrantsAsync(created.Key.Id)).Permission);
+            Assert.Equal(ShelfPermission.Read, Assert.Single(await Client.GetKeyGrantsAsync(created.Key.Id)).Permission);
         }
 
         [Fact]
         public async Task SetKeyGrantAsync_UnknownKey_ThrowsNotFound()
         {
-            Assert.Equal(ErrorCodes.NotFound, (await RefusalOf(Shelf.SetKeyGrantAsync(Guid.NewGuid(), ShelfKeyPermission.Read))).Code);
+            Assert.Equal(ErrorCodes.NotFound, (await RefusalOf(Shelf.SetKeyGrantAsync(Guid.NewGuid(), ShelfPermission.Read))).Code);
         }
 
         [Fact]
@@ -623,7 +652,7 @@ namespace ByteShelf.Server.Tests.Client
         [Fact]
         public async Task DeleteKeyAsync_ThenAgain_ThrowsNotFound()
         {
-            CreatedShelfKey created = await Shelf.CreateKeyAsync("app", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await Shelf.CreateKeyAsync("app", ShelfPermission.Read);
             await Client.DeleteKeyAsync(created.Key.Id);
 
             Assert.Equal(ErrorCodes.NotFound, (await RefusalOf(Client.DeleteKeyAsync(created.Key.Id))).Code);
@@ -633,9 +662,9 @@ namespace ByteShelf.Server.Tests.Client
         public async Task DeleteAsync_Shelf_DeletesTheKeysItWasTheLastShelfOfAndKeepsTheOthers()
         {
             await Client.CreateShelfAsync("gone");
-            CreatedShelfKey only = await Client.Shelf("gone").CreateKeyAsync("only", ShelfKeyPermission.Read);
-            CreatedShelfKey both = await Shelf.CreateKeyAsync("both", ShelfKeyPermission.Read);
-            await Client.Shelf("gone").SetKeyGrantAsync(both.Key.Id, ShelfKeyPermission.Read);
+            CreatedShelfKey only = await Client.Shelf("gone").CreateKeyAsync("only", ShelfPermission.Read);
+            CreatedShelfKey both = await Shelf.CreateKeyAsync("both", ShelfPermission.Read);
+            await Client.Shelf("gone").SetKeyGrantAsync(both.Key.Id, ShelfPermission.Read);
 
             await Client.Shelf("gone").DeleteAsync();
 
@@ -696,8 +725,8 @@ namespace ByteShelf.Server.Tests.Client
         private async Task<CreatedShelfKey> KeyOnDocsAndPhotosAsync()
         {
             await Client.CreateShelfAsync("photos");
-            CreatedShelfKey created = await Shelf.CreateKeyAsync("app", ShelfKeyPermission.Read);
-            await Client.Shelf("photos").SetKeyGrantAsync(created.Key.Id, ShelfKeyPermission.Read);
+            CreatedShelfKey created = await Shelf.CreateKeyAsync("app", ShelfPermission.Read);
+            await Client.Shelf("photos").SetKeyGrantAsync(created.Key.Id, ShelfPermission.Read);
             return created;
         }
 

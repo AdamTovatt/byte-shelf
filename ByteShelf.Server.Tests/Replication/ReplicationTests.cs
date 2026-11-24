@@ -48,6 +48,37 @@ namespace ByteShelf.Server.Tests.Replication
         }
 
         [Fact]
+        public async Task Pair_TheReplicasShelves_SayTheyAreOnOne()
+        {
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            Assert.True((await replica.GetFromJsonAsync<ShelfInfo>("/api/shelves/docs"))?.OnReplica);
+            Assert.True(Assert.Single((await replica.GetFromJsonAsync<List<ShelfInfo>>("/api/shelves"))!).OnReplica);
+        }
+
+        [Fact]
+        public async Task Pair_ThePrimarysShelves_SayTheyAreOnNone()
+        {
+            await _pair.PairAsync();
+
+            Assert.False((await _pair.Primary.AdminClient.GetFromJsonAsync<ShelfInfo>("/api/shelves/docs"))?.OnReplica);
+        }
+
+        [Fact]
+        public async Task Promote_TheReplicasShelves_SayTheyAreOnNone()
+        {
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+
+            (await replica.PostAsync("/api/replication/promote", null)).EnsureSuccessStatusCode();
+
+            Assert.False((await replica.GetFromJsonAsync<ShelfInfo>("/api/shelves/docs"))?.OnReplica);
+        }
+
+        [Fact]
         public async Task Pair_TheReplicasOwnUsers_CanNoLongerRenewTheirSessions()
         {
             HttpResponseMessage login = await _pair.Replica.AnonymousClient.PostAsJsonAsync("/api/auth/login", new { username = ServerTestHost.AdminEmail, password = ServerTestHost.Password });
@@ -287,9 +318,9 @@ namespace ByteShelf.Server.Tests.Replication
         public async Task Sync_ShelfDeletedOnThePrimary_KeepsAKeyOnItsOtherShelfAndDropsOneThatWorkedOnlyThere()
         {
             await _pair.CreateShelfAsync("gone");
-            CreatedShelfKey both = await _pair.Primary.CreateKeyAsync("docs", ShelfKeyPermission.Read);
-            (await _pair.Primary.AdminClient.PutAsJsonAsync($"/api/keys/{both.Key.Id}/grants/gone", new SetShelfKeyGrantRequest { Permission = ShelfKeyPermission.Read })).EnsureSuccessStatusCode();
-            CreatedShelfKey only = await _pair.Primary.CreateKeyAsync("gone", ShelfKeyPermission.Read);
+            CreatedShelfKey both = await _pair.Primary.CreateKeyAsync("docs", ShelfPermission.Read);
+            (await _pair.Primary.AdminClient.PutAsJsonAsync($"/api/keys/{both.Key.Id}/grants/gone", new SetShelfKeyGrantRequest { Permission = ShelfPermission.Read })).EnsureSuccessStatusCode();
+            CreatedShelfKey only = await _pair.Primary.CreateKeyAsync("gone", ShelfPermission.Read);
             await _pair.PairAsync();
             await _pair.SyncAsync();
 
@@ -309,8 +340,8 @@ namespace ByteShelf.Server.Tests.Replication
         public async Task Sync_ACopyAgain_RemovesAKeysGrantThePrimaryNoLongerHas()
         {
             await _pair.CreateShelfAsync("other");
-            CreatedShelfKey created = await _pair.Primary.CreateKeyAsync("docs", ShelfKeyPermission.Read);
-            (await _pair.Primary.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = ShelfKeyPermission.Read })).EnsureSuccessStatusCode();
+            CreatedShelfKey created = await _pair.Primary.CreateKeyAsync("docs", ShelfPermission.Read);
+            (await _pair.Primary.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = ShelfPermission.Read })).EnsureSuccessStatusCode();
             await _pair.PairAsync();
             await _pair.SyncAsync();
 
@@ -327,7 +358,7 @@ namespace ByteShelf.Server.Tests.Replication
         public async Task Sync_BehindARemovalTheLogNoLongerHolds_TakesAWholeCopyWithoutIt()
         {
             await _pair.PairAsync();
-            HttpResponseMessage created = await _pair.Primary.AdminClient.PostAsJsonAsync("/api/shelves/docs/keys", new CreateShelfKeyRequest { Name = "backup", Permission = ShelfKeyPermission.Read });
+            HttpResponseMessage created = await _pair.Primary.AdminClient.PostAsJsonAsync("/api/shelves/docs/keys", new CreateShelfKeyRequest { Name = "backup", Permission = ShelfPermission.Read });
             Guid keyId = (await created.Content.ReadFromJsonAsync<CreatedShelfKey>())!.Key.Id;
             await _pair.SyncAsync();
 

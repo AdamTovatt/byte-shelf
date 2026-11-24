@@ -15,12 +15,32 @@ beforeAll(() => {
   exported = checker.getExportsOfModule(checker.getSymbolAtLocation(program.getSourceFile(entry)!)!);
 }, 30_000);
 
-// Generated from the server's, so a change there changes what plugins are given.
-it('promises plugins this of a file, and changing what a release holds of it, but for more, raises PluginApi.Version', () => {
-  const file = checker.getDeclaredTypeOfSymbol(checker.getAliasedSymbol(exported.find(({ name }) => name === 'ShelfFile')!));
-  const properties = file.getProperties().map((property) => `${property.name}${property.flags & ts.SymbolFlags.Optional ? '?' : ''}: ${checker.typeToString(checker.getTypeOfSymbol(property))}`);
+/** The properties of the type plugins import as `type`: of a record, generated from the server's, so a change there changes what plugins are given. */
+function propertiesOf(type: string): string[] {
+  const declared = checker.getDeclaredTypeOfSymbol(checker.getAliasedSymbol(exported.find(({ name }) => name === type)!));
+  return declared.getProperties()
+    .map((property) => `${property.name}${property.flags & ts.SymbolFlags.Optional ? '?' : ''}: ${checker.typeToString(checker.getTypeOfSymbol(property))}`)
+    .sort();
+}
 
-  expect(properties.sort()).toMatchInlineSnapshot(`
+it('promises plugins this of a folder and of what is below it, and changing what a release holds of it, but for more, raises PluginApi.Version', () => {
+  expect(propertiesOf('ShelfDirectory')).toMatchInlineSnapshot(`
+    [
+      "createdAt: string",
+      "encrypted: boolean",
+      "id: string",
+      "name: string",
+      "parentId?: string | null | undefined",
+      "path: string",
+      "shelfId: string",
+    ]
+  `);
+  // Its folders and files are the records pinned here.
+  expect(propertiesOf('DirectoryTree').map((property) => property.split(':')[0])).toEqual(['directories', 'directory', 'files', 'nextCursor?']);
+});
+
+it('promises plugins this of a file, and changing what a release holds of it, but for more, raises PluginApi.Version', () => {
+  expect(propertiesOf('ShelfFile')).toMatchInlineSnapshot(`
     [
       "contentType: string",
       "createdAt: string",
@@ -35,6 +55,39 @@ it('promises plugins this of a file, and changing what a release holds of it, bu
       "shelfId: string",
       "sizeBytes: number",
       "updatedAt: string",
+    ]
+  `);
+});
+
+/** The members of an interface plugins import as `type`, as it is written, records by their names. */
+function membersOf(type: string): string[] {
+  const declared = checker.getDeclaredTypeOfSymbol(checker.getAliasedSymbol(exported.find(({ name }) => name === type)!));
+  return declared.getProperties().map(({ name, valueDeclaration }) => `${type}.${name}: ${(valueDeclaration as ts.PropertySignature).type!.getText()}`);
+}
+
+it('promises plugins this of folder types, and changing what a release holds of it, but for more, raises PluginApi.Version', () => {
+  expect(['FolderType', 'FolderViewerProps', 'FolderContents', 'LockableReader'].flatMap(membersOf)).toMatchInlineSnapshot(`
+    [
+      "FolderType.suffix: string",
+      "FolderType.label: string",
+      "FolderType.icon: IconComponent",
+      "FolderType.component: ComponentType<FolderViewerProps>",
+      "FolderViewerProps.shelf: string",
+      "FolderViewerProps.folder: ShelfDirectory",
+      "FolderViewerProps.contents: FolderContents",
+      "FolderViewerProps.canWrite: boolean",
+      "FolderContents.queryKey: readonly unknown[]",
+      "FolderContents.list: (after?: string, signal?: AbortSignal) => Promise<DirectoryTree>",
+      "FolderContents.read: (file: ShelfFile) => LockableReader",
+      "FolderContents.store: (path: string, contents: Blob, signal?: AbortSignal) => Promise<ShelfFile>",
+      "FolderContents.delete: (file: ShelfFile) => Promise<void>",
+      "FolderContents.move: (file: ShelfFile, path: string) => Promise<ShelfFile>",
+      "FolderContents.open: (file: ShelfFile) => void",
+      "LockableReader.unlock: (signal?: AbortSignal) => Promise<boolean>",
+      "LockableReader.close: () => void",
+      "LockableReader.url: (signal?: AbortSignal) => Promise<string>",
+      "LockableReader.blob: (signal?: AbortSignal) => Promise<Blob>",
+      "LockableReader.range: (start: number, end: number, signal?: AbortSignal) => Promise<Blob>",
     ]
   `);
 });
@@ -62,6 +115,7 @@ it('promises plugins these, and taking away one a release holds raises PluginApi
       "CopyFieldProps",
       "CustomScroll",
       "CustomScrollProps",
+      "DirectoryTree",
       "Divider",
       "DividerProps",
       "Dropdown",
@@ -79,6 +133,9 @@ it('promises plugins these, and taking away one a release holds raises PluginApi
       "FieldLabelProps",
       "FileAction",
       "FileActionContext",
+      "FolderContents",
+      "FolderType",
+      "FolderViewerProps",
       "FormError",
       "FormErrorProps",
       "Icon",
@@ -94,6 +151,8 @@ it('promises plugins these, and taking away one a release holds raises PluginApi
       "ListButtonProps",
       "Loaded",
       "LoadedContent",
+      "LockableReader",
+      "LockedError",
       "Modal",
       "ModalProps",
       "PAGE_CONTENT_WIDTH",
@@ -119,6 +178,7 @@ it('promises plugins these, and taking away one a release holds raises PluginApi
       "Select",
       "SelectOption",
       "SelectProps",
+      "ShelfDirectory",
       "ShelfFile",
       "SideNavItem",
       "SideNavItemProps",
@@ -153,6 +213,7 @@ it('promises plugins these, and taking away one a release holds raises PluginApi
       "iconMap",
       "invalidateResource",
       "readText",
+      "relativeTo",
       "throwIfFailed",
       "toast",
       "useCopyFeedback",

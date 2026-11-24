@@ -22,7 +22,7 @@ import { SHELF_SETTINGS_TABS, shelfSettingsRoute, type ShelfSettingsTab } from '
 import { ROUTES } from '../lib/routes';
 import { runOrToast } from '../lib/utils';
 import { useSubmit } from '../hooks/useSubmit';
-import type { CreatedShelfKey, ShelfAccessGrant, ShelfAccessPermission, ShelfKeyInfo, ShelfKeyPermission } from '../services/accessService';
+import type { CreatedShelfKey, ShelfAccessGrant, ShelfAccessPermission, ShelfKeyInfo, ShelfPermission } from '../services/accessService';
 import type { ShelfInfo } from '../services/shelfService';
 
 /**
@@ -316,7 +316,7 @@ function KeyShelvesDialog({ shelfKey, onClose }: { shelfKey: ShelfKeyInfo; onClo
   return (
     <FormDialog open title={`Shelves for ${shelfKey.name}`} onClose={onClose}>
       <LoadError error={error} failure="Could not load the key's shelves" />
-      <ShelfAccessRows<ShelfKeyPermission>
+      <ShelfAccessRows<ShelfPermission>
         rows={shelves.map((candidate) => ({
           shelf: candidate.name,
           value: grants.find((grant) => grant.shelfId === candidate.id)?.permission ?? NO_ACCESS,
@@ -335,7 +335,7 @@ function KeyShelvesDialog({ shelfKey, onClose }: { shelfKey: ShelfKeyInfo; onClo
 function CreateKeyDialog({ shelf, onClose }: { shelf: string; onClose: () => void }) {
   const createKey = useCreateKey(shelf);
   const [name, setName] = useState('');
-  const [permission, setPermission] = useState<ShelfKeyPermission>('addOnly');
+  const [permission, setPermission] = useState<ShelfPermission>('addOnly');
   const [created, setCreated] = useState<CreatedShelfKey>();
   const { error, submit } = useSubmit('Could not create the key');
 

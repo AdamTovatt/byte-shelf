@@ -1,7 +1,8 @@
 import { isBlobBacked } from '../../services/contentService';
 import type { OpenableFile } from '../../services/fileReading';
-import { eitherAborts, untilAborted } from '../abort';
+import { noPasswordGiven } from '../abort';
 import { blobReader, sourceReader, type ClosableReader } from './contentReader';
+import { openingReader } from './openingReader';
 
 /**
  * Reads a file that nothing shows yet: a blob-backed one's whole contents once they are asked for, its
@@ -9,35 +10,10 @@ import { blobReader, sourceReader, type ClosableReader } from './contentReader';
  * Closing it is for good.
  */
 export function openableReader({ file, source, readWhole }: OpenableFile): ClosableReader {
-  const closing = new AbortController();
-  let opening: Promise<ClosableReader> | null = null;
-
-  async function open(): Promise<ClosableReader> {
+  return openingReader(async (signal) => {
     if (!isBlobBacked(file)) return sourceReader(file.id, source);
-    const whole = await readWhole(closing.signal);
-    if (!whole) throw new DOMException('No password was given.', 'AbortError');
+    const whole = await readWhole(signal);
+    if (!whole) throw noPasswordGiven();
     return blobReader(whole);
-  }
-
-  /** Runs `read` on the contents, unless closed or aborted before they are there. */
-  async function opened<T>(read: (reader: ClosableReader, until: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
-    const until = eitherAborts(closing.signal, signal);
-    until.throwIfAborted();
-    // Failed, or with no password given, it may be asked again.
-    opening ??= open().catch((caught: unknown) => {
-      opening = null;
-      throw caught;
-    });
-    return read(await untilAborted(opening, until), until);
-  }
-
-  return {
-    url: (signal) => opened((reader, until) => reader.url(until), signal),
-    blob: (signal) => opened((reader, until) => reader.blob(until), signal),
-    range: (start, end, signal) => opened((reader, until) => reader.range(start, end, until), signal),
-    close: () => {
-      closing.abort();
-      void opening?.then((reader) => reader.close(), () => undefined);
-    },
-  };
+  });
 }

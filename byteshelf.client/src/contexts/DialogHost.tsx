@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useRef, useState, type ReactNode } from 'react';
+import { CleanupBoundary } from '../components/CleanupBoundary';
 import { OverlaySlotContext, type OverlaySlot } from '../ui/hooks/useOverlay';
 import { useClosedWhenGone } from '../hooks/useClosedWhenGone';
 import type { DrawDialog } from '../lib/drawDialog';
@@ -46,7 +47,9 @@ export function DialogHost({ children }: { children: ReactNode }) {
   return (
     <ShowContext.Provider value={show}>
       {children}
-      {held.map(({ id, draw, close }) => <InSlot key={id}>{draw(close)}</InSlot>)}
+      <CleanupBoundary>
+        {held.map(({ id, draw, close }) => <InSlot key={id}>{draw(close)}</InSlot>)}
+      </CleanupBoundary>
     </ShowContext.Provider>
   );
 }

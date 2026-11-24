@@ -35,7 +35,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task PostKeys_ThenUseTheSecret_ListsTheShelf()
         {
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.Read);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.Read);
 
             HttpResponseMessage response = await key.GetAsync("/api/shelves/docs/entries");
 
@@ -45,7 +45,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task KeyAsBearerToken_ListsTheShelf()
         {
-            string secret = (await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read)).Secret;
+            string secret = (await _host.CreateKeyAsync("docs", ShelfPermission.Read)).Secret;
             using HttpClient client = _host.CreateClient(secret);
 
             HttpResponseMessage response = await client.GetAsync("/api/shelves/docs/entries");
@@ -56,7 +56,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task KeyAsHeaderAndBearerTokenBoth_Returns401()
         {
-            string secret = (await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read)).Secret;
+            string secret = (await _host.CreateKeyAsync("docs", ShelfPermission.Read)).Secret;
             using HttpClient client = _host.CreateKeyClient(secret);
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", secret);
 
@@ -65,10 +65,35 @@ namespace ByteShelf.Server.Tests.Access
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         }
 
+        [Theory]
+        [InlineData(ShelfPermission.Read)]
+        [InlineData(ShelfPermission.AddOnly)]
+        [InlineData(ShelfPermission.ReadWrite)]
+        public async Task ShelfInfo_AKeys_SaysWhatItMayDoOnEachShelf(ShelfPermission held)
+        {
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", held);
+            (await _host.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = ShelfPermission.Read })).EnsureSuccessStatusCode();
+            using HttpClient key = _host.CreateKeyClient(created.Secret);
+
+            Assert.Equal(held, (await key.GetFromJsonAsync<ShelfInfo>("/api/shelves/docs"))?.Permission);
+            Assert.Equal(new[] { held, ShelfPermission.Read }, (await key.GetFromJsonAsync<IReadOnlyList<ShelfInfo>>("/api/shelves"))!.Select(shelf => shelf.Permission));
+        }
+
+        [Theory]
+        [InlineData(ShelfAccessPermission.Read, ShelfPermission.Read)]
+        [InlineData(ShelfAccessPermission.ReadWrite, ShelfPermission.ReadWrite)]
+        public async Task ShelfInfo_AUsers_SaysWhatTheyMayDo(ShelfAccessPermission held, ShelfPermission expected)
+        {
+            await _host.GrantMemberAsync("docs", held);
+
+            Assert.Equal(expected, (await _host.MemberClient.GetFromJsonAsync<ShelfInfo>("/api/shelves/docs"))?.Permission);
+            Assert.Equal(expected, Assert.Single((await _host.MemberClient.GetFromJsonAsync<IReadOnlyList<ShelfInfo>>("/api/shelves"))!).Permission);
+        }
+
         [Fact]
         public async Task ReadKey_PutContent_Returns403()
         {
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.Read);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.Read);
 
             HttpResponseMessage response = await PutAsync(key, "/new.txt", "new");
 
@@ -79,7 +104,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task AddOnlyKey_PutNewFile_StoresIt()
         {
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.AddOnly);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.AddOnly);
 
             HttpResponseMessage response = await PutAsync(key, "/backups/new.txt", "new");
 
@@ -87,10 +112,10 @@ namespace ByteShelf.Server.Tests.Access
         }
 
         [Theory]
-        [InlineData(ShelfKeyPermission.Read)]
-        [InlineData(ShelfKeyPermission.AddOnly)]
-        [InlineData(ShelfKeyPermission.ReadWrite)]
-        public async Task AnyKey_CreateDownloadLink_ServesTheFileWithoutSigningIn(ShelfKeyPermission permission)
+        [InlineData(ShelfPermission.Read)]
+        [InlineData(ShelfPermission.AddOnly)]
+        [InlineData(ShelfPermission.ReadWrite)]
+        public async Task AnyKey_CreateDownloadLink_ServesTheFileWithoutSigningIn(ShelfPermission permission)
         {
             using HttpClient key = await _host.CreateKeyClientAsync("docs", permission);
 
@@ -104,7 +129,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task AddOnlyKey_PutWithOverwrite_Returns403AndKeepsTheFile()
         {
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.AddOnly);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.AddOnly);
 
             HttpResponseMessage response = await PutAsync(key, "/existing.txt", "wiped", overwrite: true);
 
@@ -115,7 +140,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task AddOnlyKey_StartUploadWithOverwrite_Returns403()
         {
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.AddOnly);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.AddOnly);
 
             HttpResponseMessage response = await key.PostAsJsonAsync(
                 "/api/shelves/docs/uploads", new StartUploadRequest { Path = "/existing.txt", SizeBytes = 5, Overwrite = true });
@@ -130,7 +155,7 @@ namespace ByteShelf.Server.Tests.Access
                 "/api/shelves/docs/uploads", new StartUploadRequest { Path = "/existing.txt", SizeBytes = 3, Overwrite = true });
             UploadSession upload = (await started.Content.ReadFromJsonAsync<UploadSession>())!;
             (await _host.AdminClient.PutAsync($"/api/shelves/docs/uploads/{upload.Id}?offset=0", new ByteArrayContent(Encoding.UTF8.GetBytes("new")))).EnsureSuccessStatusCode();
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.AddOnly);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.AddOnly);
 
             HttpResponseMessage response = await key.PostAsync($"/api/shelves/docs/uploads/{upload.Id}/complete", null);
 
@@ -141,7 +166,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task AddOnlyKey_DeleteFile_Returns403()
         {
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.AddOnly);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.AddOnly);
 
             HttpResponseMessage response = await key.DeleteAsync("/api/shelves/docs/files?path=/existing.txt");
 
@@ -151,7 +176,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task ReadWriteKey_ManageKeys_Returns403()
         {
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.ReadWrite);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.ReadWrite);
 
             HttpResponseMessage response = await key.GetAsync("/api/shelves/docs/keys");
 
@@ -161,7 +186,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task Key_AnotherShelf_Returns404()
         {
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.ReadWrite);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.ReadWrite);
 
             HttpResponseMessage response = await key.GetAsync("/api/shelves/other/entries");
 
@@ -171,7 +196,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task Key_ListShelves_ListsOnlyItsOwn()
         {
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.Read);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.Read);
 
             IReadOnlyList<ShelfInfo>? shelves = await key.GetFromJsonAsync<IReadOnlyList<ShelfInfo>>("/api/shelves");
 
@@ -181,7 +206,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task Key_UserEndpoint_Returns401()
         {
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.ReadWrite);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.ReadWrite);
 
             HttpResponseMessage response = await key.GetAsync("/api/users/me");
 
@@ -191,7 +216,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task KeyAsBearerToken_UserEndpoint_Returns401()
         {
-            string secret = (await _host.CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite)).Secret;
+            string secret = (await _host.CreateKeyAsync("docs", ShelfPermission.ReadWrite)).Secret;
             using HttpClient client = _host.CreateClient(secret);
 
             HttpResponseMessage response = await client.GetAsync("/api/users/me");
@@ -223,7 +248,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task DeleteKeys_ThenUseTheSecret_Returns401()
         {
-            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfPermission.Read);
             using HttpClient key = _host.CreateKeyClient(created.Secret);
 
             (await _host.AdminClient.DeleteAsync($"/api/keys/{created.Key.Id}/grants/docs")).EnsureSuccessStatusCode();
@@ -235,14 +260,14 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task PutKeyGrant_AnotherShelf_KeyReachesAndListsBoth()
         {
-            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfPermission.Read);
             using HttpClient key = _host.CreateKeyClient(created.Secret);
 
             HttpResponseMessage granted = await _host.AdminClient.PutAsJsonAsync(
-                $"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = ShelfKeyPermission.AddOnly });
+                $"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = ShelfPermission.AddOnly });
 
             ShelfKeyGrantInfo grant = (await granted.EnsureSuccessStatusCode().Content.ReadFromJsonAsync<ShelfKeyGrantInfo>())!;
-            Assert.Equal(("other", ShelfKeyPermission.AddOnly), (grant.ShelfName, grant.Permission));
+            Assert.Equal(("other", ShelfPermission.AddOnly), (grant.ShelfName, grant.Permission));
             Assert.Equal(HttpStatusCode.OK, (await key.GetAsync("/api/shelves/other/entries")).StatusCode);
             Assert.Equal(new[] { "docs", "other" }, (await key.GetFromJsonAsync<IReadOnlyList<ShelfInfo>>("/api/shelves"))!.Select(shelf => shelf.Name));
             Assert.Equal(
@@ -253,9 +278,9 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task DeleteKeyOnOneShelf_KeyWithAnother_StopsThereAndKeepsWorkingOnTheOther()
         {
-            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfPermission.Read);
             using HttpClient key = _host.CreateKeyClient(created.Secret);
-            (await _host.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = ShelfKeyPermission.Read })).EnsureSuccessStatusCode();
+            (await _host.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = ShelfPermission.Read })).EnsureSuccessStatusCode();
 
             (await _host.AdminClient.DeleteAsync($"/api/keys/{created.Key.Id}/grants/docs")).EnsureSuccessStatusCode();
 
@@ -267,7 +292,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task DeleteKeyGrant_ItsLast_DeletesTheKey()
         {
-            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfPermission.Read);
             using HttpClient key = _host.CreateKeyClient(created.Secret);
 
             (await _host.AdminClient.DeleteAsync($"/api/keys/{created.Key.Id}/grants/docs")).EnsureSuccessStatusCode();
@@ -279,9 +304,9 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task DeleteKey_OnTwoShelves_StopsItEverywhere()
         {
-            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfPermission.Read);
             using HttpClient key = _host.CreateKeyClient(created.Secret);
-            (await _host.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = ShelfKeyPermission.Read })).EnsureSuccessStatusCode();
+            (await _host.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/other", new SetShelfKeyGrantRequest { Permission = ShelfPermission.Read })).EnsureSuccessStatusCode();
 
             (await _host.AdminClient.DeleteAsync($"/api/keys/{created.Key.Id}")).EnsureSuccessStatusCode();
 
@@ -306,13 +331,13 @@ namespace ByteShelf.Server.Tests.Access
         [InlineData("member", "DELETE", "grants/docs", HttpStatusCode.NotFound)]
         public async Task KeysRoutes_ByAKeyOrAUserWhoIsNoAdmin_AreRefusedAndChangeNothing(string caller, string method, string route, HttpStatusCode expected)
         {
-            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite);
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfPermission.ReadWrite);
             using HttpClient key = _host.CreateKeyClient(created.Secret);
             HttpClient client = caller == "key" ? key : _host.MemberClient;
             using HttpRequestMessage request = new HttpRequestMessage(new HttpMethod(method), $"/api/keys/{created.Key.Id}/{route}".TrimEnd('/'));
             if (method == "PUT")
             {
-                request.Content = JsonContent.Create(new SetShelfKeyGrantRequest { Permission = ShelfKeyPermission.ReadWrite });
+                request.Content = JsonContent.Create(new SetShelfKeyGrantRequest { Permission = ShelfPermission.ReadWrite });
             }
 
             HttpResponseMessage response = await client.SendAsync(request);
@@ -324,13 +349,13 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task Key_CompleteItsOwnOverwritingUploadAfterItsGrantBecameAddOnly_Returns403AndKeepsTheFile()
         {
-            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.ReadWrite);
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfPermission.ReadWrite);
             using HttpClient key = _host.CreateKeyClient(created.Secret);
             HttpResponseMessage started = await key.PostAsJsonAsync("/api/shelves/docs/uploads", new StartUploadRequest { Path = "/existing.txt", SizeBytes = 3, Overwrite = true });
             UploadSession upload = (await started.EnsureSuccessStatusCode().Content.ReadFromJsonAsync<UploadSession>())!;
             (await key.PutAsync($"/api/shelves/docs/uploads/{upload.Id}?offset=0", new ByteArrayContent(Encoding.UTF8.GetBytes("new")))).EnsureSuccessStatusCode();
 
-            (await _host.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/docs", new SetShelfKeyGrantRequest { Permission = ShelfKeyPermission.AddOnly })).EnsureSuccessStatusCode();
+            (await _host.AdminClient.PutAsJsonAsync($"/api/keys/{created.Key.Id}/grants/docs", new SetShelfKeyGrantRequest { Permission = ShelfPermission.AddOnly })).EnsureSuccessStatusCode();
             HttpResponseMessage response = await key.PostAsync($"/api/shelves/docs/uploads/{upload.Id}/complete", null);
 
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -340,7 +365,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task ValidReadKeyAlongsideAnAdminToken_PutContent_Returns403()
         {
-            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfPermission.Read);
 
             HttpResponseMessage response = await _host.AdminClient.SendAsync(WithKeyHeader(PutRequest("/new.txt", "new"), created.Secret));
 
@@ -350,7 +375,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task Key_CreateShelf_Returns401()
         {
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.ReadWrite);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.ReadWrite);
 
             HttpResponseMessage response = await key.PostAsJsonAsync("/api/shelves", new CreateShelfRequest { Name = "mine" });
 
@@ -380,7 +405,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task AddOnlyKey_StartSendAndCompleteANewUpload_StoresTheFile()
         {
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.AddOnly);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.AddOnly);
             UploadSession upload = await StartUploadAsync(key, "/new.txt", "new");
 
             HttpResponseMessage response = await key.PostAsync($"/api/shelves/docs/uploads/{upload.Id}/complete", null);
@@ -392,9 +417,9 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task AddOnlyKey_AppendToAnotherKeysUpload_Returns403()
         {
-            using HttpClient starter = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.AddOnly);
+            using HttpClient starter = await _host.CreateKeyClientAsync("docs", ShelfPermission.AddOnly);
             UploadSession upload = await StartUploadAsync(starter, "/new.txt", sizeBytes: 3);
-            using HttpClient other = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.AddOnly);
+            using HttpClient other = await _host.CreateKeyClientAsync("docs", ShelfPermission.AddOnly);
 
             HttpResponseMessage response = await other.PutAsync($"/api/shelves/docs/uploads/{upload.Id}?offset=0", new ByteArrayContent(Encoding.UTF8.GetBytes("bad")));
 
@@ -405,7 +430,7 @@ namespace ByteShelf.Server.Tests.Access
         public async Task AddOnlyKey_AbortSomeoneElsesUpload_Returns403AndKeepsIt()
         {
             UploadSession upload = await StartUploadAsync(_host.AdminClient, "/new.txt", sizeBytes: 3);
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.AddOnly);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.AddOnly);
 
             HttpResponseMessage response = await key.DeleteAsync($"/api/shelves/docs/uploads/{upload.Id}");
 
@@ -417,7 +442,7 @@ namespace ByteShelf.Server.Tests.Access
         public async Task ReadWriteKey_AbortSomeoneElsesUpload_DropsIt()
         {
             UploadSession upload = await StartUploadAsync(_host.AdminClient, "/new.txt", sizeBytes: 3);
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.ReadWrite);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.ReadWrite);
 
             HttpResponseMessage response = await key.DeleteAsync($"/api/shelves/docs/uploads/{upload.Id}");
 
@@ -478,7 +503,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task DownloadLinkMadeWithAKey_KeyDeleted_IsNotFound()
         {
-            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await _host.CreateKeyAsync("docs", ShelfPermission.Read);
             using HttpClient key = _host.CreateKeyClient(created.Secret);
             DownloadLink link = await CreateLinkAsync(key, "/existing.txt");
 

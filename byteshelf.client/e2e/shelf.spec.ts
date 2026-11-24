@@ -16,6 +16,14 @@ async function signIn(browser: Browser): Promise<Page> {
   return page;
 }
 
+/** What the server holds of a file, as the page's session reads it. */
+function storedText(page: Page, url: string): Promise<string> {
+  return page.evaluate(async (at) => {
+    const response = await fetch(at, { headers: { Authorization: `Bearer ${localStorage.getItem('byteshelf_auth_token')}` } });
+    return response.text();
+  }, url);
+}
+
 test('a file uploaded in one tab appears in another and downloads intact', async ({ browser }) => {
   const uploader = await signIn(browser);
   const watcher = await signIn(browser);
@@ -76,10 +84,7 @@ test('a folder encrypted in the browser keeps its files encrypted and opens them
   await expect(owner).toHaveURL('/shelves/vault/files/secret');
   await owner.getByTestId('file-input').setInputFiles({ name: 'note.txt', mimeType: 'text/plain', buffer: Buffer.from('for my eyes only') });
   await expect(owner.getByText('Uploaded note.txt')).toBeVisible({ timeout: 15_000 });
-  const stored = await owner.evaluate(async () => {
-    const response = await fetch('/api/shelves/vault/content?path=/secret/note.txt', { headers: { Authorization: `Bearer ${localStorage.getItem('byteshelf_auth_token')}` } });
-    return response.text();
-  });
+  const stored = await storedText(owner, '/api/shelves/vault/content?path=/secret/note.txt');
   expect(stored.startsWith('age-encryption.org/v1\n')).toBe(true);
   expect(stored).not.toContain('for my eyes only');
 
@@ -186,4 +191,65 @@ test('a Markdown file is previewed by the plugin that takes it', async ({ browse
 
   await preview.getByRole('button', { name: 'Source' }).click();
   await expect(preview.getByText('<b>markup</b>', { exact: false })).toBeVisible();
+});
+
+// What only a browser shows for a folder type: a plugin's viewer in place of the listing, reading and storing
+// through the app's own session, and the history of its contents. Encrypted, its files are decrypted in the
+// page, in a tab that never had the password.
+test('a folder of a plugin\'s type opens in its viewer, and an encrypted one once it is unlocked', async ({ browser }) => {
+  // Encrypts and decrypts, each slow on purpose.
+  test.slow();
+  const page = await signIn(browser);
+  await page.getByRole('button', { name: 'New shelf' }).click();
+  await page.getByLabel('Name').fill('folders');
+  await page.getByRole('button', { name: 'Create' }).click();
+  await expect(page).toHaveURL('/shelves/folders');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByRole('button', { name: 'New folder' }).click();
+  await page.getByLabel('Name').fill('Trip.album');
+  await page.getByRole('button', { name: 'Create' }).click();
+
+  const folder = page.getByRole('button', { name: 'Trip.album', exact: true });
+  await expect(folder.getByTestId('album-icon')).toBeVisible();
+  await folder.dblclick();
+  await expect(page).toHaveURL('/shelves/folders/files/Trip.album');
+  await expect(page.getByRole('heading', { name: 'Album of Trip.album' })).toBeVisible();
+  await expect(page.getByLabel('Search files', { exact: false })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Add a note' }).click();
+  await page.getByRole('button', { name: 'Note 1' }).click();
+  await expect(page.getByRole('dialog', { name: 'note-1.txt' }).getByText('Note 1')).toBeVisible();
+  await page.goBack();
+
+  await page.getByRole('button', { name: 'Pages of folders' }).click();
+  await page.getByRole('button', { name: 'Show contents' }).click();
+  await expect(page).toHaveURL('/shelves/folders/files/Trip.album?view=contents');
+  await expect(page.getByRole('button', { name: 'note-1.txt', exact: true })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('button', { name: 'Note 1' })).toBeVisible();
+
+  await page.goto('/shelves/folders');
+  await page.getByRole('button', { name: 'Actions for Trip.album' }).click();
+  await page.getByRole('button', { name: 'Encrypt' }).click();
+  await page.getByLabel('Password', { exact: true }).fill('correct horse');
+  await page.getByLabel('Password again').fill('correct horse');
+  await page.getByRole('button', { name: 'Next' }).click();
+  await page.getByRole('button', { name: 'Encrypt' }).click();
+  await expect(page.getByText('Encrypting Trip.album: done')).toBeVisible({ timeout: 30_000 });
+
+  const reader = await signIn(browser);
+  await reader.goto('/shelves/folders/files/Trip.album');
+  await reader.getByRole('button', { name: 'Cancel' }).click();
+  await expect(reader.getByRole('button', { name: 'note-1.txt', exact: true })).toBeVisible();
+  await reader.getByRole('button', { name: 'Unlock' }).click();
+  await reader.getByLabel('Password', { exact: true }).fill('correct horse');
+  await reader.getByRole('dialog', { name: 'Unlock Trip.album' }).getByRole('button', { name: 'Unlock' }).click();
+  await expect(reader.getByRole('button', { name: 'Note 1' })).toBeVisible({ timeout: 30_000 });
+
+  // Stored from the viewer, it is encrypted before it is sent.
+  const sent = reader.waitForResponse((response) => response.request().method() === 'PUT' && response.url().includes('/content?'));
+  await reader.getByRole('button', { name: 'Add a note' }).click();
+  const kept = await (await sent).json() as { id: string; name: string; encrypted: boolean };
+  expect(kept).toMatchObject({ name: 'note-2.txt', encrypted: true });
+  await expect(reader.getByRole('button', { name: 'Note 2' })).toBeVisible({ timeout: 30_000 });
+  expect((await storedText(reader, `/api/shelves/folders/content?id=${kept.id}`)).startsWith('age-encryption.org/v1\n')).toBe(true);
 });

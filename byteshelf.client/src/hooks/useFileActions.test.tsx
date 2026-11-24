@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DialogHost } from '../contexts/DialogHost';
 import { usePluginId } from '../contexts/PluginIdentity';
 import { useFileActions, type FileActions } from './useFileActions';
-import { usePasswordPrompt, type AskPassword } from './usePasswordPrompt';
+import { usePasswordPrompt } from './usePasswordPrompt';
+import type { AskPassword } from '../lib/encryption/askPassword';
 import { Modal } from '../ui';
 import type { PluginHostState } from '../lib/plugins/pluginHost';
 import type { FileAction, FileActionContext } from '../lib/plugins/fileAction';
@@ -55,7 +56,7 @@ describe('running a file action', () => {
   }
 
   beforeEach(() => {
-    host.state = { plugins: [{ id: 'a', viewers: [], fileActions: [action(() => undefined)] }], failures: new Map() } satisfies PluginHostState;
+    host.state = { plugins: [{ id: 'a', viewers: [], fileActions: [action(() => undefined)], folderTypes: [] }], failures: new Map() } satisfies PluginHostState;
     target = { file, source: {} as ContentSource, readWhole: async () => new Blob(['plain']) };
     errors = [];
     vi.spyOn(toast, 'error').mockImplementation((message) => {

@@ -1,6 +1,6 @@
 import { type ReactNode, type RefObject, useState, useCallback } from 'react';
 import { Popover, type PopoverAlign, type MenuPopoverPosition } from './Popover';
-import { MENU_PANEL_CLASS, MENU_ROW_CLASS, MENU_ROW_HOVER_CLASS } from './menuPanelStyles';
+import { MENU_PANEL_CLASS, MENU_ROW_CLASS, MENU_ROW_HOVER_CLASS, MENU_TICK_SIZE } from './menuPanelStyles';
 import { DropdownCloseContext, useDropdownClose } from './dropdownClose';
 import { Icon } from './Icon';
 import { DisabledReasonMark, DEFAULT_DISABLED_REASON_TEST_ID } from './DisabledReasonMark';
@@ -222,7 +222,7 @@ export function DropdownItem({
   // The tick and its placeholder are one decision here, so the spacer can never drift from the
   // icon's size the way it does when each call site writes both.
   const checkMark =
-    checked === undefined ? undefined : checked ? <Icon icon={iconMap.success} size={14} /> : <span className="w-3.5" />;
+    checked === undefined ? undefined : checked ? <Icon icon={iconMap.success} size={MENU_TICK_SIZE} /> : <span style={{ width: MENU_TICK_SIZE }} />;
 
   const button = (
     <button

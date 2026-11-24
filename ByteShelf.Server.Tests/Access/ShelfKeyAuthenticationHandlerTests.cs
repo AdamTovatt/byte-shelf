@@ -27,7 +27,7 @@ namespace ByteShelf.Server.Tests.Access
         public async Task AuthenticateAsync_HeaderTwiceWithAValidSecret_Fails()
         {
             Shelf shelf = await CreateShelfAsync();
-            CreatedShelfKey created = await KeyService.CreateAsync(shelf, "app", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await KeyService.CreateAsync(shelf, "app", ShelfPermission.Read);
 
             AuthenticateResult result = await AuthenticateAsync(new StringValues(new[] { created.Secret, created.Secret }));
 
@@ -38,7 +38,7 @@ namespace ByteShelf.Server.Tests.Access
         public async Task AuthenticateAsync_ValidSecret_SucceedsAsTheKey()
         {
             Shelf shelf = await CreateShelfAsync();
-            CreatedShelfKey created = await KeyService.CreateAsync(shelf, "app", ShelfKeyPermission.Read);
+            CreatedShelfKey created = await KeyService.CreateAsync(shelf, "app", ShelfPermission.Read);
             DefaultHttpContext context = new DefaultHttpContext();
 
             AuthenticateResult result = await AuthenticateAsync(new StringValues(created.Secret), context);

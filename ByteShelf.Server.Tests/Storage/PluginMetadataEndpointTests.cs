@@ -27,10 +27,10 @@ namespace ByteShelf.Server.Tests.Storage
         }
 
         [Theory]
-        [InlineData(ShelfKeyPermission.Read, HttpStatusCode.Forbidden)]
-        [InlineData(ShelfKeyPermission.AddOnly, HttpStatusCode.Forbidden)]
-        [InlineData(ShelfKeyPermission.ReadWrite, HttpStatusCode.OK)]
-        public async Task Put_NeedsWriteAccess(ShelfKeyPermission permission, HttpStatusCode answered)
+        [InlineData(ShelfPermission.Read, HttpStatusCode.Forbidden)]
+        [InlineData(ShelfPermission.AddOnly, HttpStatusCode.Forbidden)]
+        [InlineData(ShelfPermission.ReadWrite, HttpStatusCode.OK)]
+        public async Task Put_NeedsWriteAccess(ShelfPermission permission, HttpStatusCode answered)
         {
             using HttpClient key = await _host.CreateKeyClientAsync("docs", permission);
 
@@ -53,7 +53,7 @@ namespace ByteShelf.Server.Tests.Storage
         {
             await _host.Services.SetFileDocumentAsync(_file.Id, "{\"rating\":4}");
             await _host.Services.RecordContentDocumentAsync(_file.Sha256, "{\"width\":10}");
-            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfKeyPermission.Read);
+            using HttpClient key = await _host.CreateKeyClientAsync("docs", ShelfPermission.Read);
 
             string json = await key.GetStringAsync("/api/shelves/docs/files/metadata?path=/a.txt");
 

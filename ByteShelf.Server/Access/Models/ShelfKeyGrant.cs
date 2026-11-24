@@ -8,7 +8,7 @@ namespace ByteShelf.Server.Access.Models
         public required Guid Id { get; init; }
         public required Guid KeyId { get; init; }
         public required Guid ShelfId { get; init; }
-        public required ShelfKeyPermission Permission { get; init; }
+        public required ShelfPermission Permission { get; init; }
         public required DateTimeOffset CreatedAt { get; init; }
         public required DateTimeOffset UpdatedAt { get; init; }
     }

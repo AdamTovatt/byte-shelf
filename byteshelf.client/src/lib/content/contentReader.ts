@@ -3,9 +3,10 @@ import { eitherAborts } from '../abort';
 import { elementUrl, type ElementUrl } from '../localBlobs';
 
 /**
- * A file's contents, as a viewer or a file action reads them: always plain, wherever they come from, and
- * until the viewer's preview closes or moves on, or the action is done. A read ends as `signal` aborts, and
- * as that comes; one of an encrypted file's leaves its contents loading for any other.
+ * A file's contents, as a viewer, a file action or a folder's viewer reads them: always plain, wherever they
+ * come from, and until the viewer's preview closes or moves on, the action is done, or the folder's viewer
+ * goes or closes the reader. A read ends as `signal` aborts, and as that comes; one of an encrypted file's
+ * leaves its contents loading for any other.
  */
 export interface ContentReader {
   /** A URL an `<img>`, `<video>`, `<audio>` or `<iframe>` loads the contents from, until then. */

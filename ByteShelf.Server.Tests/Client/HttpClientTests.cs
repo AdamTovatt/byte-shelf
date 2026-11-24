@@ -31,7 +31,7 @@ namespace ByteShelf.Server.Tests.Client
             IByteShelfClient admin = await SignInAdminAsync();
             await admin.CreateShelfAsync("docs");
             await admin.CreateShelfAsync("other");
-            CreatedShelfKey key = await admin.Shelf("docs").CreateKeyAsync("app", ShelfKeyPermission.ReadWrite);
+            CreatedShelfKey key = await admin.Shelf("docs").CreateKeyAsync("app", ShelfPermission.ReadWrite);
 
             ByteShelfHttpClient program = new ByteShelfHttpClient(_http, new ShelfKeyCredentials(key.Secret));
 
@@ -45,7 +45,7 @@ namespace ByteShelf.Server.Tests.Client
             IByteShelfClient admin = await SignInAdminAsync();
             await admin.CreateShelfAsync("docs");
             await admin.Shelf("docs").UploadAsync("/a.txt", new MemoryStream(Encoding.UTF8.GetBytes("old")));
-            CreatedShelfKey key = await admin.Shelf("docs").CreateKeyAsync("app", ShelfKeyPermission.AddOnly);
+            CreatedShelfKey key = await admin.Shelf("docs").CreateKeyAsync("app", ShelfPermission.AddOnly);
             IShelfClient program = new ByteShelfHttpClient(_http, new ShelfKeyCredentials(key.Secret)).Shelf("docs");
 
             ByteShelfException exception = await Assert.ThrowsAsync<ByteShelfException>(

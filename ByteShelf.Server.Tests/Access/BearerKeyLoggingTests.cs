@@ -37,7 +37,7 @@ namespace ByteShelf.Server.Tests.Access
         public async Task KeyAsBearerToken_SessionSchemeLogsNoFailure()
         {
             HttpResponseMessage created = await _host.AdminClient.PostAsJsonAsync(
-                "/api/shelves/docs/keys", new CreateShelfKeyRequest { Name = "agent", Permission = ShelfKeyPermission.Read });
+                "/api/shelves/docs/keys", new CreateShelfKeyRequest { Name = "agent", Permission = ShelfPermission.Read });
             string secret = (await created.Content.ReadFromJsonAsync<CreatedShelfKey>())!.Secret;
 
             HttpStatusCode withKey = await GetEntriesAsync(secret);

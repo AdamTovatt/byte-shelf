@@ -29,24 +29,23 @@ namespace ByteShelf.Server.Storage.Controllers
             _accessResolver = accessResolver;
         }
 
-        /// <summary>Every shelf the caller can use, with its usage, by name: all of them for an admin, the ones it holds a grant on for a user or a key.</summary>
+        /// <summary>Every shelf the caller can use, with its usage and what the caller may do there, by name: all of them for an admin, the ones it holds a grant on for a user or a key.</summary>
         [HttpGet]
         [Authorize(Policy = ShelfKeyAuthentication.ShelfCallerPolicy)]
         [ProducesResponseType(typeof(IReadOnlyList<ShelfInfo>), 200)]
         public async Task<IActionResult> List()
         {
-            IReadOnlyList<Shelf> shelves = (await _accessResolver.GetAccessesAsync(HttpContext.GetShelfCaller())).Select(access => access.Shelf).ToList();
-            return Ok(await _shelfService.GetInfosAsync(shelves));
+            return Ok(await _shelfService.GetInfosAsync(await _accessResolver.GetAccessesAsync(HttpContext.GetShelfCaller())));
         }
 
-        /// <summary>One shelf with its usage.</summary>
+        /// <summary>One shelf with its usage and what the caller may do there.</summary>
         [HttpGet("{shelf}")]
         [ShelfAccess(ShelfOperation.Read)]
         [ProducesResponseType(typeof(ShelfInfo), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         public async Task<IActionResult> Get()
         {
-            return Ok(await _shelfService.GetInfoAsync(Shelf));
+            return Ok(await _shelfService.GetInfoAsync(Access));
         }
 
         /// <summary>Creates a shelf. Admin only.</summary>
@@ -58,7 +57,7 @@ namespace ByteShelf.Server.Storage.Controllers
         public async Task<IActionResult> Create([FromBody] CreateShelfRequest request)
         {
             Shelf shelf = await _shelfService.CreateAsync(request.Name, request.QuotaBytes);
-            return Ok(await _shelfService.GetInfoAsync(shelf));
+            return Ok(await _shelfService.GetInfoAsync(await AccessToAsync(shelf)));
         }
 
         /// <summary>Replaces a shelf's name and quota. Admin only. A new name changes the shelf's URLs.</summary>
@@ -72,7 +71,7 @@ namespace ByteShelf.Server.Storage.Controllers
         public async Task<IActionResult> Update([FromBody] UpdateShelfRequest request)
         {
             Shelf updated = await _shelfService.UpdateAsync(Shelf, request.Name, request.QuotaBytes);
-            return Ok(await _shelfService.GetInfoAsync(updated));
+            return Ok(await _shelfService.GetInfoAsync(await AccessToAsync(updated)));
         }
 
         /// <summary>
@@ -89,6 +88,12 @@ namespace ByteShelf.Server.Storage.Controllers
         {
             await _shelfService.DeleteAsync(Shelf);
             return NoContent();
+        }
+
+        /// <summary>The caller's access to a shelf as it is now, made or changed by this request.</summary>
+        private Task<ShelfAccess> AccessToAsync(Shelf shelf)
+        {
+            return _accessResolver.ResolveAsync(HttpContext.GetShelfCaller(), shelf);
         }
     }
 }
