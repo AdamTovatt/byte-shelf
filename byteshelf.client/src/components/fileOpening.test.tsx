@@ -2,9 +2,9 @@
 import type { ReactNode } from 'react';
 import toast from 'react-hot-toast';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fileOpening, opensInTab, type FileOpening } from './fileOpening';
+import { openFile, opensInTab, saveFiles } from './fileOpening';
 import { saveTokens } from '../services/authService';
-import { deletedContent, fileReading, liveContent, type ContentSource } from '../services/contentService';
+import { deletedContent, fileReading, liveContent, openable, type ContentSource } from '../services/contentService';
 import type { ShelfFile } from '../services/shelfService';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
@@ -53,8 +53,14 @@ function file(encrypted = false, id = 'f'): ShelfFile {
   return { id, shelfId: 's', directoryId: 'd', path: `/${id}.txt`, name: `${id}.txt`, contentType: 'text/plain', sizeBytes: 12, sha256: 'x', createdAt: '', updatedAt: '', description: null, encrypted };
 }
 
+/** Opens and saves files of one source. */
+interface Opening {
+  open: (file: ShelfFile) => Promise<void>;
+  save: (files: ShelfFile[]) => Promise<void>;
+}
+
 describe('opening and saving files', () => {
-  let opening: FileOpening;
+  let opening: Opening;
   let errors: string[];
   const decrypted: string[] = [];
   /** Whether the password prompt is cancelled, so nothing is decrypted. */
@@ -86,16 +92,19 @@ describe('opening and saving files', () => {
     vi.restoreAllMocks();
   });
 
-  function openingFrom(source: ContentSource): FileOpening {
-    let unlocked = false;
-    return fileOpening(fileReading(source, {
-      read: async (encrypted) => {
-        if (!unlocked) return null;
+  function openingFrom(source: ContentSource): Opening {
+    const reading = fileReading(source, {
+      read: async () => null,
+      unlock: async (encrypted) => {
+        if (promptCancelled) return null;
         decrypted.push(encrypted.id);
-        return new Blob(['secret'], { type: encrypted.contentType });
+        return new Blob(['secret']).stream();
       },
-      unlock: async () => (unlocked = !promptCancelled),
-    }));
+    });
+    return {
+      open: (each) => openFile(openable({ file: each, reading })),
+      save: (files) => saveFiles(files.map((each) => openable({ file: each, reading }))),
+    };
   }
 
   describe('over HTTPS, where the session cookie is kept', () => {

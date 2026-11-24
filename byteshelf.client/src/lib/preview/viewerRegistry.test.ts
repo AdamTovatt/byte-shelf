@@ -13,7 +13,7 @@ function file(contentType: string, name = 'a.bin'): ShelfFile {
 /** The viewer picked among those registered, by each one's plugin. */
 function picked(registered: [string | null, Viewer][], shown: ShelfFile): string | null {
   const registry = registered.reduce((before, [plugin, each]) => before.with(plugin, [each]), ViewerRegistry.EMPTY);
-  return registry.viewerFor(shown)?.id ?? null;
+  return registry.viewerFor(shown)?.viewer?.id ?? null;
 }
 
 describe('the viewer a file is shown with', () => {
@@ -35,7 +35,7 @@ describe('the viewer a file is shown with', () => {
     const before = ViewerRegistry.EMPTY;
     const after = before.with(null, [viewer('image', ['image/*'])]);
 
-    expect(after.viewerFor(file('image/png'))?.id).toBe('image');
+    expect(after.viewerFor(file('image/png'))?.viewer?.id).toBe('image');
     expect(before.viewerFor(file('image/png'))).toBeNull();
   });
 
@@ -61,5 +61,16 @@ describe('the viewer a file is shown with', () => {
     expect(picked(registered, file('image/png'))).toBe('ant');
     expect(picked(registered.slice(0, 2), file('image/png'))).toBe('zebra');
     expect(picked(registered.slice(0, 1), file('image/png'))).toBe('built-in');
+  });
+
+  it('is the next that takes the file when one is unavailable, and why the first is when none is left', () => {
+    const unavailable = (id: string) => ({ ...viewer(id, ['application/pdf']), unavailable: () => `No ${id} here.` });
+    const available = { ...viewer('available', ['application/pdf']), unavailable: () => null };
+    const registry = ViewerRegistry.EMPTY.with('ant', [unavailable('ant')]).with(null, [unavailable('built-in')]);
+    const pdf = file('application/pdf');
+
+    expect(registry.viewerFor(pdf)).toEqual({ viewer: null, unavailable: 'No ant here.' });
+    expect(registry.with('bee', [available]).viewerFor(pdf)?.viewer?.id).toBe('available');
+    expect(registry.viewerFor(file('image/png'))).toBeNull();
   });
 });

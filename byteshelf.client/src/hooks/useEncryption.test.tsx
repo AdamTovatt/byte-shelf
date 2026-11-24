@@ -195,6 +195,7 @@ describe('encryption in the browser', () => {
   afterEach(() => {
     act(() => root.unmount());
     document.body.innerHTML = '';
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -234,7 +235,8 @@ describe('encryption in the browser', () => {
     expect(opened.aborted).toBe(true);
     expect(rememberedPassword(filePasswordKey('docs', undefined, secret.id))).toBeNull();
     rememberPassword(filePasswordKey('docs', undefined, secret.id), 'right');
-    expect(await (await encryption.decryption.read(secret, source))!.text()).toBe('contents');
+    const contents = await encryption.decryption.read(secret, source);
+    expect([contents!.type, await contents!.text()]).toEqual(['text/plain', 'contents']);
 
     await act(async () => {});
     expect(document.body.querySelector('form')).toBeNull();
@@ -257,19 +259,102 @@ describe('encryption in the browser', () => {
     expect.assertions(1);
   });
 
-  it('unlocks a file with the password asked for, or the one kept, reading no more than its header', async () => {
+  it('unlocks a file with the password asked for, from the one opening of it that checked the password', async () => {
     const secret = await file('/secret.txt', 'contents', 'right');
     const reads: string[] = [];
-    const source = deletedSource(null, reads);
+
+    const { answer } = await untilAsked(() => encryption.decryption.unlock(secret, deletedSource(null, reads)));
+    fill('Password', 'right');
+    await press('Unlock');
+
+    expect(await new Response(await answer).text()).toBe('contents');
+    expect(rememberedPassword(filePasswordKey('docs', undefined, secret.id))).toBe('right');
+    expect(reads).toEqual([secret.id]);
+  });
+
+  it('unlocks a file with the password kept, asking for none', async () => {
+    const secret = await file('/secret.txt', 'contents', 'right');
+    rememberPassword(filePasswordKey('docs', undefined, secret.id), 'right');
+
+    expect(await new Response(await encryption.decryption.unlock(secret, deletedSource(null))).text()).toBe('contents');
+
+    expect(document.body.querySelector('form')).toBeNull();
+  });
+
+  it('unlocks a file where no password can be kept', async () => {
+    const secret = await file('/secret.txt', 'contents', 'right');
+    vi.stubGlobal('sessionStorage', {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('No storage.');
+      },
+    });
+
+    const { answer } = await untilAsked(() => contents(secret, deletedSource(null)));
+    fill('Password', 'right');
+    await press('Unlock');
+
+    expect(await (await answer)!.text()).toBe('contents');
+    expect(rememberedPassword(filePasswordKey('docs', undefined, secret.id))).toBeNull();
+  });
+
+  /** A file's source whose download goes on for ever, as a large one's does, with the password kept; `cancelled` hears it stop. */
+  function endlessSource(secret: ShelfFile, cancelled = () => {}): ContentSource {
+    rememberPassword(filePasswordKey('docs', undefined, secret.id), 'right');
+    const stored = shelf.files.get(secret.id)!.content;
+    return {
+      ...deletedSource(null),
+      open: async (_id, signal) => {
+        opened = signal;
+        const reader = stored.stream().getReader();
+        return new ReadableStream({
+          pull: async (controller) => {
+            const { value } = await reader.read();
+            if (value) controller.enqueue(value);
+          },
+          cancel: cancelled,
+        });
+      },
+    };
+  }
+
+  it('downloads no more of an unlocked file once its contents are cancelled', async () => {
+    const secret = await file('/secret.txt', 'contents', 'right');
+    const cancelled = vi.fn();
+
+    await (await encryption.decryption.unlock(secret, endlessSource(secret, cancelled)))!.cancel();
+
+    await vi.waitFor(() => expect(cancelled).toHaveBeenCalledTimes(1));
+  });
+
+  it('downloads no more of an unlocked file once its unlocking is aborted', async () => {
+    const secret = await file('/secret.txt', 'contents', 'right');
+    const unlocking = new AbortController();
+    await encryption.decryption.unlock(secret, endlessSource(secret), unlocking.signal);
+    expect(opened.aborted).toBe(false);
+
+    unlocking.abort();
+
+    expect(opened.aborted).toBe(true);
+  });
+
+  it('ends the check of a password still running as the prompt is cancelled', async () => {
+    const secret = await file('/secret.txt', 'contents', 'right');
+    const source = deletedSource(null);
+    let checking = false;
+    source.open = (_id, signal) => {
+      opened = signal;
+      checking = true;
+      return new Promise(() => {});
+    };
 
     const { answer } = await untilAsked(() => encryption.decryption.unlock(secret, source));
     fill('Password', 'right');
     await press('Unlock');
+    await vi.waitFor(() => expect(checking).toBe(true));
+    await press('Cancel');
 
-    expect(await answer).toBe(true);
-    expect(rememberedPassword(filePasswordKey('docs', undefined, secret.id))).toBe('right');
-    expect(await encryption.decryption.unlock(secret, source)).toBe(true);
-    expect(document.body.querySelector('form')).toBeNull();
+    expect(await answer).toBeNull();
     expect(opened.aborted).toBe(true);
   });
 
@@ -280,9 +365,9 @@ describe('encryption in the browser', () => {
 
     await act(async () => asking.abort());
 
-    expect(await answer).toBe(false);
+    expect(await answer).toBeNull();
     expect(document.body.querySelector('form')).toBeNull();
-    await act(async () => expect(await encryption.decryption.unlock(secret, deletedSource(null), asking.signal)).toBe(false));
+    await act(async () => expect(await encryption.decryption.unlock(secret, deletedSource(null), asking.signal)).toBeNull());
     expect(document.body.querySelector('form')).toBeNull();
   });
 
@@ -290,14 +375,14 @@ describe('encryption in the browser', () => {
     const [first, second] = [await file('/first.txt', 'one', 'right'), await file('/second.txt', 'two', 'right')];
     const { answer: replaced } = await untilAsked(() => encryption.decryption.unlock(first, deletedSource(null)));
 
-    let answer: Promise<boolean>;
+    let answer: Promise<ReadableStream<Uint8Array> | null>;
     await act(async () => void (answer = encryption.decryption.unlock(second, deletedSource(null))));
 
-    expect(await replaced).toBe(false);
+    expect(await replaced).toBeNull();
     expect(document.body.textContent).toContain('Unlock second.txt');
     fill('Password', 'right');
     await press('Unlock');
-    expect(await answer!).toBe(true);
+    expect(await new Response(await answer!).text()).toBe('two');
     expect(document.body.querySelector('form')).toBeNull();
   });
 

@@ -72,8 +72,7 @@ npm run codegen    # in a second terminal
   A folder's rows select as in Finder (`hooks/useSelection.ts`): a click selects one, Cmd or Ctrl
   adds or takes one away, Shift selects a range, Space toggles the focused row, Cmd or Ctrl+A selects
   them all, and Escape or a click in empty space clears it; a double-click or Enter opens a row, a file in
-  the preview when a viewer takes it (a PDF only where the browser shows one inside a page) and else in a
-  new tab. While
+  the preview when a viewer takes it and this browser can show it there, and else in a new tab. While
   any are selected, a bar over the search row (the top bar, on a phone) downloads, moves or deletes
   them. A selection belongs to its folder, and a row that leaves the list leaves it for good.
   A row, or the selection it is in, moves by dragging it onto a folder's row or breadcrumb crumb
@@ -87,24 +86,27 @@ npm run codegen    # in a second terminal
   the next page); a file outside them, as after a reload of a search, is previewed alone. A preview whose
   file is gone closes with a toast. In the trash (`hooks/useTrashPreview.ts`) it is of the one file a file
   deletion took, by the deletion's id, without neighbours.
-  - *Viewers* (`components/preview/viewers/`) are `{ id, mediaTypes, extensions, component }`, held by a
-    registry that never changes (`lib/preview/viewerRegistry.ts`) and is read through `hooks/useViewers.ts`
-    alone. An exact type beats a family (`image/*`), a plugin's viewer a built-in one, and the first plugin
-    by id the next; extensions count only for a file stored as `application/octet-stream`. Nothing is
-    rendered as HTML: HTML shows as its source, and SVG through an `<img>`, where its scripts do not run.
+  - *Viewers* (`components/preview/viewers/`) are `{ id, mediaTypes, extensions, component, unavailable? }`,
+    held by a registry that never changes (`lib/preview/viewerRegistry.ts`) and is read through
+    `hooks/useViewers.ts` alone. An exact type beats a family (`image/*`), a plugin's viewer a built-in one,
+    and the first plugin by id the next; extensions count only for a file stored as
+    `application/octet-stream`. Nothing is rendered as HTML: HTML shows as its source, and SVG through an
+    `<img>`, where its scripts do not run.
   - *Contents* reach a viewer through a `ContentReader` (`lib/preview/contentReader.ts`): `url()`, `blob()`
     and `range()`, whatever they come from. A blob-backed file (`isBlobBacked`) is read whole into the page
-    first (`hooks/useWholeContents.ts`), over 100 MiB only once Load is pressed, and let go as the preview
-    moves on. It is read and unlocked once for the preview and for a Download or Open in new tab, which goes
-    on as the preview moves on (`lib/sharedLoad.ts`). Its URL is a blob: one of its own type only where a
-    tab may show that (`elementUrl` in `lib/localBlobs.ts`): the browser's own "Open image in new tab" would
-    run a blob: SVG as the app. An image, text, XML or JSON type gets a data: URL instead, any other a blob:
-    one of untyped bytes. What the page reads itself skips the browser's cache, which can hand on a part of
-    contents swapped since as the whole (`requestBytes` in `services/contentService.ts`).
+    first (`lib/preview/fileContents.ts`), over 100 MiB only once Load, Download or Open in new tab is
+    pressed, and let go as the preview moves on. It is read and unlocked once for the preview and for a
+    Download or Open in new tab, which goes on as the preview moves on. Its URL is a blob: one of its own
+    type only where a tab may show that (`elementUrl` in `lib/localBlobs.ts`): the browser's own "Open image
+    in new tab" would run a blob: SVG as the app. An image, text, XML or JSON type gets a data: URL instead,
+    any other a blob: one of untyped bytes. What the page reads itself goes past the browser's cache, so
+    nothing of it is left there, and a cached part is never taken for the whole of contents swapped since
+    (`requestBytes` in `services/contentService.ts`).
   - *A viewer that cannot:* one that throws while rendering is caught and Download offered; an image, video
-    or recording the browser cannot decode says so, and one whose connection was lost offers Try again. Where
-    the browser shows no PDF inside a page (`viewers/inPage.ts`), a PDF's row opens it in a tab; reached
-    otherwise, its preview says so, with Open in new tab and Download.
+    or recording the browser cannot decode says so, and one whose connection was lost offers Try again. A
+    viewer that cannot show files in this browser says why (`unavailable`), and the next that takes the type
+    shows them. With none left, as for a PDF where the browser shows none inside a page, the file's row opens
+    it in a tab; reached otherwise, its preview says why, with Open in new tab and Download.
 - **Opening and saving** (`components/fileOpening.tsx`): an unencrypted file opens or saves by navigating to
   `/api/open/...`, where the session's token rides in a cookie the server sets at sign-in and renewal
   (a plain navigation cannot send the header), so no public link is made. The session is renewed
@@ -133,12 +135,12 @@ npm run codegen    # in a second terminal
   through a link, and shown in the preview; one no viewer takes, or opened in a tab, is shown from a local
   blob: in a tab for images, PDFs, plain text, audio and video, saved for every other type, since a blob
   runs as the app. Opening one asks for its password; reached by previous, next or a reload it shows Unlock
-  instead. Reading a file asks for no password and answers that it is locked; unlocking it asks
-  (`Decryption` in `services/contentService.ts`). A password is asked for once and kept in the tab's
-  `sessionStorage` (an encrypted folder's under the folder),
-  taken out of any tab the app opens, and forgotten on sign-in and sign-out, and when the app starts
-  with no session (a tab the browser restores after a sign-out). A plain folder's Remove encryption
-  leaves out the files of an encrypted folder below it, which has its own.
+  instead. Reading a file asks for no password and answers that it is locked; unlocking it asks, and answers
+  the contents (`Decryption` in `services/contentService.ts`). A password is asked for once and kept in the
+  tab's `sessionStorage` (an encrypted folder's under the folder), taken out of any tab the app opens, and
+  forgotten on sign-in and sign-out, and when the app starts with no session (a tab the browser restores
+  after a sign-out). A plain folder's Remove encryption leaves out the files of an encrypted folder below
+  it, which has its own.
 - **Pages and layout:** a shelf's settings are tabs that are routes, `/shelves/:shelf/settings/:tab`
   (`SHELF_SETTINGS_TABS` in `lib/shelfPaths.ts` lists them; the page picks the tab from the route and
   sends any other to the first tab the user sees: General for an admin, Links for anyone else).

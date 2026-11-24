@@ -3,7 +3,9 @@ import toast from 'react-hot-toast';
 import { getErrorMessage } from '../ui';
 import { NameAndReason, NameLine } from '../components/MiddleTruncatedName';
 import { runOrToastNamed } from '../components/nameToasts';
-import { DEFAULT_WORK_FACTOR, checkMatches, createCheck, decryptBlob, decryptStreamWith, encryptBlob, opensWith } from '../lib/encryption/age';
+import { DEFAULT_WORK_FACTOR, checkMatches, createCheck, decryptBlob, encryptBlob, openWith } from '../lib/encryption/age';
+import { eitherAborts } from '../lib/abort';
+import { streamBlob } from '../lib/streamBlob';
 import { filePasswordKey, folderPasswordKey, forgetPassword, rememberPassword, rememberedPassword } from '../lib/encryption/passwords';
 import {
   encryptDirectory,
@@ -59,7 +61,7 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
      * The password kept under `key` while `opens` still accepts it, else one asked for that `opens`
      * accepts, then kept. Null when cancelled, as `signal` cancels it.
      */
-    async function unlock(key: string, name: string, opens: (password: string) => Promise<boolean>, signal?: AbortSignal): Promise<string | null> {
+    async function passwordFor(key: string, name: string, opens: (password: string) => Promise<boolean>, signal?: AbortSignal): Promise<string | null> {
       const kept = rememberedPassword(key);
       if (kept !== null) {
         if (await opens(kept)) return kept;
@@ -73,7 +75,7 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
 
     /** The folder's password, tested against its check. Null when cancelled. */
     function folderPassword(folder: EncryptedFolder): Promise<string | null> {
-      return unlock(folderPasswordKey(shelf, folder.directory.id), folder.directory.name, (given) => checkMatches(folder.check, given));
+      return passwordFor(folderPasswordKey(shelf, folder.directory.id), folder.directory.name, (given) => checkMatches(folder.check, given));
     }
 
     /** An encrypted file's contents, with the password kept for its folder or for it, and that password asked for. */
@@ -83,13 +85,21 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
         // Nothing is read of a file with no password kept, and no more than its header with a stale one.
         const kept = rememberedPassword(key);
         if (kept === null) return null;
-        const plain = await withStored(file, source, (stored) => decryptStreamWith(stored, kept, file.contentType), signal);
-        if (plain === null) forgetPassword(key);
-        return plain;
+        const plain = await decryptedStream(file, source, kept, signal);
+        if (plain) return streamBlob(plain, file.contentType);
+        forgetPassword(key);
+        return null;
       },
       unlock: async (file, source, signal) => {
         const { key, name } = await passwordOf(file, source);
-        return (await unlock(key, name, (given) => fileOpensWith(file, source, given), signal)) !== null;
+        // Aborted once no password was given, with a check that is still running then.
+        const asking = new AbortController();
+        const until = eitherAborts(asking.signal, signal);
+        let opened: Promise<ReadableStream<Uint8Array> | null> = Promise.resolve(null);
+        const password = await passwordFor(key, name, async (given) => (await (opened = decryptedStream(file, source, given, until))) !== null, signal);
+        if (password !== null) return opened;
+        asking.abort();
+        return null;
       },
     };
 
@@ -99,18 +109,28 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
       return { key: filePasswordKey(shelf, folder?.directory.id, file.id), name: folder?.directory.name ?? file.name };
     }
 
-    /** Whether `password` opens a stored encrypted file, downloading only as far as its header. */
-    function fileOpensWith(file: ShelfFile, source: ContentSource, password: string): Promise<boolean> {
-      return withStored(file, source, (stored) => opensWith(stored, password));
+    /**
+     * A stored file's contents, decrypted as they are downloaded, until the stream is cancelled or `signal`
+     * aborts; null when `password` does not open it, nothing past its header downloaded.
+     */
+    async function decryptedStream(file: ShelfFile, source: ContentSource, password: string, signal?: AbortSignal): Promise<ReadableStream<Uint8Array> | null> {
+      const downloading = new AbortController();
+      let plain: ReadableStream<Uint8Array> | null = null;
+      try {
+        plain = await openWith(await source.open(file.id, eitherAborts(downloading.signal, signal)), password);
+        return plain;
+      } finally {
+        if (plain === null) downloading.abort();
+      }
     }
 
-    /** What `consume` answers of a file's stored bytes; what it did not read is not downloaded. */
-    async function withStored<T>(file: ShelfFile, source: ContentSource, consume: (stored: ReadableStream<Uint8Array>) => Promise<T>, signal?: AbortSignal): Promise<T> {
-      const reading = new AbortController();
+    /** Whether `password` opens a stored encrypted file, downloading only as far as its header. */
+    async function fileOpensWith(file: ShelfFile, source: ContentSource, password: string): Promise<boolean> {
+      const checking = new AbortController();
       try {
-        return await consume(await source.open(file.id, signal ? AbortSignal.any([signal, reading.signal]) : reading.signal));
+        return (await decryptedStream(file, source, password, checking.signal)) !== null;
       } finally {
-        reading.abort();
+        checking.abort();
       }
     }
 
@@ -226,7 +246,7 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
      */
     async function leftEncryptedPassword(directory: ShelfDirectory): Promise<string | null> {
       const encrypted = await encryptedFilesOf(directory);
-      return unlock(folderPasswordKey(shelf, directory.id), directory.name, async (given) => {
+      return passwordFor(folderPasswordKey(shelf, directory.id), directory.name, async (given) => {
         for (const file of encrypted) {
           if (await fileOpensWith(file, liveContent(shelf), given)) return true;
         }

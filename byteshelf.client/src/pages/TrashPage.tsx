@@ -7,12 +7,12 @@ import { FormDialog } from '../components/FormDialog';
 import { LoadError } from '../components/LoadError';
 import { NameLine } from '../components/MiddleTruncatedName';
 import { ShelfHeader } from '../components/ShelfHeader';
-import { fileOpening } from '../components/fileOpening';
+import { saveFiles } from '../components/fileOpening';
 import { FilePreview } from '../components/preview/FilePreview';
 import { useEncryption } from '../hooks/useEncryption';
 import { useTrashPreview } from '../hooks/useTrashPreview';
 import { useEmptyTrash, useRestoreDeletion, useTrash } from '../hooks/useShelfQueries';
-import { deletedFile } from '../services/contentService';
+import { deletedFile, openable } from '../services/contentService';
 import { formatBytes, formatDate } from '../lib/format';
 import { nameOf } from '../lib/shelfPaths';
 import { runOrToast } from '../lib/utils';
@@ -43,7 +43,7 @@ export function TrashPage() {
     return runOrToast(async () => {
       const taken = deletedFile(shelf, await fetchDeletion(shelf, entry.deletionId), encryption.decryption);
       if (!taken) throw new Error(`${entry.path} is no longer in the trash.`);
-      await fileOpening(taken.reading).save([taken.file]);
+      await saveFiles([openable(taken)]);
     }, 'Could not save the file');
   }
 

@@ -7,4 +7,6 @@ export const PDF: Viewer = {
   mediaTypes: ['application/pdf'],
   extensions: [],
   component: PdfViewer,
+  // Most phones show no PDF inside a page, only in a tab.
+  unavailable: () => (navigator.pdfViewerEnabled === false ? 'This browser does not show a PDF inside a page.' : null),
 };

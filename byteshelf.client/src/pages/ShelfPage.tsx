@@ -34,11 +34,11 @@ import { useFilePicker } from '../hooks/useFilePicker';
 import { MobileTopBarActions, MobileTopBarOverlay } from '../components/layout/MobileTopBar';
 import { useUploads } from '../hooks/useUploads';
 import { encryptionActions, useEncryption } from '../hooks/useEncryption';
-import { fileOpening, opensInTab } from '../components/fileOpening';
+import { openFile, opensInTab, saveFiles } from '../components/fileOpening';
 import { FilePreview } from '../components/preview/FilePreview';
 import { useShelfPreview, type ShownFiles } from '../hooks/useShelfPreview';
 import { isTypingTarget } from '../lib/keys';
-import { fileReading, liveContent } from '../services/contentService';
+import { fileReading, liveContent, openable } from '../services/contentService';
 import { showActionToast } from '../components/actionToast';
 import { NameAndReason, NameLine } from '../components/MiddleTruncatedName';
 import { reasonOf, runOrToastNamed, toastNamedFailure } from '../components/nameToasts';
@@ -67,7 +67,7 @@ export function ShelfPage() {
   const encryption = useEncryption(shelf);
   const { decryption } = encryption;
   const reading = useMemo(() => fileReading(liveContent(shelf), decryption), [shelf, decryption]);
-  const opening = fileOpening(reading);
+  const openableHere = (file: ShelfFile) => openable({ file, reading });
   const deleteEntry = useDeleteEntry(shelf);
   const restore = useRestoreDeletion(shelf);
   const createDownloadLink = useCreateDownloadLink(shelf);
@@ -112,7 +112,7 @@ export function ShelfPage() {
   function open(entry: Entry): void {
     if (entry.kind === 'directory') navigate(shelfRoute(shelf, entry.value.path));
     else if (preview.showsInPreview(entry.value)) preview.open(entry.value);
-    else void opening.open(entry.value);
+    else void openFile(openableHere(entry.value));
   }
 
   /**
@@ -251,9 +251,9 @@ export function ShelfPage() {
         } : undefined}
         opensIn={entry.kind === 'file' && preview.showsInPreview(entry.value) ? 'preview' : 'tab'}
         onOpen={() => open(entry)}
-        onOpenInTab={entry.kind === 'file' && opensInTab(entry.value) ? () => void opening.open(entry.value) : undefined}
+        onOpenInTab={entry.kind === 'file' && opensInTab(entry.value) ? () => void openFile(openableHere(entry.value)) : undefined}
         onPrefetch={entry.kind === 'directory' ? () => prefetchListing(entry.value.path) : undefined}
-        onDownload={entry.kind === 'file' ? () => void opening.save([entry.value]) : undefined}
+        onDownload={entry.kind === 'file' ? () => void saveFiles([openableHere(entry.value)]) : undefined}
         onDescribe={entry.kind === 'file' ? () => setDescribing(entry.value) : undefined}
         onShowDetails={entry.kind === 'file' ? () => setDetailing(entry.value) : undefined}
         onCopyLink={entry.kind === 'file' && !encrypted ? () => void copyLink(entry.value) : undefined}
@@ -315,7 +315,7 @@ export function ShelfPage() {
   const selectionActions = {
     count: selection.count,
     sizeBytes: selected.reduce((total, entry) => total + entrySizeBytes(entry), 0),
-    onDownload: selectedFiles.length === selected.length ? () => void opening.save(selectedFiles) : undefined,
+    onDownload: selectedFiles.length === selected.length ? () => void saveFiles(selectedFiles.map(openableHere)) : undefined,
     onMove: () => setMoving(selected),
     onDelete: () => void remove(selected),
     onClear: clearSelection,

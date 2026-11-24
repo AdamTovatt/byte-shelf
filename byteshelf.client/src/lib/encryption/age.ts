@@ -1,4 +1,5 @@
 import { Decrypter, Encrypter } from 'age-encryption';
+import { streamBlob } from '../streamBlob';
 
 // Password encryption as every ByteShelf client does it: an age file (c2sp.org/age) with a scrypt
 // recipient, through typage, so `age -d` and the byteshelf CLI open what the browser writes. The
@@ -27,29 +28,12 @@ const NO_MATCH = "no identity matched any of the file's recipients";
  * `workFactor` is for tests only, which lower it to run fast.
  */
 export async function encryptBlob(plain: Blob, password: string, type: string, workFactor = DEFAULT_WORK_FACTOR): Promise<Blob> {
-  return asBlob(await encrypterFor(password, workFactor).encrypt(plain.stream()), type);
+  return streamBlob(await encrypterFor(password, workFactor).encrypt(plain.stream()), type);
 }
 
 /** The contents of the age file `encrypted`, typed `type`. */
 export async function decryptBlob(encrypted: Blob, password: string, type: string): Promise<Blob> {
-  return decryptStream(encrypted.stream(), password, type);
-}
-
-/**
- * The contents of the age file `encrypted`, typed `type`, or null when `password` does not open it: only
- * its header is read then.
- */
-export async function decryptStreamWith(encrypted: ReadableStream<Uint8Array>, password: string, type: string): Promise<Blob | null> {
-  try {
-    return await decryptStream(encrypted, password, type);
-  } catch (caught) {
-    if (caught instanceof WrongPasswordError) return null;
-    throw caught;
-  }
-}
-
-async function decryptStream(encrypted: ReadableStream<Uint8Array>, password: string, type: string): Promise<Blob> {
-  return asBlob(await openStream(encrypted, password), type);
+  return streamBlob(await openStream(encrypted.stream(), password), type);
 }
 
 function encrypterFor(password: string, workFactor: number): Encrypter {
@@ -59,18 +43,15 @@ function encrypterFor(password: string, workFactor: number): Encrypter {
   return encrypter;
 }
 
-/** A stream gathered into a Blob, which the browser may keep on disk rather than in memory. */
-async function asBlob(stream: ReadableStream<Uint8Array>, type: string): Promise<Blob> {
-  return new Blob([await new Response(stream).blob()], { type });
-}
-
-/** Whether `password` opens the age file `encrypted`: only its header is read before the answer. */
-export async function opensWith(encrypted: ReadableStream<Uint8Array>, password: string): Promise<boolean> {
+/**
+ * The contents of the age file `encrypted` as a stream, or null when `password` does not open it: only its
+ * header is read before the answer.
+ */
+export async function openWith(encrypted: ReadableStream<Uint8Array>, password: string): Promise<ReadableStream<Uint8Array> | null> {
   try {
-    await (await openStream(encrypted, password)).cancel();
-    return true;
+    return await openStream(encrypted, password);
   } catch (caught) {
-    if (caught instanceof WrongPasswordError) return false;
+    if (caught instanceof WrongPasswordError) return null;
     throw caught;
   }
 }

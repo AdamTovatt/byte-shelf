@@ -3,7 +3,7 @@ import type { ShelfFile } from '../../../services/shelfService';
 import { BUILT_IN_VIEWERS } from '.';
 
 function viewerOf(contentType: string, name = 'a.bin'): string | null {
-  return BUILT_IN_VIEWERS.viewerFor({ name, contentType } as ShelfFile)?.id ?? null;
+  return BUILT_IN_VIEWERS.viewerFor({ name, contentType } as ShelfFile)?.viewer?.id ?? null;
 }
 
 describe('the built-in viewers', () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import { useLocation, useNavigate } from 'react-router-dom';
 
@@ -21,7 +21,7 @@ export interface PreviewParam {
   moveTo: (id: string) => void;
   close: () => void;
   /** Whether what is previewed was opened here, rather than moved on to, gone back to or reloaded. */
-  wasOpened: () => boolean;
+  wasOpened: boolean;
 }
 
 /** The preview in the page's URL (`?preview=<id>`), so a reload keeps it. */
@@ -34,17 +34,22 @@ export function usePreviewParam(): PreviewParam {
   // Going back is not at once, so a second close of the same history entry before it would leave the
   // page behind the preview.
   const closing = useRef<string | null>(null);
-  // What was opened here last, while it is still previewed.
-  const opened = useRef<string | null>(null);
   useEffect(() => {
     if (id === null) closing.current = null;
-    if (id !== opened.current) opened.current = null;
   }, [id]);
+
+  // What was opened here last, until something else is previewed, or nothing.
+  const [opened, setOpened] = useState<string | null>(null);
+  const [shown, setShown] = useState(id);
+  if (shown !== id) {
+    setShown(id);
+    if (opened !== id) setOpened(null);
+  }
 
   const moveTo = useCallback((next: string) => navigate({ search: withPreview(search, next) }, { replace: true, state }), [navigate, search, state]);
 
   const open = useCallback((next: string) => {
-    opened.current = next;
+    setOpened(next);
     if (id === null) navigate({ search: withPreview(search, next) }, { state: OPENED_HERE });
     else moveTo(next);
   }, [id, navigate, search, moveTo]);
@@ -56,9 +61,7 @@ export function usePreviewParam(): PreviewParam {
     else navigate({ search: withPreview(search, null) }, { replace: true });
   }, [key, navigate, search, state]);
 
-  const wasOpened = useCallback(() => id !== null && opened.current === id, [id]);
-
-  return { id, open, moveTo, close, wasOpened };
+  return { id, open, moveTo, close, wasOpened: id !== null && opened === id };
 }
 
 /** Closes a preview, saying so, once what it shows is gone. */

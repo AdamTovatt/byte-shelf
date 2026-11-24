@@ -17,7 +17,12 @@ export interface Viewer {
   /** The name extensions it takes, such as `.md`, of files stored without a type (`application/octet-stream`). */
   extensions: readonly string[];
   component: ComponentType<ViewerProps>;
+  /** Why this browser cannot show files with it now; null when it can, as one without this always can. */
+  unavailable?: () => string | null;
 }
+
+/** The viewer that shows a file, or why none of those that take its type can in this browser. */
+export type ViewerMatch = { viewer: Viewer; unavailable: null } | { viewer: null; unavailable: string };
 
 /** How closely a viewer takes a file: not at all, by its type's family, or by its type or extension. */
 const MATCH = { none: 0, family: 1, exact: 2 } as const;
@@ -33,7 +38,8 @@ interface Registered {
 /**
  * The viewers the preview shows files with, and which one shows a file: the one that takes its exact type
  * (or, untyped, its extension) before one that takes its type's family, then a plugin's before a built-in
- * one, then the plugin whose id comes first. One registry never changes; another holds more.
+ * one, then the plugin whose id comes first. One that is unavailable is passed over. One registry never
+ * changes; another holds more.
  */
 export class ViewerRegistry {
   static readonly EMPTY = new ViewerRegistry([]);
@@ -50,14 +56,21 @@ export class ViewerRegistry {
     return new ViewerRegistry([...this.registered, ...added]);
   }
 
-  /** The viewer that shows `file`; null when none takes it. */
-  viewerFor(file: ShelfFile): Viewer | null {
+  /** The viewer that shows `file`, or why those that take it cannot; null when none takes it. */
+  viewerFor(file: ShelfFile): ViewerMatch | null {
     const taking = this.registered
       .map((each) => ({ ...each, match: matchOf(each, file) }))
       .filter((each) => each.match !== MATCH.none);
     // The sort is stable, so between a plugin's own viewers the first it registered wins.
     taking.sort((one, other) => other.match - one.match || byPlugin(one.pluginId, other.pluginId));
-    return taking[0]?.viewer ?? null;
+
+    let first: ViewerMatch | null = null;
+    for (const { viewer } of taking) {
+      const unavailable = viewer.unavailable?.() ?? null;
+      if (unavailable === null) return { viewer, unavailable };
+      first ??= { viewer: null, unavailable };
+    }
+    return first;
   }
 }
 

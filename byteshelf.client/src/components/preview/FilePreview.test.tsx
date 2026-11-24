@@ -2,7 +2,6 @@
 import { act, useEffect, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import toast from 'react-hot-toast';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FilePreview } from './FilePreview';
 import { BUILT_IN_VIEWERS } from './viewers';
@@ -75,7 +74,7 @@ describe('the preview', () => {
         steps={beside && { ...beside, more: moreFound !== undefined, toPrevious: move(beside.previous), toNext: move(beside.next) ?? moreFound ?? null }}
         onClose={() => closed++}
         detailsOn={detailsOn}
-        asksPassword={() => asksPassword}
+        asksPassword={asksPassword}
       />
     );
   }
@@ -108,7 +107,7 @@ describe('the preview', () => {
     moreFound = undefined;
     detailsOn = 'docs';
     read = async () => new Blob(['read here'], { type: 'text/plain' });
-    unlock = async () => false;
+    unlock = async () => null;
     root = createRoot(document.body.appendChild(document.createElement('div')));
   });
 
@@ -217,7 +216,7 @@ describe('the preview', () => {
 
   it('says why a file\'s record could not be loaded', async () => {
     await act(async () => root.render(
-      <FilePreview previewed={null} error={new Error('The server is unreachable.')} steps={null} onClose={() => {}} asksPassword={() => false} />,
+      <FilePreview previewed={null} error={new Error('The server is unreachable.')} steps={null} onClose={() => {}} asksPassword={false} />,
     ));
 
     expect(document.body.textContent).toContain('The server is unreachable.');
@@ -415,21 +414,16 @@ describe('the preview', () => {
 
     describe('and locked', () => {
       const locked = file('a', { encrypted: true });
-      let unlocked: boolean;
       let asks: { path: string; signal?: AbortSignal; answer: (given: boolean) => void }[];
 
       beforeEach(() => {
-        unlocked = false;
         asks = [];
-        read = async (each) => (unlocked || !each.encrypted ? new Blob([`secret of ${each.id}`], { type: 'text/plain' }) : null);
+        read = async (each) => (each.encrypted ? null : new Blob([`secret of ${each.id}`], { type: 'text/plain' }));
         unlock = (each, signal) => new Promise((resolve) => {
           asks.push({
             path: each.path,
             signal,
-            answer: (given) => {
-              unlocked = given;
-              resolve(given);
-            },
+            answer: (given) => resolve(given ? new Blob([`secret of ${each.id}`]).stream() : null),
           });
         });
       });
@@ -473,28 +467,21 @@ describe('the preview', () => {
         await shows('secret of b');
       });
 
-      it('shows once Download has unlocked it, read once', async () => {
-        const reads = vi.fn(read);
-        read = reads;
+      it('shows once Download has unlocked it, unlocked once', async () => {
         await show(locked);
         await shows('This file is encrypted.');
 
         await act(async () => labelled('Download')!.click());
         await vi.waitFor(() => expect(asks).toHaveLength(1));
-        reads.mockClear();
         await act(async () => asks[0].answer(true));
 
         await shows('secret of a');
         await vi.waitFor(() => expect(saved).toEqual(['a']));
-        expect(reads).toHaveBeenCalledTimes(1);
+        expect(asks).toHaveLength(1);
       });
 
-      it('says why unlocking it failed', async () => {
-        const errors: string[] = [];
-        vi.spyOn(toast, 'error').mockImplementation((message) => {
-          errors.push(String(message));
-          return '';
-        });
+      it('says why unlocking it failed, and is unlocked when asked again', async () => {
+        const unlocking = unlock;
         unlock = async () => {
           throw new Error('The server is unreachable.');
         };
@@ -502,10 +489,29 @@ describe('the preview', () => {
         await shows('This file is encrypted.');
 
         await press('Unlock');
-
-        expect(errors).toEqual(['The server is unreachable.']);
+        await shows('The server is unreachable.');
+        unlock = unlocking;
+        await press('Unlock');
         await shows('This file is encrypted.');
+        await act(async () => asks[0].answer(true));
+
+        await shows('secret of a');
       });
+    });
+
+    it('shows anew once its contents change, and as it is when only its name does', async () => {
+      read = async (each) => new Blob([`read of ${each.sha256}`], { type: 'text/plain' });
+      const reads = vi.fn(read);
+      read = reads;
+      await show(file('a'));
+      await shows('read of a');
+
+      await act(async () => change(file('a', { name: 'renamed' })));
+      await shows('renamed');
+      expect(reads).toHaveBeenCalledTimes(1);
+      await act(async () => change(file('a', { sha256: 'changed' })));
+
+      await shows('read of changed');
     });
 
     it.each([

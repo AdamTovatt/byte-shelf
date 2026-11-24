@@ -1,4 +1,5 @@
 import type { ContentSource } from '../../services/contentService';
+import { eitherAborts } from '../abort';
 import { elementUrl, type ElementUrl } from '../localBlobs';
 
 /**
@@ -26,7 +27,7 @@ export interface ClosableReader extends ContentReader {
  */
 export function sourceReader(id: string, source: ContentSource): ClosableReader {
   let reading = new AbortController();
-  const until = (signal?: AbortSignal) => (signal ? AbortSignal.any([signal, reading.signal]) : reading.signal);
+  const until = (signal?: AbortSignal) => eitherAborts(reading.signal, signal);
 
   return {
     url: async (signal) => {

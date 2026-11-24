@@ -28,7 +28,7 @@ export function rememberPassword(key: string, password: string): void {
   try {
     sessionStorage.setItem(key, password);
   } catch {
-    // Storage unavailable: what the password unlocks stays locked.
+    // Storage unavailable: the password is asked for again each time.
   }
 }
 

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { whyNotInPage } from '../components/preview/viewers/inPage';
 import { neighboursOf, type Steps } from '../lib/preview/neighbours';
 import { isNotFound } from '../services/apiClient';
 import type { FileReading, ReadFile } from '../services/contentService';
@@ -26,7 +25,7 @@ export interface ShelfPreview {
     error: Error | null;
     steps: Steps | null;
     onClose: () => void;
-    asksPassword: () => boolean;
+    asksPassword: boolean;
   };
 }
 
@@ -67,10 +66,7 @@ export function useShelfPreview(shelf: string, shown: ShownFiles, reading: FileR
 
   return {
     isOpen: id !== null && !gone,
-    showsInPreview: (each) => {
-      const viewer = viewers.viewerFor(each);
-      return viewer !== null && whyNotInPage(viewer) === null;
-    },
+    showsInPreview: (each) => Boolean(viewers.viewerFor(each)?.viewer),
     open: (opened) => open(opened.id),
     shown: {
       previewed: file ? { file, reading } : null,

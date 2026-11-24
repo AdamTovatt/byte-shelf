@@ -13,7 +13,7 @@ export interface TrashPreview {
     previewed: ReadFile | null;
     error: Error | null;
     onClose: () => void;
-    asksPassword: () => boolean;
+    asksPassword: boolean;
   };
 }
 

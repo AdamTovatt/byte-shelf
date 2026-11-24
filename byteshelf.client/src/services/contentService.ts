@@ -4,6 +4,7 @@
 
 import { apiUrl, authorizedFetch, throwIfFailed } from './apiClient';
 import { hasFreshCookie } from './authService';
+import { streamBlob } from '../lib/streamBlob';
 import { fetchEncryptedFolder, type EncryptedFolder } from './encryptionService';
 import type { DeletionTree, ShelfFile } from './shelfService';
 
@@ -116,10 +117,11 @@ export interface Decryption {
   /** The file's contents, decrypted with the password kept for it; null when none kept opens it. Asks for none. */
   read: (file: ShelfFile, source: ContentSource, signal?: AbortSignal) => Promise<Blob | null>;
   /**
-   * Whether a password that opens the file is kept, asked for when none is: false when it was not given.
-   * `signal` takes the prompt back.
+   * The file's contents, downloaded and decrypted as they are read, with a password asked for when none kept
+   * opens it; null when it was not given. Aborting `signal` takes the prompt back and ends the download, as
+   * cancelling the stream does.
    */
-  unlock: (file: ShelfFile, source: ContentSource, signal?: AbortSignal) => Promise<boolean>;
+  unlock: (file: ShelfFile, source: ContentSource, signal?: AbortSignal) => Promise<ReadableStream<Uint8Array> | null>;
 }
 
 /** A source's files, and a file's whole contents read from it into the page. */
@@ -127,8 +129,8 @@ export interface FileReading {
   source: ContentSource;
   /** The whole contents, decrypted when encrypted; null when it is locked. Asks for no password. */
   read: (file: ShelfFile, signal?: AbortSignal) => Promise<Blob | null>;
-  /** Whether a locked file's password is given when asked for, so it can be read; `signal` takes the prompt back. */
-  unlock: (file: ShelfFile, signal?: AbortSignal) => Promise<boolean>;
+  /** A locked file's contents, its password asked for, as `Decryption.unlock` answers them. */
+  unlock: (file: ShelfFile, signal?: AbortSignal) => Promise<ReadableStream<Uint8Array> | null>;
 }
 
 /** A file and what reads it. */
@@ -156,8 +158,24 @@ export function deletedFile(shelf: string, { deletion, tree, encryptedBy }: Dele
 }
 
 /** A file's whole contents, its password asked for when it is locked; null when it was not given. */
-export async function unlockedContents({ read, unlock }: Pick<FileReading, 'read' | 'unlock'>, file: ShelfFile): Promise<Blob | null> {
-  return (await read(file)) ?? ((await unlock(file)) ? read(file) : null);
+export async function unlockedContents({ read, unlock }: FileReading, file: ShelfFile): Promise<Blob | null> {
+  const contents = await read(file);
+  if (contents) return contents;
+  const unlocked = await unlock(file);
+  return unlocked && streamBlob(unlocked, file.contentType);
+}
+
+/** One file as it is opened in a tab and saved. */
+export interface OpenableFile {
+  file: ShelfFile;
+  source: ContentSource;
+  /** Its whole contents, its password asked for when it is locked; null when it was not given. */
+  contents: () => Promise<Blob | null>;
+}
+
+/** A file opened and saved from what reads it, its whole contents answered by `contents` when given. */
+export function openable({ file, reading }: ReadFile, contents = () => unlockedContents(reading, file)): OpenableFile {
+  return { file, source: reading.source, contents };
 }
 
 async function fetchBytes(url: string, init: RequestInit): Promise<Response> {
@@ -167,9 +185,10 @@ async function fetchBytes(url: string, init: RequestInit): Promise<Response> {
 }
 
 /**
- * Asks for a file's stored bytes past the browser's cache. Its contents may have been swapped at the same
- * address, and Chrome, asking whether a part it keeps still holds, hands on the same part of the new
- * contents as the whole.
+ * Asks for a file's stored bytes past the browser's cache, so that nothing the page reads is left there: of
+ * an encrypted file, or of a plain one encrypted later. A cached part would also be handed on as the whole:
+ * once contents are swapped at the same address, Chrome, asking whether a part it keeps still holds, takes
+ * the same part of the new ones.
  */
 function requestBytes(url: string, init: RequestInit): Promise<Response> {
   return authorizedFetch(url, { method: 'GET', cache: 'no-store', ...init });

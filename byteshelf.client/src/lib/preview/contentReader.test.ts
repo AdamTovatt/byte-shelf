@@ -71,7 +71,7 @@ describe('a file read by its address', () => {
     await vi.waitFor(() => expect(sent).toHaveLength(1));
     caller.abort();
     expect(await abandoned).toBe('AbortError');
-    const closed = reader.range(0, 5).catch((error: Error) => error.name);
+    const closed = reader.range(0, 5, new AbortController().signal).catch((error: Error) => error.name);
     await vi.waitFor(() => expect(sent).toHaveLength(2));
     reader.close();
     expect(await closed).toBe('AbortError');
