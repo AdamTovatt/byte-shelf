@@ -11,7 +11,7 @@ namespace ByteShelf.Server.Tests.Derived
     public sealed class DerivedStoreTests : IAsyncLifetime
     {
         private static readonly string Sha256 = TestHashes.Sha256Of("contents");
-        private static readonly DerivedEntry Made = new DerivedEntry("images", 3, new MadeInfo("image/webp", new DerivedOriginal(4000, 3000, "image/jpeg")));
+        private static readonly DerivedEntry Made = new DerivedEntry("images", 3, new MadeInfo("image/webp"));
         private static readonly DerivedEntry Failed = new DerivedEntry("images", 3, null);
 
         private readonly TestClock _clock = new TestClock(TestInstants.Now);
@@ -40,7 +40,7 @@ namespace ByteShelf.Server.Tests.Derived
             string path = Path.Combine(_root.Root.Path, "derived", "thumbnail", Sha256[..2], Sha256[2..4], Sha256);
             Assert.Equal("small", await File.ReadAllTextAsync(path));
             Assert.Equal(
-                "{\"plugin\":\"images\",\"version\":3,\"made\":{\"mediaType\":\"image/webp\",\"original\":{\"width\":4000,\"height\":3000,\"mediaType\":\"image/jpeg\"}}}",
+                "{\"plugin\":\"images\",\"version\":3,\"made\":{\"mediaType\":\"image/webp\"}}",
                 await File.ReadAllTextAsync(path + ".json"));
             Assert.Equal(2, AllFiles().Count);
             Assert.Equal(Made, _store.Find(DerivedKind.Thumbnail, Sha256));

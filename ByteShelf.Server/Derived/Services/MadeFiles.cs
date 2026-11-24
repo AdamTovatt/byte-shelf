@@ -22,7 +22,7 @@ namespace ByteShelf.Server.Derived.Services
 
         public IReadOnlyList<MadeInFolder> Made => _made.Values.ToList();
 
-        public async Task AddAsync(DerivedKind kind, string mediaType, DerivedOriginal? original, Func<Stream, Task> write)
+        public async Task AddAsync(DerivedKind kind, string mediaType, Func<Stream, Task> write)
         {
             if (!_kinds.Contains(kind))
             {
@@ -39,7 +39,7 @@ namespace ByteShelf.Server.Derived.Services
                 await write(file);
             }
 
-            _made[kind] = new MadeInFolder(kind, mediaType, original);
+            _made[kind] = new MadeInFolder(kind, mediaType);
         }
 
         /// <exception cref="PluginUnavailableException">

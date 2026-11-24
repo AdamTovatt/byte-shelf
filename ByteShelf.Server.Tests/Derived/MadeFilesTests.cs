@@ -106,7 +106,7 @@ namespace ByteShelf.Server.Tests.Derived
 
         private Task AddAsync(Func<Stream, Task> write)
         {
-            return _made.AddAsync(DerivedKind.Thumbnail, "image/webp", null, write);
+            return _made.AddAsync(DerivedKind.Thumbnail, "image/webp", write);
         }
     }
 }

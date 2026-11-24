@@ -26,8 +26,8 @@ whose own type nothing takes has none, though another holds the same contents.
 ## On disk (`DerivedStore`)
 
 `derived/<kind>/ab/cd/<sha256>` in the root, by the SHA-256 of the contents it was made from, and beside
-it `<sha256>.json` (`DerivedEntry`): the plugin and version that made it, its media type and the
-original's width, height and type, or that making it failed. Nothing about them is in the database.
+it `<sha256>.json` (`DerivedEntry`): the plugin and version that made it and its media type, or that
+making it failed. Nothing about them is in the database.
 
 They are a cache: not replicated, not in backups, not counted in quota, not found by search. Empty the
 folder and they are made again, failures tried again too (with the server stopped: a run under way works in

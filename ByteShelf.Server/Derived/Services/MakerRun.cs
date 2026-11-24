@@ -105,7 +105,7 @@ namespace ByteShelf.Server.Derived.Services
             FileInfo file = new FileInfo(Path.Combine(folder.Path, DerivedKinds.NameOf(kind)));
             bool mayBeKept = file is { Exists: true, LinkTarget: null } && file.Length <= DerivedFileLimits.MaxBytesOf(kind);
             MadeInfo? info = made != null && MediaTypeHeaderValue.TryParse(made.MediaType, out _) && mayBeKept
-                ? new MadeInfo(made.MediaType, made.Original)
+                ? new MadeInfo(made.MediaType)
                 : null;
 
             return new KeptFile(kind, new DerivedEntry(_plugin.Id, maker.Declaration.Version, info), info == null ? null : file.FullName);

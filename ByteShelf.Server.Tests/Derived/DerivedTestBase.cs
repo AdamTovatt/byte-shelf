@@ -89,7 +89,7 @@ namespace ByteShelf.Server.Tests.Derived
                 large.SetLength(DerivedStore.MaxFullBytes);
             }
 
-            Store.Put(file.Sha256, new KeptFile(DerivedKind.Full, new DerivedEntry(TestMaker.Spec.DefaultId, 1, new MadeInfo(TestMaker.MediaType, null)), source));
+            Store.Put(file.Sha256, new KeptFile(DerivedKind.Full, new DerivedEntry(TestMaker.Spec.DefaultId, 1, new MadeInfo(TestMaker.MediaType)), source));
         }
 
         /// <summary>One pass over what is already stored, as the job runs it.</summary>

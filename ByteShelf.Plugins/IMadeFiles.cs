@@ -14,10 +14,9 @@ namespace ByteShelf.Plugins
         /// </summary>
         /// <param name="kind">One of the kinds the run was asked for, each made at most once.</param>
         /// <param name="mediaType">The file's media type.</param>
-        /// <param name="original">What it is made from, when the maker can tell.</param>
         /// <param name="write">Writes the file.</param>
         /// <exception cref="ArgumentException">The kind was not asked for.</exception>
         /// <exception cref="InvalidOperationException">The kind is made already.</exception>
-        Task AddAsync(DerivedKind kind, string mediaType, DerivedOriginal? original, Func<Stream, Task> write);
+        Task AddAsync(DerivedKind kind, string mediaType, Func<Stream, Task> write);
     }
 }

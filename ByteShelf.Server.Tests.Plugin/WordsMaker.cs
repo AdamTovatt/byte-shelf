@@ -13,7 +13,7 @@ namespace ByteShelf.Server.Tests.Plugin
             byte[] words = Encoding.UTF8.GetBytes((await reader.ReadToEndAsync()).ToUpperInvariant());
             foreach (DerivedKind kind in kinds)
             {
-                await made.AddAsync(kind, "text/plain", null, file => file.WriteAsync(words).AsTask());
+                await made.AddAsync(kind, "text/plain", file => file.WriteAsync(words).AsTask());
             }
         }
     }

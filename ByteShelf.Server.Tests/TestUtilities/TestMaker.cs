@@ -198,7 +198,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
             if (kind == DerivedKind.Agent && text.StartsWith("picture", StringComparison.Ordinal))
             {
                 // As much of a JPEG as tells one.
-                return made.AddAsync(kind, MediaType, null, file => file.WriteAsync(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 }).AsTask());
+                return made.AddAsync(kind, MediaType, file => file.WriteAsync(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 }).AsTask());
             }
 
             return kind == DerivedKind.Thumbnail && text == "large thumbnail"
@@ -208,7 +208,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
 
         private static Task AddAsync(IMadeFiles made, DerivedKind kind, params string[] parts)
         {
-            return made.AddAsync(kind, MediaType, new DerivedOriginal(40, 30, "image/png"), async file =>
+            return made.AddAsync(kind, MediaType, async file =>
             {
                 foreach (string part in parts)
                 {
