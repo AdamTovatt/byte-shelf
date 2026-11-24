@@ -67,7 +67,8 @@ A plugin's entry point is made and its registration run in each of those process
 
 ## The server assembly
 
-It is written against `ByteShelf.Plugins` and holds one public class implementing
+It is written against `ByteShelf.Plugins`, which like `ByteShelfCommon` is MIT-licensed
+([LICENSE](../../ByteShelf.Plugins/LICENSE)). It holds one public class implementing
 `IByteShelfPlugin`, which registers what it adds through an `IPluginBuilder`: its services, in a
 copy of the server's collection, taken over only once the plugin can be loaded, so one that fails
 leaves nothing registered and no controller behind. The exception is what a registration does to an

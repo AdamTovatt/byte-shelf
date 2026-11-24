@@ -108,5 +108,6 @@ dotnet run --project ByteShelf.Cli -- shelves
 ## License
 
 The server, the CLI, the MCP tools and the web UI are GPL-3.0-only ([LICENSE](LICENSE)). The libraries an app
-builds against, ByteShelfClient and ByteShelfCommon, are MIT
-([ByteShelfClient/LICENSE](ByteShelfClient/LICENSE), [ByteShelfCommon/LICENSE](ByteShelfCommon/LICENSE)).
+or a plugin's server assembly builds against, ByteShelfClient, ByteShelfCommon and ByteShelf.Plugins, are MIT
+([ByteShelfClient/LICENSE](ByteShelfClient/LICENSE), [ByteShelfCommon/LICENSE](ByteShelfCommon/LICENSE),
+[ByteShelf.Plugins/LICENSE](ByteShelf.Plugins/LICENSE)).
