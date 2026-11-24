@@ -12,6 +12,8 @@ namespace ByteShelf.Server.Metadata.Services
     /// </summary>
     public class MetadataReadingWorker : PeriodicJobWorker<MetadataReadingSummary>
     {
+        internal static readonly TimeSpan BetweenPasses = TimeSpan.FromHours(1);
+
         private readonly MetadataReadingSignal _signal;
 
         public MetadataReadingWorker(IServiceScopeFactory scopeFactory, MetadataReadingSignal signal, TimeProvider timeProvider, ILogger<MetadataReadingWorker> logger)
@@ -22,7 +24,7 @@ namespace ByteShelf.Server.Metadata.Services
 
         protected override string JobName => JobNames.MetadataReading;
 
-        protected override TimeSpan Interval => TimeSpan.FromHours(1);
+        protected override TimeSpan Interval => BetweenPasses;
 
         protected override WakeSignal Wake => _signal.Wake;
 

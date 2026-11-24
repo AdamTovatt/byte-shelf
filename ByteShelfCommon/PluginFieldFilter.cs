@@ -14,6 +14,8 @@ namespace ByteShelfCommon
     {
         internal const string RangeSeparator = "..";
 
+        private delegate bool Reader<T>(string text, out T value);
+
         /// <param name="plugin">The plugin's id.</param>
         /// <param name="field">The name of the field it declares.</param>
         /// <param name="condition">What is asked of it.</param>
@@ -118,8 +120,6 @@ namespace ByteShelfCommon
                 ? new PluginFieldCondition.During(from, before)
                 : null;
         }
-
-        private delegate bool Reader<T>(string text, out T value);
 
         /// <summary>One end of a range; a blank one is left open.</summary>
         private static bool TryReadEnd<T>(string text, Reader<T> read, out T? value)

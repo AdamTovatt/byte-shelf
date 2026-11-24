@@ -16,13 +16,13 @@ A Server-Sent Events stream that tells the web UI which cached queries to refetc
 
 ## Where events come from
 
-`ChangeLogInvalidationPublisher` follows the change log, polling it once a second, and publishes
-what each new entry makes stale (`ChangeLogInvalidations`). Every change a service makes to storage,
-users and access is in the log, written in the transaction that made it, so no service publishes on its
-own (what goes with a file by a foreign key is not in it, but the file's purge is): nothing can forget to, and nothing is published for a change that rolls back. SQLite commits one
-writer at a time in sequence order, so following the sequence misses nothing. It starts from where
-the log stands when it first reads it, and a failed read, that first one included, is tried again at
-the next poll.
+`ChangeLogInvalidationPublisher` follows the change log, polling it once a second, and publishes what
+each new entry makes stale (`ChangeLogInvalidations`). Every change a service makes to storage, users
+and access is in the log, written in the transaction that made it, so no service publishes on its own
+(what goes with a file by a foreign key is not in it, but the file's purge is): nothing can forget to,
+and nothing is published for a change that rolls back. SQLite commits one writer at a time in sequence
+order, so following the sequence misses nothing. It starts from where the log stands when it first reads
+it, and a failed read, that first one included, is tried again at the next poll.
 
 | Resource | Made stale by | Metadata |
 |---|---|---|
@@ -39,10 +39,10 @@ entry names an object, not a shelf, and refreshing every open listing for each f
 more than it shows. The web UI fetches a file's metadata afresh whenever it shows it. A plugin's document
 about contents is the same.
 
-A plugin's document about a file makes its shelf's contents stale, as a description does: listings carry its
-fields and search finds the file by them. Its entry names the file, whose shelf the publisher looks up, and
-makes nothing stale once the file is gone, whose purge did. A document that was
-deleted (`--forget-plugin`, or a replica removing what its primary no longer has) names none, so every shelf's
+A plugin's document about a file makes its shelf's contents stale, as a description does: listings carry
+its fields and search finds the file by them. Its entry names the file, whose shelf the publisher looks
+up, and makes nothing stale once the file is gone, whose purge did. A document that was deleted
+(`--forget-plugin`, or a replica removing what its primary no longer has) names none, so every shelf's
 contents are stale; an entry whose state the log forgot for a newer one
 ([Change log](../ChangeLog/ChangeLog.md)) says nothing, as the newer follows it.
 

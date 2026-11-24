@@ -20,11 +20,22 @@ CREATE TABLE content_plugin_metadata (
 CREATE INDEX idx_content_plugin_metadata_sha256 ON content_plugin_metadata (sha256);
 
 -- The version of the server's own reader that read the row: what another version read is read again, as a plugin's is.
--- 1 read every row from before versions were kept (ObjectMetadata.ReaderVersion).
+-- 1 read every row from before versions were kept.
 ALTER TABLE object_metadata ADD COLUMN reader_version INTEGER NOT NULL DEFAULT 1;
 
--- About a file, whatever its contents. A null document was removed: its row stays, so a version is never given twice. It goes with the file's row, and nothing logs that: a replica keeps the document of
--- a file purged on its primary for as long as it keeps the file in its own trash.
+-- The log's states of those rows, and a whole copy's taken before the upgrade and still held, say so too, so one shape is met
+-- when they are applied: ObjectMetadata refuses a payload without its version.
+UPDATE change_log
+SET payload = json_set(payload, '$.readerVersion', 1)
+WHERE entity_type = 'object_metadata' AND payload IS NOT NULL;
+
+UPDATE replication_copy
+SET payload = json_set(payload, '$.readerVersion', 1)
+WHERE entity_type = 'object_metadata';
+
+-- About a file, whatever its contents. A null document was removed: its row stays, so a version is never given twice. It goes
+-- with the file's row, and nothing logs that: a replica keeps the document of a file purged on its primary for as long as it
+-- keeps the file in its own trash.
 CREATE TABLE file_plugin_metadata (
     id TEXT PRIMARY KEY,
     plugin_id TEXT NOT NULL CHECK (plugin_id <> ''),

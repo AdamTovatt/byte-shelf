@@ -12,7 +12,6 @@ using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
-using DbUp;
 using EasyReasy.Database;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,8 +27,6 @@ namespace ByteShelf.Server.Tests.Access
     /// </summary>
     public class KeyGrantsMigrationTests : ServiceTestBase
     {
-        private const string FirstMigrationAfter = "v0014";
-
         private static readonly Guid Docs = Guid.Parse("10000000-0000-0000-0000-000000000001");
         private static readonly Guid Photos = Guid.Parse("10000000-0000-0000-0000-000000000002");
         private static readonly OldKey Writer = new OldKey(Guid.Parse("20000000-0000-0000-0000-000000000001"), Docs, "writer", "read_write", ShelfKeyPermission.ReadWrite);
@@ -49,7 +46,7 @@ namespace ByteShelf.Server.Tests.Access
         {
             await base.InitializeAsync();
             _old = RootFolder.Open(Path.Combine(AppContext.BaseDirectory, "test-roots", "v0013-" + Guid.NewGuid().ToString("N")));
-            MigrateThroughV0013(_old.ConnectionString);
+            TestMigrations.RunBefore("v0014", _old.ConnectionString);
             await FillAsBeforeV0014Async(_old.ConnectionString);
 
             _migrationStarted = DateTimeOffset.UtcNow;
@@ -171,24 +168,6 @@ namespace ByteShelf.Server.Tests.Access
             await using IDbTransactionSession session = await Services.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync();
             await Services.GetRequiredService<ReplicaApplier>().ApplyAsync(await ReadLogAsync(_old.ConnectionString), session, new AppliedChanges());
             await session.CommitAsync();
-        }
-
-        private static void MigrateThroughV0013(string connectionString)
-        {
-            DbUp.Engine.DatabaseUpgradeResult result = DeployChanges.To
-                .SqliteDatabase(connectionString)
-                .WithScriptsEmbeddedInAssembly(
-                    typeof(DatabaseMigrator).Assembly,
-                    (string name) => name.Contains("Migrations") && name.EndsWith(".sql", StringComparison.Ordinal)
-                        && string.CompareOrdinal(name.Split('.')[^2], FirstMigrationAfter) < 0)
-                .WithTransactionPerScript()
-                .LogToNowhere()
-                .Build()
-                .PerformUpgrade();
-
-            Assert.True(result.Successful, result.Error?.ToString());
-            Assert.Contains(result.Scripts, script => script.Name.Contains("v0013_", StringComparison.Ordinal));
-            Assert.DoesNotContain(result.Scripts, script => script.Name.Contains(FirstMigrationAfter, StringComparison.Ordinal));
         }
 
         /// <summary>Rows and log entries as the server wrote them before v0014.</summary>

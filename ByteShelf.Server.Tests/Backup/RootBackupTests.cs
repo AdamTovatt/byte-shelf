@@ -3,6 +3,7 @@ using System.Runtime.Versioning;
 using ByteShelf.Server.Backup.Models;
 using ByteShelf.Server.Backup.Services;
 using ByteShelf.Server.ChangeLog.Models;
+using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Shared.IO;
 using ByteShelf.Server.Shared.Root;
@@ -346,7 +347,8 @@ namespace ByteShelf.Server.Tests.Backup
         {
             ShelfFile photo = await StoreAsync(shelf, "/photo.jpg", TestMedia.Photo(make: camera), "image/jpeg");
             await Services.GetRequiredService<MetadataReading>().RunAsync(CancellationToken.None);
-            await Services.RecordContentDocumentAsync(photo.Sha256, $"{{\"camera\":\"{camera}\"}}");
+            Assert.Equal(camera, (await Services.GetRequiredService<IObjectMetadataRepository>().GetBySha256Async(photo.Sha256))?.Metadata.Camera);
+            Assert.True(await Services.RecordContentDocumentAsync(photo.Sha256, $"{{\"camera\":\"{camera}\"}}"));
             return photo;
         }
 

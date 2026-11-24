@@ -9,8 +9,8 @@ namespace ByteShelf.Server.Metadata
     public static class ServiceCollectionExtensions
     {
         /// <summary>
-        /// What files' contents say about them: the tables, the job that reads them and the signal that wakes
-        /// it. Which plugins there are is registered apart, by <see cref="AddInstalledPlugins"/> with
+        /// What files' contents say about them: the tables, the jobs that read them and the signal that wakes
+        /// them. Which plugins there are is registered apart, by <see cref="AddInstalledPlugins"/> with
         /// <see cref="IPluginReaders"/>, or <see cref="AddPluginsNotKnown"/>.
         /// </summary>
         public static IServiceCollection AddMetadataServices(this IServiceCollection services)
@@ -28,11 +28,13 @@ namespace ByteShelf.Server.Metadata
             services.AddScoped<PluginFieldIndex>();
             services.AddScoped<MetadataUpkeep>();
             services.AddScoped<FileMetadataService>();
-            services.AddScoped<ContentReaders>();
+            services.AddScoped<ContentReading>();
             services.AddScoped<MetadataReading>();
+            services.AddScoped<PluginMetadataReading>();
 
             services.AddHostedService<PluginFieldIndexStartup>();
             services.AddHostedService<MetadataReadingWorker>();
+            services.AddHostedService<PluginMetadataReadingWorker>();
 
             return services;
         }

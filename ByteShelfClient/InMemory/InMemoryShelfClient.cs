@@ -104,14 +104,14 @@ namespace ByteShelfClient.InMemory
             return Run(cancellationToken, shelf =>
             {
                 FileNode node = shelf.GetFile(file);
-                Dictionary<string, PluginFileMetadata> plugins = _store.Plugins.All
+                Dictionary<string, PluginFileDetails> plugins = _store.Plugins.All
                     .Where(plugin => node.Plugins.ContainsKey(plugin.Id))
                     .ToDictionary(plugin => plugin.Id, plugin => Kept(plugin, node), StringComparer.Ordinal);
                 return plugins.Count == 0 ? FileMetadata.None : new FileMetadata { Plugins = plugins };
             });
         }
 
-        public Task<PluginFileMetadata> SetPluginDocumentAsync(EntryReference file, string plugin, PluginDocument? document, int? expectedVersion, CancellationToken cancellationToken = default)
+        public Task<PluginFileDetails> SetPluginDocumentAsync(EntryReference file, string plugin, PluginDocument? document, int? expectedVersion, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(file);
             ArgumentNullException.ThrowIfNull(plugin);
@@ -136,10 +136,10 @@ namespace ByteShelfClient.InMemory
             });
         }
 
-        private static PluginFileMetadata Kept(PluginDeclaration plugin, FileNode node)
+        private static PluginFileDetails Kept(PluginDeclaration plugin, FileNode node)
         {
             PluginRow? row = node.Plugins.GetValueOrDefault(plugin.Id);
-            return PluginFileMetadata.Of(plugin, contentsDocument: null, row?.Document, row?.Version);
+            return PluginFileDetails.Of(plugin, contentsDocument: null, row?.Document, row?.Version);
         }
 
         public async Task<ShelfFile> UploadAsync(string path, Stream content, UploadOptions? options = null, CancellationToken cancellationToken = default)

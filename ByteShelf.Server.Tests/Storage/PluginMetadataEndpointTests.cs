@@ -64,12 +64,25 @@ namespace ByteShelf.Server.Tests.Storage
         [Theory]
         [InlineData("[1]")]
         [InlineData("\"text\"")]
+        [InlineData("{\"t\":\"\\ud83c\"}")]
         [InlineData(null)]
         public async Task Put_SomethingThatIsNoDocument_IsABadRequest(string? document)
         {
             string sent = document ?? $"{{\"t\":\"{new string('x', PluginDocument.MaxBytes)}\"}}";
 
             HttpResponseMessage response = await PutAsync(_host.AdminClient, $"{{\"document\":{sent}}}");
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            Assert.Null(await _host.Services.GetFileDocumentAsync(_file.Id));
+        }
+
+        [Fact]
+        public async Task Put_BytesThatAreNoUtf8_IsABadRequest()
+        {
+            using ByteArrayContent body = new ByteArrayContent([.. "{\"document\":{\"t\":\""u8, 0xC3, 0x28, .. "\"}}"u8]);
+            body.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+
+            HttpResponseMessage response = await _host.AdminClient.PutAsync(Url, body);
 
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
             Assert.Null(await _host.Services.GetFileDocumentAsync(_file.Id));

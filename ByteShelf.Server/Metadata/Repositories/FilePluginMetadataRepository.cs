@@ -97,7 +97,7 @@ namespace ByteShelf.Server.Metadata.Repositories
         /// <inheritdoc />
         public async Task CopyAsync(Guid fromFileId, Guid toFileId, DateTimeOffset at, IDbSession session)
         {
-            foreach (FilePluginMetadata source in await GetOfFileAsync(fromFileId, session))
+            foreach (FilePluginMetadata source in await GetOfFilesAsync([fromFileId], session))
             {
                 FilePluginMetadata copy = FilePluginMetadata.Of(source.PluginId, toFileId, source.Version, source.Document);
                 await session.Connection.ExecuteAsync(InsertSql, Parameters(copy), transaction: session.Transaction);
@@ -106,9 +106,9 @@ namespace ByteShelf.Server.Metadata.Repositories
         }
 
         /// <inheritdoc />
-        public async Task LogAgainAsync(Guid fileId, DateTimeOffset at, IDbSession session)
+        public async Task LogAgainAsync(IReadOnlyCollection<Guid> fileIds, DateTimeOffset at, IDbSession session)
         {
-            foreach (FilePluginMetadata metadata in await GetOfFileAsync(fileId, session))
+            foreach (FilePluginMetadata metadata in await GetOfFilesAsync(fileIds, session))
             {
                 await _changeLog.AppendAsync(ChangeEntityType.FilePluginMetadata, metadata.Id, ChangeAction.Updated, metadata, at, session);
             }
@@ -128,12 +128,16 @@ namespace ByteShelf.Server.Metadata.Repositories
             return await _changeLog.DeleteAndLogAsync(ChangeEntityType.FilePluginMetadata, query, new { id }, at, session) > 0;
         }
 
-        private static async Task<IReadOnlyList<FilePluginMetadata>> GetOfFileAsync(Guid fileId, IDbSession session)
+        private static async Task<IReadOnlyList<FilePluginMetadata>> GetOfFilesAsync(IReadOnlyCollection<Guid> fileIds, IDbSession session)
         {
-            string query = $"SELECT {SelectColumns} FROM file_plugin_metadata WHERE file_id = @{nameof(fileId)} ORDER BY plugin_id";
+            string fileIdsJson = GuidTypeHandler.ToJsonArray(fileIds);
+            string query = $@"
+                SELECT {SelectColumns} FROM file_plugin_metadata
+                WHERE file_id IN (SELECT value FROM json_each(@{nameof(fileIdsJson)}))
+                ORDER BY file_id, plugin_id";
 
             IEnumerable<FilePluginMetadataEntity> entities = await session.Connection.QueryAsync<FilePluginMetadataEntity>(
-                query, new { fileId }, transaction: session.Transaction);
+                query, new { fileIdsJson }, transaction: session.Transaction);
 
             return entities.Select(entity => entity.ToDomain()).ToList();
         }

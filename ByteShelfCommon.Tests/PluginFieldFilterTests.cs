@@ -107,19 +107,24 @@ namespace ByteShelfCommon.Tests
             Assert.Equal(search.PluginFields, new DuplicateSearch(search).PluginFields);
         }
 
-        [Fact]
-        public void Matches_Conditions_DecideByTheValue()
+        public static TheoryData<PluginFieldCondition, PluginFieldValue?, bool> Conditions { get; } = new TheoryData<PluginFieldCondition, PluginFieldValue?, bool>
         {
-            PluginFieldValue three = PluginFieldValue.OfNumber(3);
-            PluginFieldValue newYear = PluginFieldValue.OfDate(NewYear);
+            { new PluginFieldCondition.Has(true), null, false },
+            { new PluginFieldCondition.Has(false), null, true },
+            { new PluginFieldCondition.Between(3, 3), PluginFieldValue.OfNumber(3), true },
+            { new PluginFieldCondition.Between(3.1, null), PluginFieldValue.OfNumber(3), false },
+            { new PluginFieldCondition.Between(null, 2.9), PluginFieldValue.OfNumber(3), false },
+            { new PluginFieldCondition.During(NewYear, null), PluginFieldValue.OfDate(NewYear), true },
+            { new PluginFieldCondition.During(null, NewYear), PluginFieldValue.OfDate(NewYear), false },
+            { new PluginFieldCondition.Is(false), null, false },
+            { new PluginFieldCondition.Contains("åsa"), PluginFieldValue.OfText("Hej Åsa"), true },
+        };
 
-            Assert.True(new PluginFieldCondition.Has(false).Matches(null));
-            Assert.True(new PluginFieldCondition.Between(3, 3).Matches(three));
-            Assert.False(new PluginFieldCondition.Between(3.1, null).Matches(three));
-            Assert.True(new PluginFieldCondition.During(NewYear, null).Matches(newYear));
-            Assert.False(new PluginFieldCondition.During(null, NewYear).Matches(newYear));
-            Assert.False(new PluginFieldCondition.Is(false).Matches(null));
-            Assert.True(new PluginFieldCondition.Contains("åsa").Matches(PluginFieldValue.OfText("Hej Åsa")));
+        [Theory]
+        [MemberData(nameof(Conditions))]
+        public void Matches_Condition_DecidesByTheValue(PluginFieldCondition condition, PluginFieldValue? value, bool matches)
+        {
+            Assert.Equal(matches, condition.Matches(value));
         }
 
         [Theory]

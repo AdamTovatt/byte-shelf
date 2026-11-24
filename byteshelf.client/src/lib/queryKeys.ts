@@ -24,6 +24,8 @@ export const queryKeys = {
     search: (shelf: string, under: string, criteria: SearchCriteria) => ['shelfContents', shelf, 'search', under, criteria] as const,
     duplicates: (shelf: string, under: string, criteria: SearchCriteria) => ['shelfContents', shelf, 'duplicates', under, criteria] as const,
     metadata: (shelf: string, id: string) => ['shelfContents', shelf, 'metadata', id] as const,
+    // By the shelf's id, which a file carries and no rename changes; the other keys have its name.
+    pluginDocuments: (shelfId: string, id: string) => ['shelfContents', shelfId, 'pluginDocuments', id] as const,
   },
   shelfAccess: {
     root: ['shelfAccess'] as const,

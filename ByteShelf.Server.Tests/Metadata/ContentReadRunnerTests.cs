@@ -10,14 +10,7 @@ namespace ByteShelf.Server.Tests.Metadata
     /// <summary>How long one read may take, to the instant, and what is left of it.</summary>
     public class ContentReadRunnerTests : ServiceTestBase
     {
-        private static readonly TimeSpan RealTimeLimit = TimeSpan.FromSeconds(30);
-
         private static readonly TimeSpan OneMoment = TimeSpan.FromMilliseconds(1);
-
-        // Written out rather than taken from the code, so a change of either is noticed.
-        private static readonly TimeSpan PrepareLimit = TimeSpan.FromSeconds(60);
-        private static readonly TimeSpan ReadLimit = TimeSpan.FromSeconds(60);
-        private static readonly TimeSpan StopLimit = TimeSpan.FromSeconds(5);
 
         private readonly RecordingLogger<ContentReadRunner> _logger = new RecordingLogger<ContentReadRunner>();
         private readonly ReaderProblems _problems = new ReaderProblems();
@@ -30,11 +23,11 @@ namespace ByteShelf.Server.Tests.Metadata
             ContentReadRunner runner = NewRunner();
 
             Task<ReadOutcome?> read = runner.ReadAsync(Reader(reader), await StoreAFileAsync(), CancellationToken.None);
-            await Clock.WaitForTimerAsync(PrepareLimit);
-            Clock.Advance(PrepareLimit - OneMoment);
+            await Clock.WaitForTimerAsync(TestReadLimits.Prepare);
+            Clock.Advance(TestReadLimits.Prepare - OneMoment);
             made.SetResult();
 
-            Assert.False((await read.WaitAsync(RealTimeLimit))!.Failed);
+            Assert.False((await read.WaitAsync(TestReadLimits.Real))!.Failed);
             Assert.True(runner.MayRun(Reader(reader)));
         }
 
@@ -45,10 +38,10 @@ namespace ByteShelf.Server.Tests.Metadata
             ContentReadRunner runner = NewRunner();
 
             Task<ReadOutcome?> read = runner.ReadAsync(Reader(reader), await StoreAFileAsync(), CancellationToken.None);
-            await Clock.WaitForTimerAsync(PrepareLimit);
-            Clock.Advance(PrepareLimit);
+            await Clock.WaitForTimerAsync(TestReadLimits.Prepare);
+            Clock.Advance(TestReadLimits.Prepare);
 
-            Assert.Null(await read.WaitAsync(RealTimeLimit));
+            Assert.Null(await read.WaitAsync(TestReadLimits.Real));
             Assert.False(runner.MayRun(Reader(reader)));
             Assert.Equal("Its reader of files' contents could not be made, so it reads nothing until the server restarts: It took over 60 seconds.", _problems.Of(TestPluginMetadata.Plugin));
             Assert.Equal(["The reader test-plugin could not be made, so it reads nothing until the server restarts: It took over 60 seconds."], _logger.Messages);
@@ -75,10 +68,10 @@ namespace ByteShelf.Server.Tests.Metadata
             using CancellationTokenSource shuttingDown = new CancellationTokenSource();
 
             Task<ReadOutcome?> read = runner.ReadAsync(Reader(reader), await StoreAFileAsync(), shuttingDown.Token);
-            await Clock.WaitForTimerAsync(PrepareLimit);
+            await Clock.WaitForTimerAsync(TestReadLimits.Prepare);
             await shuttingDown.CancelAsync();
 
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read.WaitAsync(RealTimeLimit));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => read.WaitAsync(TestReadLimits.Real));
             Assert.True(runner.MayRun(Reader(reader)));
             Assert.Empty(_logger.Messages);
         }
@@ -96,13 +89,13 @@ namespace ByteShelf.Server.Tests.Metadata
             ContentReadRunner runner = NewRunner();
 
             Task<ReadOutcome?> read = runner.ReadAsync(Reader(reader), await StoreAFileAsync(), CancellationToken.None);
-            CancellationToken given = await started.Task.WaitAsync(RealTimeLimit);
-            await Clock.WaitForTimerAsync(ReadLimit);
-            Clock.Advance(ReadLimit - OneMoment);
+            CancellationToken given = await started.Task.WaitAsync(TestReadLimits.Real);
+            await Clock.WaitForTimerAsync(TestReadLimits.Read);
+            Clock.Advance(TestReadLimits.Read - OneMoment);
             Assert.False(given.IsCancellationRequested);
             found.SetResult(new JsonObject());
 
-            Assert.False((await read.WaitAsync(RealTimeLimit))!.Failed);
+            Assert.False((await read.WaitAsync(TestReadLimits.Real))!.Failed);
         }
 
         [Fact]
@@ -119,15 +112,15 @@ namespace ByteShelf.Server.Tests.Metadata
             ContentReader contentReader = Reader(reader);
 
             Task<ReadOutcome?> read = runner.ReadAsync(contentReader, await StoreAFileAsync(), CancellationToken.None);
-            CancellationToken given = await started.Task.WaitAsync(RealTimeLimit);
-            await Clock.WaitForTimerAsync(ReadLimit);
-            Clock.Advance(ReadLimit);
-            await Clock.WaitForTimerAsync(StopLimit);
+            CancellationToken given = await started.Task.WaitAsync(TestReadLimits.Real);
+            await Clock.WaitForTimerAsync(TestReadLimits.Read);
+            Clock.Advance(TestReadLimits.Read);
+            await Clock.WaitForTimerAsync(TestReadLimits.Stop);
             Assert.True(given.IsCancellationRequested);
-            Clock.Advance(StopLimit - OneMoment);
+            Clock.Advance(TestReadLimits.Stop - OneMoment);
             stopped.SetResult(new JsonObject());
 
-            Assert.True((await read.WaitAsync(RealTimeLimit))!.Failed);
+            Assert.True((await read.WaitAsync(TestReadLimits.Real))!.Failed);
             Assert.True(runner.MayRun(contentReader));
         }
 
@@ -140,12 +133,12 @@ namespace ByteShelf.Server.Tests.Metadata
             ContentReader contentReader = Reader(reader);
 
             Task<ReadOutcome?> read = runner.ReadAsync(contentReader, await StoreAFileAsync(), CancellationToken.None);
-            await Clock.WaitForTimerAsync(ReadLimit);
-            Clock.Advance(ReadLimit);
-            await Clock.WaitForTimerAsync(StopLimit);
-            Clock.Advance(StopLimit);
+            await Clock.WaitForTimerAsync(TestReadLimits.Read);
+            Clock.Advance(TestReadLimits.Read);
+            await Clock.WaitForTimerAsync(TestReadLimits.Stop);
+            Clock.Advance(TestReadLimits.Stop);
 
-            Assert.True((await read.WaitAsync(RealTimeLimit))!.Failed);
+            Assert.True((await read.WaitAsync(TestReadLimits.Real))!.Failed);
             Assert.False(runner.MayRun(contentReader));
             Assert.True(runner.MayRun(Reader(reader, "another")));
             Assert.Equal("Its reader of files' contents did not stop when it was told to, so it reads nothing more until the server restarts.", _problems.Of(contentReader.Id));
@@ -160,6 +153,7 @@ namespace ByteShelf.Server.Tests.Metadata
 
             await NewRunner().ReadAsync(Reader(reader), await StoreAFileAsync(), CancellationToken.None);
 
+            Assert.Equal(1, reader.Reads);
             await reader.AllReadsEndedAsync();
         }
 

@@ -6,7 +6,7 @@ namespace ByteShelfCommon
         /// <summary>The whole document; null removes it, and leaving it out of the JSON is refused.</summary>
         public required PluginDocument? Document { get; init; }
 
-        /// <summary>The version it replaces (<see cref="PluginFileMetadata.FileVersion"/>), a removed one's included; null for a first write.</summary>
+        /// <summary>The version it replaces (<see cref="PluginFileDetails.FileVersion"/>), a removed one's included; null for a first write.</summary>
         public int? ExpectedVersion { get; init; }
     }
 }

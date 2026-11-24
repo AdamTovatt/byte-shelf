@@ -83,15 +83,17 @@ those in its folder that the assembly's references lead to, not for one it loads
 A plugin that reads files' contents adds one reader, `builder.AddReader<TReader>(version, mediaTypes)`: an
 `IContentDocumentReader`, which the server runs in the background, once per version, over every object that a
 live plain file of those types holds, and whose answers it keeps as the plugin's documents about contents
-([Metadata](../Metadata/Metadata.md)). A second reader, or a type that is none, refuses the plugin. The
-reader is made with no services (`new()`), the first time there is something for it to read, so never on a
-replica and not by `--check-plugin`. It may be made and run in another process than the rest of the plugin,
-with which it shares no state; `IPluginReaders` is the one place that says which readers there are, and how
-each is made and run. One that cannot be made, or takes over 60 seconds to be, or does not stop when told to,
-is not run until the server restarts: it is logged, admins see why on the Settings page (`ReaderProblems`),
-and the rest of the plugin works. What it would have read stays to be read, but for contents it did not stop
-on, which are recorded as saying nothing. **A reader keeps what it reads nowhere else**, where it would
-outlive the plaintext.
+([Metadata](../Metadata/Metadata.md)). A second reader, or a type that is none, refuses the plugin. The reader
+is made with no services (`new()`), the first time there is something for it to read, so never on a replica
+and not by `--check-plugin`. It may be made and run in another process than the rest of the plugin, with which
+it shares no state; `IPluginReaders` is the one place that says which readers there are, and how each is made
+and run. One that cannot be made, or takes over 60 seconds to be, or does not stop when told to, is not run
+until the server restarts: it is logged, admins see why on the Settings page (`ReaderProblems`), and the rest
+of the plugin works. What it would have read stays to be read, but for contents it did not stop on, which are
+recorded as saying nothing. A read has 60 seconds, and 5 more to stop once cancelled; one that takes longer,
+throws, or answers more than a document holds (64 KiB, nested 32 deep) is recorded as saying nothing too, and
+is not tried again by that version. **A reader keeps what it reads nowhere else**, where it would outlive the
+plaintext.
 
 Each plugin has an `AssemblyLoadContext` of its own (`PluginLoadContext`): its packages and native
 libraries come from its folder, so it may use another version of a package than the server does.

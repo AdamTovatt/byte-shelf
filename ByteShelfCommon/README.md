@@ -20,7 +20,7 @@ AOT-compatible.
 | `ShelfLink`, `ShelfLinkKind`, `LinkMaker`, `LinkMakerKind` | A download or upload link as listed, to revoke by its id: what it reaches, who made it, and when it runs out. |
 | `FileMetadata` | What the server read from a file's contents (when and where a photo was taken, the camera, a video's length, a PDF's title and pages), whether it reads that file at all (`Readable`), and what plugins keep about it (`Plugins`). |
 | `PluginDeclaration`, `PluginField`, `PluginFieldKind`, `PluginDocumentSubject`, `InstalledPlugins` | A plugin with the fields it declares in its documents, and the plugins a server has, which a filter is checked against. |
-| `PluginFileMetadata`, `PluginFieldEntry`, `PluginFieldValue`, `SetPluginMetadataRequest` | What one plugin keeps about a file, with its declared fields and their values, and writing its document about the file. |
+| `PluginFileDetails`, `PluginFieldEntry`, `PluginFieldValue`, `SetPluginMetadataRequest` | What one plugin keeps about a file, with its declared fields and their values, and writing its document about the file. |
 | `PluginFieldFilter`, `PluginFieldCondition` | A search's criterion on a field a plugin declares. |
 | `PluginDocument` | What a plugin keeps about a file or its contents: one JSON object, which is how it is written in JSON. |
 | `MediaTypePattern` | One media type or a family such as `image/*`, and which media types it covers. |

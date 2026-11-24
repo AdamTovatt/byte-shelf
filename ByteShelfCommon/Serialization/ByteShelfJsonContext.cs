@@ -13,7 +13,7 @@ namespace ByteShelfCommon.Serialization
     [JsonSerializable(typeof(ErrorResponse))]
     [JsonSerializable(typeof(ShelfFile))]
     [JsonSerializable(typeof(FileMetadata))]
-    [JsonSerializable(typeof(PluginFileMetadata))]
+    [JsonSerializable(typeof(PluginFileDetails))]
     [JsonSerializable(typeof(PluginFieldValue))]
     [JsonSerializable(typeof(SetPluginMetadataRequest))]
     [JsonSerializable(typeof(DownloadLink))]

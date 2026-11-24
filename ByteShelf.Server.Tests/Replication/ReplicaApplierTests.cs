@@ -252,15 +252,13 @@ namespace ByteShelf.Server.Tests.Replication
         }
 
         [Fact]
-        public async Task ApplyAsync_ReadingFromAPrimaryThatKeepsNoVersions_IsVersionOnes()
+        public async Task ApplyAsync_ReadingFromAPrimaryThatKeepsNoVersions_StopsTheReplica()
         {
             string sha256 = new string('a', 64);
             Guid id = ObjectMetadata.IdFor(sha256);
 
-            await ApplyAsync(Entry(ChangeEntityType.ObjectMetadata, id, new { Id = id, Sha256 = sha256, ReadAt = TestInstants.Now, Metadata = new { Camera = "Nikon" } }));
-
-            ObjectMetadata applied = (await Services.GetRequiredService<IObjectMetadataRepository>().GetBySha256Async(sha256))!;
-            Assert.Equal((1, "Nikon"), (applied.ReaderVersion, applied.Metadata.Camera));
+            await Assert.ThrowsAsync<PrimaryFailedException>(() => ApplyAsync(
+                Entry(ChangeEntityType.ObjectMetadata, id, new { Id = id, Sha256 = sha256, ReadAt = TestInstants.Now, Metadata = new { Camera = "Nikon" } })));
         }
 
         [Fact]

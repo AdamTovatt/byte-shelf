@@ -70,8 +70,9 @@ What the primary read from files' contents arrives the same way, as `object_meta
 A plugin's document about a file (`file_plugin_metadata`) refers to the file and may come before it: a copy
 holds each entity's newest entry, and the file may have changed after the document. So only after the last
 entry of a transaction (`ReplicaApplier.SettleAsync`) is a document whose file is not here passed over. Its
-file was purged, or was itself passed over for contents the primary no longer held (below), and the swap
-that made it so logs the file's documents again after it.
+file was purged, or was itself passed over for contents the primary no longer held (below). Where the file
+comes later after all, the primary logs its documents again after it: as it swaps a file's contents, and as it
+restores a file, which the replica may have purged from its own trash, its documents with it.
 
 An entry naming contents the primary no longer holds for that file is passed over: the file was purged,
 or its contents swapped (encrypted or decrypted in place) before the replica fetched them. The primary
@@ -92,8 +93,8 @@ person confirmed cannot be undone ([Storage](../Storage/Storage.md#encryption-sh
 SHA-256 changes in no other way, so when an applied state points a file here at other contents, the old
 object is removed once the page (or the whole copy) commits, unless a row here still points at it, such
 as another file with the same contents. What was read from them has gone by then: the primary logs those
-removals before the swap ([Metadata](../Metadata/Metadata.md)). Removed users' sessions end first; a removal that fails is logged
-and left to maintenance, which removes whatever nothing points at.
+removals before the swap ([Metadata](../Metadata/Metadata.md)). Removed users' sessions end first; a removal
+that fails is logged and left to maintenance, which removes whatever nothing points at.
 
 A change of a type this build does not know (from a newer primary) stops replication with
 `ReplicaOutdatedException`, saying to update, rather than being skipped. The replica's admins see that

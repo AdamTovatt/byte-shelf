@@ -17,12 +17,12 @@ namespace ByteShelf.Server.Tests.Client
         {
             ShelfFile file = await UploadTextAsync("/a.txt", "a");
 
-            PluginFileMetadata first = await SetAsync("/a.txt", "{\"rating\":4,\"other\":[1]}", null);
-            PluginFileMetadata second = await SetAsync("/a.txt", "{\"rating\":5}", 1);
+            PluginFileDetails first = await SetAsync("/a.txt", "{\"rating\":4,\"other\":[1]}", null);
+            PluginFileDetails second = await SetAsync("/a.txt", "{\"rating\":5}", 1);
 
             Assert.Equal((1, "{\"rating\":4,\"other\":[1]}"), (first.FileVersion, first.FileDocument?.Json));
             Assert.Equal((2, "{\"rating\":5}"), (second.FileVersion, second.FileDocument?.Json));
-            PluginFileMetadata read = (await Shelf.GetFileMetadataAsync("/a.txt")).Plugins[Plugin];
+            PluginFileDetails read = (await Shelf.GetFileMetadataAsync("/a.txt")).Plugins[Plugin];
             Assert.Equal(("Test plugin", 2, "{\"rating\":5}"), (read.Name, read.FileVersion, read.FileDocument?.Json));
             Assert.Null(read.ContentsDocument);
             Assert.Equal(file.UpdatedAt, (await Shelf.GetFileAsync("/a.txt")).UpdatedAt);
@@ -50,7 +50,7 @@ namespace ByteShelf.Server.Tests.Client
 
             await SetAsync("/a.txt", null, 1);
 
-            PluginFileMetadata removed = (await Shelf.GetFileMetadataAsync("/a.txt")).Plugins[Plugin];
+            PluginFileDetails removed = (await Shelf.GetFileMetadataAsync("/a.txt")).Plugins[Plugin];
             Assert.Equal((2, null), (removed.FileVersion, removed.FileDocument));
             Assert.Empty(removed.Fields);
             Assert.Equal(ErrorCodes.Conflict, (await RefusalOf(SetAsync("/a.txt", "{}", null))).Code);
@@ -62,7 +62,7 @@ namespace ByteShelf.Server.Tests.Client
         {
             await UploadTextAsync("/a.txt", "a");
 
-            PluginFileMetadata kept = await SetAsync("/a.txt", null, null);
+            PluginFileDetails kept = await SetAsync("/a.txt", null, null);
 
             Assert.Equal((null, null), (kept.FileVersion, kept.FileDocument));
             Assert.Empty((await Shelf.GetFileMetadataAsync("/a.txt")).Plugins);
@@ -100,7 +100,7 @@ namespace ByteShelf.Server.Tests.Client
             await UploadTextAsync("/a.txt", "a");
             await SetAsync("/a.txt", "{\"due\":\"2026-03-01T14:30:00+02:00\",\"rating\":\"five\",\"done\":false,\"note\":\"x\",\"undeclared\":1}", null);
 
-            PluginFileMetadata kept = (await Shelf.GetFileMetadataAsync("/a.txt")).Plugins[Plugin];
+            PluginFileDetails kept = (await Shelf.GetFileMetadataAsync("/a.txt")).Plugins[Plugin];
 
             Assert.Equal(["note", "due", "done"], kept.Fields.Select(field => field.Name));
             PluginFieldEntry due = kept.Fields[1];
@@ -116,7 +116,7 @@ namespace ByteShelf.Server.Tests.Client
 
             await UploadTextAsync("/a.txt", "b", overwrite: true);
 
-            PluginFileMetadata kept = (await Shelf.GetFileMetadataAsync("/a.txt")).Plugins[Plugin];
+            PluginFileDetails kept = (await Shelf.GetFileMetadataAsync("/a.txt")).Plugins[Plugin];
             Assert.Equal((1, "{\"rating\":4}"), (kept.FileVersion, kept.FileDocument?.Json));
             Assert.Equal(["/a.txt"], await FindAsync($"{Plugin}.rating=4"));
         }
@@ -325,7 +325,7 @@ namespace ByteShelf.Server.Tests.Client
             Assert.Equal(["/a.txt", "/c.txt"], Assert.Single(found.Groups).Files.Select(file => file.Path));
         }
 
-        private Task<PluginFileMetadata> SetAsync(string path, string? json, int? expectedVersion)
+        private Task<PluginFileDetails> SetAsync(string path, string? json, int? expectedVersion)
         {
             return Shelf.SetPluginDocumentAsync(path, Plugin, json == null ? null : PluginDocument.Parse(json), expectedVersion);
         }

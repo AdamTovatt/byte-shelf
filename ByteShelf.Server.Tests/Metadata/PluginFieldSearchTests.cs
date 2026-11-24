@@ -52,9 +52,7 @@ namespace ByteShelf.Server.Tests.Metadata
         public async Task SearchAsync_EncryptedFileWithTheBytesOfAPlainOne_HasNoFieldOfTheContents()
         {
             Shelf shelf = await CreateShelfAsync();
-            byte[] bytes = Encoding.ASCII.GetBytes("age-encryption.org/v1\nstored as plain as well");
-            ShelfFile plain = await StoreAsync(shelf, "/plain.txt", bytes, "text/plain");
-            await StoreAsync(shelf, "/secret.txt", bytes, "text/plain", encrypted: true);
+            (ShelfFile plain, _) = await StorePlainAndEncryptedAsync(shelf);
             await Services.RecordContentDocumentAsync(plain.Sha256, "{\"words\":\"apple\",\"width\":10}");
 
             Assert.Equal(["/plain.txt"], await FindAsync(shelf, $"{Plugin}.width"));
@@ -162,7 +160,7 @@ namespace ByteShelf.Server.Tests.Metadata
             await Services.RecordContentDocumentAsync(file.Sha256, "{\"width\":10,\"caption\":\"of the contents, where it is not declared\"}");
             await Services.SetFileDocumentAsync(file.Id, "{\"rating\":4,\"width\":99}");
 
-            PluginFileMetadata kept = (await MetadataAsync(shelf, file)).Plugins[Plugin];
+            PluginFileDetails kept = (await MetadataAsync(shelf, file)).Plugins[Plugin];
 
             Assert.Equal(("Test plugin", 1), (kept.Name, kept.FileVersion));
             Assert.Equal(10, kept.ContentsDocument?.ToElement().GetProperty("width").GetInt32());
@@ -173,13 +171,11 @@ namespace ByteShelf.Server.Tests.Metadata
         public async Task GetAsync_EncryptedFile_HasNoContentsDocumentEvenWhenAPlainFileHoldsTheBytes()
         {
             Shelf shelf = await CreateShelfAsync();
-            byte[] bytes = Encoding.ASCII.GetBytes("age-encryption.org/v1\nstored as plain as well");
-            ShelfFile plain = await StoreAsync(shelf, "/plain.txt", bytes, "text/plain");
-            ShelfFile secret = await StoreAsync(shelf, "/secret.txt", bytes, "text/plain", encrypted: true);
+            (ShelfFile plain, ShelfFile secret) = await StorePlainAndEncryptedAsync(shelf);
             await Services.RecordContentDocumentAsync(plain.Sha256, "{\"width\":10}");
             await Services.SetFileDocumentAsync(secret.Id, "{\"rating\":4}");
 
-            PluginFileMetadata kept = (await MetadataAsync(shelf, secret)).Plugins[Plugin];
+            PluginFileDetails kept = (await MetadataAsync(shelf, secret)).Plugins[Plugin];
 
             Assert.Null(kept.ContentsDocument);
             Assert.Equal(["rating"], kept.Fields.Select(field => field.Name));

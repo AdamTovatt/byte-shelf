@@ -1,4 +1,3 @@
-using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Storage.Models;
 using ByteShelfCommon;
 
@@ -25,25 +24,6 @@ namespace ByteShelf.Server.Storage.Services
                 Description = file.Description,
                 Encrypted = file.Encrypted,
                 PluginFields = pluginFields,
-            };
-        }
-
-        /// <summary>What was read from a file's contents, whether they are read at all, and what plugins keep.</summary>
-        public static FileMetadata ToFileMetadata(bool readable, ObjectMetadata? read, IReadOnlyDictionary<string, PluginFileMetadata> plugins)
-        {
-            ContentMetadata metadata = read?.Metadata ?? ContentMetadata.None;
-            return new FileMetadata
-            {
-                Readable = readable,
-                ReadAt = read?.ReadAt,
-                TakenAt = metadata.TakenAt,
-                Latitude = metadata.Latitude,
-                Longitude = metadata.Longitude,
-                DurationSeconds = metadata.DurationSeconds,
-                PageCount = metadata.PageCount,
-                Title = metadata.Title,
-                Camera = metadata.Camera,
-                Plugins = plugins,
             };
         }
 

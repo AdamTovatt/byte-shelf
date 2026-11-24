@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type UseMutationResult, type UseQueryResult } from '@tanstack/react-query';
 import { usePluginId } from '../contexts/PluginIdentity';
 import { queryKeys } from '../lib/queryKeys';
-import { fetchFileMetadata, setPluginDocument, type FileMetadata, type PluginFileMetadata, type ShelfFile } from '../services/shelfService';
+import { fetchFileMetadata, setPluginDocument, type FileMetadata, type PluginFileDetails, type ShelfFile } from '../services/shelfService';
 import { shelfName, useInvalidateShelf } from './useShelfQueries';
 
 /** What a plugin keeps about a file. */
@@ -34,7 +34,7 @@ export function usePluginDocuments(file: ShelfFile): UseQueryResult<PluginDocume
   const pluginId = usePluginId();
   const queryClient = useQueryClient();
   return useQuery({
-    queryKey: metadataKey(file),
+    queryKey: queryKeys.shelfContents.pluginDocuments(file.shelfId, file.id),
     queryFn: async () => fetchFileMetadata(await shelfName(queryClient, file.shelfId), file.id),
     // What is read from contents is not in the live updates.
     staleTime: 0,
@@ -52,7 +52,7 @@ export function useSetPluginDocument(file: ShelfFile): UseMutationResult<PluginD
       const written = await setPluginDocument(await shelfName(queryClient, file.shelfId), file.id, pluginId, document, expectedVersion);
 
       // At once, so the next write is made from this one's version.
-      queryClient.setQueryData(metadataKey(file), (read: FileMetadata | undefined) => (
+      queryClient.setQueryData(queryKeys.shelfContents.pluginDocuments(file.shelfId, file.id), (read: FileMetadata | undefined) => (
         read && { ...read, plugins: { ...read.plugins, [pluginId]: written } }
       ));
       return documentsOf(file, written);
@@ -62,12 +62,7 @@ export function useSetPluginDocument(file: ShelfFile): UseMutationResult<PluginD
   });
 }
 
-/** By the shelf's id, which a file carries and no rename changes; other queries know their shelf by its name. */
-function metadataKey(file: ShelfFile) {
-  return queryKeys.shelfContents.metadata(file.shelfId, file.id);
-}
-
-function documentsOf(file: ShelfFile, metadata: PluginFileMetadata | undefined): PluginDocuments {
+function documentsOf(file: ShelfFile, metadata: PluginFileDetails | undefined): PluginDocuments {
   return {
     // Not what was read before it was encrypted, which may still be cached.
     contents: file.encrypted ? null : metadata?.contentsDocument ?? null,

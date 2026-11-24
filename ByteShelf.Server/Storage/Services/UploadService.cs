@@ -23,7 +23,6 @@ namespace ByteShelf.Server.Storage.Services
         private readonly ObjectCollector _objectCollector;
         private readonly UploadLocks _uploadLocks;
         private readonly MetadataReadingSignal _metadataSignal;
-        private readonly MetadataUpkeep _metadataUpkeep;
         private readonly StorageOptions _options;
         private readonly TimeProvider _timeProvider;
 
@@ -40,7 +39,6 @@ namespace ByteShelf.Server.Storage.Services
             ObjectCollector objectCollector,
             UploadLocks uploadLocks,
             MetadataReadingSignal metadataSignal,
-            MetadataUpkeep metadataUpkeep,
             StorageOptions options,
             TimeProvider timeProvider)
         {
@@ -56,7 +54,6 @@ namespace ByteShelf.Server.Storage.Services
             _objectCollector = objectCollector;
             _uploadLocks = uploadLocks;
             _metadataSignal = metadataSignal;
-            _metadataUpkeep = metadataUpkeep;
             _options = options;
             _timeProvider = timeProvider;
         }
@@ -396,12 +393,7 @@ namespace ByteShelf.Server.Storage.Services
                 Encrypted = upload.Encrypted,
             };
 
-            await _fileRepository.InsertAsync(file, session);
-            if (replaced != null)
-            {
-                await _metadataUpkeep.StoredOverAsync(replaced.Id, file.Id, now, session);
-            }
-
+            await _fileRepository.InsertAsync(file, replaced?.Id, session);
             return StorageContracts.ToShelfFile(file, directoryPath);
         }
 

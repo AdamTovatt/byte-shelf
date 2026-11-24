@@ -2,7 +2,7 @@ import { useId, type ReactNode } from 'react';
 import { FormDialog } from './FormDialog';
 import { useFileMetadata } from '../hooks/useShelfQueries';
 import { formatBytes, formatDuration, formatTime } from '../lib/format';
-import type { FileMetadata, PluginFieldValue, PluginFileMetadata, ShelfFile } from '../services/shelfService';
+import type { FileMetadata, PluginFieldValue, PluginFileDetails, ShelfFile } from '../services/shelfService';
 import { getErrorMessage } from '../ui';
 
 /**
@@ -43,7 +43,7 @@ function metadataDetails(metadata: FileMetadata): ReactNode {
 }
 
 /** The declared fields of one plugin that have a value for the file, in the order it declares them. */
-function PluginDetails({ plugin }: { plugin: PluginFileMetadata }) {
+function PluginDetails({ plugin }: { plugin: PluginFileDetails }) {
   const heading = useId();
   return (
     <section aria-labelledby={heading}>

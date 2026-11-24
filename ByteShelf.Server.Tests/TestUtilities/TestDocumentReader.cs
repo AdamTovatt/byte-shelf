@@ -56,16 +56,16 @@ namespace ByteShelf.Server.Tests.TestUtilities
             }
         }
 
-        private async Task<IContentDocumentReader> MadeAsync()
-        {
-            await Making;
-            return this;
-        }
-
         public Task<JsonObject?> ReadAsync(Stream contents, CancellationToken cancellationToken)
         {
             _streams.Enqueue(contents);
             return _read(contents, cancellationToken);
+        }
+
+        private async Task<IContentDocumentReader> MadeAsync()
+        {
+            await Making;
+            return this;
         }
     }
 }

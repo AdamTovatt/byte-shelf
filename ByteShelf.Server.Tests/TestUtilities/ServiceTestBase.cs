@@ -29,6 +29,9 @@ namespace ByteShelf.Server.Tests.TestUtilities
         /// <summary>Contents the server takes as encrypted: it checks only that they start as an age file.</summary>
         protected static readonly byte[] AgeBytes = Encoding.ASCII.GetBytes("age-encryption.org/v1\nan encrypted file");
 
+        /// <summary>Contents the server takes as encrypted and as plain.</summary>
+        protected static readonly byte[] BytesOfBoth = Encoding.ASCII.GetBytes("age-encryption.org/v1\nstored as plain as well");
+
         private ServiceProvider _provider = null!;
         private AsyncServiceScope _scope;
         private readonly TestMetadataPlugins _plugins = new TestMetadataPlugins();
@@ -117,6 +120,12 @@ namespace ByteShelf.Server.Tests.TestUtilities
         {
             StartUploadRequest request = new StartUploadRequest { Path = path, SizeBytes = contents.Length, ContentType = contentType, Encrypted = encrypted };
             return UploadService.StoreAsync(shelf, request, Uploader, new MemoryStream(contents), CancellationToken.None);
+        }
+
+        /// <summary>Stores <see cref="BytesOfBoth"/> as a plain file and as an encrypted one.</summary>
+        protected async Task<(ShelfFile Plain, ShelfFile Encrypted)> StorePlainAndEncryptedAsync(Shelf shelf)
+        {
+            return (await StoreAsync(shelf, "/plain.txt", BytesOfBoth, "text/plain"), await StoreAsync(shelf, "/secret.txt", BytesOfBoth, "text/plain", encrypted: true));
         }
 
         /// <summary>Swaps a plain file's contents for <see cref="AgeBytes"/>, in a scope of its own as a request has, so something the test runs meanwhile may do it.</summary>

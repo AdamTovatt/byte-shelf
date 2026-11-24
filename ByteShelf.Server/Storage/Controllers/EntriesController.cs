@@ -108,7 +108,7 @@ namespace ByteShelf.Server.Storage.Controllers
         /// </summary>
         [HttpPut("files/plugin-metadata")]
         [ShelfAccess(ShelfOperation.Write)]
-        [ProducesResponseType(typeof(PluginFileMetadata), 200)]
+        [ProducesResponseType(typeof(PluginFileDetails), 200)]
         [ProducesResponseType(typeof(ErrorResponse), 400)]
         [ProducesResponseType(typeof(ErrorResponse), 404)]
         [ProducesResponseType(typeof(ErrorResponse), 409)]

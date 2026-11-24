@@ -97,20 +97,6 @@ namespace ByteShelf.Server.Tests.Metadata
         }
 
         [Fact]
-        public async Task GetBySha256Async_RowFromBeforeVersionsWereKept_IsVersionOnes()
-        {
-            string sha256 = new string('a', 64);
-            await using (IDbSession session = await TestRoot.SessionFactory.CreateSessionAsync())
-            {
-                await session.Connection.ExecuteAsync(
-                    "INSERT INTO object_metadata (id, sha256, read_at) VALUES (@Id, @Sha256, @ReadAt)",
-                    new { Id = ObjectMetadata.IdFor(sha256), Sha256 = sha256, ReadAt = TestInstants.Now });
-            }
-
-            Assert.Equal(1, (await Services.GetRequiredService<IObjectMetadataRepository>().GetBySha256Async(sha256))!.ReaderVersion);
-        }
-
-        [Fact]
         public async Task RunAsync_FileOfATypeNotRead_LeavesItUnread()
         {
             Shelf shelf = await CreateShelfAsync();
@@ -124,7 +110,7 @@ namespace ByteShelf.Server.Tests.Metadata
         }
 
         [Fact]
-        public async Task GetMetadataAsync_PhotoNotReadYet_IsReadableWithNothingRead()
+        public async Task GetAsync_PhotoNotReadYet_IsReadableWithNothingRead()
         {
             Shelf shelf = await CreateShelfAsync();
             await StoreAsync(shelf, "/photo.jpg", TestMedia.Photo(make: "Nikon"), "image/jpeg");
@@ -147,7 +133,7 @@ namespace ByteShelf.Server.Tests.Metadata
         }
 
         [Fact]
-        public async Task GetMetadataAsync_EncryptedFileWithAPlainFilesContents_HasNone()
+        public async Task GetAsync_EncryptedFileWithAPlainFilesContents_HasNone()
         {
             Shelf shelf = await CreateShelfAsync();
             await StoreAsync(shelf, "/plain.jpg", AgeBytes, "image/jpeg");
@@ -257,7 +243,7 @@ namespace ByteShelf.Server.Tests.Metadata
         public async Task RunAsync_MoreThanABatch_ReadsThemAll()
         {
             Shelf shelf = await CreateShelfAsync();
-            int count = MetadataReading.BatchSize + 3;
+            int count = ContentReading.BatchSize + 3;
             for (int index = 0; index < count; index++)
             {
                 await StoreAsync(shelf, $"/scans/{index}.pdf", TestMedia.Pdf(pages: 1, title: $"Scan {index}"), "application/pdf");
@@ -272,7 +258,7 @@ namespace ByteShelf.Server.Tests.Metadata
         public async Task Worker_ContentsStoredAfterItsFirstPass_ReadsThemWithoutWaitingForTheClock()
         {
             Shelf shelf = await CreateShelfAsync();
-            PassLogger passes = new PassLogger();
+            PassLogger<MetadataReadingWorker> passes = new PassLogger<MetadataReadingWorker>();
             MetadataReadingWorker worker = new MetadataReadingWorker(
                 Services.GetRequiredService<IServiceScopeFactory>(), Services.GetRequiredService<MetadataReadingSignal>(), Clock, passes);
 
@@ -298,46 +284,6 @@ namespace ByteShelf.Server.Tests.Metadata
 
             Assert.Equal(new MetadataReadingSummary(OnReplica: false, Read: 0, Failed: 0, Removed: 0), summary);
             Assert.Null(await Services.GetRequiredService<IObjectMetadataRepository>().GetBySha256Async(photo.Sha256));
-        }
-
-        /// <summary>Counts the worker's finished passes, which it logs, so a test can wait for one.</summary>
-        private sealed class PassLogger : ILogger<MetadataReadingWorker>
-        {
-            private readonly TaskCompletionSource[] _finished = [NewSignal(), NewSignal()];
-            private int _count;
-
-            public Task Finished(int pass)
-            {
-                return _finished[pass - 1].Task;
-            }
-
-            public IDisposable? BeginScope<TState>(TState state)
-                where TState : notnull
-            {
-                return null;
-            }
-
-            public bool IsEnabled(LogLevel logLevel)
-            {
-                return true;
-            }
-
-            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-            {
-                if (formatter(state, exception).Contains("finished a pass", StringComparison.Ordinal))
-                {
-                    int pass = Interlocked.Increment(ref _count);
-                    if (pass <= _finished.Length)
-                    {
-                        _finished[pass - 1].TrySetResult();
-                    }
-                }
-            }
-
-            private static TaskCompletionSource NewSignal()
-            {
-                return new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            }
         }
     }
 }

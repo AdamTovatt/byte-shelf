@@ -351,6 +351,7 @@ namespace ByteShelf.Server.Tests.Storage
                         DeletedAt = now,
                         DeletionId = deletionId,
                     },
+                    replacedId: null,
                     session);
             }
 

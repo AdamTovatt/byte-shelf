@@ -15,7 +15,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
         /// <summary>Sets a document about a file over whatever version is there.</summary>
         public static async Task<FilePluginMetadata> SetFileDocumentAsync(this IServiceProvider services, Guid fileId, string json, string plugin = Plugin)
         {
-            return await InTransactionAsync(services, async (provider, session) =>
+            return await services.InTransactionAsync(async (provider, session) =>
             {
                 IFilePluginMetadataRepository repository = provider.GetRequiredService<IFilePluginMetadataRepository>();
                 int? version = (await repository.GetAsync(plugin, fileId, session))?.Version;
@@ -25,7 +25,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
 
         public static async Task RemoveFileDocumentAsync(this IServiceProvider services, Guid fileId, string plugin = Plugin)
         {
-            await InTransactionAsync(services, async (provider, session) =>
+            await services.InTransactionAsync(async (provider, session) =>
             {
                 IFilePluginMetadataRepository repository = provider.GetRequiredService<IFilePluginMetadataRepository>();
                 int version = (await repository.GetAsync(plugin, fileId, session))!.Version;
@@ -42,7 +42,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
         /// <summary>Records a document about contents as a plugin's reader would; false when the server takes none about them.</summary>
         public static async Task<bool> RecordContentDocumentAsync(this IServiceProvider services, string sha256, string json, string plugin = Plugin, int version = 1)
         {
-            return await InTransactionAsync(services, (provider, session) => provider.GetRequiredService<IContentPluginMetadataRepository>()
+            return await services.InTransactionAsync((provider, session) => provider.GetRequiredService<IContentPluginMetadataRepository>()
                 .RecordAsync(ContentPluginMetadata.Of(plugin, sha256, version, DateTimeOffset.UtcNow, PluginDocument.Parse(json)), session));
         }
 
@@ -57,16 +57,6 @@ namespace ByteShelf.Server.Tests.TestUtilities
         {
             using IServiceScope scope = services.CreateScope();
             await scope.ServiceProvider.GetRequiredService<PluginFieldIndex>().BringUpToDateAsync(CancellationToken.None);
-        }
-
-        /// <summary>Does something in a scope and transaction of its own.</summary>
-        public static async Task<TResult> InTransactionAsync<TResult>(this IServiceProvider services, Func<IServiceProvider, IDbSession, Task<TResult>> write)
-        {
-            using IServiceScope scope = services.CreateScope();
-            await using IDbTransactionSession session = await scope.ServiceProvider.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync();
-            TResult result = await write(scope.ServiceProvider, session);
-            await session.CommitAsync();
-            return result;
         }
     }
 }

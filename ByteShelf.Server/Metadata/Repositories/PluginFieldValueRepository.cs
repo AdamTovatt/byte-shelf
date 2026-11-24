@@ -109,34 +109,15 @@ namespace ByteShelf.Server.Metadata.Repositories
                 return;
             }
 
-            JsonElement read = document.ToElement();
-
             string insertQuery = $@"
                 INSERT INTO plugin_field_value (plugin_id, field, sha256, file_id, text_fold, number, instant, flag, searched, listed)
                 VALUES (@{nameof(pluginId)}, @Field, @{nameof(subject.Sha256)}, @{nameof(subject.FileId)}, @TextFold, @Number, @Instant, @Flag, @Searched, @Listed)";
 
-            foreach (PluginField field in plugin.Fields.Where(field => field.Document == subject.Document))
+            foreach (PluginFieldValueRow row in PluginFieldValueRow.Of(plugin, subject.Document, document))
             {
-                if (PluginFieldValue.Of(field, read) is not { } value)
-                {
-                    continue;
-                }
-
                 await session.Connection.ExecuteAsync(
                     insertQuery,
-                    new
-                    {
-                        pluginId,
-                        Field = field.Name,
-                        subject.Sha256,
-                        subject.FileId,
-                        TextFold = value.FoldedText(),
-                        value.Number,
-                        Instant = value.Date,
-                        value.Flag,
-                        field.Searched,
-                        Listed = field.Listed && value.FitsListings() ? JsonSerializer.Serialize(value, ByteShelfJsonContext.Default.PluginFieldValue) : null,
-                    },
+                    new { pluginId, row.Field, subject.Sha256, subject.FileId, row.TextFold, row.Number, row.Instant, row.Flag, row.Searched, row.Listed },
                     transaction: session.Transaction);
             }
         }

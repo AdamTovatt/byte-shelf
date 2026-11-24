@@ -915,9 +915,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "text/plain": components["schemas"]["PluginFileMetadata"];
-                        "application/json": components["schemas"]["PluginFileMetadata"];
-                        "text/json": components["schemas"]["PluginFileMetadata"];
+                        "text/plain": components["schemas"]["PluginFileDetails"];
+                        "application/json": components["schemas"]["PluginFileDetails"];
+                        "text/json": components["schemas"]["PluginFileDetails"];
                     };
                 };
                 /** @description Bad Request */
@@ -5026,7 +5026,7 @@ export interface components {
             title?: string | null;
             camera?: string | null;
             plugins?: {
-                [key: string]: components["schemas"]["PluginFileMetadata"];
+                [key: string]: components["schemas"]["PluginFileDetails"];
             };
         };
         FileSearchResults: {
@@ -5132,7 +5132,7 @@ export interface components {
             readonly date?: string | null;
             readonly flag?: boolean | null;
         };
-        PluginFileMetadata: {
+        PluginFileDetails: {
             name: string;
             contentsDocument?: {
                 [key: string]: unknown;

@@ -1,4 +1,5 @@
 using ByteShelf.Server.Metadata.Models;
+using ByteShelf.Server.Shared.Database;
 
 namespace ByteShelf.Server.Metadata.Repositories
 {
@@ -13,9 +14,20 @@ namespace ByteShelf.Server.Metadata.Repositories
         /// parameter. A reading is recorded only where it is true in the same transaction, since they may
         /// have been encrypted or removed while they were read.
         /// </summary>
-        public static string HeldByLiveFile(string sha256)
+        private static string HeldByLiveFile(string sha256)
         {
             return $"EXISTS (SELECT 1 FROM file WHERE file.sha256 = {sha256} AND file.encrypted = 0 AND file.deleted_at IS NULL)";
+        }
+
+        /// <summary>
+        /// Records a reading of the contents <c>@Sha256</c> in <paramref name="table"/>, by an insert of the columns and
+        /// values given, over what another version of the reader recorded: nothing when no live plain file holds
+        /// them, or this version has.
+        /// </summary>
+        public static string RecordSql(string table, string columns, string values)
+        {
+            string upsert = UpsertSql.OnIdConflict($"INSERT INTO {table} ({columns}) SELECT {values} WHERE {HeldByLiveFile("@Sha256")}");
+            return $"{upsert} WHERE {table}.reader_version <> excluded.reader_version";
         }
 
         /// <summary>

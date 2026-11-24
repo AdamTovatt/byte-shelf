@@ -6,7 +6,8 @@ namespace ByteShelf.Server.ChangeLog.Models
     /// trash, keeps the row too.
     /// </summary>
     /// <param name="EntityType">The owner's type.</param>
+    /// <param name="Table">The table the owners are in.</param>
     /// <param name="OwnedTable">The table the owned rows are in.</param>
     /// <param name="OwnedColumn">The column of it that names a row's owner.</param>
-    public sealed record EntityOwner(string EntityType, string OwnedTable, string OwnedColumn);
+    public sealed record EntityOwner(string EntityType, string Table, string OwnedTable, string OwnedColumn);
 }

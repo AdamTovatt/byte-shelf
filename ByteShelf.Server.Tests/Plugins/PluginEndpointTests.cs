@@ -250,7 +250,7 @@ namespace ByteShelf.Server.Tests.Plugins
             await host.PutAsAdminAsync("docs", "/a.html", "Html"u8.ToArray(), "text/html");
             await host.PutAsAdminAsync("docs", "/a.css", "Css"u8.ToArray(), "text/css");
 
-            await host.Services.ReadMetadataAsync();
+            await host.Services.ReadPluginMetadataAsync();
 
             Assert.Equal(["reading: Ett äpple"], await ReadWordsAsync(host, "/a.txt"));
             Assert.Equal(["reading: Html"], await ReadWordsAsync(host, "/a.html"));
@@ -267,7 +267,7 @@ namespace ByteShelf.Server.Tests.Plugins
             await host.CreateShelfAsync("docs");
             await host.PutAsAdminAsync("docs", "/a.txt", "a"u8.ToArray(), "text/plain");
 
-            await host.Services.ReadMetadataAsync();
+            await host.Services.ReadPluginMetadataAsync();
 
             Assert.Equal(["first: a", "second: a"], (await ReadWordsAsync(host, "/a.txt")).Order());
         }
@@ -279,7 +279,7 @@ namespace ByteShelf.Server.Tests.Plugins
             await using ServerTestHost host = await StartWithAnUnmadeReaderAsync(services => services.AddSingleton<ILogger<ContentReadRunner>>(logger));
             ShelfFile stored = await host.PutAsAdminAsync("docs", "/a.txt", "Ett äpple"u8.ToArray(), "text/plain");
 
-            await host.Services.ReadMetadataAsync();
+            await host.Services.ReadPluginMetadataAsync();
 
             Assert.Equal(["healthy: Ett äpple"], await ReadWordsAsync(host, "/a.txt"));
             await using AsyncServiceScope scope = host.Services.CreateAsyncScope();
@@ -294,7 +294,7 @@ namespace ByteShelf.Server.Tests.Plugins
         {
             await using ServerTestHost host = await StartWithAnUnmadeReaderAsync();
             await host.PutAsAdminAsync("docs", "/a.txt", "a"u8.ToArray(), "text/plain");
-            await host.Services.ReadMetadataAsync();
+            await host.Services.ReadPluginMetadataAsync();
 
             string problem = "Its reader of files' contents could not be made, so it reads nothing until the server restarts: It was told to fail.";
             Assert.Equal([("healthy", null), ("reading", problem)], await ReadProblemsAsync(host.AdminClient));

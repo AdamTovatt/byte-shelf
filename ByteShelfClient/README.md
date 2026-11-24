@@ -176,9 +176,10 @@ Replication is modelled by its rules and state only: an in-memory client can fol
 same process with its pairing code, after which it refuses writes until promoted, but a follower
 copies no data, and it is never behind.
 
-File metadata (`GetFileMetadataAsync`: when a photo was taken, a PDF's title and so on) is read only
-by the server, with libraries this package does not carry. In memory every file has none, a search criterion about it (`TakenFrom`, `HasGps`, durations, page counts)
-matches no file, and search text matches no title or camera.
+What files' contents say (`GetFileMetadataAsync`: when a photo was taken, a PDF's title and so on) is read
+only by the server, with libraries this package does not carry. In memory no file's contents say anything: a
+search criterion about it (`TakenFrom`, `HasGps`, durations, page counts) matches no file, and search text
+matches no title or camera.
 
 What plugins keep about files works in memory: pass the `plugins` it has, each a `PluginDeclaration` with its
 fields. `SetPluginDocumentAsync` writes a plugin's document about a file, `GetFileMetadataAsync` answers it

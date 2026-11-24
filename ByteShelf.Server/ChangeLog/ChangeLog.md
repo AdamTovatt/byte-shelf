@@ -29,10 +29,10 @@ One kind of removal is the database's own and not logged: a row that goes with i
 key (`ChangeEntityType.Owned`). What a plugin keeps about a file goes with the file that way, since a
 replica keeps a purged file in its own trash, and the document with it.
 
-One write of a service's own is left out on purpose: emptying a shelf's trash first moves the deletion time of everything in
-it past the restore window (`ExpireTrashAsync`), so nothing of it can be restored while it is purged. The
-log already holds those rows as deleted, and each purge is logged; a replica keeps what it follows in its
-own trash for its own window, which logging the new time would cut short.
+One write of a service's own is left out on purpose: emptying a shelf's trash first moves the deletion
+time of everything in it past the restore window (`ExpireTrashAsync`), so nothing of it can be restored
+while it is purged. The log already holds those rows as deleted, and each purge is logged; a replica
+keeps what it follows in its own trash for its own window, which logging the new time would cut short.
 
 Credentials are logged as the server stores them: a user's `user_login` rows with the password hash,
 a passkey with its public key, and a key with the SHA-256 of its secret. A passkey's sign count and

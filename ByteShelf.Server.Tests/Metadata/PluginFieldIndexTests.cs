@@ -1,3 +1,4 @@
+using System.Data.Common;
 using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
@@ -85,7 +86,7 @@ namespace ByteShelf.Server.Tests.Metadata
             await Services.StartPluginFieldIndexAsync();
             ShelfFile file = await StoreTextAsync(await CreateShelfAsync(), "/a.txt", "a");
             await Services.SetFileDocumentAsync(file.Id, "{\"rating\":4}");
-            await Services.InTransactionAsync((_, session) => session.Connection.ExecuteAsync("UPDATE plugin_field_value SET number = 5", transaction: session.Transaction));
+            await RunSqlAsync("UPDATE plugin_field_value SET number = 5");
 
             Install(new PluginField("rating", "Another label", PluginFieldKind.Number, PluginDocumentSubject.File));
             await Services.StartPluginFieldIndexAsync();
@@ -155,13 +156,32 @@ namespace ByteShelf.Server.Tests.Metadata
             await Services.StartPluginFieldIndexAsync();
             ShelfFile file = await StoreTextAsync(await CreateShelfAsync(), "/a.txt", "a");
             await Services.SetFileDocumentAsync(file.Id, "{\"rating\":4}");
-            await Services.InTransactionAsync((_, session) => session.Connection.ExecuteAsync(
-                $"UPDATE plugin_field_value SET number = 5; UPDATE plugin_values_taken SET taken_by = replace(taken_by, '\"Version\":{PluginFieldIndex.Version}', '\"Version\":0')",
-                transaction: session.Transaction));
+            await RunSqlAsync(
+                $"UPDATE plugin_field_value SET number = 5; UPDATE plugin_values_taken SET taken_by = replace(taken_by, '\"Version\":{PluginFieldIndex.Version}', '\"Version\":0')");
 
             await Services.StartPluginFieldIndexAsync();
 
             Assert.Equal(["rating 4"], await ValuesAsync());
+        }
+
+        [Fact]
+        public async Task BringUpToDateAsync_StoppedHalfWay_IsTakenAnewByTheNextStart()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile first = await StoreTextAsync(shelf, "/a.txt", "a");
+            ShelfFile second = await StoreTextAsync(shelf, "/b.txt", "b");
+            await Services.RecordContentDocumentAsync(first.Sha256, "{\"width\":10}");
+            await Services.SetFileDocumentAsync(second.Id, "{\"rating\":4}");
+            Install(Field("rating", PluginFieldKind.Number), Field("width", PluginFieldKind.Number, PluginDocumentSubject.Contents));
+
+            // Stopped once it has taken those about contents.
+            await RunSqlAsync("CREATE TRIGGER stop BEFORE INSERT ON plugin_field_value WHEN new.field = 'rating' BEGIN SELECT RAISE(ABORT, 'stopped'); END");
+            await Assert.ThrowsAnyAsync<DbException>(() => Services.StartPluginFieldIndexAsync());
+            await RunSqlAsync("DROP TRIGGER stop");
+
+            await Services.StartPluginFieldIndexAsync();
+
+            Assert.Equal(["rating 4", "width 10"], await ValuesAsync());
         }
 
         [Fact]
@@ -174,6 +194,7 @@ namespace ByteShelf.Server.Tests.Metadata
             Install(Field("rating", PluginFieldKind.Number));
             await Services.StartPluginFieldIndexAsync();
 
+            Assert.Equal(["rating 4"], await ValuesAsync());
             Assert.Equal(before, await ChangeLog.GetLatestSequenceAsync());
         }
 
@@ -185,6 +206,11 @@ namespace ByteShelf.Server.Tests.Metadata
         private static PluginField Field(string name, PluginFieldKind kind, PluginDocumentSubject document = PluginDocumentSubject.File)
         {
             return new PluginField(name, name, kind, document);
+        }
+
+        private Task<int> RunSqlAsync(string sql)
+        {
+            return Services.InTransactionAsync((_, session) => session.Connection.ExecuteAsync(sql, transaction: session.Transaction));
         }
 
         /// <summary>Every value in the table, with its field, in order.</summary>

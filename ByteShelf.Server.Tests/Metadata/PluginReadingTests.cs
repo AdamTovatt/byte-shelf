@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 using ByteShelf.Server.ChangeLog.Models;
@@ -15,17 +16,10 @@ namespace ByteShelf.Server.Tests.Metadata
     /// <summary>What plugins' readers find in files' contents: read by the same job as the server's own, and never outliving the plaintext.</summary>
     public class PluginReadingTests : ServiceTestBase
     {
-        // Written out rather than taken from the code, so a change of either is noticed.
-        private static readonly TimeSpan PrepareLimit = TimeSpan.FromSeconds(60);
-        private static readonly TimeSpan ReadLimit = TimeSpan.FromSeconds(60);
-        private static readonly TimeSpan StopLimit = TimeSpan.FromSeconds(5);
-
-        private static readonly TimeSpan RealTimeLimit = TimeSpan.FromSeconds(30);
-
         /// <summary>A pass in a scope of its own, as the worker runs it.</summary>
-        private Task<MetadataReadingSummary> RunAsync()
+        private Task<PluginMetadataReadingSummary> RunAsync()
         {
-            return Services.ReadMetadataAsync();
+            return Services.ReadPluginMetadataAsync();
         }
 
         [Fact]
@@ -36,9 +30,9 @@ namespace ByteShelf.Server.Tests.Metadata
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "hello");
             long before = await ChangeLog.GetLatestSequenceAsync();
 
-            MetadataReadingSummary summary = await RunAsync();
+            PluginMetadataReadingSummary summary = await RunAsync();
 
-            Assert.Equal(new MetadataReadingSummary(OnReplica: false, Read: 1, Failed: 0, Removed: 0), summary);
+            Assert.Equal(new PluginMetadataReadingSummary(OnReplica: false, Read: 1, Failed: 0), summary);
             ContentPluginMetadata row = (await Rows.GetAsync(TestPluginMetadata.Plugin, file.Sha256))!;
             Assert.Equal(("{\"text\":\"hello\"}", 1, TestInstants.Now), (row.Document?.Json, row.ReaderVersion, row.ReadAt));
             ChangeLogEntry logged = Assert.Single(await ChangeLog.GetAfterAsync(before, 100));
@@ -46,26 +40,42 @@ namespace ByteShelf.Server.Tests.Metadata
             Assert.Equal(row.Document, ChangePayload.Deserialize<ContentPluginMetadata>(logged.Payload!).Document);
         }
 
+        /// <summary>Both jobs run as the server runs them, the plugins' one woken by the upload it reads.</summary>
         [Fact]
-        public async Task RunAsync_TheServersOwnReader_RunsFirst()
+        public async Task Workers_APluginsReaderIsBusy_TheServersOwnReadsANewUploadMeanwhile()
         {
-            bool ownRowWasThere = false;
-            ShelfFile? photo = null;
-            Install(new TestDocumentReader(
-                async (_, _) =>
-                {
-                    using IServiceScope scope = Services.CreateScope();
-                    ownRowWasThere = await scope.ServiceProvider.GetRequiredService<IObjectMetadataRepository>().GetBySha256Async(photo!.Sha256) != null;
-                    return null;
-                },
-                mediaTypes: "image/*"));
+            TaskCompletionSource started = NewSignal();
+            TaskCompletionSource release = NewSignal();
+            Install(new TestDocumentReader(async (_, _) =>
+            {
+                started.TrySetResult();
+                await release.Task;
+                return null;
+            }));
             Shelf shelf = await CreateShelfAsync();
-            photo = await StoreAsync(shelf, "/photo.jpg", TestMedia.Photo(make: "Nikon"), "image/jpeg");
+            IServiceScopeFactory scopes = Services.GetRequiredService<IServiceScopeFactory>();
+            MetadataReadingSignal signal = Services.GetRequiredService<MetadataReadingSignal>();
+            PassLogger<MetadataReadingWorker> passes = new PassLogger<MetadataReadingWorker>();
+            PassLogger<PluginMetadataReadingWorker> pluginPasses = new PassLogger<PluginMetadataReadingWorker>();
+            MetadataReadingWorker own = new MetadataReadingWorker(scopes, signal, Clock, passes);
+            PluginMetadataReadingWorker plugins = new PluginMetadataReadingWorker(scopes, signal, Clock, pluginPasses);
+            await own.StartAsync(CancellationToken.None);
+            await plugins.StartAsync(CancellationToken.None);
+            await Task.WhenAll(passes.Finished(1), pluginPasses.Finished(1)).WaitAsync(TestReadLimits.Real);
 
-            MetadataReadingSummary summary = await RunAsync();
+            // The fake clock never moves, so only the uploads start passes.
+            await StoreTextAsync(shelf, "/a.txt", "a");
+            await started.Task.WaitAsync(TestReadLimits.Real);
+            await passes.Finished(2).WaitAsync(TestReadLimits.Real);
+            ShelfFile photo = await StoreAsync(shelf, "/photo.jpg", TestMedia.Photo(make: "Nikon"), "image/jpeg");
+            await passes.Finished(3).WaitAsync(TestReadLimits.Real);
 
-            Assert.True(ownRowWasThere);
-            Assert.Equal(2, summary.Read);
+            Assert.NotNull(await Services.GetRequiredService<IObjectMetadataRepository>().GetBySha256Async(photo.Sha256));
+            Assert.False(pluginPasses.Finished(2).IsCompleted);
+            release.SetResult();
+            await pluginPasses.Finished(2).WaitAsync(TestReadLimits.Real);
+            await own.StopAsync(CancellationToken.None);
+            await plugins.StopAsync(CancellationToken.None);
         }
 
         [Fact]
@@ -115,8 +125,8 @@ namespace ByteShelf.Server.Tests.Metadata
             ShelfFile bad = await StoreTextAsync(shelf, "/bad.txt", "bad");
             ShelfFile good = await StoreTextAsync(shelf, "/good.txt", "good");
 
-            MetadataReadingSummary first = await RunAsync();
-            MetadataReadingSummary second = await RunAsync();
+            PluginMetadataReadingSummary first = await RunAsync();
+            PluginMetadataReadingSummary second = await RunAsync();
 
             Assert.Equal((2, 1, 0), (first.Read, first.Failed, second.Read));
             Assert.Equal(2, reader.Reads);
@@ -131,7 +141,7 @@ namespace ByteShelf.Server.Tests.Metadata
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "hello");
 
-            MetadataReadingSummary summary = await RunAsync();
+            PluginMetadataReadingSummary summary = await RunAsync();
 
             Assert.Equal((1, 1), (summary.Read, summary.Failed));
             Assert.Null((await Rows.GetAsync(TestPluginMetadata.Plugin, file.Sha256))!.Document);
@@ -159,11 +169,11 @@ namespace ByteShelf.Server.Tests.Metadata
             ShelfFile a = await StoreTextAsync(shelf, "/a.txt", "a");
             ShelfFile b = await StoreTextAsync(shelf, "/b.txt", "b");
 
-            Task<MetadataReadingSummary> run = RunAsync();
-            await started.Task.WaitAsync(RealTimeLimit);
-            await Clock.WaitForTimerAsync(ReadLimit);
-            Clock.Advance(ReadLimit);
-            MetadataReadingSummary summary = await run.WaitAsync(RealTimeLimit);
+            Task<PluginMetadataReadingSummary> run = RunAsync();
+            await started.Task.WaitAsync(TestReadLimits.Real);
+            await Clock.WaitForTimerAsync(TestReadLimits.Read);
+            Clock.Advance(TestReadLimits.Read);
+            PluginMetadataReadingSummary summary = await run.WaitAsync(TestReadLimits.Real);
 
             Assert.Equal((2, 1), (summary.Read, summary.Failed));
             Assert.Equal(2, reader.Reads);
@@ -176,9 +186,11 @@ namespace ByteShelf.Server.Tests.Metadata
         [Fact]
         public async Task RunAsync_AReadThatOnlyReadsItsStream_StopsWhenCancelledThoughItLooksAtNoToken()
         {
+            // Bounded, so a break that never stops it fails the test rather than hanging the run.
+            Stopwatch running = Stopwatch.StartNew();
             Install(new TestDocumentReader((contents, _) =>
             {
-                while (contents.Length == 1)
+                while (contents.Length == 1 && running.Elapsed < TestReadLimits.Real)
                 {
                     contents.Position = 0;
                     contents.ReadByte();
@@ -189,12 +201,12 @@ namespace ByteShelf.Server.Tests.Metadata
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
 
-            Task<MetadataReadingSummary> run = RunAsync();
-            await Clock.WaitForTimerAsync(ReadLimit);
-            Clock.Advance(ReadLimit);
+            Task<PluginMetadataReadingSummary> run = RunAsync();
+            await Clock.WaitForTimerAsync(TestReadLimits.Read);
+            Clock.Advance(TestReadLimits.Read);
 
             // The clock stands still from here, so it stops of its own and is never left behind: it is run again.
-            Assert.Equal(1, (await run.WaitAsync(RealTimeLimit)).Failed);
+            Assert.Equal(1, (await run.WaitAsync(TestReadLimits.Real)).Failed);
             Assert.Null((await Rows.GetAsync(TestPluginMetadata.Plugin, file.Sha256))!.Document);
             await StoreTextAsync(shelf, "/b.txt", "another");
             Assert.Equal((1, 0), Counts(await RunAsync()));
@@ -213,16 +225,16 @@ namespace ByteShelf.Server.Tests.Metadata
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
 
-            Task<MetadataReadingSummary> run = RunAsync();
+            Task<PluginMetadataReadingSummary> run = RunAsync();
             if (hangs)
             {
-                await Clock.WaitForTimerAsync(PrepareLimit);
-                Clock.Advance(PrepareLimit);
+                await Clock.WaitForTimerAsync(TestReadLimits.Prepare);
+                Clock.Advance(TestReadLimits.Prepare);
             }
 
-            Assert.Equal((1, 0), Counts(await run.WaitAsync(RealTimeLimit)));
+            Assert.Equal((1, 0), Counts(await run.WaitAsync(TestReadLimits.Real)));
             await StoreTextAsync(shelf, "/b.txt", "b");
-            Assert.Equal((1, 0), Counts(await RunAsync().WaitAsync(RealTimeLimit)));
+            Assert.Equal((1, 0), Counts(await RunAsync().WaitAsync(TestReadLimits.Real)));
             Assert.Equal((0, 2), (unmade.Reads, other.Reads));
             Assert.Null(await Rows.GetAsync("unmade", file.Sha256));
         }
@@ -234,7 +246,7 @@ namespace ByteShelf.Server.Tests.Metadata
             using ManualResetEventSlim release = new ManualResetEventSlim();
             TestDocumentReader stuck = new TestDocumentReader((_, _) =>
             {
-                release.Wait(RealTimeLimit);
+                release.Wait(TestReadLimits.Real);
                 return Task.FromResult<JsonObject?>(new JsonObject { ["late"] = true });
             });
             TestDocumentReader other = new TestDocumentReader((_, _) => Task.FromResult<JsonObject?>(new JsonObject()));
@@ -243,14 +255,14 @@ namespace ByteShelf.Server.Tests.Metadata
             ShelfFile first = await StoreTextAsync(shelf, "/a.txt", "a");
             ShelfFile second = await StoreTextAsync(shelf, "/b.txt", "b");
 
-            Task<MetadataReadingSummary> run = RunAsync();
-            await Clock.WaitForTimerAsync(ReadLimit);
-            Clock.Advance(ReadLimit);
-            await Clock.WaitForTimerAsync(StopLimit);
-            Clock.Advance(StopLimit);
-            MetadataReadingSummary summary = await run.WaitAsync(RealTimeLimit);
+            Task<PluginMetadataReadingSummary> run = RunAsync();
+            await Clock.WaitForTimerAsync(TestReadLimits.Read);
+            Clock.Advance(TestReadLimits.Read);
+            await Clock.WaitForTimerAsync(TestReadLimits.Stop);
+            Clock.Advance(TestReadLimits.Stop);
+            PluginMetadataReadingSummary summary = await run.WaitAsync(TestReadLimits.Real);
             await StoreTextAsync(shelf, "/c.txt", "c");
-            MetadataReadingSummary again = await RunAsync();
+            PluginMetadataReadingSummary again = await RunAsync();
 
             // The one it hung on is recorded as nothing, the rest wait for a restart; another reader goes on.
             Assert.Equal((3, 1), Counts(summary));
@@ -280,19 +292,18 @@ namespace ByteShelf.Server.Tests.Metadata
                     throw new InvalidOperationException("whatever a reader throws when it is cancelled");
                 }
 
-                release.Wait(CancellationToken.None);
+                release.Wait(TestReadLimits.Real, CancellationToken.None);
                 return null;
             }));
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
             using CancellationTokenSource stopping = new CancellationTokenSource();
 
-            using IServiceScope scope = Services.CreateScope();
-            Task run = scope.ServiceProvider.GetRequiredService<MetadataReading>().RunAsync(stopping.Token);
-            await started.Task.WaitAsync(RealTimeLimit);
+            Task run = Services.ReadPluginMetadataAsync(stopping.Token);
+            await started.Task.WaitAsync(TestReadLimits.Real);
             await stopping.CancelAsync();
 
-            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(RealTimeLimit));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(TestReadLimits.Real));
             release.Set();
             await interrupted.AllReadsEndedAsync();
             Assert.Null(await Rows.GetAsync(TestPluginMetadata.Plugin, file.Sha256));
@@ -318,16 +329,16 @@ namespace ByteShelf.Server.Tests.Metadata
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a secret");
-            Install(new TestDocumentReader(async (contents, cancellationToken) =>
+            TestDocumentReader reader = Install(new TestDocumentReader(async (contents, cancellationToken) =>
             {
                 string text = await TestDocumentReader.ReadTextAsync(contents, cancellationToken);
                 await EncryptInPlaceAsync(shelf, file);
                 return new JsonObject { ["text"] = text };
             }));
 
-            MetadataReadingSummary summary = await RunAsync();
+            PluginMetadataReadingSummary summary = await RunAsync();
 
-            Assert.Equal(0, summary.Read);
+            Assert.Equal((1, 0), (reader.Reads, summary.Read));
             await AssertNothingOutlivesAsync(file.Sha256, "a secret");
         }
 
@@ -335,18 +346,16 @@ namespace ByteShelf.Server.Tests.Metadata
         public async Task RunAsync_OnlyAnEncryptedFileHoldsTheBytesOnceRead_RecordsNothing()
         {
             Shelf shelf = await CreateShelfAsync();
-            byte[] bytes = Encoding.ASCII.GetBytes("age-encryption.org/v1\nstored as plain as well");
-            ShelfFile plain = await StoreAsync(shelf, "/plain.txt", bytes, "text/plain");
-            await StoreAsync(shelf, "/secret.txt", bytes, "text/plain", encrypted: true);
-            Install(new TestDocumentReader(async (_, _) =>
+            (ShelfFile plain, _) = await StorePlainAndEncryptedAsync(shelf);
+            TestDocumentReader reader = Install(new TestDocumentReader(async (_, _) =>
             {
                 await EncryptInPlaceAsync(shelf, plain);
                 return new JsonObject();
             }));
 
-            MetadataReadingSummary summary = await RunAsync();
+            PluginMetadataReadingSummary summary = await RunAsync();
 
-            Assert.Equal(0, summary.Read);
+            Assert.Equal((1, 0), (reader.Reads, summary.Read));
             Assert.Null(await Rows.GetAsync(TestPluginMetadata.Plugin, plain.Sha256));
         }
 
@@ -362,9 +371,9 @@ namespace ByteShelf.Server.Tests.Metadata
                 return new JsonObject();
             }));
 
-            MetadataReadingSummary whileDeleted = await RunAsync();
+            PluginMetadataReadingSummary whileDeleted = await RunAsync();
             await TrashService.RestoreAsync(shelf, deleted!.DeletionId);
-            MetadataReadingSummary restored = await RunAsync();
+            PluginMetadataReadingSummary restored = await RunAsync();
 
             Assert.Equal((0, 1), (whileDeleted.Read, restored.Read));
         }
@@ -429,6 +438,11 @@ namespace ByteShelf.Server.Tests.Metadata
             await RunAsync();
             InstallPlugins(Plugin(TestDocumentReader.OfText(version: 2), "first"));
             await RunAsync();
+            foreach ((string plugin, int version) in new[] { ("first", 2), ("second", 1) })
+            {
+                ContentPluginMetadata read = (await Rows.GetAsync(plugin, file.Sha256))!;
+                Assert.Equal((version, "{\"text\":\"a secret\"}"), (read.ReaderVersion, read.Document?.Json));
+            }
 
             // The second plugin is gone, the first has read them twice: all of it goes all the same.
             await EncryptInPlaceAsync(shelf, file);
@@ -457,10 +471,9 @@ namespace ByteShelf.Server.Tests.Metadata
         {
             Install(TestDocumentReader.OfText());
             Shelf shelf = await CreateShelfAsync();
-            byte[] bytes = Encoding.ASCII.GetBytes("age-encryption.org/v1\nstored as plain as well");
-            ShelfFile plain = await StoreAsync(shelf, "/plain.txt", bytes, "text/plain");
-            await StoreAsync(shelf, "/secret.txt", bytes, "text/plain", encrypted: true);
+            (ShelfFile plain, _) = await StorePlainAndEncryptedAsync(shelf);
             await RunAsync();
+            Assert.Equal("{\"text\":\"age-encryption.org/v1\\nstored as plain as well\"}", await Services.GetContentDocumentAsync(plain.Sha256));
 
             await EncryptInPlaceAsync(shelf, plain);
 
@@ -476,10 +489,10 @@ namespace ByteShelf.Server.Tests.Metadata
             await RunAsync();
             InstallPlugins();
             await FileService.DeleteFileAsync(shelf, EntryReference.ForId(file.Id));
-            Assert.Equal(0, (await RunAsync()).Removed);
+            Assert.Equal(0, (await Services.ReadMetadataAsync()).Removed);
             await TrashService.EmptyAsync(shelf, CancellationToken.None);
 
-            MetadataReadingSummary summary = await RunAsync();
+            MetadataReadingSummary summary = await Services.ReadMetadataAsync();
 
             Assert.Equal(1, summary.Removed);
             await AssertNothingOutlivesAsync(file.Sha256, "a secret");
@@ -490,14 +503,12 @@ namespace ByteShelf.Server.Tests.Metadata
         {
             Install(TestDocumentReader.OfText());
             Shelf shelf = await CreateShelfAsync();
-            byte[] bytes = Encoding.ASCII.GetBytes("age-encryption.org/v1\nstored as plain as well");
-            ShelfFile plain = await StoreAsync(shelf, "/plain.txt", bytes, "text/plain");
-            await StoreAsync(shelf, "/secret.txt", bytes, "text/plain", encrypted: true);
+            (ShelfFile plain, _) = await StorePlainAndEncryptedAsync(shelf);
             await RunAsync();
             await FileService.DeleteFileAsync(shelf, EntryReference.ForId(plain.Id));
             await TrashService.EmptyAsync(shelf, CancellationToken.None);
 
-            MetadataReadingSummary summary = await RunAsync();
+            MetadataReadingSummary summary = await Services.ReadMetadataAsync();
 
             Assert.Equal(1, summary.Removed);
             await AssertNothingOutlivesAsync(plain.Sha256, "stored as plain as well");
@@ -536,7 +547,7 @@ namespace ByteShelf.Server.Tests.Metadata
             return new TestMetadataPlugin(new PluginDeclaration(id, id, [text]), reader);
         }
 
-        private static (int Read, int Failed) Counts(MetadataReadingSummary summary)
+        private static (int Read, int Failed) Counts(PluginMetadataReadingSummary summary)
         {
             return (summary.Read, summary.Failed);
         }

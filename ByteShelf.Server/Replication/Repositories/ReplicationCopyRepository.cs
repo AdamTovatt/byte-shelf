@@ -65,15 +65,5 @@ namespace ByteShelf.Server.Replication.Repositories
 
             return (await session.Connection.QueryAsync<Guid>(query, new { entityType, ownerType = owner?.EntityType }, transaction: session.Transaction)).ToList();
         }
-
-        /// <inheritdoc />
-        public async Task<IReadOnlyList<Guid>> GetIdsWithoutOwnerAsync(EntityOwner owner, string ownerTable, IDbSession session)
-        {
-            string query = $@"
-                SELECT id FROM {owner.OwnedTable}
-                WHERE NOT EXISTS (SELECT 1 FROM {ownerTable} WHERE {ownerTable}.id = {owner.OwnedTable}.{owner.OwnedColumn})";
-
-            return (await session.Connection.QueryAsync<Guid>(query, transaction: session.Transaction)).ToList();
-        }
     }
 }

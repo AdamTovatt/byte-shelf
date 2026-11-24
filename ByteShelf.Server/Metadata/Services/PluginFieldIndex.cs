@@ -18,9 +18,9 @@ namespace ByteShelf.Server.Metadata.Services
         internal const int BatchSize = 100;
 
         /// <summary>
-        /// The server's own rules for what it takes and keeps of a field: <see cref="PluginFieldValue.Of"/>, the
-        /// folding and cutting of text, the limit on what is listed and the JSON that is. Raised when one
-        /// changes, which has every value taken again.
+        /// The server's own rules for what it takes and keeps of a field (<see cref="PluginFieldValueRow.Of"/>):
+        /// <see cref="PluginFieldValue.Of"/>, the folding and cutting of text, the limit on what is listed and the
+        /// JSON that is. Raised when one changes, which has every value taken again.
         /// </summary>
         internal const int Version = 1;
 

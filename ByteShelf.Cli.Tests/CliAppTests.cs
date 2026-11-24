@@ -730,6 +730,18 @@ namespace ByteShelf.Cli.Tests
         }
 
         [Fact]
+        public async Task Stat_LongTextOfAPlugin_IsWhole()
+        {
+            string caption = new string('x', 5000);
+            await UploadAsync("/a.txt", "a");
+            await Docs.SetPluginDocumentAsync("/a.txt", "notes", PluginDocument.Parse($"{{\"caption\":\"{caption}\"}}"), null);
+
+            CliRun run = await RunAsync("stat", "docs:/a.txt");
+
+            Assert.EndsWith($"  Caption (caption): {caption}", run.Output.TrimEnd(), StringComparison.Ordinal);
+        }
+
+        [Fact]
         public async Task Stat_PluginWithNoFieldThatHasAValue_PrintsNothingOfIt()
         {
             await UploadAsync("/a.txt", "a");

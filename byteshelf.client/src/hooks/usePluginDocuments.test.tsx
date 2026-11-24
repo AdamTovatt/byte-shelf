@@ -10,7 +10,7 @@ import { invalidateResource } from '../lib/invalidate';
 import { queryClient } from '../lib/queryClient';
 import { queryKeys } from '../lib/queryKeys';
 import { saveTokens } from '../services/authService';
-import type { FileMetadata, PluginFileMetadata, ShelfFile } from '../services/shelfService';
+import type { FileMetadata, PluginFileDetails, ShelfFile } from '../services/shelfService';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
 
@@ -20,7 +20,7 @@ const FILE = { id: 'f', shelfId: 's' } as ShelfFile;
 
 const NONE = { contents: null, file: null, fileVersion: null };
 
-function kept(fileDocument: Record<string, unknown> | null, fileVersion: number, contentsDocument: Record<string, unknown> | null = null): PluginFileMetadata {
+function kept(fileDocument: Record<string, unknown> | null, fileVersion: number, contentsDocument: Record<string, unknown> | null = null): PluginFileDetails {
   return { name: 'Notes', contentsDocument, fileDocument, fileVersion, fields: [] };
 }
 
@@ -29,7 +29,7 @@ describe('a plugin\'s documents about a file', () => {
   let root: Root;
   let read: ReturnType<typeof usePluginDocuments>;
   let set: ReturnType<typeof useSetPluginDocument>;
-  let plugins: Record<string, PluginFileMetadata>;
+  let plugins: Record<string, PluginFileDetails>;
   let refusal: Response | null;
   let holdReads: Promise<void> | null;
   let file: ShelfFile;
@@ -128,7 +128,7 @@ describe('a plugin\'s documents about a file', () => {
     expect(bodies).toEqual([{ document: { rating: 5 }, expectedVersion: 1 }]);
     expect(sent.filter((request) => request.startsWith('PUT')).map((request) => request.split(' ')[1])).toEqual(['/api/shelves/docs/files/plugin-metadata?id=f&plugin=notes']);
     await vi.waitFor(() => expect(read.data).toEqual({ ...NONE, file: { rating: 5 }, fileVersion: 2 }));
-    expect(Object.keys(queryClient.getQueryData<FileMetadata>(queryKeys.shelfContents.metadata('s', 'f'))!.plugins!)).toEqual(['notes', 'other']);
+    expect(Object.keys(queryClient.getQueryData<FileMetadata>(queryKeys.shelfContents.pluginDocuments('s', 'f'))!.plugins!)).toEqual(['notes', 'other']);
     release();
   });
 
@@ -186,7 +186,7 @@ describe('a plugin\'s documents about a file', () => {
     plugins = { notes: kept({ rating: 5 }, 1), other: kept({ rating: 1 }, 1) };
     await write({ document: { rating: 5 }, expectedVersion: null });
 
-    expect(queryClient.getQueryData(queryKeys.shelfContents.metadata('s', 'f'))).toBeUndefined();
+    expect(queryClient.getQueryData(queryKeys.shelfContents.pluginDocuments('s', 'f'))).toBeUndefined();
     release();
     await vi.waitFor(() => expect(read.data?.fileVersion).toBe(1));
   });

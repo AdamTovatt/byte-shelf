@@ -9,7 +9,7 @@ namespace ByteShelf.Server.Metadata.Services
     /// </summary>
     internal delegate Task<bool> RecordReading(string sha256, DateTimeOffset at, IDbSession session);
 
-    /// <summary>One of the readers <see cref="MetadataReading"/> runs: what it has yet to read, how it reads, and where what it finds goes.</summary>
+    /// <summary>A reader of contents, as <see cref="ContentReading"/> runs it: what it has yet to read, how it reads, and where what it finds goes.</summary>
     internal abstract class ContentReader
     {
         /// <summary>Names the reader, different for every one.</summary>

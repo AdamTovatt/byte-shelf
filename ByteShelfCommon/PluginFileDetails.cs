@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace ByteShelfCommon
 {
     /// <summary>What one installed plugin keeps about a file.</summary>
-    public sealed class PluginFileMetadata
+    public sealed class PluginFileDetails
     {
         /// <summary>The plugin's name, for people.</summary>
         public required string Name { get; init; }
@@ -24,7 +24,7 @@ namespace ByteShelfCommon
         public required IReadOnlyList<PluginFieldEntry> Fields { get; init; }
 
         /// <summary>What <paramref name="plugin"/> keeps about a file, its declared fields read from its documents.</summary>
-        public static PluginFileMetadata Of(PluginDeclaration plugin, PluginDocument? contentsDocument, PluginDocument? fileDocument, int? fileVersion)
+        public static PluginFileDetails Of(PluginDeclaration plugin, PluginDocument? contentsDocument, PluginDocument? fileDocument, int? fileVersion)
         {
             ArgumentNullException.ThrowIfNull(plugin);
             JsonElement? contents = contentsDocument?.ToElement();
@@ -38,7 +38,7 @@ namespace ByteShelfCommon
                 }
             }
 
-            return new PluginFileMetadata
+            return new PluginFileDetails
             {
                 Name = plugin.Name,
                 ContentsDocument = contentsDocument,

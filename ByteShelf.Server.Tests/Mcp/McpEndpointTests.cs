@@ -216,6 +216,19 @@ namespace ByteShelf.Server.Tests.Mcp
         }
 
         [Fact]
+        public async Task GetInfo_TextOfAPluginAsLongAsMayBe_IsWhole()
+        {
+            ShelfFile file = await StoreAsync("/a.txt", "a"u8.ToArray(), "text/plain");
+            string note = new string('x', 1000);
+            await _host.Services.SetFileDocumentAsync(file.Id, $"{{\"note\":\"{note}\"}}");
+
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read), asBearer: true);
+            string info = TextOf(await client.CallToolAsync("get_info", new Dictionary<string, object?> { ["path"] = "/a.txt" }));
+
+            Assert.EndsWith($"  Note (note): {note}", info, StringComparison.Ordinal);
+        }
+
+        [Fact]
         public async Task GetInfo_LongTextOfAPlugin_IsCut()
         {
             ShelfFile file = await StoreAsync("/a.txt", "a"u8.ToArray(), "text/plain");
@@ -242,9 +255,19 @@ namespace ByteShelf.Server.Tests.Mcp
 
             await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read), asBearer: true);
             string found = TextOf(await client.CallToolAsync(tool, new Dictionary<string, object?> { ["pluginFields"] = new[] { "test-plugin.rating=4..5", "test-plugin.done=true" } }));
-            CallToolResult refused = await client.CallToolAsync(tool, new Dictionary<string, object?> { ["pluginFields"] = new[] { "rating" } });
 
             Assert.Equal(["/a/a.txt", "/a/b.txt"], PathsIn(found));
+        }
+
+        [Theory]
+        [InlineData("search_files")]
+        [InlineData("find_duplicates")]
+        public async Task SearchTool_FilterThatCannotBeRead_IsRefusedSayingSo(string tool)
+        {
+            await using McpClient client = await ConnectAsync(await CreateKeyAsync("docs", ShelfKeyPermission.Read), asBearer: true);
+
+            CallToolResult refused = await client.CallToolAsync(tool, new Dictionary<string, object?> { ["pluginFields"] = new[] { "rating" } });
+
             Assert.True(refused.IsError);
             Assert.Contains("'rating' is not a filter on a plugin's field", TextOf(refused), StringComparison.Ordinal);
         }

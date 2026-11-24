@@ -112,10 +112,14 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
-        public async Task InsertAsync(FileRecord file, IDbSession session)
+        public async Task InsertAsync(FileRecord file, Guid? replacedId, IDbSession session)
         {
             await session.Connection.ExecuteAsync(InsertSql, Parameters(file), transaction: session.Transaction);
             await _changeLog.AppendAsync(ChangeEntityType.File, file.Id, ChangeAction.Added, file, file.CreatedAt, session);
+            if (replacedId is Guid replaced)
+            {
+                await _metadataUpkeep.StoredOverAsync(replaced, file.Id, file.CreatedAt, session);
+            }
         }
 
         /// <inheritdoc />
@@ -391,6 +395,7 @@ namespace ByteShelf.Server.Storage.Repositories
                 await _changeLog.AppendAsync(ChangeEntityType.File, entity.Id, ChangeAction.Restored, entity.ToDomain(), restoredAt, session);
             }
 
+            await _metadataUpkeep.RestoredAsync(restored.Select(entity => entity.Id).ToList(), restoredAt, session);
             return restored.Count;
         }
 

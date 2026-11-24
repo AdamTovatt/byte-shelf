@@ -1,8 +1,6 @@
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Shared.Root;
-using ByteShelf.Server.Storage.Models;
-using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using EasyReasy.Database;
@@ -36,44 +34,6 @@ namespace ByteShelf.Server.Tests.Metadata
         public async Task DisposeAsync()
         {
             await _host.DisposeAsync();
-        }
-
-        /// <summary>A command does not know the plugins, so what it wrote would be found by none of its fields.</summary>
-        [Fact]
-        public async Task Services_OfACommand_WriteNoDocument()
-        {
-            await using ServiceProvider command = RootCommand.BuildServices(ServerSettings.Open(_host.TestRoot.Root), _logs);
-
-            await Assert.ThrowsAsync<InvalidOperationException>(() => command.SetFileDocumentAsync(_file.Id, "{\"caption\":\"new\"}"));
-            await Assert.ThrowsAsync<InvalidOperationException>(() => command.RecordContentDocumentAsync(_file.Sha256, "{\"words\":\"new\"}", version: 2));
-
-            Assert.Equal("{\"caption\":\"to forget\"}", await _host.Services.GetFileDocumentAsync(_file.Id));
-            Assert.Equal("{\"words\":\"to forget\"}", await _host.Services.GetContentDocumentAsync(_file.Sha256));
-
-            // Undone with the transactions, as the values of a document are removed before it is refused.
-            Assert.Equal(2, await CountValuesAsync());
-        }
-
-        [Fact]
-        public async Task Services_OfACommand_RemoveADocumentWithItsValues()
-        {
-            await using ServiceProvider command = RootCommand.BuildServices(ServerSettings.Open(_host.TestRoot.Root), _logs);
-
-            await command.RemoveFileDocumentAsync(_file.Id);
-
-            Assert.Null(await _host.Services.GetFileDocumentAsync(_file.Id));
-            Assert.Equal(1, await CountValuesAsync());
-        }
-
-        /// <summary>Not as though there were none.</summary>
-        [Fact]
-        public async Task Services_OfACommand_ListNoPluginsFields()
-        {
-            await using ServiceProvider command = RootCommand.BuildServices(ServerSettings.Open(_host.TestRoot.Root), _logs);
-            using IServiceScope scope = command.CreateScope();
-            Shelf shelf = await scope.ServiceProvider.GetRequiredService<IShelfService>().GetByNameAsync("docs");
-
-            await Assert.ThrowsAsync<InvalidOperationException>(() => scope.ServiceProvider.GetRequiredService<IDirectoryService>().ListAsync(shelf, EntryReference.ForPath("/")));
         }
 
         [Fact]
@@ -129,14 +89,6 @@ namespace ByteShelf.Server.Tests.Metadata
             Assert.Equal(RootCommand.Usage, await RunAsync(args));
 
             await AssertKeptAsync();
-        }
-
-        /// <summary>How many values of the plugin's fields there are.</summary>
-        private async Task<long> CountValuesAsync()
-        {
-            using IServiceScope scope = _host.Services.CreateScope();
-            await using IDbSession session = await scope.ServiceProvider.GetRequiredService<IDbSessionFactory>().CreateSessionAsync();
-            return await TestQueries.CountAsync(session, $"plugin_field_value WHERE plugin_id = '{TestPluginMetadata.Plugin}'");
         }
 
         private async Task AssertKeptAsync()

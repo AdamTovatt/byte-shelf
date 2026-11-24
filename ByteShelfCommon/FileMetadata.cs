@@ -9,9 +9,9 @@ namespace ByteShelfCommon
     /// </summary>
     public sealed class FileMetadata
     {
-        private static readonly IReadOnlyDictionary<string, PluginFileMetadata> NoPlugins = new Dictionary<string, PluginFileMetadata>();
+        private static readonly IReadOnlyDictionary<string, PluginFileDetails> NoPlugins = new Dictionary<string, PluginFileDetails>();
 
-        private readonly IReadOnlyDictionary<string, PluginFileMetadata>? _plugins;
+        private readonly IReadOnlyDictionary<string, PluginFileDetails>? _plugins;
 
         /// <summary>None read, nor to be, and nothing kept by a plugin.</summary>
         public static readonly FileMetadata None = new FileMetadata();
@@ -57,7 +57,7 @@ namespace ByteShelfCommon
         /// anything: a document about the file's contents, read in the background, and one about the file itself.
         /// </summary>
         /// <remarks>Empty, too, from a server that keeps nothing for plugins, whose answer does not have it.</remarks>
-        public IReadOnlyDictionary<string, PluginFileMetadata> Plugins
+        public IReadOnlyDictionary<string, PluginFileDetails> Plugins
         {
             get => _plugins ?? NoPlugins;
             init => _plugins = value;

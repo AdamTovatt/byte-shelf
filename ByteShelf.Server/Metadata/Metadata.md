@@ -48,7 +48,9 @@ plaintext, and metadata read from it would leak what encryption hides. Such file
 `GET files/metadata` answers nothing read for one even when a plain file holds the same bytes; what plugins
 keep about the file itself it still has.
 
-**What was read from plaintext never outlives it**, whichever reader read it:
+**What was read from plaintext never outlives it** in the tables and the log, whichever reader read it.
+What a row held may stay on the database file's free pages until SQLite writes over them, as what any
+deleted row held; a backup's copy has none of it ([Backup](../Backup/Backup.md)).
 
 - A file encrypted in place drops what was read from its plain contents in the swap's transaction
   (`FileRepository.SwapContentAsync`, the one way to swap contents, for a backup too, through
@@ -61,7 +63,7 @@ keep about the file itself it still has.
 - A read that fails is logged by its exception's type alone: a message may quote the contents, and the
   server's log forgets nothing.
 - A reading is recorded only where a live plain file holds the contents in the same transaction
-  (`PlainContents.HeldByLiveFile`, part of the write itself), since they may have been encrypted or
+  (`PlainContents.RecordSql`, the write itself), since they may have been encrypted or
   deleted while they were read.
 
 ## Search
@@ -95,7 +97,8 @@ with a null document, so no version of it is given twice and a write made agains
 removed is refused.
 
 The log keeps only the newest state of a document of either kind
-([Change log](../ChangeLog/ChangeLog.md)), so writing one over and over does not grow it.
+([Change log](../ChangeLog/ChangeLog.md)), so writing one over and over adds only blanked entries, which
+compaction drops.
 
 Documents do not count toward a shelf's quota, as descriptions and what the server itself read do not: storing
 a file over another copies up to 64 KiB per plugin whatever the new file's size.
@@ -158,17 +161,20 @@ query string (`pluginFields=`, escaped, once a filter), the CLI and MCP:
 | `notes.due=2026-01-01..2026-02-01`, `=2026-01-01..`, `=..2026-02-01` | is an instant from the first (included) to the second (excluded), each a UTC date or an ISO 8601 time with an offset |
 | `notes.done=true`, `=false` | is a flag that is that |
 
-## The job (`metadata.reading`)
+## The jobs (`metadata.reading`, `metadata.plugin_reading`)
 
-`MetadataReadingWorker` runs `MetadataReading` ([Jobs](../Jobs/Jobs.md)) at startup, whenever an
-upload finishes (`MetadataReadingSignal`, woken by `UploadService`), and hourly. A pass:
+Two jobs read contents, so that what plugins have yet to read never delays the server's own reading. Both run
+at startup, whenever an upload finishes (`MetadataReadingSignal`, woken by `UploadService`), and hourly
+([Jobs](../Jobs/Jobs.md)). A pass of `metadata.reading` (`MetadataReading`) drops what was read from contents
+no plain file row, live or trashed, holds any more (a file in the trash keeps it for a restore), every
+plugin's, installed or not; then it runs the server's own reader. A pass of `metadata.plugin_reading`
+(`PluginMetadataReading`) runs each plugin's reader (`IPluginReaders`) in turn, so one's backlog delays the
+next's.
 
-1. drops what was read from contents no plain file row, live or trashed, holds any more (a file in the
-   trash keeps it for a restore), every plugin's, installed or not;
-2. runs each reader in turn (`ContentReaders`), the server's own first, then each plugin's: it reads every
-   object that a live, plain file of a type it takes holds and that it has not read, whenever it was
-   stored, a batch at a time by SHA-256, each in its own transaction. Every reader has a version (the
-   server's own is `MetadataReader.Version`), and what another version read it reads again.
+A reader reads every object that a live, plain file of a type it takes holds and that it has not read,
+whenever it was stored, a batch at a time by SHA-256, each in its own transaction (`ContentReading`). Every
+reader has a version (the server's own is `MetadataReader.Version`), and what another version read it reads
+again.
 
 A plugin's reader is made the first time it has something to read, and has 60 seconds for that; one that is
 not made by then says nothing of any contents, which stay to be read.
@@ -177,11 +183,11 @@ A read that throws, answers no valid document, or takes over 60 seconds is recor
 and so not tried again by that version: contents never change. A read over its time is cancelled by its token,
 and by its stream, which refuses the next read (`CancellableReadStream`), so a reader that looks at no token
 still stops. One that has not stopped 5 seconds later is left behind on the thread it holds. A reader left
-behind, or not made, is not run again until the server restarts, and admins are told why (`ReaderProblems`,
-[Plugins](../Plugins/Plugins.md)); the other readers go on (`ContentReadRunner`). Shutting down records
-nothing.
+behind, or not made, is not run again until the server restarts (`ContentReadRunner`); the other readers go
+on. Admins are told why of a plugin's (`ReaderProblems`, [Plugins](../Plugins/Plugins.md)); of the server's
+own, only the log says so. Shutting down records nothing.
 
-Uploads never wait for it. Contents that vanish between being listed and read are passed over.
+Uploads never wait for them. Contents that vanish between being listed and read are passed over.
 
 ## Replicas
 
@@ -189,7 +195,7 @@ Rows are change-log entities, each named by an id made from what it is about (`O
 first 128 bits of the SHA-256; `PluginMetadataId` for plugins' documents), so no two rows on any server are
 about the same, and reach replicas through the log and whole copies like any other
 ([Replication](../Replication/Replication.md)). A replica never reads: its
-job does nothing while it follows a primary, and starts reading once it is promoted.
+jobs do nothing while it follows a primary, and start reading once it is promoted.
 
 ## The in-memory client
 

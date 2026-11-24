@@ -22,11 +22,5 @@ namespace ByteShelf.Server.Replication.Repositories
         /// does not hold; given an <paramref name="owner"/>, only those whose owner it does.
         /// </summary>
         Task<IReadOnlyList<Guid>> GetIdsMissingAsync(string entityType, string table, EntityOwner? owner, IDbSession session);
-
-        /// <summary>
-        /// The ids of the rows whose <paramref name="owner"/>, a row of <paramref name="ownerTable"/>, is not
-        /// here, in a transaction that deferred the foreign keys.
-        /// </summary>
-        Task<IReadOnlyList<Guid>> GetIdsWithoutOwnerAsync(EntityOwner owner, string ownerTable, IDbSession session);
     }
 }

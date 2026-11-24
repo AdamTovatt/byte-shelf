@@ -6,8 +6,9 @@ namespace ByteShelf.Server.Metadata.Services
     /// <summary>
     /// Keeps everything the server holds about files in step with the files: what was read from contents,
     /// whichever reader read it, never outlives their plaintext, and what plugins keep about a file stays with
-    /// it. The one place that knows every table of metadata. Each change is made in the caller's transaction
-    /// and logged, and the log forgets readings that go
+    /// it. The one place that knows every table of metadata. <see cref="Storage.Repositories.FileRepository"/>
+    /// calls it wherever a write of its needs that, so no write of files can leave it out. Each change is made in
+    /// the caller's transaction and logged, and the log forgets readings that go
     /// (<see cref="ChangeLog.Models.ChangeEntityType.ForgetsEarlierStates"/>).
     /// </summary>
     public sealed class MetadataUpkeep
@@ -34,9 +35,7 @@ namespace ByteShelf.Server.Metadata.Services
 
         /// <summary>
         /// Runs <paramref name="swap"/>, which swaps the contents <paramref name="sha256"/> of the file
-        /// <paramref name="fileId"/> for others and logs it, between what it does to metadata. Only
-        /// <see cref="Storage.Repositories.FileRepository.SwapContentAsync"/> calls it, whose swap there is no
-        /// other way to.
+        /// <paramref name="fileId"/> for others and logs it, between what it does to metadata.
         /// </summary>
         /// <remarks>
         /// Before it, what was read from the contents goes unless another plain file, live or in the trash,
@@ -53,8 +52,17 @@ namespace ByteShelf.Server.Metadata.Services
 
             TSwapped swapped = await swap();
 
-            await _filePluginMetadata.LogAgainAsync(fileId, at, session);
+            await _filePluginMetadata.LogAgainAsync([fileId], at, session);
             return swapped;
+        }
+
+        /// <summary>
+        /// The files <paramref name="fileIds"/> were restored, and logged so: what plugins keep about them is logged
+        /// again, for a replica that has purged one from its own trash since, its documents with it.
+        /// </summary>
+        public async Task RestoredAsync(IReadOnlyCollection<Guid> fileIds, DateTimeOffset at, IDbSession session)
+        {
+            await _filePluginMetadata.LogAgainAsync(fileIds, at, session);
         }
 
         /// <summary>

@@ -2,8 +2,11 @@ using System.Net.Http.Json;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Metadata.Models;
+using ByteShelf.Server.Metadata.Repositories;
+using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Replication.Models;
 using ByteShelf.Server.Replication.Repositories;
+using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
 using ByteShelf.Server.Tests.TestUtilities;
@@ -195,6 +198,7 @@ namespace ByteShelf.Server.Tests.Replication
             await pair.Primary.Services.SetFileDocumentAsync(purged.Id, Rating);
             await pair.Primary.Services.SetFileDocumentAsync(kept.Id, Rating);
             await pair.PurgeOnPrimaryAsync("docs", "/a.txt");
+            Assert.Equal(2, (await pair.Primary.Services.GetLatestStatesAsync()).Count(entry => entry.EntityType == ChangeEntityType.FilePluginMetadata && entry.Payload != null));
 
             await pair.PairAsync();
             await pair.SyncAsync();
@@ -244,6 +248,79 @@ namespace ByteShelf.Server.Tests.Replication
             await pair.SyncAsync();
 
             Assert.Null(await pair.Replica.Services.GetFileDocumentAsync(file.Id));
+        }
+
+        [Theory]
+        [InlineData(1)]
+        [InlineData(100)]
+        public async Task Sync_FilesRestoredAfterTheReplicaPurgedThem_BringTheirDocuments(int pageSize)
+        {
+            ReplicationPair pair = await StartAsync(pageSize);
+            ShelfFile file = await pair.PutOnPrimaryAsync("docs", "/folder/a.txt", "a");
+            ShelfFile removed = await pair.PutOnPrimaryAsync("docs", "/folder/b.txt", "b");
+            await pair.Primary.Services.SetFileDocumentAsync(file.Id, Rating);
+            await pair.Primary.Services.SetFileDocumentAsync(file.Id, "{\"width\":1}", "another");
+            await pair.Primary.Services.SetFileDocumentAsync(removed.Id, Rating);
+            await pair.Primary.Services.RemoveFileDocumentAsync(removed.Id);
+            await pair.PairAsync();
+            (await pair.Primary.AdminClient.DeleteAsync("/api/shelves/docs/directories?path=/folder")).EnsureSuccessStatusCode();
+            await pair.SyncAsync();
+            foreach (ShelfFile each in new[] { file, removed })
+            {
+                Assert.True(await pair.Replica.Services.InTransactionAsync((provider, session) => provider.GetRequiredService<IFileRepository>().PurgeAsync(each.Id, DateTimeOffset.UtcNow, session)));
+            }
+
+            Assert.Null(await pair.Replica.Services.GetFileDocumentAsync(file.Id));
+
+            TrashEntry deleted = Assert.Single((await pair.Primary.AdminClient.GetFromJsonAsync<IReadOnlyList<TrashEntry>>("/api/shelves/docs/trash"))!);
+            (await pair.Primary.AdminClient.PostAsync($"/api/shelves/docs/trash/{deleted.DeletionId}/restore", null)).EnsureSuccessStatusCode();
+            await pair.SyncAsync();
+
+            Assert.Equal(Rating, await pair.Replica.Services.GetFileDocumentAsync(file.Id));
+            Assert.Equal("{\"width\":1}", await pair.Replica.Services.GetFileDocumentAsync(file.Id, "another"));
+            Assert.Equal(["/folder/a.txt"], await FindOnReplicaAsync(pair, "test-plugin.rating=4"));
+
+            // The version of the one removed came too, so none is given twice after a promotion.
+            using IServiceScope scope = pair.Replica.Services.CreateScope();
+            Assert.Equal(2, (await scope.ServiceProvider.GetRequiredService<IFilePluginMetadataRepository>().GetAsync(TestPluginMetadata.Plugin, removed.Id))!.Version);
+        }
+
+        /// <summary>By the log, and by a whole copy, which has no entry of what was forgotten once the log is compacted.</summary>
+        [Theory]
+        [InlineData(false)]
+        [InlineData(true)]
+        public async Task Sync_PluginForgottenOnThePrimary_IsForgottenOnTheReplica(bool byCopy)
+        {
+            ReplicationPair pair = await StartAsync();
+            ShelfFile file = await pair.PutOnPrimaryAsync("docs", "/a.txt", "a");
+            foreach (string plugin in new[] { TestPluginMetadata.Plugin, "another" })
+            {
+                await pair.Primary.Services.SetFileDocumentAsync(file.Id, Rating, plugin);
+                await pair.Primary.Services.RecordContentDocumentAsync(file.Sha256, "{\"width\":10}", plugin);
+            }
+
+            await pair.PairAsync();
+            await pair.SyncAsync();
+            Assert.Equal((Rating, "{\"width\":10}"), await DocumentsOnReplicaAsync(pair, file));
+
+            Assert.Equal(RootCommand.Done, await PluginMetadataCommand.RunAsync(["--forget-plugin", TestPluginMetadata.Plugin], pair.Primary.TestRoot.Root.Path, new RecordingLoggerFactory()));
+            if (byCopy)
+            {
+                await CompactAsync(pair.Primary);
+                await RequireCopyAsync(pair.Replica);
+            }
+
+            await pair.SyncAsync();
+
+            Assert.Equal((null, null), await DocumentsOnReplicaAsync(pair, file));
+            Assert.Equal(Rating, await pair.Replica.Services.GetFileDocumentAsync(file.Id, "another"));
+            Assert.Equal("{\"width\":10}", await pair.Replica.Services.GetContentDocumentAsync(file.Sha256, "another"));
+            Assert.Empty(await FindOnReplicaAsync(pair, "test-plugin.rating"));
+            await using IDbSession session = await pair.Replica.TestRoot.SessionFactory.CreateSessionAsync();
+            foreach (string table in new[] { "file_plugin_metadata", "content_plugin_metadata" })
+            {
+                Assert.Equal(0, await TestQueries.CountAsync(session, $"{table} WHERE plugin_id = '{TestPluginMetadata.Plugin}'"));
+            }
         }
 
         [Fact]
@@ -448,10 +525,7 @@ namespace ByteShelf.Server.Tests.Replication
         /// <summary>Compacts a server's log as if every entry were older than the retention; the hosts run on the real clock.</summary>
         private static async Task CompactAsync(ServerTestHost host)
         {
-            using IServiceScope scope = host.Services.CreateScope();
-            await using IDbTransactionSession session = await scope.ServiceProvider.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync();
-            await scope.ServiceProvider.GetRequiredService<IChangeLogRepository>().CompactAsync(DateTimeOffset.UtcNow.AddYears(1), session);
-            await session.CommitAsync();
+            await host.Services.InTransactionAsync((provider, session) => provider.GetRequiredService<IChangeLogRepository>().CompactAsync(DateTimeOffset.UtcNow.AddYears(1), session));
         }
 
         private static async Task RequireCopyAsync(ServerTestHost replica)

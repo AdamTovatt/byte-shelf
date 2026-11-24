@@ -19,14 +19,13 @@ namespace ByteShelf.Server.Metadata.Repositories
             read_at AS {nameof(ContentPluginMetadataEntity.ReadAt)},
             document";
 
-        private const string InsertIntoSql = "INSERT INTO content_plugin_metadata (id, plugin_id, sha256, reader_version, read_at, document)";
+        private const string Columns = "id, plugin_id, sha256, reader_version, read_at, document";
 
-        private const string ValuesSql = "@Id, @PluginId, @Sha256, @ReaderVersion, @ReadAt, @Document";
+        private const string Values = "@Id, @PluginId, @Sha256, @ReaderVersion, @ReadAt, @Document";
 
-        private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict($"{InsertIntoSql} VALUES ({ValuesSql})");
+        private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict($"INSERT INTO content_plugin_metadata ({Columns}) VALUES ({Values})");
 
-        private static readonly string RecordSql =
-            $"{UpsertSql.OnIdConflict($"{InsertIntoSql} SELECT {ValuesSql} WHERE {PlainContents.HeldByLiveFile("@Sha256")}")} WHERE content_plugin_metadata.reader_version <> excluded.reader_version";
+        private static readonly string RecordSql = PlainContents.RecordSql("content_plugin_metadata", Columns, Values);
 
         private readonly IChangeLogRepository _changeLog;
         private readonly IPluginFieldValueRepository _fieldValues;

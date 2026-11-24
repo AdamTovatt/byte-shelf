@@ -96,7 +96,7 @@ namespace ByteShelf.Server.Replication.Services
                     contentPluginMetadataRepository.DeleteByIdAsync),
                 new EntityHandler(
                     ChangeEntityType.FilePluginMetadata,
-                    "file_plugin_metadata",
+                    ChangeEntityType.Owned[ChangeEntityType.FilePluginMetadata].OwnedTable,
                     (entry, at, session, _) => filePluginMetadataRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<FilePluginMetadata>(entry.Payload!), entry.Action, at, session),
                     filePluginMetadataRepository.DeleteByIdAsync),
                 new EntityHandler(
@@ -214,7 +214,7 @@ namespace ByteShelf.Server.Replication.Services
             {
                 // What goes with an owner the copy lacks leaves no removal and no entries on the primary: it
                 // stays until this server purges the owner.
-                EntityOwner? owner = ChangeEntityType.OwnerOf(handler.EntityType);
+                EntityOwner? owner = ChangeEntityType.Owned.GetValueOrDefault(handler.EntityType);
                 foreach (Guid id in await _copyRepository.GetIdsMissingAsync(handler.EntityType, handler.Table, owner, session))
                 {
                     await RemoveAsync(handler, id, now, session, changes);
@@ -226,18 +226,18 @@ namespace ByteShelf.Server.Replication.Services
         /// Settles what only a transaction's last entry decides; called once, after it. A row that goes with an
         /// owner may come before it (a copy holds each entity's newest entry, and the owner may have changed
         /// after the row), so only now is one without its owner passed over. A plugin's document about a file:
-        /// its file was purged, or passed over itself for contents the primary no longer holds, and then the
-        /// swap that made it so logs its documents again after it (<see cref="IFilePluginMetadataRepository.LogAgainAsync"/>).
+        /// its file was purged, or passed over itself for contents the primary no longer holds. Where the file comes
+        /// later after all, as it was swapped or restored, the primary logs its documents again after it
+        /// (<see cref="IFilePluginMetadataRepository.LogAgainAsync"/>).
         /// </summary>
         public async Task SettleAsync(IDbSession session, AppliedChanges changes)
         {
             DateTimeOffset now = _timeProvider.GetUtcNow();
             foreach (EntityHandler handler in _handlers.Where(handler => changes.WrittenTypes.Contains(handler.EntityType)))
             {
-                if (ChangeEntityType.OwnerOf(handler.EntityType) is { } owner)
+                if (ChangeEntityType.Owned.TryGetValue(handler.EntityType, out EntityOwner? owner))
                 {
-                    string ownerTable = _handlers.First(candidate => candidate.EntityType == owner.EntityType).Table;
-                    foreach (Guid id in await _copyRepository.GetIdsWithoutOwnerAsync(owner, ownerTable, session))
+                    foreach (Guid id in await OwnedRows.GetIdsWithoutOwnerAsync(owner, session))
                     {
                         await RemoveAsync(handler, id, now, session, changes);
                     }

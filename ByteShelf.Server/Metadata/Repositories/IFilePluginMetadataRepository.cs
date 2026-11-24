@@ -7,7 +7,7 @@ namespace ByteShelf.Server.Metadata.Repositories
     /// <summary>
     /// The <c>file_plugin_metadata</c> table. Every write logs the change in the caller's transaction; a row's
     /// going with its file is the database's doing and is not logged
-    /// (<see cref="ChangeLog.Models.ChangeEntityType.OwnerOf"/>). Nothing read from a file's plaintext may be in
+    /// (<see cref="ChangeLog.Models.ChangeEntityType.Owned"/>). Nothing read from a file's plaintext may be in
     /// one: it stays when the file is encrypted in place.
     /// </summary>
     public interface IFilePluginMetadataRepository
@@ -35,10 +35,8 @@ namespace ByteShelf.Server.Metadata.Repositories
         /// </summary>
         Task CopyAsync(Guid fromFileId, Guid toFileId, DateTimeOffset at, IDbSession session);
 
-        /// <summary>
-        /// Logs every document about a file again, as it stands, so that they follow its newest entry.
-        /// </summary>
-        Task LogAgainAsync(Guid fileId, DateTimeOffset at, IDbSession session);
+        /// <summary>Logs every document about the files <paramref name="fileIds"/> again, as it stands, so that they follow the files' newest entries.</summary>
+        Task LogAgainAsync(IReadOnlyCollection<Guid> fileIds, DateTimeOffset at, IDbSession session);
 
         /// <summary>
         /// Writes a row as a primary's change log holds it, logged as <paramref name="action"/>. Its file may

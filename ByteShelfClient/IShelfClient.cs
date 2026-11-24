@@ -55,7 +55,7 @@ namespace ByteShelfClient
         /// Writes the document the installed plugin <paramref name="plugin"/> keeps about a file, whole, or
         /// removes it with null, and answers what the plugin keeps about the file then.
         /// <paramref name="expectedVersion"/> is the version it replaces
-        /// (<see cref="PluginFileMetadata.FileVersion"/>), a removed one's included, null for a first write;
+        /// (<see cref="PluginFileDetails.FileVersion"/>), a removed one's included, null for a first write;
         /// another version there is a conflict. Not found for a plugin that is not installed. Needs write
         /// access, and moves no <see cref="ShelfFile.UpdatedAt"/>.
         /// </summary>
@@ -63,7 +63,7 @@ namespace ByteShelfClient
         /// The document stays when the file is encrypted, readable by the server and whoever may read the shelf,
         /// so it must hold nothing read from the file's contents.
         /// </remarks>
-        Task<PluginFileMetadata> SetPluginDocumentAsync(EntryReference file, string plugin, PluginDocument? document, int? expectedVersion, CancellationToken cancellationToken = default);
+        Task<PluginFileDetails> SetPluginDocumentAsync(EntryReference file, string plugin, PluginDocument? document, int? expectedVersion, CancellationToken cancellationToken = default);
 
         /// <summary>
         /// Stores <paramref name="content"/>, read from its current position to its end, as the file at

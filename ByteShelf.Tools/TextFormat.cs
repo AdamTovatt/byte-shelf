@@ -136,7 +136,7 @@ namespace ByteShelf.Tools
         /// <summary>Each plugin's declared fields that have a value, under its name and the id a filter names it by.</summary>
         private static IEnumerable<string> PluginLines(FileMetadata metadata, int? maxFieldText)
         {
-            foreach ((string id, PluginFileMetadata plugin) in metadata.Plugins.OrderBy(plugin => plugin.Key, StringComparer.Ordinal))
+            foreach ((string id, PluginFileDetails plugin) in metadata.Plugins.OrderBy(plugin => plugin.Key, StringComparer.Ordinal))
             {
                 if (plugin.Fields.Count == 0)
                 {

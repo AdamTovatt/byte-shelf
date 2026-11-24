@@ -13,7 +13,7 @@ export type FileSearchResults = components['schemas']['FileSearchResults'];
 export type DuplicateSearchResults = components['schemas']['DuplicateSearchResults'];
 export type DuplicateGroup = components['schemas']['DuplicateGroup'];
 export type FileMetadata = components['schemas']['FileMetadata'];
-export type PluginFileMetadata = components['schemas']['PluginFileMetadata'];
+export type PluginFileDetails = components['schemas']['PluginFileDetails'];
 export type PluginFieldValue = components['schemas']['PluginFieldValue'];
 
 /**
@@ -101,7 +101,7 @@ export function setPluginDocument(
   plugin: string,
   document: Record<string, unknown> | null,
   expectedVersion: number | null,
-): Promise<PluginFileMetadata> {
+): Promise<PluginFileDetails> {
   return unwrapResponse(apiClient.PUT('/api/shelves/{shelf}/files/plugin-metadata', {
     params: { ...shelfPath(shelf), query: { id, plugin } },
     body: { document, expectedVersion },

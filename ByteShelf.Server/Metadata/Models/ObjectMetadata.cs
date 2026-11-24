@@ -11,11 +11,8 @@ namespace ByteShelf.Server.Metadata.Models
 
         public required string Sha256 { get; init; }
 
-        /// <summary>
-        /// The version of <see cref="Services.MetadataReader"/> that read them; 1 for a row, or a primary's
-        /// log entry, from before versions were kept.
-        /// </summary>
-        public int ReaderVersion { get; init; } = 1;
+        /// <summary>The version of <see cref="Services.MetadataReader"/> that read them; 1 for those from before versions were kept.</summary>
+        public required int ReaderVersion { get; init; }
 
         /// <summary>When the contents were read.</summary>
         public required DateTimeOffset ReadAt { get; init; }

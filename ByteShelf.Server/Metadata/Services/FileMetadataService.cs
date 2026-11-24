@@ -52,17 +52,17 @@ namespace ByteShelf.Server.Metadata.Services
             bool readable = !file.Encrypted && ReadMediaTypes.All.Includes(ContentTypes.MediaTypeOf(file.ContentType));
             ObjectMetadata? read = readable ? await _objectMetadata.GetBySha256Async(file.Sha256, session) : null;
 
-            Dictionary<string, PluginFileMetadata> plugins = new Dictionary<string, PluginFileMetadata>(StringComparer.Ordinal);
+            Dictionary<string, PluginFileDetails> plugins = new Dictionary<string, PluginFileDetails>(StringComparer.Ordinal);
             foreach (PluginDeclaration plugin in _plugins.All)
             {
-                PluginFileMetadata kept = await OfPluginAsync(plugin, file, session);
+                PluginFileDetails kept = await OfPluginAsync(plugin, file, session);
                 if (kept.ContentsDocument != null || kept.FileVersion != null)
                 {
                     plugins.Add(plugin.Id, kept);
                 }
             }
 
-            return StorageContracts.ToFileMetadata(readable, read, plugins);
+            return ToFileMetadata(readable, read, plugins);
         }
 
         /// <summary>
@@ -72,7 +72,7 @@ namespace ByteShelf.Server.Metadata.Services
         /// </summary>
         /// <exception cref="NotFoundException">There is no such live file, or the plugin is not installed.</exception>
         /// <exception cref="ConflictException">Another version is there.</exception>
-        public async Task<PluginFileMetadata> SetPluginDocumentAsync(Shelf shelf, EntryReference reference, string pluginId, SetPluginMetadataRequest request)
+        public async Task<PluginFileDetails> SetPluginDocumentAsync(Shelf shelf, EntryReference reference, string pluginId, SetPluginMetadataRequest request)
         {
             PluginDeclaration plugin = _plugins.Find(pluginId)
                 ?? throw new NotFoundException($"There is no plugin '{pluginId}' on this server.");
@@ -88,9 +88,28 @@ namespace ByteShelf.Server.Metadata.Services
                     $"What the plugin '{plugin.Id}' keeps about '{reference}' has changed since it was read ({At(current?.Version)}, not {At(request.ExpectedVersion)}): read it again, then write it.");
             }
 
-            PluginFileMetadata kept = await OfPluginAsync(plugin, file, session);
+            PluginFileDetails kept = await OfPluginAsync(plugin, file, session);
             await session.CommitAsync();
             return kept;
+        }
+
+        /// <summary>What was read from a file's contents, whether they are read at all, and what plugins keep.</summary>
+        private static FileMetadata ToFileMetadata(bool readable, ObjectMetadata? read, IReadOnlyDictionary<string, PluginFileDetails> plugins)
+        {
+            ContentMetadata metadata = read?.Metadata ?? ContentMetadata.None;
+            return new FileMetadata
+            {
+                Readable = readable,
+                ReadAt = read?.ReadAt,
+                TakenAt = metadata.TakenAt,
+                Latitude = metadata.Latitude,
+                Longitude = metadata.Longitude,
+                DurationSeconds = metadata.DurationSeconds,
+                PageCount = metadata.PageCount,
+                Title = metadata.Title,
+                Camera = metadata.Camera,
+                Plugins = plugins,
+            };
         }
 
         private static string At(int? version)
@@ -98,11 +117,11 @@ namespace ByteShelf.Server.Metadata.Services
             return version == null ? "none written yet" : $"version {version}";
         }
 
-        private async Task<PluginFileMetadata> OfPluginAsync(PluginDeclaration plugin, FileRecord file, IDbSession session)
+        private async Task<PluginFileDetails> OfPluginAsync(PluginDeclaration plugin, FileRecord file, IDbSession session)
         {
             ContentPluginMetadata? contents = file.Encrypted ? null : await _contentDocuments.GetAsync(plugin.Id, file.Sha256, session);
             FilePluginMetadata? about = await _fileDocuments.GetAsync(plugin.Id, file.Id, session);
-            return PluginFileMetadata.Of(plugin, contents?.Document, about?.Document, about?.Version);
+            return PluginFileDetails.Of(plugin, contents?.Document, about?.Document, about?.Version);
         }
     }
 }

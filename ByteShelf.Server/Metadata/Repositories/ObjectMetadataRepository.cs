@@ -24,16 +24,15 @@ namespace ByteShelf.Server.Metadata.Repositories
             title,
             camera";
 
-        private const string InsertIntoSql =
-            "INSERT INTO object_metadata (id, sha256, reader_version, read_at, taken_at, latitude, longitude, duration_seconds, page_count, title, title_fold, camera, camera_fold)";
+        private const string Columns =
+            "id, sha256, reader_version, read_at, taken_at, latitude, longitude, duration_seconds, page_count, title, title_fold, camera, camera_fold";
 
-        private const string ValuesSql =
+        private const string Values =
             "@Id, @Sha256, @ReaderVersion, @ReadAt, @TakenAt, @Latitude, @Longitude, @DurationSeconds, @PageCount, @Title, @TitleFold, @Camera, @CameraFold";
 
-        private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict($"{InsertIntoSql} VALUES ({ValuesSql})");
+        private static readonly string UpsertReplicatedSql = UpsertSql.OnIdConflict($"INSERT INTO object_metadata ({Columns}) VALUES ({Values})");
 
-        private static readonly string RecordSql =
-            $"{UpsertSql.OnIdConflict($"{InsertIntoSql} SELECT {ValuesSql} WHERE {PlainContents.HeldByLiveFile("@Sha256")}")} WHERE object_metadata.reader_version <> excluded.reader_version";
+        private static readonly string RecordSql = PlainContents.RecordSql("object_metadata", Columns, Values);
 
         private readonly IChangeLogRepository _changeLog;
 

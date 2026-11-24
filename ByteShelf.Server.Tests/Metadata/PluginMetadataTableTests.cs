@@ -29,6 +29,35 @@ namespace ByteShelf.Server.Tests.Metadata
             await AssertTakenAsync(taken, $"INSERT INTO file_plugin_metadata (id, plugin_id, file_id, version, document) VALUES ('a', 'p', {FileId}, 1, {document})");
         }
 
+        [Theory]
+        [InlineData("0", false)]
+        [InlineData("1", true)]
+        public async Task Version_IsPositive(string version, bool taken)
+        {
+            await StoreTextAsync(await CreateShelfAsync(), "/a.txt", "a");
+
+            await AssertTakenAsync(taken, $"INSERT INTO file_plugin_metadata (id, plugin_id, file_id, version) VALUES ('a', 'p', {FileId}, {version})");
+        }
+
+        [Theory]
+        [InlineData("sha256, number", "'SHA', 1", true)]
+        [InlineData("file_id, flag", "'FILE', 1", true)]
+        [InlineData("number", "1", false)]
+        [InlineData("sha256, file_id, number", "'SHA', 'FILE', 1", false)]
+        [InlineData("file_id", "'FILE'", false)]
+        [InlineData("file_id, number, flag", "'FILE', 1, 1", false)]
+        [InlineData("file_id, text_fold, instant", "'FILE', 'a', '2026-01-01'", false)]
+        [InlineData("file_id, flag", "'FILE', 2", false)]
+        public async Task FieldValue_IsOneValueInOneDocument(string columns, string values, bool taken)
+        {
+            ShelfFile file = await StoreTextAsync(await CreateShelfAsync(), "/a.txt", "a");
+            await Services.SetFileDocumentAsync(file.Id, "{}", "p");
+            await Services.RecordContentDocumentAsync(file.Sha256, "{}", "p");
+            string given = values.Replace("SHA", file.Sha256, StringComparison.Ordinal).Replace("FILE", file.Id.ToString("D"), StringComparison.Ordinal);
+
+            await AssertTakenAsync(taken, $"INSERT INTO plugin_field_value (plugin_id, field, searched, {columns}) VALUES ('p', 'f', 0, {given})");
+        }
+
         /// <summary>Pinned: a primary and its replicas make these ids apart, and each must name the same row.</summary>
         [Fact]
         public void Ids_AreTheSameOnEveryVersion()

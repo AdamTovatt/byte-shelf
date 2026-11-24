@@ -19,7 +19,8 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <summary>The live files directly inside <paramref name="directoryId"/>, by name.</summary>
         Task<IReadOnlyList<FileRecord>> GetLiveInDirectoryAsync(Guid directoryId, IDbSession? session = null);
 
-        Task InsertAsync(FileRecord file, IDbSession session);
+        /// <summary>Adds a file, which keeps what plugins keep about the file <paramref name="replacedId"/> it was stored over, null for none.</summary>
+        Task InsertAsync(FileRecord file, Guid? replacedId, IDbSession session);
 
         /// <summary>Moves a live file to the trash under <paramref name="deletionId"/>. False when it is not live.</summary>
         Task<bool> SoftDeleteAsync(Guid id, Guid deletionId, DateTimeOffset deletedAt, IDbSession session);
@@ -82,7 +83,7 @@ namespace ByteShelf.Server.Storage.Repositories
         /// <summary>Whether a deletion holds any file that is not encrypted.</summary>
         Task<bool> DeletionHoldsPlainFileAsync(Guid deletionId, IDbSession? session = null);
 
-        /// <summary>Brings back every file of a deletion; answers how many.</summary>
+        /// <summary>Brings back every file of a deletion; answers how many. Logged, and then what plugins keep about them again.</summary>
         Task<int> RestoreDeletionAsync(Guid deletionId, DateTimeOffset restoredAt, IDbSession session);
 
         /// <summary>
