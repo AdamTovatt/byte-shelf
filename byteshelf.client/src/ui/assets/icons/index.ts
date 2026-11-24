@@ -27,6 +27,7 @@ export { default as InformationCircleIcon } from './information-circle-stroke-ro
 export { default as KeyIcon } from './key.svg?react';
 export { default as LibraryBigIcon } from './library-big.svg?react';
 export { default as LinkIcon } from './link.svg?react';
+export { default as LinkSquareIcon } from './link-square.svg?react';
 export { default as Logout02Icon } from './logout-02-stroke-rounded.svg?react';
 export { default as Menu01Icon } from './menu-01-stroke-rounded.svg?react';
 export { default as Moon02Icon } from './moon-02-stroke-rounded.svg?react';

@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ShelfPage } from './ShelfPage';
@@ -27,6 +28,9 @@ function file(name: string) {
 /** The files in the shelf's root; a test adds to it to change what the next listing answers. */
 let rootFiles: ReturnType<typeof file>[];
 
+/** The files a search found that are not in the root; a test adds to it. */
+let elsewhere: ReturnType<typeof file>[];
+
 function listing(path: string) {
   return path === '/'
     ? { directory: directory('/'), directories: [{ directory: directory('/reports'), sizeBytes: 0, fileCount: 0, encryptedFileCount: 0 }], files: rootFiles }
@@ -46,6 +50,10 @@ function duplicates(after: string | null) {
     : { groups: [duplicateGroup('b.txt', 'b'.repeat(64))], nextCursor: null };
 }
 
+/** Whether the search for a second page fails, and the type of the file it finds. */
+let searchFails: boolean;
+let secondPageType: string;
+
 /** Whether both searches find nothing; a test sets it to see what an empty search says. */
 let findNothing: boolean;
 
@@ -54,7 +62,7 @@ function searched(after: string | null) {
   if (findNothing) return { files: [], nextCursor: null };
   return after === null
     ? { files: [{ ...file('c.txt'), path: '/reports/c.txt' }], nextCursor: 'next' }
-    : { files: [{ ...file('d.txt'), path: '/reports/d.txt' }], nextCursor: null };
+    : { files: [{ ...file('d.txt'), path: '/reports/d.txt', contentType: secondPageType }], nextCursor: null };
 }
 
 describe('the shelf page\'s rows', () => {
@@ -63,9 +71,13 @@ describe('the shelf page\'s rows', () => {
   let client: QueryClient;
   let sent: string[];
   let location: string;
+  let goBack: () => void;
 
   function Location() {
-    location = useLocation().pathname;
+    const { pathname, search } = useLocation();
+    location = pathname + search;
+    const navigate = useNavigate();
+    goBack = () => act(() => navigate(-1));
     return null;
   }
 
@@ -74,20 +86,35 @@ describe('the shelf page\'s rows', () => {
     installFakeWebLocks();
     saveTokens({ token: 't', expiresAt: inAnHour(), refreshToken: 'r' });
     rootFiles = [file('a.txt'), file('b.txt')];
+    elsewhere = [...['c.txt', 'd.txt'].map((name) => ({ ...file(name), path: `/reports/${name}` })), duplicateGroup('a.txt', '').files[1]];
+    searchFails = false;
+    secondPageType = 'text/plain';
     findNothing = false;
     sent = stubServer(async (request) => {
       const url = new URL(request.url);
       if (url.pathname === '/api/shelves/docs/duplicates') return json(duplicates(url.searchParams.get('after')));
+      if (url.pathname === '/api/shelves/docs/search' && searchFails && url.searchParams.has('after')) return json({ message: 'Down.' }, 500);
       if (url.pathname === '/api/shelves/docs/search') return json(searched(url.searchParams.get('after')));
+      if (url.pathname === '/api/shelves/docs/content') return new Response('the contents', { status: 206 });
+      if (url.pathname === '/api/shelves/docs/files') {
+        const found = [...rootFiles, ...elsewhere].find((each) => each.id === url.searchParams.get('id'));
+        return found ? json(found) : json({ message: 'There is no such file.', code: 'not_found' }, 404);
+      }
       if (url.pathname === '/api/shelves/docs/files/metadata') return json({ readable: false, readAt: null });
       return url.pathname === '/api/shelves/docs/entries' ? json(listing(url.searchParams.get('path')!)) : json({ message: 'Not here.' }, 404);
     });
     container = document.body.appendChild(document.createElement('div'));
+    await renderAt('/shelves/docs');
+    await vi.waitFor(() => expect(row('b.txt')).not.toBeNull());
+  });
+
+  /** Opens the page at `url` in a tab of its own: no history and nothing cached. */
+  async function renderAt(url: string): Promise<void> {
     root = createRoot(container);
     client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     await act(async () => root.render(
       <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={['/shelves/docs']}>
+        <MemoryRouter initialEntries={[url]}>
           <Routes>
             <Route path={SHELF_ROUTE_PATTERNS.shelf} element={<ShelfPage />} />
             <Route path={SHELF_ROUTE_PATTERNS.files} element={<ShelfPage />} />
@@ -96,13 +123,13 @@ describe('the shelf page\'s rows', () => {
         </MemoryRouter>
       </QueryClientProvider>,
     ));
-    await vi.waitFor(() => expect(row('b.txt')).not.toBeNull());
-  });
+  }
 
   afterEach(() => {
     act(() => root.unmount());
     document.body.innerHTML = '';
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   function row(name: string): HTMLButtonElement | null {
@@ -325,6 +352,217 @@ describe('the shelf page\'s rows', () => {
     await vi.waitFor(() => expect(document.body.textContent).toContain('The server does not read files of this type.'));
     expect(document.body.textContent).toContain('Details of a.txt');
     expect(sent).toContain('GET /api/shelves/docs/files/metadata?id=file%3Aa.txt Bearer t');
+  });
+
+  /** The name of the file previewed, and where it says it stands; null when nothing is previewed. */
+  function previewed(): { name: string; position: string | undefined } | null {
+    const dialog = document.querySelector('[role="dialog"]');
+    if (!dialog) return null;
+    return { name: dialog.querySelector('h2')!.textContent!, position: dialog.textContent!.match(/\d+ of \d+\+?/)?.[0] };
+  }
+
+  function previews(expected: ReturnType<typeof previewed>): Promise<void> {
+    return vi.waitFor(async () => {
+      await act(async () => {});
+      expect(previewed()).toEqual(expected);
+    });
+  }
+
+  it('previews a file on Enter, in the URL, and Back closes it', async () => {
+    key(row('b.txt')!, { key: 'Enter' });
+    await previews({ name: 'b.txt', position: '2 of 2' });
+    expect(location).toBe('/shelves/docs?preview=file%3Ab.txt');
+
+    goBack();
+    await previews(null);
+    expect(location).toBe('/shelves/docs');
+  });
+
+  it('previews a file on a double-click', async () => {
+    act(() => void row('a.txt')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
+    await previews({ name: 'a.txt', position: '1 of 2' });
+  });
+
+  it('closes on Escape to where it was opened from, whatever it moved on to, keeping the selection', async () => {
+    key(document, { key: 'a', ctrlKey: true });
+    key(row('a.txt')!, { key: 'Enter' });
+    await previews({ name: 'a.txt', position: '1 of 2' });
+
+    key(document, { key: 'ArrowRight' });
+    await previews({ name: 'b.txt', position: '2 of 2' });
+    expect(location).toBe('/shelves/docs?preview=file%3Ab.txt');
+    key(document, { key: 'Escape' });
+
+    await previews(null);
+    expect(location).toBe('/shelves/docs');
+    expect(selected()).toEqual(['reports', 'a.txt', 'b.txt']);
+  });
+
+  it('goes only through the files a viewer takes', async () => {
+    rootFiles = [file('a.txt'), { ...file('a.zip'), contentType: 'application/zip' }, file('b.txt')];
+    await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
+    await vi.waitFor(() => expect(row('a.zip')).not.toBeNull());
+
+    key(row('a.txt')!, { key: 'Enter' });
+    await previews({ name: 'a.txt', position: '1 of 2' });
+    key(document, { key: 'ArrowRight' });
+    await previews({ name: 'b.txt', position: '2 of 2' });
+  });
+
+  it('opens a file no viewer takes in a tab, as its menu opens any file', async () => {
+    vi.stubGlobal('isSecureContext', true);
+    const tabs: { location: { href: string } }[] = [];
+    vi.spyOn(window, 'open').mockImplementation(() => {
+      const tab = { location: { href: '' }, sessionStorage: {}, close: () => {} };
+      tabs.push(tab);
+      return tab as unknown as Window;
+    });
+    rootFiles = [file('a.txt'), { ...file('a.zip'), contentType: 'application/zip' }];
+    await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
+    await vi.waitFor(() => expect(row('a.zip')).not.toBeNull());
+
+    key(row('a.zip')!, { key: 'Enter' });
+    await vi.waitFor(() => expect(tabs.map((tab) => tab.location.href)).toEqual(['/api/open/docs/content?id=file%3Aa.zip']));
+    click(container.querySelector('button[aria-label="Actions for a.txt"]')!);
+    click(Array.from(document.querySelectorAll('button')).find((button) => button.textContent === 'Open in new tab')!);
+    await vi.waitFor(() => expect(tabs.map((tab) => tab.location.href)).toContain('/api/open/docs/content?id=file%3Aa.txt'));
+    expect(previewed()).toBeNull();
+  });
+
+  /** Searches, and opens the result c.txt. */
+  async function openResult(): Promise<void> {
+    type(searchField(), 'notes');
+    click(await vi.waitFor(() => {
+      const found = container.querySelector('button[aria-label="Open c.txt"]');
+      expect(found).not.toBeNull();
+      return found!;
+    }));
+    await previews({ name: 'c.txt', position: '1 of 1+' });
+  }
+
+  const NEXT_PAGE = 'GET /api/shelves/docs/search?under=%2F&text=notes&after=next ';
+
+  it('previews a search\'s files in their order, past the last one shown on to the next page', async () => {
+    await openResult();
+    expect(requests(NEXT_PAGE)).toEqual([]);
+
+    key(document, { key: 'ArrowRight' });
+
+    await previews({ name: 'd.txt', position: '2 of 2' });
+    expect(requests(NEXT_PAGE)).toHaveLength(1);
+  });
+
+  it('stays on the last result when the next page holds nothing a viewer takes', async () => {
+    secondPageType = 'application/zip';
+    await openResult();
+
+    key(document, { key: 'ArrowRight' });
+
+    await previews({ name: 'c.txt', position: '1 of 1' });
+  });
+
+  it('stays on the last result when the next page fails, and asks again only when asked', async () => {
+    searchFails = true;
+    await openResult();
+
+    key(document, { key: 'ArrowRight' });
+    await vi.waitFor(() => expect(requests(NEXT_PAGE)).toHaveLength(1));
+    await previews({ name: 'c.txt', position: '1 of 1+' });
+    searchFails = false;
+    key(document, { key: 'ArrowRight' });
+
+    await previews({ name: 'd.txt', position: '2 of 2' });
+    expect(requests(NEXT_PAGE)).toHaveLength(2);
+  });
+
+  it('previews the files of a search for duplicates a group after another', async () => {
+    await toggleDuplicates();
+    click(await vi.waitFor(() => {
+      const found = container.querySelector('button[aria-label="Open a.txt"]');
+      expect(found).not.toBeNull();
+      return found!;
+    }));
+    await previews({ name: 'a.txt', position: '1 of 2+' });
+
+    key(document, { key: 'ArrowRight' });
+    await previews({ name: 'a.txt', position: '2 of 2+' });
+    key(document, { key: 'ArrowRight' });
+    await previews({ name: 'b.txt', position: '3 of 4' });
+  });
+
+  it('offers Open in new tab only for what a tab shows', async () => {
+    vi.stubGlobal('isSecureContext', false);
+    rootFiles = [file('a.txt'), { ...file('a.svg'), contentType: 'image/svg+xml' }];
+    await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
+    await vi.waitFor(() => expect(row('a.svg')).not.toBeNull());
+    const items = (name: string) => {
+      click(container.querySelector(`button[aria-label="Actions for ${name}"]`)!);
+      return Array.from(document.querySelectorAll('button')).map((button) => button.textContent);
+    };
+
+    expect(items('a.svg')).not.toContain('Open in new tab');
+    expect(items('a.txt')).toContain('Open in new tab');
+  });
+
+  it('keeps the preview on a reload: a file of the folder among the others, one elsewhere alone, and closing it stays here', async () => {
+    act(() => root.unmount());
+    await renderAt('/shelves/docs?preview=file%3Aa.txt');
+    await previews({ name: 'a.txt', position: '1 of 2' });
+    act(() => root.unmount());
+    await renderAt('/shelves/docs?preview=file%3Ac.txt');
+    await previews({ name: 'c.txt', position: undefined });
+
+    key(document, { key: 'Escape' });
+
+    await previews(null);
+    expect(location).toBe('/shelves/docs');
+  });
+
+  it('closes the preview of a file that is gone, with a toast, and keeps that of one moved elsewhere', async () => {
+    const said = vi.spyOn(toast, 'error').mockReturnValue('');
+    key(row('a.txt')!, { key: 'Enter' });
+    await previews({ name: 'a.txt', position: '1 of 2' });
+
+    elsewhere.push({ ...rootFiles[0], path: '/reports/a.txt' });
+    rootFiles = rootFiles.slice(1);
+    await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
+    await previews({ name: 'a.txt', position: undefined });
+    expect(said).not.toHaveBeenCalled();
+
+    elsewhere.pop();
+    await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
+    await previews(null);
+    expect(said).toHaveBeenCalledWith('That file is no longer here.', expect.anything());
+    expect(location).toBe('/shelves/docs');
+  });
+
+  it('previews a file that was gone once it is back', async () => {
+    vi.spyOn(toast, 'error').mockReturnValue('');
+    const [back] = rootFiles;
+    key(row('a.txt')!, { key: 'Enter' });
+    await previews({ name: 'a.txt', position: '1 of 2' });
+    rootFiles = rootFiles.slice(1);
+    await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
+    await previews(null);
+
+    rootFiles = [back, ...rootFiles];
+    await act(() => client.invalidateQueries({ queryKey: queryKeys.shelfContents.root }));
+    await vi.waitFor(() => expect(row('a.txt')).not.toBeNull());
+    key(row('a.txt')!, { key: 'Enter' });
+
+    await previews({ name: 'a.txt', position: '1 of 2' });
+    expect(toast.error).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not ask again for a record that is not there', async () => {
+    const asked = () => requests('GET /api/shelves/docs/files?id=file%3Anone ').length;
+    vi.spyOn(toast, 'error').mockReturnValue('');
+    act(() => root.unmount());
+
+    await renderAt('/shelves/docs?preview=file%3Anone');
+
+    await previews(null);
+    expect(asked()).toBe(1);
   });
 
   it('fetches the first subfolders ahead as a folder opens, and not again as its listing is refetched', async () => {

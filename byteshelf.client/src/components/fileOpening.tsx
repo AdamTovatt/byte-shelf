@@ -1,7 +1,7 @@
 import { openTabWithoutPasswords } from '../lib/encryption/passwords';
-import { saveBlob, saveFrom, showBlob } from '../lib/localBlobs';
+import { saveBlob, saveFrom, showBlob, showsInTab } from '../lib/localBlobs';
 import { runOrToast } from '../lib/utils';
-import { opensByNavigation, type ContentSource } from '../services/contentService';
+import { isBlobBacked, type FileReading } from '../services/contentService';
 import type { ShelfFile } from '../services/shelfService';
 import { showActionToast } from './actionToast';
 import { NameLine } from './MiddleTruncatedName';
@@ -12,30 +12,25 @@ export interface FileOpening {
   save: (files: ShelfFile[]) => Promise<void>;
 }
 
+/** Whether opening a file in a tab shows it there: a blob of a type a tab must not show is saved instead. */
+export function opensInTab(file: ShelfFile): boolean {
+  return !isBlobBacked(file) || showsInTab(file.contentType);
+}
+
 /**
- * Opens and saves files from `source` (a shelf's live files, or one deletion in its trash), never
+ * Opens and saves files of one source (a shelf's live files, or one deletion in its trash), never
  * through a public link. A plain file goes by navigating to it, the session's token in its cookie, so
- * it streams and the browser's own viewers handle any type. An encrypted file, and any file where the
- * page cannot keep that cookie (`opensByNavigation`), is read here into a blob (decrypted from
- * `source` by `decrypted` when encrypted), shown in a tab only when its type is one a tab may show
+ * it streams and the browser's own viewers handle any type. A blob-backed one (`isBlobBacked`) is
+ * opened from its contents read into the page, shown in a tab only when its type is one a tab may show
  * (`showBlob`), and saved otherwise.
  */
-export function fileOpening(source: ContentSource, decrypted: (file: ShelfFile, source: ContentSource) => Promise<Blob | null>): FileOpening {
-  function throughBlob(file: ShelfFile): boolean {
-    return file.encrypted || !opensByNavigation();
-  }
-
-  /** The file's contents read here, decrypted when encrypted; null when no password was given. */
-  function contentsHere(file: ShelfFile): Promise<Blob | null> {
-    return file.encrypted ? decrypted(file, source) : source.read(file.id);
-  }
-
+export function fileOpening({ source, contents }: FileReading): FileOpening {
   /**
    * Opens a file in a new tab. The tab is opened before anything is awaited, while the click still
    * counts as the user's, or the browser would block it as a popup; a blocked tab saves the file.
    */
   async function open(file: ShelfFile): Promise<void> {
-    if (throughBlob(file)) return openFromBlob(file);
+    if (isBlobBacked(file)) return openFromBlob(file);
     const tab = openTabWithoutPasswords();
     if (!tab) return save([file]);
     await runOrToast(async () => {
@@ -54,7 +49,7 @@ export function fileOpening(source: ContentSource, decrypted: (file: ShelfFile, 
    */
   async function openFromBlob(file: ShelfFile): Promise<void> {
     await runOrToast(async () => {
-      const blob = await contentsHere(file);
+      const blob = await contents(file);
       if (!blob || showBlob(blob, file.name)) return;
       showActionToast({
         message: <NameLine name={file.name} after={file.encrypted ? ' is unlocked' : ' is ready'} />,
@@ -72,8 +67,8 @@ export function fileOpening(source: ContentSource, decrypted: (file: ShelfFile, 
   async function save(files: ShelfFile[]): Promise<void> {
     await runOrToast(async () => {
       for (const file of files) {
-        if (throughBlob(file)) {
-          const blob = await contentsHere(file);
+        if (isBlobBacked(file)) {
+          const blob = await contents(file);
           if (blob) saveBlob(blob, file.name);
         } else {
           saveFrom(await source.navigationUrl(file.id, true), '');

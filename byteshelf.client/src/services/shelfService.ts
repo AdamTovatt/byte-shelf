@@ -79,6 +79,11 @@ export function moveDirectory(shelf: string, id: string, toPath: string): Promis
   return unwrapResponse(apiClient.POST('/api/shelves/{shelf}/directories/move', { params: { ...shelfPath(shelf), query: { id } }, body: { toPath } }));
 }
 
+/** A live file's record. */
+export function fetchFile(shelf: string, id: string): Promise<ShelfFile> {
+  return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/files', { params: { ...shelfPath(shelf), query: { id } } }));
+}
+
 /** What the server read from a file's contents; `readAt` is null until it has, and for good when `readable` is false (an encrypted file, or a type it does not read). */
 export function fetchFileMetadata(shelf: string, id: string): Promise<FileMetadata> {
   return unwrapResponse(apiClient.GET('/api/shelves/{shelf}/files/metadata', { params: { ...shelfPath(shelf), query: { id } } }));

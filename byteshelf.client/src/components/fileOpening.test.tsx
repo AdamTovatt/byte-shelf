@@ -2,9 +2,9 @@
 import type { ReactNode } from 'react';
 import toast from 'react-hot-toast';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fileOpening, type FileOpening } from './fileOpening';
+import { fileOpening, opensInTab, type FileOpening } from './fileOpening';
 import { saveTokens } from '../services/authService';
-import { deletedContent, liveContent } from '../services/contentService';
+import { deletedContent, fileReading, liveContent, type ContentSource } from '../services/contentService';
 import type { DeletionTree, ShelfFile } from '../services/shelfService';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { inAnHour, json, stubServer } from '../test/fakeServer';
@@ -13,7 +13,8 @@ import { textOf } from '../test/dom';
 /** What was shown or saved from a blob here, and saved by navigating; whether a tab may show one. */
 const blobs = vi.hoisted(() => ({ shown: [] as string[], saved: [] as string[], savedFrom: [] as string[], tabBlocked: false }));
 
-vi.mock('../lib/localBlobs', () => ({
+vi.mock('../lib/localBlobs', async (original) => ({
+  showsInTab: (await original<typeof import('../lib/localBlobs')>()).showsInTab,
   showBlob: (blob: Blob, name: string) => {
     if (blobs.tabBlocked) return false;
     blobs.shown.push(`${name} ${blob.type}`);
@@ -86,17 +87,21 @@ describe('opening and saving files', () => {
       errors.push(String(message));
       return '';
     });
-    opening = fileOpening(liveContent('docs'), async (encrypted) => {
-      if (promptCancelled) return null;
-      decrypted.push(encrypted.id);
-      return new Blob(['secret'], { type: encrypted.contentType });
-    });
+    opening = openingFrom(liveContent('docs'));
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
+
+  function openingFrom(source: ContentSource): FileOpening {
+    return fileOpening(fileReading(source, async (encrypted) => {
+      if (promptCancelled) return null;
+      decrypted.push(encrypted.id);
+      return new Blob(['secret'], { type: encrypted.contentType });
+    }));
+  }
 
   describe('over HTTPS, where the session cookie is kept', () => {
     beforeEach(() => {
@@ -125,7 +130,7 @@ describe('opening and saving files', () => {
     it('saves a file from the trash by navigating to its deletion, as a live file is saved', async () => {
       stubServer(async () => json({}));
 
-      await fileOpening(deletedContent('docs', deletion('del')), async () => null).save([file()]);
+      await openingFrom(deletedContent('docs', deletion('del'))).save([file()]);
 
       expect(blobs.savedFrom).toEqual(['/api/open/docs/trash/del/content?id=f&download=true']);
     });
@@ -216,6 +221,18 @@ describe('opening and saving files', () => {
     });
   });
 
+  it.each([
+    // A plain file opens by its address, where the server's policy keeps it from running.
+    ['a plain SVG where the cookie is kept', { secure: true, encrypted: false, type: 'image/svg+xml' }, true],
+    ['an encrypted SVG', { secure: true, encrypted: true, type: 'image/svg+xml' }, false],
+    ['an encrypted PNG', { secure: true, encrypted: true, type: 'image/png' }, true],
+    ['a plain SVG over plain HTTP', { secure: false, encrypted: false, type: 'image/svg+xml' }, false],
+  ])('tells whether a tab shows %s', (_what, { secure, encrypted, type }, shown) => {
+    vi.stubGlobal('isSecureContext', secure);
+
+    expect(opensInTab({ ...file(encrypted), contentType: type })).toBe(shown);
+  });
+
   describe('over plain HTTP, where the session cookie is refused', () => {
     beforeEach(() => {
       vi.stubGlobal('isSecureContext', false);
@@ -243,7 +260,7 @@ describe('opening and saving files', () => {
     it('saves a file from the trash from its contents read here from its deletion', async () => {
       const sent = stubServer(async () => new Response('the contents', { headers: { 'Content-Type': 'text/plain' } }));
 
-      await fileOpening(deletedContent('docs', deletion('del')), async () => null).save([file()]);
+      await openingFrom(deletedContent('docs', deletion('del'))).save([file()]);
 
       expect(sent).toEqual(['GET /api/shelves/docs/trash/del/content?id=f Bearer first']);
       expect(blobs.saved).toEqual(['f.txt']);

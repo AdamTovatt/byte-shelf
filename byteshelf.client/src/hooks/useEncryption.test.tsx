@@ -87,7 +87,6 @@ vi.mock('../services/contentService', () => ({
     read: async (id: string) => shelf.files.get(id)!.content,
     encryptedFolderOf: (file: ShelfFile) => shelf.folderFor(file.path),
   }),
-  readContent: async (_shelf: string, id: string) => shelf.files.get(id)!.content,
   openContent: async (_shelf: string, id: string, signal: AbortSignal) => {
     shelf.headerReads.push(id);
     signal.addEventListener('abort', () => shelf.headerReadsEnded.push(id));
@@ -119,6 +118,9 @@ function deletedSource(encryptedBy: EncryptedFolder | null, reads: string[] = []
     read: async (id) => {
       reads.push(id);
       return shelf.files.get(id)!.content;
+    },
+    readRange: async () => {
+      throw new Error('An encrypted file is read whole.');
     },
     encryptedFolderOf: async () => encryptedBy,
   };

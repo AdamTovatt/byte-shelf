@@ -43,6 +43,7 @@ import {
   ShelvingUnitIcon,
   LibraryBigIcon,
   LinkIcon,
+  LinkSquareIcon,
   Shield01Icon,
   SquareLock01Icon,
   SquareUnlock01Icon,
@@ -111,6 +112,8 @@ export const iconMap = {
   delete: Delete01Icon,
   undo: Undo03Icon,
   copy: Copy01Icon,
+  // Opens something in a tab of its own.
+  openInTab: LinkSquareIcon,
   close: Cancel01Icon,
   more: MoreHorizontalIcon,
   view: ViewIcon,

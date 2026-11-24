@@ -10,7 +10,7 @@ import { ShelfHeader } from '../components/ShelfHeader';
 import { fileOpening } from '../components/fileOpening';
 import { useEncryption } from '../hooks/useEncryption';
 import { useEmptyTrash, useRestoreDeletion, useTrash } from '../hooks/useShelfQueries';
-import { deletedContent } from '../services/contentService';
+import { deletedContent, fileReading } from '../services/contentService';
 import { formatBytes, formatDate } from '../lib/format';
 import { nameOf } from '../lib/shelfPaths';
 import { runOrToast } from '../lib/utils';
@@ -41,7 +41,7 @@ export function TrashPage() {
       const deletion = await fetchDeletion(shelf, entry.deletionId);
       const file = deletion.tree.files.find((taken) => taken.id === entry.entryId);
       if (!file) throw new Error(`${entry.path} is no longer in the trash.`);
-      await fileOpening(deletedContent(shelf, deletion), encryption.contents).save([file]);
+      await fileOpening(fileReading(deletedContent(shelf, deletion), encryption.contents)).save([file]);
     }, 'Could not save the file');
   }
 

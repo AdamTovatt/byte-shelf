@@ -1,9 +1,16 @@
-import { createContext, useContext, useEffect, useRef } from 'react';
+import { createContext, useContext, useEffect, useRef, type RefObject } from 'react';
 
 interface UseOverlayOptions {
   isOpen: boolean;
   onClose: () => void;
+  /** Any other key, heard only while this overlay is the topmost, as Escape is. */
+  onKeyDown?: (event: KeyboardEvent) => void;
+  /** The overlay's element, which takes the focus and keeps it while the overlay is the topmost. */
+  element?: RefObject<HTMLElement | null>;
 }
+
+/** What Tab stops at. */
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), iframe, video[controls], audio[controls], [tabindex]:not([tabindex="-1"])';
 
 /**
  * How many overlays enclose the subtree being rendered — 0 on the page itself, 1 inside a dialog, 2
@@ -64,8 +71,27 @@ function topmostToken(): symbol | undefined {
 }
 
 /**
- * The page-level behaviour every overlay shares: the body does not scroll behind it, and Escape
- * dismisses it.
+ * Keeps Tab within `element`: past its last stop it goes on at the first, and back. A focus elsewhere is
+ * left alone, such as in a menu the overlay opened, which is a sibling of it in the document; one that
+ * is nowhere, as after what had it is gone, comes back in.
+ */
+function keepTabWithin(element: HTMLElement, event: KeyboardEvent): void {
+  const stops = Array.from(element.querySelectorAll<HTMLElement>(FOCUSABLE));
+  const active = document.activeElement;
+  const within = element.contains(active);
+  if (!within && active !== document.body) return;
+
+  const index = stops.indexOf(active as HTMLElement);
+  const leaves = event.shiftKey ? index <= 0 : index === stops.length - 1 || !within;
+  if (!leaves) return;
+  event.preventDefault();
+  stops.at(event.shiftKey ? -1 : 0)?.focus();
+}
+
+/**
+ * The page-level behaviour every overlay shares: the body does not scroll behind it, Escape dismisses
+ * it, and, given its `element`, the focus goes into it as it opens, stays in it, and goes back to where
+ * it was as it closes.
  *
  * **Escape reaches the topmost overlay only** — see {@link topmostToken} for what topmost means. The
  * handler is on the document, so every open overlay hears every Escape; what decides is that
@@ -81,7 +107,7 @@ function topmostToken(): symbol | undefined {
  * to its own children through {@link OverlayDepthContext}, or a nested overlay registers as this
  * one's sibling and the two contend for Escape by mount order again.
  */
-export function useOverlay({ isOpen, onClose }: UseOverlayOptions): number {
+export function useOverlay({ isOpen, onClose, onKeyDown, element }: UseOverlayOptions): number {
   const depth = useContext(OverlayDepthContext) + 1;
 
   // `onClose` is read through a ref so the effect below depends on `isOpen` alone. It is a fresh
@@ -89,8 +115,10 @@ export function useOverlay({ isOpen, onClose }: UseOverlayOptions): number {
   // dependency, an ordinary re-render of an OUTER overlay would tear its registration down and push
   // it back on top of the stack, stealing Escape from the overlay it opened.
   const onCloseRef = useRef(onClose);
+  const onKeyDownRef = useRef(onKeyDown);
   useEffect(() => {
     onCloseRef.current = onClose;
+    onKeyDownRef.current = onKeyDown;
   });
 
   useEffect(() => {
@@ -100,17 +128,18 @@ export function useOverlay({ isOpen, onClose }: UseOverlayOptions): number {
     openOverlays.push({ token, depth });
     document.body.style.overflow = 'hidden';
 
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
+    const handleKeyDown = (event: KeyboardEvent) => {
       if (topmostToken() !== token) return;
 
-      onCloseRef.current();
+      if (event.key === 'Escape') onCloseRef.current();
+      else if (event.key === 'Tab' && element?.current) keepTabWithin(element.current, event);
+      else onKeyDownRef.current?.(event);
     };
 
-    document.addEventListener('keydown', handleEscape);
+    document.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener('keydown', handleKeyDown);
 
       const index = openOverlays.findIndex((overlay) => overlay.token === token);
       if (index !== -1) openOverlays.splice(index, 1);
@@ -119,7 +148,17 @@ export function useOverlay({ isOpen, onClose }: UseOverlayOptions): number {
         document.body.style.overflow = '';
       }
     };
-  }, [isOpen, depth]);
+  }, [isOpen, depth, element]);
+
+  useEffect(() => {
+    if (!isOpen || !element?.current) return;
+    const before = document.activeElement;
+    // Left where it is when something inside took it as it opened, as a field with autoFocus does.
+    if (!element.current.contains(before)) element.current.focus();
+    return () => {
+      if (before instanceof HTMLElement) before.focus();
+    };
+  }, [isOpen, element]);
 
   return depth;
 }

@@ -15,7 +15,7 @@ import {
   treeUnder,
   type EncryptedFolder,
 } from '../services/encryptionService';
-import { liveContent, openContent, readContent, type ContentSource } from '../services/contentService';
+import { liveContent, openContent, type ContentSource } from '../services/contentService';
 import type { Entry, ShelfDirectory, ShelfFile } from '../services/shelfService';
 import { useInvalidateShelf } from './useShelfQueries';
 
@@ -109,8 +109,8 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
      * An encrypted file's contents read from `source`, decrypted with its folder's password or its
      * own, asked for when this tab has none that opens it. Null when cancelled.
      */
-    async function contents(file: ShelfFile, source: ContentSource): Promise<Blob | null> {
-      const [stored, folder] = await Promise.all([source.read(file.id), source.encryptedFolderOf(file)]);
+    async function contents(file: ShelfFile, source: ContentSource, signal?: AbortSignal): Promise<Blob | null> {
+      const [stored, folder] = await Promise.all([source.read(file.id, signal), source.encryptedFolderOf(file)]);
       let plain: Blob | null = null;
       const password = await unlock(filePasswordKey(shelf, folder?.directory.id, file.id), folder?.directory.name ?? file.name, async (given) => {
         plain = await decryptBlobWith(stored, given, file.contentType);
@@ -130,11 +130,11 @@ export function useEncryption(shelf: string, workFactor = DEFAULT_WORK_FACTOR) {
     }
 
     async function encryptInPlace(file: ShelfFile, password: string): Promise<ShelfFile> {
-      return replaceContent(shelf, file, await encryptBlob(await readContent(shelf, file.id), password, file.contentType, workFactor), true);
+      return replaceContent(shelf, file, await encryptBlob(await liveContent(shelf).read(file.id), password, file.contentType, workFactor), true);
     }
 
     async function decryptInPlace(file: ShelfFile, password: string): Promise<ShelfFile> {
-      return replaceContent(shelf, file, await decryptBlob(await readContent(shelf, file.id), password, file.contentType), false);
+      return replaceContent(shelf, file, await decryptBlob(await liveContent(shelf).read(file.id), password, file.contentType), false);
     }
 
     /**

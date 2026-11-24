@@ -9,6 +9,7 @@ import {
   deleteFile,
   deleteShelf,
   emptyTrash,
+  fetchFile,
   fetchFileMetadata,
   fetchListing,
   fetchShelf,
@@ -22,7 +23,9 @@ import {
   setDescription,
   updateShelf,
   type Entry,
+  type ShelfFile,
 } from '../services/shelfService';
+import { isNotFound } from '../services/apiClient';
 import { joinPath, parentPath } from '../lib/shelfPaths';
 import { getErrorMessage } from '../ui';
 
@@ -103,6 +106,21 @@ export function useDuplicateSearch(shelf: string, under: string, criteria: Searc
     (after) => findDuplicates(shelf, under, criteria, after),
     enabled,
   );
+}
+
+/**
+ * A live file's record, refetched as the shelf changes, so a file moved elsewhere is still found and
+ * one that is gone fails with the server's 404. `listed`, the record a list on the page already holds,
+ * stands in until the first answer. Idle while `id` is null.
+ */
+export function useFile(shelf: string, id: string | null, listed?: ShelfFile) {
+  return useQuery({
+    queryKey: queryKeys.shelfContents.file(shelf, id ?? ''),
+    queryFn: () => fetchFile(shelf, id!),
+    enabled: id !== null,
+    placeholderData: listed,
+    retry: (failures, error) => failures < 1 && !isNotFound(error),
+  });
 }
 
 /**
