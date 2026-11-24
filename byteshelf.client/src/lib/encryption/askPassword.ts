@@ -11,6 +11,6 @@ export type PasswordRequest =
 
 /**
  * Asks for a password: null when cancelled, as `signal` cancels it, when another prompt took its place, or
- * when the page that asks is left.
+ * when what asks, such as a page, is gone.
  */
 export type AskPassword = (request: PasswordRequest, signal?: AbortSignal) => Promise<string | null>;

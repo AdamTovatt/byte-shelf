@@ -74,8 +74,12 @@ npm run codegen    # in a second terminal
   (`lib/deviceName.ts`). The ceremonies go through the browser's own WebAuthn JSON helpers
   (`lib/webauthn.ts`); a browser without them gets no passkeys.
 - **Files:** uploads up to 8 MiB go in one request, larger ones as a resumable upload in 8 MiB chunks
-  (`services/uploadService.ts`); a file whose name is taken is replaced only when asked. One the browser
-  has no type for is sent without one, so the server types it by its name. "Copy link"
+  (`services/uploadService.ts`). They go through one queue (`services/uploadQueue.ts`), which goes on as its
+  page is left, until a reload or the end of the session (`contexts/UploadHost.tsx`). A file whose name is
+  taken is replaced only when asked; a replace that is cancelled or fails is offered again. Nothing is sent
+  once the folder is gone from its path or not encrypted as it was read, and a password not given ends the
+  rest of what was uploaded together. A file the browser has no type for is sent without one, so the server
+  types it by its name. "Copy link"
   in a file's menu copies one that works for a day, for someone without access; where the browser
   offers no clipboard (plain HTTP), the toast shows it to copy by hand. A shelf's settings show
   everyone a Links tab listing the share and upload links that have not run out (their own, or every one
@@ -147,15 +151,17 @@ npm run codegen    # in a second terminal
   gone at once, never to the trash (a browser that showed them may keep them in its own cache). A file
   changed since it was read is refused and left as it is. Inside an encrypted folder, a file is encrypted
   with the folder's password and a folder cannot be encrypted on its own; files uploaded into one are
-  encrypted with its password. A folder holding a file encrypted with another password is refused before
-  anything changes. Removing a folder's encryption lets plain files in again and decrypts every file under
-  it. A file that fails is named and the rest go on; a folder's menu offers Encrypt or Remove encryption
-  again while its files show the run unfinished, and that finishes it. An encrypted file is read with the
+  encrypted with its password, and a file stored over one with a password of its own is encrypted with that
+  one: what is uploaded and what a plugin's folder viewer stores go by one rule, `StoreFile`
+  (`services/fileStoring.ts`), which looks the folder up each time, and the file when it may store over one. A
+  folder holding a file encrypted with another password is refused before anything changes. Removing a
+  folder's encryption lets plain files in again and decrypts every file under it. A file that fails is named
+  and the rest go on; a folder's menu offers Encrypt or Remove encryption again while its files show the run
+  unfinished, and that finishes it. An encrypted file is read with the
   token and decrypted here, never through a link, and shown in the preview; one no viewer takes, or opened
   in a tab, is shown from a local blob: in a tab for images, PDFs, plain text, audio and video, saved for
   every other type, since a blob runs as the app. Opening one asks for its password; reached by previous,
-  next or a reload it shows Unlock instead. A plugin's folder viewer stores a file
-  encrypted or plain as `StoreFile` (`services/fileStoring.ts`) says. Reading a file asks for no password and
+  next or a reload it shows Unlock instead. Reading a file asks for no password and
   answers that it is locked; unlocking it asks, and answers the contents (`Decryption` in
   `services/fileReading.ts`). A password is asked for once and kept in the tab's `sessionStorage` (an
   encrypted folder's under the folder), taken out of any tab the app opens, and forgotten on sign-in, as the
@@ -193,7 +199,7 @@ npm run codegen    # in a second terminal
   one way (`folderKey` in `lib/openFolder.ts`). An encrypted one asks for its password as it opens
   (`hooks/useFolderLock.ts`); cancelled, its listing shows, with Unlock. A file the viewer opens is previewed
   alone, and a file dropped on it, which it does not take, is refused. What goes on with a shelf's files
-  (uploads, file actions) goes on from a listing to a viewer and back (`hooks/useShelfWork.ts`).
+  (such as file actions) goes on from a listing to a viewer and back (`hooks/useShelfWork.ts`).
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and
   refetches what each event makes stale (`lib/invalidationMap.ts`), so a change made elsewhere shows up
   within about a second. A test checks the map covers every resource the server publishes. The

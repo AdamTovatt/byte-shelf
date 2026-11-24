@@ -1,18 +1,33 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { filePasswordKey, folderPasswordKey, rememberPassword, rememberedPassword } from '../lib/encryption/passwords';
-import { deletedSource, encryptedFolder, fakeShelf, lastOpened, resetShelf, storedFile } from '../test/encryptedShelf';
+import { createCheck } from '../lib/encryption/age';
+import { filePasswordKey, folderPasswordKey, forgetPasswords, rememberPassword, rememberedPassword } from '../lib/encryption/passwords';
+import { FAST, deletedSource, encryptedFolder, fakeShelf, lastOpened, resetShelf, storedFile } from '../test/encryptedShelf';
 import { passwordAsking } from '../test/passwordAsking';
 import { shelfDirectory } from '../test/shelfFiles';
 import { liveContent, type ContentSource } from './contentService';
 import { fileReading, unlockedContents } from './fileReading';
 import { shelfPasswords, type ShelfPasswords } from './shelfPasswords';
-import type { ShelfFile } from './shelfService';
+import type { ShelfDirectory, ShelfFile } from './shelfService';
 
 vi.mock('./contentService', async (original) => ({
   ...(await original<typeof import('./contentService')>()),
   liveContent: (await import('../test/encryptedShelf')).liveContent,
 }));
+
+/** The passwords checked against a folder's check, in order. */
+const checked = vi.hoisted(() => [] as string[]);
+
+vi.mock('../lib/encryption/age', async (original) => {
+  const age = await original<typeof import('../lib/encryption/age')>();
+  return {
+    ...age,
+    checkMatches: (check: string, password: string) => {
+      checked.push(password);
+      return age.checkMatches(check, password);
+    },
+  };
+});
 
 describe('a shelf\'s passwords', () => {
   let prompts: ReturnType<typeof passwordAsking>;
@@ -45,6 +60,69 @@ describe('a shelf\'s passwords', () => {
 
     expect(await asked).toBe('new');
     expect(rememberedPassword(folderPasswordKey('docs', vault.id))).toBe('new');
+  });
+
+  describe('a folder\'s password found to match its check', () => {
+    let vault: ShelfDirectory;
+
+    function ask(): Promise<string | null> {
+      return passwords.folderPassword({ directory: vault, check: fakeShelf.checks.get(vault.id)! });
+    }
+
+    beforeEach(async () => {
+      vault = await encryptedFolder('/vault', 'right');
+      rememberPassword(folderPasswordKey('docs', vault.id), 'right');
+      await ask();
+      checked.length = 0;
+    });
+
+    it('is not checked again, whoever asks for it', async () => {
+      expect(await ask()).toBe('right');
+      expect(await shelfPasswords('docs', prompts.ask).folderPassword({ directory: vault, check: fakeShelf.checks.get(vault.id)! })).toBe('right');
+
+      expect(checked).toEqual([]);
+    });
+
+    it('is checked, and asked for, as the folder has another one', async () => {
+      fakeShelf.checks.set(vault.id, await createCheck('another', FAST));
+
+      const { answer, prompt } = await prompts.untilAsked(ask);
+      await prompt.give('another');
+
+      expect(await answer).toBe('another');
+      expect(checked).toEqual(['right', 'another']);
+    });
+
+    it('is checked as another one is kept', async () => {
+      rememberPassword(folderPasswordKey('docs', vault.id), 'wrong');
+
+      const { prompt } = await prompts.untilAsked(ask);
+      prompt.cancel();
+
+      expect(checked).toEqual(['wrong']);
+    });
+
+    it('is checked again once it was forgotten', async () => {
+      forgetPasswords();
+      rememberPassword(folderPasswordKey('docs', vault.id), 'right');
+
+      expect(await ask()).toBe('right');
+      expect(checked).toEqual(['right']);
+    });
+
+    it('is not known to match as it is not given', async () => {
+      forgetPasswords();
+      const { answer, prompt } = await prompts.untilAsked(ask);
+      const { request } = prompt;
+      if (request.kind === 'unlock') await request.verify('right');
+      prompt.cancel();
+      await answer;
+      rememberPassword(folderPasswordKey('docs', vault.id), 'right');
+
+      await ask();
+
+      expect(checked).toEqual(['right', 'right']);
+    });
   });
 
   it('takes back asking for a folder\'s password as its signal aborts', async () => {

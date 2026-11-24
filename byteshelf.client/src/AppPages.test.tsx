@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, useEffect, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import App from './App';
@@ -42,7 +43,7 @@ afterEach(() => {
 });
 
 it('goes on to the next page as what a plugin drew in the last one throws as it goes', async () => {
-  await act(async () => root.render(<App />));
+  await act(async () => root.render(<QueryClientProvider client={new QueryClient()}><App /></QueryClientProvider>));
   await act(async () => container.querySelector('a')!.click());
 
   expect(container.textContent).toContain('the shelves');

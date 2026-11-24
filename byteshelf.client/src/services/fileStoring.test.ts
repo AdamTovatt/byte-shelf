@@ -4,7 +4,7 @@ import { decryptBlob } from '../lib/encryption/age';
 import { filePasswordKey, folderPasswordKey, rememberPassword, rememberedPassword } from '../lib/encryption/passwords';
 import { FAST, encryptedFolder, fakeShelf, resetShelf, storedDirectory, storedFile } from '../test/encryptedShelf';
 import { passwordAsking } from '../test/passwordAsking';
-import { fileStoring, type StoreFile } from './fileStoring';
+import { fileStoring, type StoreFile, type StoreOptions } from './fileStoring';
 import type { OpenFolder } from '../lib/openFolder';
 import { shelfPasswords } from './shelfPasswords';
 import type { ShelfDirectory } from './shelfService';
@@ -45,8 +45,9 @@ const uploads = vi.hoisted(() => [] as { path: string; contents: Blob; type: str
 const folderIds = vi.hoisted(() => new Map<string, string>());
 
 vi.mock('./uploadService', () => ({
-  uploadFile: async ({ path, file: contents, overwrite, encrypted, signal }: { path: string; file: Blob; overwrite: boolean; encrypted: boolean; signal?: AbortSignal }) => {
+  uploadFile: async ({ path, file: contents, overwrite, encrypted, onProgress, signal }: { path: string; file: Blob; overwrite: boolean; encrypted: boolean; onProgress?: (sentBytes: number) => void; signal?: AbortSignal }) => {
     steps.take('uploadFile', signal);
+    onProgress?.(contents.size);
     uploads.push({ path, contents, type: contents.type, overwrite, encrypted });
     return { id: `stored:${path}`, path, encrypted };
   },
@@ -74,7 +75,8 @@ describe('storing a file', () => {
   }
 
   let prompts: ReturnType<typeof passwordAsking>;
-  let store: StoreFile;
+  /** Stores over what is there, unless told not to. */
+  let store: (folder: OpenFolder, path: string, contents: Blob, options?: Partial<StoreOptions>) => ReturnType<StoreFile>;
 
   beforeEach(() => {
     sessionStorage.clear();
@@ -85,7 +87,8 @@ describe('storing a file', () => {
     steps.signals = [];
     steps.during = () => undefined;
     prompts = passwordAsking();
-    store = fileStoring('docs', shelfPasswords('docs', prompts.ask), FAST);
+    const storing = fileStoring('docs', shelfPasswords('docs', prompts.ask), FAST);
+    store = (folder, path, stored, options) => storing(folder, path, stored, { overwrite: true, ...options });
   });
 
   afterEach(() => void vi.restoreAllMocks());
@@ -247,6 +250,37 @@ describe('storing a file', () => {
       expect(await answer).toBe('AbortError');
       expect(prompts.open).toEqual([]);
     });
+  });
+
+  describe('that may not go over another', () => {
+    it('is stored plain outside an encrypted folder, whatever is at its path, which is not looked up', async () => {
+      await storedFile('/a/own.txt', 'old', 'own');
+
+      await store(into('/a'), '/a/own.txt', contents, { overwrite: false });
+
+      expect(uploads).toMatchObject([{ overwrite: false, encrypted: false }]);
+      expect(steps.called).toEqual(['fetchEncryptedFolder', 'requireDirectoryAt', 'uploadFile']);
+      expect(prompts.open).toEqual([]);
+    });
+
+    it('is encrypted with the password of a folder that is encrypted since it was read', async () => {
+      const read = into('/vault');
+      const vault = await encryptedFolder('/vault', 'right');
+      rememberPassword(folderPasswordKey('docs', vault.id), 'right');
+
+      await store(read, '/vault/a.txt', contents, { overwrite: false });
+
+      expect(uploads).toMatchObject([{ overwrite: false, encrypted: true }]);
+      expect(await (await decryptBlob(uploads[0].contents, 'right', '')).text()).toBe('new');
+    });
+  });
+
+  it('tells how much of it is sent', async () => {
+    const sent: number[] = [];
+
+    await store(into('/a'), '/a/new.txt', contents, { onProgress: (sentBytes) => sent.push(sentBytes) });
+
+    expect(sent).toEqual([contents.size]);
   });
 
   it('goes on where a password is no longer asked for, when it needs none', async () => {

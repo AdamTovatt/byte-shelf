@@ -1,15 +1,24 @@
 import toast from 'react-hot-toast';
-import { Button, ProgressBar } from '../ui';
+import { Button, ProgressBar, getErrorMessage } from '../ui';
 import { formatBytes } from '../lib/format';
 import { MiddleTruncatedName, NameAndReason, NameLine } from './MiddleTruncatedName';
-import type { UploadReporter } from '../hooks/useUploads';
+import type { UploadReporter } from '../services/uploadQueue';
+
+/** How long a finished upload's toast stays; said, as it would otherwise stay as long as the one whose place it takes. */
+const DONE_MS = 2000;
 
 /** How long a failed upload's toast stays; long enough to read the reason. */
 const FAILED_MS = 8000;
 
+/** The reason of an upload that failed. */
+function reasonOf(error: unknown): string {
+  return getErrorMessage(error, 'The upload failed');
+}
+
 /**
- * Shows each upload as one toast, updated in place by its id: progress while it runs, a short success,
- * and an error toast when it fails. A taken name stays until Replace or Dismiss.
+ * Shows each upload as one toast, updated in place by its id: progress while it runs, a short success, an error
+ * toast when it fails, and none once it is cancelled. A taken name stays until Replace or Dismiss, with the
+ * reason when replacing it failed.
  */
 export const reportUpload: UploadReporter = (upload, state) => {
   const id = `upload-${upload.id}`;
@@ -31,12 +40,13 @@ export const reportUpload: UploadReporter = (upload, state) => {
       return;
     }
     case 'done':
-      toast.success(<NameLine before="Uploaded" name={name} />, { id });
+      toast.success(<NameLine before="Uploaded" name={name} />, { id, duration: DONE_MS });
       return;
     case 'taken':
       toast.error((t) => (
         <span className="flex flex-col gap-2">
-          <span>{state.error}</span>
+          <span>A file already exists at '{upload.path}'.</span>
+          {state.failure !== undefined && <span>Could not replace it: {reasonOf(state.failure)}</span>}
           <span className="flex gap-2">
             <Button size="sm" variant="outlineDanger" onClick={() => { toast.dismiss(t.id); state.replace(); }}>Replace</Button>
             <Button size="sm" variant="ghost" onClick={() => toast.dismiss(t.id)}>Dismiss</Button>
@@ -44,8 +54,11 @@ export const reportUpload: UploadReporter = (upload, state) => {
         </span>
       ), { id, duration: Infinity });
       return;
+    case 'cancelled':
+      toast.dismiss(id);
+      return;
     case 'failed':
-      toast.error(<NameAndReason before="Could not upload" name={name} reason={state.error} />, { id, duration: FAILED_MS });
+      toast.error(<NameAndReason before="Could not upload" name={name} reason={reasonOf(state.error)} />, { id, duration: FAILED_MS });
       return;
   }
 };

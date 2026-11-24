@@ -4,6 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DialogHost } from '../contexts/DialogHost';
 import { MobileTopBarContext } from '../contexts/MobileTopBarContext';
+import { UploadHost } from '../contexts/UploadHost';
 import { SHELF_ROUTE_PATTERNS } from '../lib/shelfPaths';
 import { ShelfPage } from '../pages/ShelfPage';
 import { saveTokens } from '../services/authService';
@@ -31,10 +32,12 @@ export async function renderShelfPage(url: string, { strict = false, phone = fal
       <MemoryRouter initialEntries={[url]}>
         <MobileTopBarContext.Provider value={{ actions: phone ? bar : null, bar: null }}>
           <DialogHost>
-            <Routes>
-              <Route path={SHELF_ROUTE_PATTERNS.shelf} element={<ShelfPage />} />
-              <Route path={SHELF_ROUTE_PATTERNS.files} element={<ShelfPage />} />
-            </Routes>
+            <UploadHost>
+              <Routes>
+                <Route path={SHELF_ROUTE_PATTERNS.shelf} element={<ShelfPage />} />
+                <Route path={SHELF_ROUTE_PATTERNS.files} element={<ShelfPage />} />
+              </Routes>
+            </UploadHost>
           </DialogHost>
         </MobileTopBarContext.Provider>
         <page.Follow />
