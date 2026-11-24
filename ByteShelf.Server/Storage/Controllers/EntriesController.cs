@@ -24,8 +24,10 @@ namespace ByteShelf.Server.Storage.Controllers
         /// <summary>Where a shelf's entries are, <c>{shelf}</c> its name; MCP's instructions name it in their curl commands.</summary>
         internal const string ShelfRoute = "api/shelves/{shelf}";
 
-        /// <summary>The contents route where the token may come in a cookie, for what a browser loads by itself (<see cref="AuthSetup.CookieTokenPath"/>).</summary>
-        private const string OpenContentRoute = AuthSetup.CookieTokenPath + "/{shelf}/content";
+        /// <summary>Where a shelf's entries are read with the token in a cookie, by what a browser loads by itself (<see cref="AuthSetup.CookieTokenPath"/>).</summary>
+        internal const string OpenShelfRoute = AuthSetup.CookieTokenPath + "/{shelf}";
+
+        private const string OpenContentRoute = OpenShelfRoute + "/content";
 
         private readonly IDirectoryService _directoryService;
         private readonly IFileService _fileService;

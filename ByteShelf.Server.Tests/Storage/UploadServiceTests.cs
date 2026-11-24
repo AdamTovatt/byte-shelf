@@ -13,11 +13,11 @@ namespace ByteShelf.Server.Tests.Storage
 {
     public class UploadServiceTests : ServiceTestBase
     {
-        private FailingCommitSessionFactory _sessionFactory = null!;
+        private HookedCommitSessionFactory _sessionFactory = null!;
 
         protected override void ConfigureServices(IServiceCollection services)
         {
-            _sessionFactory = new FailingCommitSessionFactory(TestRoot.Root.Database);
+            _sessionFactory = new HookedCommitSessionFactory(TestRoot.Root.Database);
             services.AddSingleton<IDbSessionFactory>(_sessionFactory);
         }
 

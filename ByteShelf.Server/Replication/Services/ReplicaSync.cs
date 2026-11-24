@@ -1,4 +1,5 @@
 using ByteShelf.Server.ChangeLog.Models;
+using ByteShelf.Server.Derived.Services;
 using ByteShelf.Server.Replication.Models;
 using ByteShelf.Server.Replication.Repositories;
 using ByteShelf.Server.Shared.Errors;
@@ -34,6 +35,8 @@ namespace ByteShelf.Server.Replication.Services
         private readonly ReplicaApplier _applier;
         private readonly ObjectStore _objectStore;
         private readonly ObjectCollector _objectCollector;
+        private readonly IDerivedRemoval _derivedRemoval;
+        private readonly StoredContents _storedContents;
         private readonly StagingArea _stagingArea;
         private readonly MaintenanceGate _maintenanceGate;
         private readonly ReplicaSyncControl _control;
@@ -49,6 +52,8 @@ namespace ByteShelf.Server.Replication.Services
             ReplicaApplier applier,
             ObjectStore objectStore,
             ObjectCollector objectCollector,
+            IDerivedRemoval derivedRemoval,
+            StoredContents storedContents,
             StagingArea stagingArea,
             MaintenanceGate maintenanceGate,
             ReplicaSyncControl control,
@@ -63,6 +68,8 @@ namespace ByteShelf.Server.Replication.Services
             _applier = applier;
             _objectStore = objectStore;
             _objectCollector = objectCollector;
+            _derivedRemoval = derivedRemoval;
+            _storedContents = storedContents;
             _stagingArea = stagingArea;
             _maintenanceGate = maintenanceGate;
             _control = control;
@@ -153,7 +160,7 @@ namespace ByteShelf.Server.Replication.Services
                     return;
                 }
 
-                await session.CommitAsync();
+                await _derivedRemoval.CommitReleasingAsync(changes.ReleasedObjects, session);
             }
 
             await FinishAsync(changes);
@@ -162,7 +169,8 @@ namespace ByteShelf.Server.Replication.Services
         /// <summary>
         /// Does what applied changes leave to do once they commit: ends removed users' sessions first, the
         /// part that matters for safety, then removes at once the old contents of files swapped in place
-        /// (encrypted or decrypted), as the primary did, unless a row here still points at them.
+        /// (encrypted or decrypted), as the primary did, unless a row here still points at them, and has what
+        /// plugins make from new contents made.
         /// </summary>
         private async Task FinishAsync(AppliedChanges changes)
         {
@@ -172,6 +180,11 @@ namespace ByteShelf.Server.Replication.Services
             }
 
             await _objectCollector.RemoveReleasedAsync(changes.ReleasedObjects);
+
+            foreach (string sha256 in changes.StoredContents)
+            {
+                _storedContents.Add(sha256);
+            }
         }
 
         /// <summary>
@@ -236,7 +249,7 @@ namespace ByteShelf.Server.Replication.Services
                 await _copyRepository.ClearAsync(session);
                 if (await _sourceRepository.SetProgressAsync(source, startedAt.Value, appliedFingerprint: null, _timeProvider.GetUtcNow(), session))
                 {
-                    await session.CommitAsync();
+                    await _derivedRemoval.CommitReleasingAsync(changes.ReleasedObjects, session);
                     await FinishAsync(changes);
                     return;
                 }

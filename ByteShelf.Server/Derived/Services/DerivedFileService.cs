@@ -1,0 +1,131 @@
+using ByteShelf.Server.Derived.Models;
+using ByteShelf.Server.Derived.Repositories;
+using ByteShelf.Server.Shared.Errors;
+using ByteShelf.Server.Storage.Models;
+using ByteShelf.Server.Storage.Services;
+using ByteShelfCommon;
+
+namespace ByteShelf.Server.Derived.Services
+{
+    /// <summary>The derived files of files, made as they are asked for when they are missing.</summary>
+    internal sealed class DerivedFileService : IDerivedFileService
+    {
+        /// <summary>How long a request waits for a derived file to be made.</summary>
+        private static readonly TimeSpan WaitLimit = TimeSpan.FromSeconds(10);
+
+        /// <summary>When a request that waited is told to come back.</summary>
+        private static readonly TimeSpan RetryAfter = TimeSpan.FromSeconds(5);
+
+        private readonly ShelfTree _shelfTree;
+        private readonly ITrashService _trashService;
+        private readonly ISourceContentsRepository _contents;
+        private readonly DerivedMakers _makers;
+        private readonly DerivedStore _store;
+        private readonly DerivedMaking _making;
+        private readonly TimeProvider _timeProvider;
+
+        public DerivedFileService(
+            ShelfTree shelfTree,
+            ITrashService trashService,
+            ISourceContentsRepository contents,
+            DerivedMakers makers,
+            DerivedStore store,
+            DerivedMaking making,
+            TimeProvider timeProvider)
+        {
+            _shelfTree = shelfTree;
+            _trashService = trashService;
+            _contents = contents;
+            _makers = makers;
+            _store = store;
+            _making = making;
+            _timeProvider = timeProvider;
+        }
+
+        /// <inheritdoc />
+        public async Task<DerivedFile> GetAsync(Shelf shelf, EntryReference reference, DerivedKind kind, CancellationToken cancellationToken)
+        {
+            return await OfAsync(await _shelfTree.GetFileAsync(shelf.Id, reference), kind, cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public async Task<DerivedFile> GetDeletedAsync(Shelf shelf, Guid deletionId, Guid fileId, DerivedKind kind, CancellationToken cancellationToken)
+        {
+            return await OfAsync(await _trashService.GetDeletedFileAsync(shelf, deletionId, fileId), kind, cancellationToken);
+        }
+
+        private async Task<DerivedFile> OfAsync(FileRecord file, DerivedKind kind, CancellationToken cancellationToken)
+        {
+            // An encrypted file has none, even when a plain file holds the same bytes.
+            if (file.Encrypted || _makers.For(kind, [ContentTypes.MediaTypeOf(file.ContentType)]) == null)
+            {
+                throw None(file, kind);
+            }
+
+            // By every type the contents are held as, so whichever file is asked about they have one maker.
+            KindMaker maker = _makers.For(kind, await _contents.GetMediaTypesAsync(file.Sha256)) ?? throw None(file, kind);
+            if (await FindAsync(file.Sha256, maker, cancellationToken) is { } found)
+            {
+                return found.File ?? throw None(file, kind);
+            }
+
+            Task<MakingOutcome> making = _making.MakeAsync(file.Sha256, kind, maker.Plugin, MakingPriority.Asked);
+            try
+            {
+                if (await making.WaitAsync(WaitLimit, _timeProvider, cancellationToken) == MakingOutcome.Stopped)
+                {
+                    throw Later(kind);
+                }
+            }
+            catch (TimeoutException)
+            {
+                throw Later(kind);
+            }
+
+            return (await FindAsync(file.Sha256, maker, cancellationToken))?.File ?? throw None(file, kind);
+        }
+
+        /// <summary>What <paramref name="maker"/> made of the contents, with no file when it could not; null when it has yet to.</summary>
+        private async Task<Found?> FindAsync(string sha256, KindMaker maker, CancellationToken cancellationToken)
+        {
+            DerivedKind kind = maker.Declaration.Kind;
+            using (await _store.LockAsync(sha256, cancellationToken))
+            {
+                DerivedEntry? entry = _store.Find(kind, sha256);
+                if (!maker.IsCurrent(entry))
+                {
+                    return null;
+                }
+
+                if (entry!.Made == null)
+                {
+                    return new Found(null);
+                }
+
+                return _store.TryOpenRead(kind, sha256) is not FileStream contents
+                    ? null
+                    : new Found(new DerivedFile
+                    {
+                        Kind = kind,
+                        Sha256 = sha256,
+                        Plugin = entry.Plugin,
+                        Version = entry.Version,
+                        MediaType = entry.Made.MediaType,
+                        Contents = contents,
+                    });
+            }
+        }
+
+        private static NotFoundException None(FileRecord file, DerivedKind kind)
+        {
+            return new NotFoundException($"The file {file.Id} has no {DerivedKinds.NameOf(kind)}.");
+        }
+
+        private static RetryLaterException Later(DerivedKind kind)
+        {
+            return new RetryLaterException($"The {DerivedKinds.NameOf(kind)} is still being made; ask again.", RetryAfter);
+        }
+
+        private sealed record Found(DerivedFile? File);
+    }
+}

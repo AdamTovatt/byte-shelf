@@ -1,3 +1,4 @@
+using ByteShelf.Server.Derived.Services;
 using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Shared.Errors;
@@ -21,8 +22,10 @@ namespace ByteShelf.Server.Storage.Services
         private readonly StagingArea _stagingArea;
         private readonly ObjectStore _objectStore;
         private readonly ObjectCollector _objectCollector;
+        private readonly IDerivedRemoval _derivedRemoval;
         private readonly UploadLocks _uploadLocks;
         private readonly MetadataReadingSignal _metadataSignal;
+        private readonly StoredContents _storedContents;
         private readonly StorageOptions _options;
         private readonly TimeProvider _timeProvider;
 
@@ -37,8 +40,10 @@ namespace ByteShelf.Server.Storage.Services
             StagingArea stagingArea,
             ObjectStore objectStore,
             ObjectCollector objectCollector,
+            IDerivedRemoval derivedRemoval,
             UploadLocks uploadLocks,
             MetadataReadingSignal metadataSignal,
+            StoredContents storedContents,
             StorageOptions options,
             TimeProvider timeProvider)
         {
@@ -52,8 +57,10 @@ namespace ByteShelf.Server.Storage.Services
             _stagingArea = stagingArea;
             _objectStore = objectStore;
             _objectCollector = objectCollector;
+            _derivedRemoval = derivedRemoval;
             _uploadLocks = uploadLocks;
             _metadataSignal = metadataSignal;
+            _storedContents = storedContents;
             _options = options;
             _timeProvider = timeProvider;
         }
@@ -298,9 +305,9 @@ namespace ByteShelf.Server.Storage.Services
         /// or swaps its contents (<see cref="SwapInAsync"/>) and removes the upload, placing the object last
         /// before the commit. The object's lock is held from placing it until the row commits, so no
         /// removal can take it away in between. A swap's old contents are removed once it commits, unless
-        /// another file holds them. Hold the upload's lock. An upload <paramref name="throughLink"/> is held
-        /// to <see cref="ShelfEncryption.RequireLinkTargetAsync"/> again in that transaction: the place may
-        /// have been encrypted while the body arrived.
+        /// another file holds them, and what was derived from them before it commits. Hold the upload's lock.
+        /// An upload <paramref name="throughLink"/> is held to <see cref="ShelfEncryption.RequireLinkTargetAsync"/>
+        /// again in that transaction: the place may have been encrypted while the body arrived.
         /// </summary>
         private async Task<ShelfFile> FinishAsync(UploadRecord upload, bool throughLink, CancellationToken cancellationToken)
         {
@@ -331,9 +338,14 @@ namespace ByteShelf.Server.Storage.Services
                         };
                         await _uploadRepository.DeleteAsync(upload.Id, session);
 
-                        _objectStore.Place(_stagingArea.GetPath(upload.Id), sha256);
-                        placed = true;
-                        await session.CommitAsync();
+                        await _derivedRemoval.CommitReleasingAsync(
+                            upload.Target is ContentSwap released ? [released.Sha256] : [],
+                            session,
+                            beforeCommit: () =>
+                            {
+                                _objectStore.Place(_stagingArea.GetPath(upload.Id), sha256);
+                                placed = true;
+                            });
                     }
                 }
                 catch when (placed)
@@ -351,6 +363,7 @@ namespace ByteShelf.Server.Storage.Services
             }
 
             _metadataSignal.ContentsStored();
+            _storedContents.Add(sha256);
             return stored;
         }
 

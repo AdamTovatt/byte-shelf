@@ -254,7 +254,7 @@ namespace ByteShelf.Server.Tests.Replication
             // A move supersedes the swap's entry before the replica saw it, so compacting drops that and
             // the replica, behind what was dropped, takes a whole copy.
             (await _pair.Primary.AdminClient.PostAsJsonAsync("/api/shelves/docs/files/move?path=/a.txt", new MoveRequest { ToPath = "/b.txt" })).EnsureSuccessStatusCode();
-            await CompactPrimaryAsync();
+            await _pair.CompactPrimaryAsync();
             await _pair.SyncOnceAsync();
             using HttpClient replica = await _pair.SignInOnReplicaAsync();
             Assert.True((await ReplicationPair.GetStatusAsync(replica)).Source!.Copying);
@@ -346,7 +346,7 @@ namespace ByteShelf.Server.Tests.Replication
             await _pair.SyncAsync();
 
             (await _pair.Primary.AdminClient.DeleteAsync($"/api/keys/{created.Key.Id}/grants/other")).EnsureSuccessStatusCode();
-            await CompactPrimaryAsync();
+            await _pair.CompactPrimaryAsync();
             await _pair.SyncAsync();
 
             using HttpClient key = _pair.Replica.CreateKeyClient(created.Secret);
@@ -363,7 +363,7 @@ namespace ByteShelf.Server.Tests.Replication
             await _pair.SyncAsync();
 
             (await _pair.Primary.AdminClient.DeleteAsync($"/api/keys/{keyId}/grants/docs")).EnsureSuccessStatusCode();
-            await CompactPrimaryAsync();
+            await _pair.CompactPrimaryAsync();
             await _pair.SyncAsync();
 
             using HttpClient replica = await _pair.SignInOnReplicaAsync();
@@ -381,7 +381,7 @@ namespace ByteShelf.Server.Tests.Replication
             // row before its parent's only entry, so the replica copies instead.
             await _pair.PutOnPrimaryAsync("docs", "/a.txt", "a");
             (await _pair.Primary.AdminClient.PostAsJsonAsync("/api/shelves/docs/files/move?path=/a.txt", new MoveRequest { ToPath = "/b.txt" })).EnsureSuccessStatusCode();
-            await CompactPrimaryAsync();
+            await _pair.CompactPrimaryAsync();
             await _pair.SyncOnceAsync();
 
             using HttpClient replica = await _pair.SignInOnReplicaAsync();
@@ -438,7 +438,7 @@ namespace ByteShelf.Server.Tests.Replication
             (await _pair.Primary.AdminClient.DeleteAsync("/api/shelves/docs/directories?path=/d")).EnsureSuccessStatusCode();
             (await _pair.Primary.AdminClient.DeleteAsync("/api/shelves/docs/trash")).EnsureSuccessStatusCode();
             (await _pair.Primary.AdminClient.DeleteAsync($"/api/users/{_pair.Primary.MemberId}")).EnsureSuccessStatusCode();
-            await CompactPrimaryAsync();
+            await _pair.CompactPrimaryAsync();
             await _pair.SyncAsync();
 
             using HttpClient replica = await _pair.SignInOnReplicaAsync();
@@ -1117,15 +1117,6 @@ namespace ByteShelf.Server.Tests.Replication
         private async Task RewindPrimaryLogAsync(long sequence)
         {
             await ExecuteOnAsync(_pair.Primary, $"DELETE FROM change_log WHERE sequence > {sequence}; UPDATE sqlite_sequence SET seq = {sequence} WHERE name = 'change_log'");
-        }
-
-        /// <summary>Compacts the primary's log as if every entry were older than the retention; this host runs on the real clock.</summary>
-        private async Task CompactPrimaryAsync()
-        {
-            using IServiceScope scope = _pair.Primary.Services.CreateScope();
-            await using IDbTransactionSession session = await scope.ServiceProvider.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync();
-            await scope.ServiceProvider.GetRequiredService<IChangeLogRepository>().CompactAsync(DateTimeOffset.UtcNow.AddYears(1), session);
-            await session.CommitAsync();
         }
     }
 }

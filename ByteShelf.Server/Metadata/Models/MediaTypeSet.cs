@@ -3,7 +3,7 @@ using ByteShelfCommon;
 
 namespace ByteShelf.Server.Metadata.Models
 {
-    /// <summary>The media types a reader takes: single ones (<c>application/pdf</c>) and families (<c>image/*</c>).</summary>
+    /// <summary>The media types a plugin or the server itself takes: single ones (<c>application/pdf</c>) and families (<c>image/*</c>).</summary>
     public sealed partial class MediaTypeSet
     {
         private readonly IReadOnlyList<MediaTypePattern> _patterns;
@@ -35,6 +35,18 @@ namespace ByteShelf.Server.Metadata.Models
         public bool Includes(string mediaType)
         {
             return _patterns.Any(pattern => pattern.Includes(mediaType));
+        }
+
+        /// <summary>Whether <paramref name="mediaType"/> (without parameters, lowercase) is one of them by its own name, not only by its family's.</summary>
+        public bool Names(string mediaType)
+        {
+            return _patterns.Any(pattern => pattern.Type == mediaType);
+        }
+
+        /// <summary>Every type that is in one of <paramref name="sets"/>.</summary>
+        public static MediaTypeSet Union(IEnumerable<MediaTypeSet> sets)
+        {
+            return new MediaTypeSet(sets.SelectMany(set => set._patterns).Distinct().ToList());
         }
 
         /// <summary>

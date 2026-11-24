@@ -27,11 +27,12 @@ One folder, named by `BYTESHELF_ROOT`, holds the whole instance:
   byteshelf.db              the SQLite database: shelves, directories, files, users, the change log
   objects/ab/cd/<sha256>    file contents, stored whole and never modified
   staging/                  uploads in progress
+  derived/                  what plugins made from file contents, made again when it is gone
   keys/                     secrets the server generates for itself (jwt-secret, and link-secret for download and upload links)
 ```
 
 Nothing lives outside it, so a zip of a stopped server's root is a complete copy; `--backup` writes a
-consistent one from a running server, leaving out uploads in progress. Every object is named by its
+consistent one from a running server, leaving out uploads in progress and `derived/`. Every object is named by its
 SHA-256, so `sha256sum` verifies it, and identical contents are stored once.
 
 ## Concepts
@@ -98,7 +99,7 @@ dotnet run --project ByteShelf.Cli -- shelves
   [Invalidation](ByteShelf.Server/Invalidation/Invalidation.md), [Version](ByteShelf.Server/Version/Version.md),
   [Replication](ByteShelf.Server/Replication/Replication.md), [Backup](ByteShelf.Server/Backup/Backup.md),
   [Mcp](ByteShelf.Server/Mcp/Mcp.md), [Metadata](ByteShelf.Server/Metadata/Metadata.md),
-  [Plugins](ByteShelf.Server/Plugins/Plugins.md).
+  [Plugins](ByteShelf.Server/Plugins/Plugins.md), [Derived files](ByteShelf.Server/Derived/Derived.md).
 - [ByteShelfCommon](ByteShelfCommon/README.md), [ByteShelfClient](ByteShelfClient/README.md),
   [the CLI and MCP server](ByteShelf.Cli/README.md), [the shared operations and MCP tools](ByteShelf.Tools/README.md),
   [the web UI](byteshelf.client/README.md), [the plugins made here](plugins/README.md).

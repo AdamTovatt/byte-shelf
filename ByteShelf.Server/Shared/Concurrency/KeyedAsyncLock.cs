@@ -64,6 +64,23 @@ namespace ByteShelf.Server.Shared.Concurrency
             return new Releaser(this, key, entry);
         }
 
+        /// <summary>Takes the lock on <paramref name="key"/> if nobody holds or waits for it; null when somebody does. Never waits.</summary>
+        public IDisposable? TryAcquire(string key)
+        {
+            lock (_entries)
+            {
+                if (_entries.ContainsKey(key))
+                {
+                    return null;
+                }
+
+                Entry entry = new Entry { Users = 1 };
+                entry.Semaphore.Wait(0);
+                _entries[key] = entry;
+                return new Releaser(this, key, entry);
+            }
+        }
+
         private void Leave(string key, Entry entry)
         {
             lock (_entries)

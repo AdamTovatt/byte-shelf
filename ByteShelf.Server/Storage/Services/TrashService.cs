@@ -149,19 +149,22 @@ namespace ByteShelf.Server.Storage.Services
         }
 
         /// <inheritdoc />
+        public async Task<FileRecord> GetDeletedFileAsync(Shelf shelf, Guid deletionId, Guid fileId)
+        {
+            await using (IDbSession session = await _sessionFactory.CreateSessionAsync())
+            {
+                return await GetDeletedFileAsync(shelf, deletionId, fileId, session);
+            }
+        }
+
+        /// <inheritdoc />
         public async Task<FileContent> GetDeletedContentAsync(Shelf shelf, Guid deletionId, Guid fileId)
         {
             ShelfFile described;
             string sha256;
             await using (IDbSession session = await _sessionFactory.CreateSessionAsync())
             {
-                await GetRestorableEntryAsync(shelf, deletionId, session);
-                FileRecord? file = await _fileRepository.GetByIdAsync(fileId, session);
-                if (file == null || file.ShelfId != shelf.Id || file.DeletionId != deletionId)
-                {
-                    throw new NotFoundException($"Deletion {deletionId} in this shelf's trash holds no file {fileId}.");
-                }
-
+                FileRecord file = await GetDeletedFileAsync(shelf, deletionId, fileId, session);
                 described = await _shelfTree.ToShelfFileAsync(file, session);
                 sha256 = file.Sha256;
             }
@@ -232,7 +235,7 @@ namespace ByteShelf.Server.Storage.Services
         /// <summary>
         /// Removes every row deleted before <paramref name="cutoff"/>, on one shelf or all of them, in
         /// short transactions, files before the directories they were in. Then removes the objects only
-        /// those files pointed at.
+        /// those files pointed at, and what was derived from them.
         /// </summary>
         private async Task<int> PurgeDeletedBeforeAsync(DateTimeOffset cutoff, Guid? shelfId, CancellationToken cancellationToken)
         {
@@ -262,10 +265,7 @@ namespace ByteShelf.Server.Storage.Services
                     await session.CommitAsync();
                 }
 
-                foreach (string sha256 in files.Select(file => file.Sha256).Distinct())
-                {
-                    await _objectCollector.RemoveIfUnreferencedAsync(sha256, cancellationToken);
-                }
+                await _objectCollector.RemoveReleasedAsync(files.Select(file => file.Sha256).Distinct(), cancellationToken);
             }
 
             while (true)
@@ -300,6 +300,18 @@ namespace ByteShelf.Server.Storage.Services
         private DateTimeOffset RestorableSince()
         {
             return _timeProvider.GetUtcNow() - _options.RestoreWindow;
+        }
+
+        private async Task<FileRecord> GetDeletedFileAsync(Shelf shelf, Guid deletionId, Guid fileId, IDbSession session)
+        {
+            await GetRestorableEntryAsync(shelf, deletionId, session);
+            FileRecord? file = await _fileRepository.GetByIdAsync(fileId, session);
+            if (file == null || file.ShelfId != shelf.Id || file.DeletionId != deletionId)
+            {
+                throw new NotFoundException($"Deletion {deletionId} in this shelf's trash holds no file {fileId}.");
+            }
+
+            return file;
         }
 
         private async Task<TrashedEntry> GetRestorableEntryAsync(Shelf shelf, Guid deletionId, IDbSession session)

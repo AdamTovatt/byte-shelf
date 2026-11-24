@@ -29,14 +29,21 @@ namespace ByteShelf.Server.Storage.Services
             return HashPattern().IsMatch(sha256);
         }
 
-        public string GetPath(string sha256)
+        /// <summary>Where what is kept by the contents <paramref name="sha256"/> is in <paramref name="folder"/>: spread over folders, so none grows too large.</summary>
+        /// <exception cref="ArgumentException">It is not a SHA-256.</exception>
+        public static string PathIn(string folder, string sha256)
         {
             if (!IsValidHash(sha256))
             {
                 throw new ArgumentException($"'{sha256}' is not a lowercase hex SHA-256.", nameof(sha256));
             }
 
-            return Path.Combine(_root.ObjectsPath, sha256[..2], sha256[2..4], sha256);
+            return Path.Combine(folder, sha256[..2], sha256[2..4], sha256);
+        }
+
+        public string GetPath(string sha256)
+        {
+            return PathIn(_root.ObjectsPath, sha256);
         }
 
         public bool Exists(string sha256)

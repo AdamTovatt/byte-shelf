@@ -2,6 +2,8 @@ using System.Net;
 using ByteShelf.Server.Access;
 using ByteShelf.Server.Backup.Services;
 using ByteShelf.Server.ChangeLog;
+using ByteShelf.Server.Derived;
+using ByteShelf.Server.Derived.Services;
 using ByteShelf.Server.Email;
 using ByteShelf.Server.Invalidation;
 using ByteShelf.Server.Jobs;
@@ -59,6 +61,13 @@ namespace ByteShelf.Server
             {
                 RunMigrateOnlyMode();
                 return;
+            }
+
+            if (args.Contains(MakeDerivedCommand.Flag))
+            {
+                // Exits rather than returns, so a thread a plugin left running does not keep the process.
+                string? folder = args.ElementAtOrDefault(Array.IndexOf(args, MakeDerivedCommand.Flag) + 1);
+                Environment.Exit((int)MakeDerivedCommand.RunAsync(folder, new NoDerivedFilePlugins().Load).GetAwaiter().GetResult());
             }
 
             int backup = Array.IndexOf(args, "--backup");
@@ -179,6 +188,7 @@ namespace ByteShelf.Server
             services.AddChangeLogServices();
             services.AddStorageServices(settings.Storage);
             services.AddMetadataServices();
+            services.AddDerivedServices();
             services.AddAccessServices();
         }
 

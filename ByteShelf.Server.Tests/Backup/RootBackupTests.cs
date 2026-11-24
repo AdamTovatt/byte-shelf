@@ -52,6 +52,8 @@ namespace ByteShelf.Server.Tests.Backup
             ShelfFile a = await StoreTextAsync(shelf, "/a.txt", "first");
             ShelfFile b = await StoreTextAsync(shelf, "/b.txt", "second");
             await File.WriteAllTextAsync(Path.Combine(TestRoot.Root.KeysPath, "jwt-secret"), "secret");
+            Directory.CreateDirectory(TestRoot.Root.DerivedPath);
+            await File.WriteAllTextAsync(Path.Combine(TestRoot.Root.DerivedPath, "derived"), "made again");
 
             BackupSummary summary = await RootBackup.WriteAsync(TestRoot.Root, _zipPath, CancellationToken.None);
 
@@ -62,6 +64,7 @@ namespace ByteShelf.Server.Tests.Backup
             Assert.Equal("second", await File.ReadAllTextAsync(objects.GetPath(b.Sha256)));
             Assert.Equal("secret", await File.ReadAllTextAsync(Path.Combine(restored.KeysPath, "jwt-secret")));
             Assert.Equal(2, await CountAsync(restored, "SELECT COUNT(*) FROM file"));
+            Assert.False(Directory.Exists(restored.DerivedPath));
         }
 
         [Fact]

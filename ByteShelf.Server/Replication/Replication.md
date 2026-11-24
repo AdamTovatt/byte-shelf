@@ -65,8 +65,9 @@ write is logged in the replica's own change log, so its pages update live and a 
 whole log.
 
 What the primary read from files' contents arrives the same way, as `object_metadata` and
-`content_plugin_metadata` entries: a replica never reads contents itself, and starts to once promoted
-([Metadata](../Metadata/Metadata.md)).
+`content_plugin_metadata` entries: a replica reads no metadata from contents itself, and starts to once promoted
+([Metadata](../Metadata/Metadata.md)). What plugins make from contents (thumbnails and previews) it does make
+itself ([Derived files](../Derived/Derived.md)).
 
 A plugin's document about a file (`file_plugin_metadata`) refers to the file and may come before it: a copy
 holds each entity's newest entry, and the file may have changed after the document. So only after the last
@@ -94,8 +95,11 @@ person confirmed cannot be undone ([Storage](../Storage/Storage.md#encryption-sh
 SHA-256 changes in no other way, so when an applied state points a file here at other contents, the old
 object is removed once the page (or the whole copy) commits, unless a row here still points at it, such
 as another file with the same contents. What was read from them has gone by then: the primary logs those
-removals before the swap ([Metadata](../Metadata/Metadata.md)). Removed users' sessions end first; a removal
-that fails is logged and left to maintenance, which removes whatever nothing points at.
+removals before the swap ([Metadata](../Metadata/Metadata.md)). What plugins made from them here goes in the
+transaction that applies the swap, also when only the file's encrypted flag changes, as for an age file
+stored as a plain one; what cannot be removed stops the step, which is tried again
+([Derived files](../Derived/Derived.md)). Once that has committed, removed users' sessions end first, and an
+object whose removal fails is logged and left to maintenance, which removes whatever nothing points at.
 
 A change of a type this build does not know (from a newer primary) stops replication with
 `ReplicaOutdatedException`, saying to update, rather than being skipped. The replica's admins see that

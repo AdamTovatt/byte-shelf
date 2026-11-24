@@ -105,7 +105,7 @@ contents again ([Metadata](ByteShelf.Server/Metadata/Metadata.md)).
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `BYTESHELF_ROOT` | yes | The root folder. Created on first start, or by `--create-user` or `--follow` run before it, with `objects/`, `staging/` and `keys/` inside, owned by whoever created it. The server makes it reachable by its owner only on every start, so it must be owned by the user the server runs as. |
+| `BYTESHELF_ROOT` | yes | The root folder. Created on first start, or by `--create-user` or `--follow` run before it, with `objects/`, `staging/` and `keys/` inside (and `derived/`, which may be emptied while the server is stopped), owned by whoever created it. The server makes it reachable by its owner only on every start, so it must be owned by the user the server runs as. |
 | `APP_BASE_URL` | outside Development | The public URL, e.g. `https://shelf.example.com`. Password-reset links, the download links the API answers (share links, the web UI's Copy link, MCP's `share_file`) and upload links point at it. Passkeys are made for its host, and are off without it or when it is plain http to anything but this machine. |
 | `POSTMARK_API_KEY` | to send email | A Postmark server token. Without it no email is sent (see [Email](#email)). |
 | `EMAIL_FROM_ADDRESS` | with `POSTMARK_API_KEY` | The address mail is from, a sender confirmed in Postmark. The server refuses to start with a token and no address. |
@@ -382,3 +382,8 @@ files purged since). After every upload, and hourly, it reads what the contents 
 plugins read them. A failed pass is logged as an error and the next one runs on schedule. A replica
 also follows its primary continuously, every two seconds when caught up, and every minute each
 server checks replication for the alerts above.
+
+Plugins that make thumbnails and previews have them made as files are uploaded and asked for, and hourly for
+files that lack them; daily, what nothing needs any more is removed. Each plugin runs in a child process of the
+server's own executable (`--make-derived`), one at a time, for at most a minute a file. What they make is in
+`derived/`, outside every shelf's quota ([Derived files](ByteShelf.Server/Derived/Derived.md)).

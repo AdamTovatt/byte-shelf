@@ -19,6 +19,12 @@ namespace ByteShelf.Server.Metadata.Repositories
             return $"EXISTS (SELECT 1 FROM file WHERE file.sha256 = {sha256} AND file.encrypted = 0 AND file.deleted_at IS NULL)";
         }
 
+        /// <summary>The condition that a plain file, live or in the trash (for a restore), holds the contents <paramref name="sha256"/>, a column or parameter.</summary>
+        public static string HeldByFile(string sha256)
+        {
+            return $"EXISTS (SELECT 1 FROM file WHERE file.sha256 = {sha256} AND file.encrypted = 0)";
+        }
+
         /// <summary>
         /// Records a reading of the contents <c>@Sha256</c> in <paramref name="table"/>, by an insert of the columns and
         /// values given, over what another version of the reader recorded: nothing when no live plain file holds
@@ -38,7 +44,7 @@ namespace ByteShelf.Server.Metadata.Repositories
         {
             return $@"
                 DELETE FROM {table}
-                WHERE NOT EXISTS (SELECT 1 FROM file WHERE file.sha256 = {table}.sha256 AND file.encrypted = 0)
+                WHERE NOT {HeldByFile($"{table}.sha256")}
                 RETURNING id";
         }
 
@@ -54,10 +60,20 @@ namespace ByteShelf.Server.Metadata.Repositories
 
         /// <summary>
         /// The SHA-256 of contents live plain files of <paramref name="mediaTypes"/> hold, each once and in
-        /// order, after <c>@after</c> and at most <c>@limit</c>, but those <paramref name="read"/> is true of:
-        /// a condition on <c>file.sha256</c>.
+        /// order, after <c>@after</c> and at most <c>@limit</c>.
         /// </summary>
+        public static string LiveSql(MediaTypeSet mediaTypes)
+        {
+            return LiveSql(mediaTypes, unless: null);
+        }
+
+        /// <summary>As <see cref="LiveSql(MediaTypeSet)"/>, but those <paramref name="read"/> is true of: a condition on <c>file.sha256</c>.</summary>
         public static string UnreadSql(MediaTypeSet mediaTypes, string read)
+        {
+            return LiveSql(mediaTypes, unless: read);
+        }
+
+        private static string LiveSql(MediaTypeSet mediaTypes, string? unless)
         {
             return $@"
                 SELECT DISTINCT file.sha256
@@ -65,7 +81,7 @@ namespace ByteShelf.Server.Metadata.Repositories
                 WHERE file.deleted_at IS NULL
                   AND file.encrypted = 0
                   AND {mediaTypes.Sql("file.media_type")}
-                  AND NOT ({read})
+                  {(unless == null ? string.Empty : $"AND NOT ({unless})")}
                   AND (@after IS NULL OR file.sha256 > @after)
                 ORDER BY file.sha256
                 LIMIT @limit";

@@ -20,7 +20,8 @@ it never migrates the database or creates folders there, and it refuses a zip pa
    [SQLite leaves](../../DEPLOYMENT.md#deleted-data) as it splits a page. `VACUUM INTO` copies none of the live
    database's free pages.
 3. **The snapshot itself**, without uploads in progress (their staged bytes are not copied), as
-   `byteshelf.db`, then every file in `keys/`.
+   `byteshelf.db`, then every file in `keys/`. Not what plugins made from contents (`derived/`), which a
+   restored root makes again.
 
 The zip holds every secret the server has: the password hashes, the sign-in and link secrets
 in `keys/` (the link secret signs share and upload links), and on a replica the credential it follows its primary with, in plain text in the

@@ -117,9 +117,17 @@ namespace ByteShelf.Server.Replication.Services
                         FileRecord? here = await fileRepository.GetByIdAsync(file.Id, session);
                         await fileRepository.UpsertReplicatedAsync(file, entry.Action, Guid.NewGuid(), at, session);
 
-                        if (here != null && here.Sha256 != file.Sha256)
+                        bool otherContents = here != null && here.Sha256 != file.Sha256;
+
+                        // An age file stored as a plain one is encrypted by the very same bytes.
+                        if (here != null && (otherContents || here.Encrypted != file.Encrypted))
                         {
                             changes.ObjectReleased(here.Sha256);
+                        }
+
+                        if ((here == null || otherContents) && !file.Encrypted && file.DeletedAt == null)
+                        {
+                            changes.ContentsStored(file.Sha256);
                         }
                     },
                     (id, at, session) => fileRepository.SoftDeleteAsync(id, Guid.NewGuid(), at, session)),

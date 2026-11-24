@@ -34,6 +34,7 @@ namespace ByteShelf.Server.Shared.Errors
                 ReadOnlyReplicaException => (HttpStatusCode.Conflict, exception.Message, ErrorCodes.ReadOnlyReplica),
                 PrimaryFailedException => (HttpStatusCode.BadGateway, exception.Message, ErrorCodes.PrimaryFailed),
                 QuotaExceededException => (HttpStatusCode.InsufficientStorage, exception.Message, ErrorCodes.QuotaExceeded),
+                RetryLaterException => (HttpStatusCode.ServiceUnavailable, exception.Message, ErrorCodes.NotReady),
                 LengthRequiredException => (HttpStatusCode.LengthRequired, exception.Message, ErrorCodes.InvalidRequest),
 
                 // Kestrel's refusal of a malformed request or a body over the endpoint's limit. It

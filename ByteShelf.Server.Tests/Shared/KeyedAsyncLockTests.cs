@@ -87,5 +87,27 @@ namespace ByteShelf.Server.Tests.Shared
             second.Dispose();
             (await third.WaitAsync(TimeSpan.FromSeconds(5))).Dispose();
         }
+
+        [Fact]
+        public async Task TryAcquire_HeldOrWaitedFor_IsNullAndOtherwiseHoldsIt()
+        {
+            KeyedAsyncLock locks = new KeyedAsyncLock();
+            Task<IDisposable> waiting;
+            using (IDisposable? held = locks.TryAcquire("a"))
+            {
+                Assert.NotNull(held);
+                Assert.Null(locks.TryAcquire("a"));
+                waiting = locks.AcquireAsync("a");
+                Assert.False(waiting.IsCompleted);
+            }
+
+            using (await waiting)
+            {
+                Assert.Null(locks.TryAcquire("a"));
+            }
+
+            locks.TryAcquire("a")!.Dispose();
+            Assert.Equal(0, locks.ActiveKeyCount);
+        }
     }
 }

@@ -14,6 +14,7 @@ namespace ByteShelf.Server.Shared.Root
         public const string ObjectsFolderName = "objects";
         public const string StagingFolderName = "staging";
         public const string KeysFolderName = "keys";
+        public const string DerivedFolderName = "derived";
 
         private RootFolder(string path)
         {
@@ -23,6 +24,7 @@ namespace ByteShelf.Server.Shared.Root
             ObjectsPath = System.IO.Path.Combine(path, ObjectsFolderName);
             StagingPath = System.IO.Path.Combine(path, StagingFolderName);
             KeysPath = System.IO.Path.Combine(path, KeysFolderName);
+            DerivedPath = System.IO.Path.Combine(path, DerivedFolderName);
         }
 
         public string Path { get; }
@@ -39,6 +41,9 @@ namespace ByteShelf.Server.Shared.Root
 
         /// <summary>The database at <see cref="DatabasePath"/>, opened through this alone.</summary>
         public DatabaseFile Database { get; }
+
+        /// <summary>What plugins made from file contents: a cache, made again when it is gone, and in no backup.</summary>
+        public string DerivedPath { get; }
 
         /// <summary>
         /// The root a server at <paramref name="path"/> would have, of which nothing is made or opened: for

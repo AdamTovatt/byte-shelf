@@ -39,7 +39,7 @@ grant given, changed or taken applies to the next request.
 
 | Operation | Endpoints | Who may |
 |---|---|---|
-| `Read` | list, list a tree, search, file records and metadata, content, a download link, the shelf's info, the trash list, what a path is encrypted under, listing and revoking links (its own; every link with `Write`) | every caller with access |
+| `Read` | list, list a tree, search, file records and metadata, content and what is derived from it, a download link, the shelf's info, the trash list, what a path is encrypted under, listing and revoking links (its own; every link with `Write`) | every caller with access |
 | `Add` | store a new file (with a description), create directories, every upload endpoint but starting a swap, an upload link | `addOnly` and `readWrite` keys, `readWrite` users |
 | `Write` | overwrite, swap a file's contents (encrypting or decrypting it in place, as one `PUT` or an upload), move, describe a stored file, write a plugin's document about one, delete, restore, empty the trash, encrypt a directory or stop encrypting it | `readWrite` keys and users |
 | `Administer` | rename, quota and delete the shelf; its grants and keys, and giving a key the shelf or taking it | admins |
