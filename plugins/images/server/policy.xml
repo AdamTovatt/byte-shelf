@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- ImageMagick's, which the plugin has it go by (Codecs.Prepare): it reads and writes the formats named here and nothing else. -->
+<policymap>
+  <policy domain="coder" rights="none" pattern="*" />
+  <policy domain="coder" rights="read | write" pattern="{JPEG,PNG,GIF,WEBP,AVIF,HEIC,TIFF,BMP,ICO}" />
+  <policy domain="module" rights="none" pattern="*" />
+  <policy domain="module" rights="read | write" pattern="{JPEG,PNG,GIF,WEBP,HEIC,TIFF,BMP,ICON}" />
+  <policy domain="delegate" rights="none" pattern="*" />
+  <policy domain="filter" rights="none" pattern="*" />
+  <policy domain="path" rights="none" pattern="@*" />
+  <policy domain="path" rights="none" pattern="|*" />
+</policymap>

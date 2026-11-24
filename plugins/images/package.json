@@ -1,0 +1,9 @@
+{
+  "name": "byteshelf-plugin-images",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "build": "node ../../byteshelf.client/build/buildPlugin.ts"
+  }
+}

@@ -13,10 +13,10 @@ in the web UI.
 | `ByteShelfClient` | The client library (net8.0, AOT-compatible): `IByteShelfClient` over HTTP, and in memory for an app's tests. Published as the `ByteShelfClient` NuGet package. |
 | `ByteShelf.Plugins` | What a plugin's server assembly is written against (net10.0): the interface it implements, the one it registers through, and those its reader of files' contents and its maker of derived files implement and are given. Not published. |
 | `byteshelf.client` | The web UI (React, TypeScript, Vite): browse and upload to the shelves you reach; for admins, shelves, users, access, keys and replication. The server serves its build. |
-| `plugins` | The plugins released with the server, each built on its own ([plugins/README.md](plugins/README.md)). |
+| `plugins` | The plugins released with the server ([plugins/README.md](plugins/README.md)). |
 | `ByteShelf.Cli` | The `byteshelf` dotnet tool (net10.0): the command line, and with `--mcp` an MCP server for agents. Published as the `ByteShelf.Cli` NuGet tool package. |
 | `ByteShelf.Tools` | The file operations the CLI's commands and the MCP tools share, and the MCP tools themselves (net10.0), one copy for both MCP servers: the CLI's over stdio and the server's at `/mcp`. Built into both, not published on its own. |
-| `ByteShelf.Server.Tests`, `ByteShelfCommon.Tests`, `ByteShelfClient.Tests`, `ByteShelf.Cli.Tests` | xUnit tests; the server's include the client contract, run against both clients, and the CLI's login against the server, and load `ByteShelf.Server.Tests.Plugin`, a plugin of their own. |
+| `ByteShelf.Server.Tests`, `ByteShelfCommon.Tests`, `ByteShelfClient.Tests`, `ByteShelf.Cli.Tests`, `plugins/images/server.tests` | xUnit tests; the server's include the client contract, run against both clients, and the CLI's login against the server, and load `ByteShelf.Server.Tests.Plugin`, a plugin of their own, and the images plugin. |
 
 ## The root folder
 
@@ -59,7 +59,8 @@ BYTESHELF_ROOT=./dev-root INITIAL_ADMIN_EMAIL=admin@example.com INITIAL_ADMIN_PA
 ```
 
 Building the server restores the web UI's packages, so it needs Node.js and npm as well as the
-.NET SDK. The .NET tests need nothing more: each makes a root folder of its own under the test
+.NET SDK. The .NET tests need nothing more, on a platform the
+[images plugin](plugins/images/README.md) is for: each makes a root folder of its own under the test
 output. The web UI's own tests are in [byteshelf.client](byteshelf.client/README.md).
 
 For the web UI while developing, copy `ByteShelf.Server/Properties/launchSettings_git.json` to
@@ -107,7 +108,8 @@ dotnet run --project ByteShelf.Cli -- shelves
 
 ## License
 
-The server, the CLI, the MCP tools and the web UI are GPL-3.0-only ([LICENSE](LICENSE)). The libraries an app
+The server, the CLI, the MCP tools, the web UI and the plugins are GPL-3.0-only ([LICENSE](LICENSE)); the images
+plugin comes with libraries of other licences (`Magick.NET.Notice.txt` in it). The libraries an app
 or a plugin's server assembly builds against, ByteShelfClient, ByteShelfCommon and ByteShelf.Plugins, are MIT
 ([ByteShelfClient/LICENSE](ByteShelfClient/LICENSE), [ByteShelfCommon/LICENSE](ByteShelfCommon/LICENSE),
 [ByteShelf.Plugins/LICENSE](ByteShelf.Plugins/LICENSE)).

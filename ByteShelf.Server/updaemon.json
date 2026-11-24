@@ -5,7 +5,10 @@
   "extensions": {
     "variable": "BYTESHELF_PLUGINS",
     "check": ["--check-plugin"],
-    "known": { "markdown": "github:AdamTovatt/byte-shelf/byteshelf-markdown.zip" }
+    "known": {
+      "images": "github:AdamTovatt/byte-shelf/byteshelf-images.zip",
+      "markdown": "github:AdamTovatt/byte-shelf/byteshelf-markdown.zip"
+    }
   },
   "settings": {
     "BYTESHELF_ROOT": { "description": "Root folder for the database, objects and keys, owned by the user the server runs as", "required": true },

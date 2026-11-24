@@ -109,7 +109,7 @@ libraries come from its folder, so it may use another version of a package than 
 `ByteShelf.Plugins`, `ByteShelfCommon` and the framework always come from the server
 (`HostAssemblies`), whatever the plugin brings, so the two agree on their types and rules. A plugin
 references the first two without copying them (`Private="false" ExcludeAssets="runtime"`) and sets
-`EnableDynamicLoading`, as `ByteShelf.Server.Tests.Plugin` does.
+`EnableDynamicLoading`, as `plugins/images/server` does.
 
 Its controllers answer under `/api/plugins/{id}/` whatever routes they declare
 (`PluginRouteProvider`), so none can take an address of the server's, and are left out of the

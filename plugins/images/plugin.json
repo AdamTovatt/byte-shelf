@@ -1,0 +1,6 @@
+{
+  "id": "images",
+  "name": "Images",
+  "api": 1,
+  "serverAssembly": "ByteShelf.Plugins.Images.dll"
+}

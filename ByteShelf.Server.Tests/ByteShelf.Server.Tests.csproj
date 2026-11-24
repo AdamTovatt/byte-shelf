@@ -27,6 +27,7 @@
     <ProjectReference Include="..\ByteShelf.Cli\ByteShelf.Cli.csproj" />
     <!-- Built before the tests and never referenced by them: the server loads it as it does any plugin. -->
     <ProjectReference Include="..\ByteShelf.Server.Tests.Plugin\ByteShelf.Server.Tests.Plugin.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\plugins\images\server\ByteShelf.Plugins.Images.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <!-- Beside the tests, where TestPlugins takes it from. -->
@@ -35,6 +36,15 @@
       <TestPluginFile Include="..\ByteShelf.Server.Tests.Plugin\bin\$(Configuration)\$(TargetFramework)\*.*" />
     </ItemGroup>
     <Copy SourceFiles="@(TestPluginFile)" DestinationFolder="$(OutDir)test-plugin" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- A folder of plugins beside the tests, with the images plugin's server part as it is built in it, and the version its release gives it. -->
+  <Target Name="CopyImagesPlugin" AfterTargets="Build">
+    <ItemGroup>
+      <ImagesPluginFile Include="..\plugins\images\server\bin\$(Configuration)\$(TargetFramework)\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ImagesPluginFile)" DestinationFiles="@(ImagesPluginFile->'$(OutDir)images-plugin\images\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <WriteLinesToFile File="$(OutDir)images-plugin\images\plugin.json" Lines="$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\..\plugins\images\plugin.json').Replace('&quot;api&quot;', '&quot;version&quot;: &quot;1.0.0&quot;, &quot;api&quot;'))" Overwrite="true" WriteOnlyWhenDifferent="true" />
   </Target>
 
 </Project>

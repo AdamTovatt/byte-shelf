@@ -94,7 +94,7 @@ that follow different things:
 
 **A plugin must not put what it read from a file's plaintext into a document about the file**: that one is
 kept when the file is encrypted, so it would outlive the plaintext. What is read from contents goes into the
-document about them, through the plugin's reader.
+document about them, through the plugin's reader, as the images plugin's `placeholder`, a tiny picture, does.
 
 A write of a document about a file names the version it replaces, and a removal is a write too: the row stays
 with a null document, so no version of it is given twice and a write made against one that has since been

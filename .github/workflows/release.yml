@@ -70,7 +70,8 @@ jobs:
 
     # Each plugin in plugins/ is an asset of its own, byteshelf-<id>.zip, with plugin.json at the archive
     # root. Its build holds its id to its folder's name and to one that does not read as a server's zip;
-    # zip adds to one that is there, so none may be. The server just published must load it.
+    # zip adds to one that is there, so none may be. One with native libraries has every platform's in its
+    # one zip. The server just published must load it.
     - name: Build and zip plugins
       run: |
         shopt -s nullglob

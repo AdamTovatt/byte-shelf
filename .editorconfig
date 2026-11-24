@@ -100,7 +100,7 @@ dotnet_diagnostic.CA1311.severity = none
 # ── Test project relaxations ───────────────────────────────────────────────────
 # Test code has different conventions: underscore naming, disposable fixtures,
 # inline arrays, unsealed classes, non-cryptographic random, etc.
-[{*Tests*/**/*.cs,*Tests*/*.cs}]
+[{*Tests*/**/*.cs,*Tests*/*.cs,plugins/*/server.tests/**.cs}]
 dotnet_diagnostic.CA1707.severity = none
 dotnet_diagnostic.CA1861.severity = none
 dotnet_diagnostic.CA1063.severity = none

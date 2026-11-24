@@ -222,7 +222,8 @@ server has those installed on it. What they keep about files is both: it is in t
 
 **A plugin runs with full trust, and there is no sandbox.** In the web UI it can do what the
 signed-in user can and reads what the page holds, the session and unlocked passwords included; on the
-server it can do what the server can. Install only what you trust that far, at your own risk.
+server it can do what the server can. Install only what you trust that far, at your own risk. On a machine others
+use, run the server with systemd's `PrivateTmp=yes`: the images plugin's ImageMagick reads settings from `/tmp`.
 
 A plugin the server cannot load is skipped and logged, and admins see it with the reason on the
 Settings page; the server starts without it. `ByteShelf.Server --check-plugin <folder>` says

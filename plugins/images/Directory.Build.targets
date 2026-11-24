@@ -1,0 +1,23 @@
+<Project>
+  <PropertyGroup>
+    <TargetsAbove>$([MSBuild]::GetPathOfFileAbove('Directory.Build.targets', '$(MSBuildThisFileDirectory)../'))</TargetsAbove>
+  </PropertyGroup>
+  <Import Project="$(TargetsAbove)" Condition="'$(TargetsAbove)' != ''" />
+
+  <!--
+    Magick.NET brings its native library for every platform it supports. Keep only the platforms the server
+    runs on: Linux x64 and arm64, macOS arm64 and Windows x64. Every one the plugin has is in its one zip,
+    which is for all of them. On any other platform it makes and reads nothing.
+  -->
+  <Target Name="KeepMagickNativesForByteShelfPlatforms" AfterTargets="ResolvePackageAssets">
+    <PropertyGroup>
+      <ByteShelfMagickRuntimes>;linux-x64;linux-arm64;osx-arm64;win-x64;</ByteShelfMagickRuntimes>
+    </PropertyGroup>
+    <ItemGroup>
+      <RuntimeTargetsCopyLocalItems
+        Remove="@(RuntimeTargetsCopyLocalItems)"
+        Condition="$([System.String]::Copy('%(RuntimeTargetsCopyLocalItems.NuGetPackageId)').StartsWith('Magick.NET'))
+                   And !$(ByteShelfMagickRuntimes.Contains(';%(RuntimeTargetsCopyLocalItems.RuntimeIdentifier);'))" />
+    </ItemGroup>
+  </Target>
+</Project>
