@@ -148,62 +148,75 @@ namespace ByteShelf.Server
         {
             EnvironmentVariableHelper.ValidateVariableNamesIn(typeof(EnvironmentVariables));
 
-            WebApplication app = BuildApplication(args, RootFolder.Open(EnvironmentVariables.ByteShelfRoot.GetValue()), EnvironmentVariables.Plugins.GetValueOrDefault());
+            WebApplicationBuilder builder = CreateBuilder(args);
+            RootFolder root = RootFolder.Open(EnvironmentVariables.ByteShelfRoot.GetValue());
+            WebApplication app = BuildApplication(builder, ServerSettings.FromEnvironment(root, builder.Environment));
             app.Run();
         }
 
         /// <summary>
         /// The features that hold and change the data, which the service tests build on their own; the
         /// web host adds the rest (live updates, version, replication, MCP, rate limits) beside them.
+        /// Nothing is made or opened at the root.
         /// </summary>
-        internal static void AddDomainServices(IServiceCollection services, RootFolder root, PublicAddress publicAddress, EmailOptions email)
+        internal static void AddDomainServices(IServiceCollection services, ServerSettings settings)
         {
-            services.AddSingleton(publicAddress);
-            services.AddDatabaseServices(root);
-            services.AddEmailServices(email);
-            services.AddUserServices(root);
+            services.AddSingleton(settings.PublicAddress);
+            services.AddDatabaseServices(settings.Root);
+            services.AddEmailServices(settings.Email);
+            services.AddUserServices(settings.JwtSecret);
             services.AddJobServices();
             services.AddChangeLogServices();
-            services.AddStorageServices();
+            services.AddStorageServices(settings.Storage);
             services.AddMetadataServices();
             services.AddAccessServices();
         }
 
-        /// <summary>
-        /// Migrates the root's database and builds the full application on it. Separate from
-        /// <see cref="RunApplication"/> so the in-process HTTP tests build the same pipeline on a root
-        /// of their own, with the plugins under <paramref name="pluginsPath"/>;
-        /// <paramref name="configureForTests"/> runs once every service is registered, so a test can replace
-        /// or remove one. <paramref name="email"/> is read from the environment when not given; a test gives
-        /// <see cref="EmailOptions.None"/>, so it never sends through a token the machine running it happens
-        /// to hold.
-        /// </summary>
-        internal static WebApplication BuildApplication(string[] args, RootFolder root, string? pluginsPath, Action<WebApplicationBuilder>? configureForTests = null, EmailOptions? email = null)
+        /// <summary>The builder the server is built with, before anything of its own is registered.</summary>
+        internal static WebApplicationBuilder CreateBuilder(string[] args)
         {
             // The content root is the executable's folder, which holds wwwroot/ and appsettings.json, not the
             // working directory, which is wherever the server was started from.
             WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = AppContext.BaseDirectory });
             builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestLineSize = MaxRequestLineBytes);
+            return builder;
+        }
 
-            using ILoggerFactory startupLoggerFactory = CreateStartupLoggerFactory();
-            ILogger<Program> startupLogger = startupLoggerFactory.CreateLogger<Program>();
-            DatabaseMigrator.RunMigrations(root.ConnectionString, startupLogger);
-
-            IMvcBuilder mvc = AddApi(builder.Services);
-            ConfigureForwardedHeaders(builder.Services);
+        /// <summary>
+        /// Every service of the server's own, which plugins' registrations are then added to, by the server
+        /// and by <c>--check-plugin</c> alike. Nothing is made, opened or started.
+        /// </summary>
+        internal static IMvcBuilder AddServerServices(IServiceCollection services, ServerSettings settings)
+        {
+            IMvcBuilder mvc = AddApi(services);
+            ConfigureForwardedHeaders(services, settings.TrustedProxies);
 
             // One line per feature; adding a feature = add a folder, add one line here or in AddDomainServices.
-            PublicAddress publicAddress = PublicAddress.Resolve(EnvironmentVariables.AppBaseUrl.GetValueOrDefault(), builder.Environment);
-            AddDomainServices(builder.Services, root, publicAddress, email ?? EmailOptions.FromEnvironment());
-            builder.Services.AddInitialAdmin(InitialAdminSettings.FromEnvironment());
-            builder.Services.AddInvalidationServices();
-            builder.Services.AddVersionServices();
-            builder.Services.AddReplicationServices(publicAddress.Absolute.AbsoluteUri);
-            builder.Services.AddMcpServices();
-            builder.Services.AddRateLimitingServices();
+            AddDomainServices(services, settings);
+            services.AddInitialAdmin(settings.InitialAdmin);
+            services.AddInvalidationServices();
+            services.AddVersionServices();
+            services.AddReplicationServices(settings.Replication);
+            services.AddMcpServices();
+            services.AddRateLimitingServices();
+            services.AddPluginServices();
+            return mvc;
+        }
 
-            // After everything of the server's own, which a plugin's registrations are added to.
-            builder.Services.AddPlugins(mvc, pluginsPath, startupLogger);
+        /// <summary>
+        /// Migrates the root's database and builds the full application on it. Separate from
+        /// <see cref="RunApplication"/> so the in-process HTTP tests build the same pipeline on a root
+        /// and settings of their own; <paramref name="configureForTests"/> runs once every service is
+        /// registered, so a test can replace or remove one.
+        /// </summary>
+        internal static WebApplication BuildApplication(WebApplicationBuilder builder, ServerSettings settings, Action<WebApplicationBuilder>? configureForTests = null)
+        {
+            using ILoggerFactory startupLoggerFactory = CreateStartupLoggerFactory();
+            ILogger<Program> startupLogger = startupLoggerFactory.CreateLogger<Program>();
+            DatabaseMigrator.RunMigrations(settings.Root.ConnectionString, startupLogger);
+
+            IMvcBuilder mvc = AddServerServices(builder.Services, settings);
+            mvc.LoadPlugins(settings.PluginsPath, startupLogger);
             configureForTests?.Invoke(builder);
 
             WebApplication app = builder.Build();
@@ -249,14 +262,12 @@ namespace ByteShelf.Server
 
         /// <summary>
         /// Trusts <c>X-Forwarded-For</c> and <c>X-Forwarded-Proto</c> from the proxies listed in
-        /// <c>BYTESHELF_TRUSTED_PROXIES</c> (loopback is always trusted). Not <c>X-Forwarded-Host</c>: only
+        /// <paramref name="trustedProxies"/> (loopback is always trusted). Not <c>X-Forwarded-Host</c>: only
         /// a Development server without <c>APP_BASE_URL</c> reads the host, and a proxy passing one through
         /// from the client would let the client choose it.
         /// </summary>
-        private static void ConfigureForwardedHeaders(IServiceCollection services)
+        private static void ConfigureForwardedHeaders(IServiceCollection services, string? trustedProxies)
         {
-            string? trustedProxies = EnvironmentVariables.TrustedProxies.GetValueOrDefault();
-
             services.Configure<ForwardedHeadersOptions>(options =>
             {
                 options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;

@@ -11,6 +11,12 @@ namespace ByteShelf.Server.Shared.Root
     {
         public const string JwtSecretFileName = "jwt-secret";
 
+        /// <summary>The secret sessions are signed with, made once, so a copied root keeps its sessions valid.</summary>
+        public static string GetOrCreateJwtSecret(RootFolder root)
+        {
+            return GetOrCreate(root, JwtSecretFileName);
+        }
+
         /// <summary>
         /// Answers the secret stored as <paramref name="fileName"/> under <c>keys/</c>, generating
         /// <paramref name="byteCount"/> random bytes and writing them the first time. The folder and the

@@ -89,7 +89,7 @@ namespace ByteShelf.Server.Users.Services
             services.AddLogging();
 
             // No link or email leaves a user command: a reset link is never made here.
-            Program.AddDomainServices(services, root, new PublicAddress(null), EmailOptions.None);
+            Program.AddDomainServices(services, ServerSettings.On(root));
             services.AddReplicationState();
             return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         }

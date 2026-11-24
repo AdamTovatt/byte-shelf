@@ -99,8 +99,9 @@ namespace ByteShelf.Server.Replication.Services
             services.AddLogging();
 
             // No email leaves a replication command.
-            Program.AddDomainServices(services, root, address, EmailOptions.None);
-            services.AddReplicationPairing(address.Absolute.AbsoluteUri);
+            ServerSettings settings = ServerSettings.On(root) with { PublicAddress = address };
+            Program.AddDomainServices(services, settings);
+            services.AddReplicationPairing(settings.Replication);
             configureServices?.Invoke(services);
             return services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         }

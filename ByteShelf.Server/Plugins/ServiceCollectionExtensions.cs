@@ -9,16 +9,21 @@ namespace ByteShelf.Server.Plugins
 {
     public static class ServiceCollectionExtensions
     {
-        /// <summary>
-        /// Loads the plugins under <paramref name="pluginsPath"/>, none when it is null. After every
-        /// service of the server's own, which the plugins' registrations are added to.
-        /// </summary>
-        public static IServiceCollection AddPlugins(this IServiceCollection services, IMvcBuilder mvc, string? pluginsPath, ILogger logger)
+        /// <summary>What confines plugins' controllers to their addresses; <see cref="LoadPlugins"/> loads the plugins.</summary>
+        public static IServiceCollection AddPluginServices(this IServiceCollection services)
         {
             services.AddSingleton<IActionDescriptorProvider, PluginRouteProvider>();
-            PluginCatalog catalog = PluginLoader.LoadAll(PluginDiscovery.Find(pluginsPath, logger), services, mvc.PartManager, logger);
-            services.AddSingleton<IPluginCatalog>(catalog);
             return services;
+        }
+
+        /// <summary>
+        /// Loads the plugins under <paramref name="pluginsPath"/>, none when it is null, adding their
+        /// registrations to the server's own, which must all be there.
+        /// </summary>
+        public static void LoadPlugins(this IMvcBuilder mvc, string? pluginsPath, ILogger logger)
+        {
+            PluginCatalog catalog = PluginLoader.LoadAll(PluginDiscovery.Find(pluginsPath, logger), mvc.Services, mvc.PartManager, logger);
+            mvc.Services.AddSingleton<IPluginCatalog>(catalog);
         }
 
         /// <summary>

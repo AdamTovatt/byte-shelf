@@ -13,6 +13,7 @@ in the web UI.
 | `ByteShelfClient` | The client library (net8.0, AOT-compatible): `IByteShelfClient` over HTTP, and in memory for an app's tests. Published as the `ByteShelfClient` NuGet package. |
 | `ByteShelf.Plugins` | What a plugin's server assembly is written against (net10.0): the entry interface. Not published. |
 | `byteshelf.client` | The web UI (React, TypeScript, Vite): browse and upload to the shelves you reach; for admins, shelves, users, access, keys and replication. The server serves its build. |
+| `plugins` | The plugins released with the server, each built on its own ([plugins/README.md](plugins/README.md)). |
 | `ByteShelf.Cli` | The `byteshelf` dotnet tool (net10.0): the command line, and with `--mcp` an MCP server for agents. Published as the `ByteShelf.Cli` NuGet tool package. |
 | `ByteShelf.Tools` | The file operations the CLI's commands and the MCP tools share, and the MCP tools themselves (net10.0), one copy for both MCP servers: the CLI's over stdio and the server's at `/mcp`. Built into both, not published on its own. |
 | `ByteShelf.Server.Tests`, `ByteShelfCommon.Tests`, `ByteShelfClient.Tests`, `ByteShelf.Cli.Tests` | xUnit tests; the server's include the client contract, run against both clients, and the CLI's login against the server, and load `ByteShelf.Server.Tests.Plugin`, a plugin of their own. |
@@ -100,7 +101,7 @@ dotnet run --project ByteShelf.Cli -- shelves
   [Plugins](ByteShelf.Server/Plugins/Plugins.md).
 - [ByteShelfCommon](ByteShelfCommon/README.md), [ByteShelfClient](ByteShelfClient/README.md),
   [the CLI and MCP server](ByteShelf.Cli/README.md), [the shared operations and MCP tools](ByteShelf.Tools/README.md),
-  [the web UI](byteshelf.client/README.md).
+  [the web UI](byteshelf.client/README.md), [the plugins made here](plugins/README.md).
 
 ## License
 

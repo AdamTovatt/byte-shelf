@@ -2,7 +2,6 @@ using ByteShelf.Server.Email.Services;
 using ByteShelf.Server.Replication;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Auth;
-using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Users.Models;
 using ByteShelf.Server.Users.Repositories;
 using ByteShelf.Server.Users.Services;
@@ -13,9 +12,6 @@ namespace ByteShelf.Server.Users
 {
     public static class ServiceCollectionExtensions
     {
-        /// <param name="services">The service collection.</param>
-        /// <param name="root">The root whose <c>keys/</c> folder holds the JWT secret.</param>
-        /// <remarks>Reset links are made on the registered <see cref="PublicAddress"/>.</remarks>
         /// <summary>
         /// The first admin, created at the server's start from <paramref name="settings"/> while there are
         /// no users (<see cref="InitialAccountSeeder"/>): the web host's, so the server's commands and the
@@ -30,12 +26,13 @@ namespace ByteShelf.Server.Users
             return services;
         }
 
-        public static IServiceCollection AddUserServices(this IServiceCollection services, RootFolder root)
+        /// <param name="services">The service collection.</param>
+        /// <param name="jwtSecret">What sessions are signed with.</param>
+        /// <remarks>Reset links are made on the registered <see cref="PublicAddress"/>.</remarks>
+        public static IServiceCollection AddUserServices(this IServiceCollection services, string jwtSecret)
         {
             services.TryAddTimeProvider();
 
-            // Generated once into the root's keys/ folder, so a copied root keeps its sessions valid.
-            string jwtSecret = RootKeyMaterial.GetOrCreate(root, RootKeyMaterial.JwtSecretFileName);
             services.AddEasyReasyAuth(jwtSecret, AuthSetup.Configure);
 
             // Every request of a signed-in user sees the roles they have now, not the token's. Configure,

@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "eslint .",
+    "lint": "eslint . && cd ../plugins && eslint --config ../byteshelf.client/eslint.config.js --no-error-on-unmatched-pattern .",
     "preview": "vite preview",
     "codegen": "openapi-typescript http://localhost:5190/swagger/v1/swagger.json -o src/types/api.ts",
     "test": "vitest run",

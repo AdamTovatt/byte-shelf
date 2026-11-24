@@ -58,6 +58,15 @@ namespace ByteShelf.Server.Shared.Root
         }
 
         /// <summary>
+        /// The root a server at <paramref name="path"/> would have, of which nothing is made or opened: for
+        /// registering the server's services without running them.
+        /// </summary>
+        public static RootFolder At(string path)
+        {
+            return new RootFolder(System.IO.Path.GetFullPath(path));
+        }
+
+        /// <summary>
         /// Opens the root at <paramref name="path"/>, creating it and its folders when they are missing. The
         /// root is made reachable by its owner only, an existing one too, so the database, the stored
         /// objects and uploads in progress are private whatever the umask gave them.

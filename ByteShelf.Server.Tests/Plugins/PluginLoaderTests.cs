@@ -2,12 +2,14 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json.Nodes;
 using ByteShelf.Plugins;
+using ByteShelf.Server.Email;
 using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Plugins.Services;
+using ByteShelf.Server.Shared;
+using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using EasyReasy.EnvironmentVariables;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Mvc.ApplicationParts;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -23,8 +25,9 @@ namespace ByteShelf.Server.Tests.Plugins
 
         public PluginLoaderTests()
         {
-            _services = WebApplication.CreateBuilder(new WebApplicationOptions { ContentRootPath = AppContext.BaseDirectory }).Services;
-            _parts = _services.AddControllers().PartManager;
+            IMvcBuilder mvc = Program.AddServerServices(Program.CreateBuilder([]).Services, ServerSettings.OnNoRoot());
+            _services = mvc.Services;
+            _parts = mvc.PartManager;
         }
 
         [Fact]

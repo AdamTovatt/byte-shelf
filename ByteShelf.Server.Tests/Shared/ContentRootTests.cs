@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.TestHost;
 namespace ByteShelf.Server.Tests.Shared
 {
     /// <summary>Where the server finds its web UI and settings, whichever folder it is started from.</summary>
-    [Collection(nameof(WorkingDirectoryCollection))]
+    [Collection(nameof(ProcessStateCollection))]
     public sealed class ContentRootTests
     {
         [Fact]
@@ -21,11 +21,9 @@ namespace ByteShelf.Server.Tests.Shared
             try
             {
                 await using WebApplication app = Program.BuildApplication(
-                    ["--environment", "Development"],
-                    root.Root,
-                    pluginsPath: null,
-                    configureForTests: builder => builder.WebHost.UseTestServer(),
-                    email: EmailOptions.None);
+                    Program.CreateBuilder(["--environment", "Development"]),
+                    ServerSettings.On(root.Root),
+                    builder => builder.WebHost.UseTestServer());
 
                 Assert.Equal(
                     Path.TrimEndingDirectorySeparator(AppContext.BaseDirectory),

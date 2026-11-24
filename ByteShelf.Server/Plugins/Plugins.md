@@ -41,8 +41,12 @@ assembly fails to load, whose registration throws or whose controllers cannot be
 and listed for admins with the reason. A loaded plugin can stop it: services that break building the
 host and hosted services that throw are its full trust.
 
-`--check-plugin <folder>` (`PluginCheckCommand`) loads one plugin as the server does, into the
-services of a web host with controllers and none of ByteShelf's, which are thrown away. It sees that
+`--check-plugin <folder>` (`PluginCheckCommand`) loads one plugin as the server does, among the same
+registrations of the server's own (`Program.AddServerServices`), which are thrown away. The check
+and the server can still answer differently where the plugin's registration depends on the values in
+those, which are the defaults whatever the environment sets (the root, the secret, the public
+address, settings), on the email sender, which is the one that only logs, on what the machine
+configures (`appsettings.json`, `ASPNETCORE_*`), or on another plugin's registrations. It sees that
 one folder, so not another plugin with the same id. Its arguments, exit codes and what it may need
 are a contract with updaemon, which runs it before switching versions, as the server's user, with
 only `PATH` and `HOME`, from any folder. Only the server itself loads plugins; `--schema-only`,
@@ -83,3 +87,12 @@ loads modules without the session's token. The hash is of every file in the fold
 cached for good, and is in the deploy id ([Version](../Version/Version.md)), so open tabs are told
 of a new version. It is taken once, at startup, so a plugin's folder must not change under a running
 server.
+
+The app asks for the list once someone is signed in and imports each plugin's module
+(`lib/plugins/pluginHost.ts`), showing it once its stylesheet is there too. One whose module or
+stylesheet fails, or whose default export is not made with `definePlugin`, adds nothing to the page
+and leaves no styles in it; the others are not affected, nor is its own server part, and admins see
+the reason on the Settings page. `index.html`'s import map
+(`byteshelf.client/build/sharedModules.ts`) has the browser resolve the modules plugins share with
+the app, so there is one React and one of each context. How plugins are built, and their styles kept
+apart from the app's, is in [plugins/README.md](../../plugins/README.md).

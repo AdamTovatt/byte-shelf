@@ -50,15 +50,13 @@ namespace ByteShelf.Server.Tests.Backup
             ZipFile.ExtractToDirectory(_zipPath, _restored);
 
             await using WebApplication restored = Program.BuildApplication(
-                new[] { "--environment", "Development" },
-                RootFolder.OpenExisting(_restored),
-                pluginsPath: null,
-                configureForTests: builder =>
+                Program.CreateBuilder(["--environment", "Development"]),
+                ServerSettings.On(RootFolder.OpenExisting(_restored)),
+                builder =>
                 {
                     builder.WebHost.UseTestServer();
                     builder.Logging.SetMinimumLevel(LogLevel.Warning);
-                },
-                email: EmailOptions.None);
+                });
             await restored.StartAsync();
             using HttpClient client = restored.GetTestClient();
 

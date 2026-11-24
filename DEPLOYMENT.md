@@ -17,11 +17,12 @@ started from; `--contentRoot` and `ASPNETCORE_CONTENTROOT` are ignored.
 Pushing a tag `server-v<version>`, such as `server-v2.0.0`, runs `.github/workflows/release.yml`.
 The tag's version must equal `<Version>` in `ByteShelf.Server.csproj`, or nothing is released. The
 release holds `byteshelf-linux-arm64.zip` and `byteshelf-linux-x64.zip`, each a self-contained
-publish with `updaemon.json` at its root, and a `SHA256SUMS` that updaemon checks the download
-against. Its notes are `<PackageReleaseNotes>` in the same csproj, above the pull requests GitHub
-lists since the last release. The `client-v` and `cli-v` tags publish to NuGet and make no GitHub
-release, so the latest release is always the server's, which is the one updaemon installs and
-updates to. Each package's `<PackageReleaseNotes>` is its release notes on nuget.org.
+publish with `updaemon.json` at its root, `byteshelf-<id>.zip` for each plugin in `plugins/`, and a
+`SHA256SUMS` that updaemon checks each download against. Its notes are `<PackageReleaseNotes>` in
+the same csproj, above the pull requests GitHub lists since the last release. The `client-v` and
+`cli-v` tags publish to NuGet and make no GitHub release, so the latest release is always the
+server's, which is the one updaemon installs and updates to. Each package's `<PackageReleaseNotes>`
+is its release notes on nuget.org.
 
 ## Installing
 
@@ -101,7 +102,7 @@ path. Exit codes: 0 done, 1 refused or failed (the reason is logged), 2 the argu
 | `INITIAL_ADMIN_DISPLAY_NAME` | no | The first admin's display name; the email's local part otherwise. |
 | `BYTESHELF_RESTORE_WINDOW_DAYS` | no | How long a deletion can be restored before it is purged. Whole days, 30 by default, at most 3650. |
 | `BYTESHELF_REPLICATION_ALERT_MINUTES` | no | How long replication may go wrong before the admins are emailed (see [Replicas](#replicas)). Whole minutes, 60 by default; at least 10, twice the longest a replica waits between failed attempts, and at most 43200 (30 days). |
-| `BYTESHELF_PLUGINS` | no | The folder whose folders are plugins (see [Plugins](#plugins)). Unset, none are loaded. |
+| `BYTESHELF_PLUGINS` | no | The folder whose folders are plugins (see [Plugins](#plugins)). Unset, none are loaded. updaemon sets it, and refuses it as a setting. |
 | `BYTESHELF_TRUSTED_PROXIES` | behind a proxy | Comma-separated IPs or CIDR ranges of the reverse proxies in front of the server. Their `X-Forwarded-For` and `X-Forwarded-Proto` are believed, so rate limits and the sign-in delay count each client rather than the proxy. Loopback is always trusted. |
 | `ASPNETCORE_URLS` | no | Where Kestrel listens. |
 
@@ -192,6 +193,12 @@ rate limit beside the MCP request itself.
 
 ## Plugins
 
+An updaemon that supports extensions installs a plugin as one of the server's and keeps it updated with
+it: `updaemon install byteshelf/<id>` for one released with the server, and with `--from`, such as
+`--from github:<owner>/<repository>/<asset>`, for another. It sets `BYTESHELF_PLUGINS` itself, so a
+plugin built by hand is for a server without updaemon: set the variable and put plugins into folders
+under the one it names.
+
 A plugin is a folder that adds to the web UI, the server, or both
 ([Plugins](ByteShelf.Server/Plugins/Plugins.md)). The server loads every folder directly under the
 one `BYTESHELF_PLUGINS` names when it starts; adding or removing one takes a restart. Never change a
@@ -206,9 +213,10 @@ server it can do what the server can. Install only what you trust that far, at y
 A plugin the server cannot load is skipped and logged, and admins see it with the reason on the
 Settings page; the server starts without it. `ByteShelf.Server --check-plugin <folder>` says
 beforehand whether this server would load the plugin in a folder: exit code 0 if it would, 1 if not,
-with the reason, 2 for wrong arguments. It starts nothing and needs no root and no settings. It cannot
-tell whether another folder holds a plugin with the same id, nor whether the plugin works once
-running: one whose services break the server as it is built or started stops it from starting.
+with the reason, 2 for wrong arguments. It starts nothing, needs no root and reads no settings. What
+it cannot tell is in [Plugins](ByteShelf.Server/Plugins/Plugins.md#loading-plugindiscovery-pluginloader):
+above all, whether the plugin works once running. One whose services break the server as it is built
+or started stops it from starting.
 
 ## Replicas
 

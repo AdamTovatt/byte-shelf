@@ -1,4 +1,5 @@
 using ByteShelf.Server.Plugins.Models;
+using ByteShelf.Server.Shared;
 using ByteShelf.Server.Shared.Root;
 
 namespace ByteShelf.Server.Plugins.Services
@@ -6,9 +7,10 @@ namespace ByteShelf.Server.Plugins.Services
     /// <summary>
     /// <c>ByteShelf.Server --check-plugin &lt;folder&gt;</c>: whether this server would load the plugin in a
     /// folder, for updaemon to ask before it switches versions. It loads the plugin as the server does,
-    /// into services that are thrown away, so it starts nothing and needs no root and no settings. Its
-    /// arguments, exit codes and what it may need are a contract with updaemon (<c>check</c> in
-    /// updaemon.json).
+    /// among the server's own registrations, which are thrown away, so it starts nothing, needs no root and
+    /// reads no settings, whatever the environment holds. Where it can still answer differently is in
+    /// Plugins.md. Its arguments, exit codes and what it may need are a contract with updaemon
+    /// (<c>check</c> in updaemon.json).
     /// </summary>
     public static class PluginCheckCommand
     {
@@ -36,12 +38,8 @@ namespace ByteShelf.Server.Plugins.Services
 
             try
             {
-                // The content root is the server's own folder: a builder watches its content root, which
-                // must not be wherever the check was started from.
-                WebApplicationBuilder builder = WebApplication.CreateBuilder(new WebApplicationOptions { ContentRootPath = AppContext.BaseDirectory });
-                IMvcBuilder mvc = builder.Services.AddControllers();
-
-                LoadedPlugin plugin = PluginLoader.Load(PluginManifestReader.Read(folder), builder.Services, mvc.PartManager);
+                IMvcBuilder mvc = Program.AddServerServices(Program.CreateBuilder([]).Services, ServerSettings.OnNoRoot());
+                LoadedPlugin plugin = PluginLoader.Load(PluginManifestReader.Read(folder), mvc.Services, mvc.PartManager);
                 output.WriteLine($"This server loads the plugin {plugin.Manifest.Id} {plugin.Manifest.Version}.");
                 return Loads;
             }

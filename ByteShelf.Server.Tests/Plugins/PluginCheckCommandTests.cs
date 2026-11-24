@@ -1,4 +1,5 @@
 using ByteShelf.Server.Plugins.Services;
+using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 
 namespace ByteShelf.Server.Tests.Plugins
@@ -23,6 +24,20 @@ namespace ByteShelf.Server.Tests.Plugins
         {
             Assert.Equal(1, Run(_plugins.AddFailingServerPlugin("failing")));
             Assert.Equal(TestPlugins.FailingReason, _errors.ToString().Trim());
+        }
+
+        [Fact]
+        public void Run_APluginNeedingAServiceOfTheServers_IsZero()
+        {
+            // As one that wraps it looks for it: the check registers what the server does.
+            Assert.Equal(0, Run(_plugins.AddServerPluginNeeding("wrapping", typeof(IShelfService).FullName!)));
+        }
+
+        [Fact]
+        public void Run_APluginNeedingAServiceThatIsNotThere_IsOneWithTheReason()
+        {
+            Assert.Equal(1, Run(_plugins.AddServerPluginNeeding("wrapping", "Missing")));
+            Assert.Equal("Registering its services failed: There is no Missing.", _errors.ToString().Trim());
         }
 
         [Fact]

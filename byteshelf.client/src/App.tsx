@@ -14,6 +14,7 @@ import { ReplicationPage } from './pages/ReplicationPage';
 import { NewVersionBanner } from './components/NewVersionBanner';
 import { AppShell } from './components/layout/AppShell';
 import { useInvalidationStream } from './hooks/useInvalidationStream';
+import { useLoadPlugins } from './hooks/usePluginHost';
 import { SHELF_ROUTE_PATTERNS } from './lib/shelfPaths';
 import { ROUTES } from './lib/routes';
 import { KnownRole } from './components/KnownRole';
@@ -24,6 +25,7 @@ function ProtectedRoute() {
   // The live-update stream lives with the signed-in shell: one connection keeps every cached query
   // fresh across the whole app.
   useInvalidationStream(isAuthenticated);
+  useLoadPlugins(isAuthenticated);
 
   if (!isAuthenticated) {
     return <Navigate to={ROUTES.LOGIN} replace />;

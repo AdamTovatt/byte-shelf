@@ -13,7 +13,7 @@ trash or previews or downloads a deleted file from it without restoring it (a re
 Admins also create shelves and users, set quotas, give access from a shelf or from a user, make keys
 and give a key other shelves (a key row's Shelves control in shelf settings), and on the Replication
 page pair replicas, see how far behind each is, remove one, and promote a replica; their Settings list
-the server's plugins and why one was skipped.
+the server's plugins, and why one was skipped or its part in the web UI failed.
 
 `src/ui` is the UI library: buttons, fields, cards, dialogs, menus, page layout and the sidebar, with
 the colour, type and icon systems and the Tailwind preset they need. A dialog takes the focus, keeps Tab
@@ -27,7 +27,7 @@ hook, `hooks/useFilePicker.tsx`.
 
 ```bash
 npm ci
-npm run dev        # Vite on port 44903, forwarding /api, /mcp, /llms.txt and /swagger to the server (ASPNETCORE_URLS, else :5190)
+npm run dev        # Vite on port 44903, forwarding /api, /plugins, /mcp, /llms.txt and /swagger to the server (ASPNETCORE_URLS, else :5190)
 npm run lint
 npm test           # Vitest
 npm run test:e2e   # Playwright: builds the UI, starts the server on a root of its own, runs e2e/
@@ -155,9 +155,15 @@ npm run codegen    # in a second terminal
   known, and says why when that fails, rather than treating them as no admin. Below the `md` width the sidebar becomes a drawer behind a top bar, and
   a page puts its own controls in that bar through `MobileTopBarActions`, or covers it with
   `MobileTopBarOverlay` (`components/layout/MobileTopBar.tsx`).
+- **Plugins:** once signed in, the app loads the server's plugins into the page
+  (`lib/plugins/pluginHost.ts`, followed with `hooks/usePluginHost.ts`), each failing alone. What they
+  import as `@byteshelf/plugin` is `src/plugin/index.ts`; `build/sharedModules.ts` makes that and the
+  packages plugins share an entry each of the build, named in `index.html`'s import map, and in the dev
+  server too. `build/buildPlugin.ts` builds the plugins in [plugins](../plugins/README.md). What they
+  may use is a promise: breaking it raises `PluginApi.Version` on the server.
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and
   refetches what each event makes stale (`lib/invalidationMap.ts`), so a change made elsewhere shows up
   within about a second. A test checks the map covers every resource the server publishes. The
   exceptions are the Replication page's status, polled every 5 seconds, as a replica's lag changes
-  without anything being published, and the plugin list in Settings, which changes only with a restart
-  and is read again when the page is opened.
+  without anything being published, and the plugins, which change only with a restart of the server:
+  they are read at sign-in, and again for Settings once that is stale.

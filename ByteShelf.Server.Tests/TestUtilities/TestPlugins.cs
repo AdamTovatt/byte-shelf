@@ -70,6 +70,14 @@ namespace ByteShelf.Server.Tests.TestUtilities
             return folder;
         }
 
+        /// <summary>Makes a plugin whose registration fails unless the service <paramref name="serviceName"/> is registered before it, and answers its folder.</summary>
+        public string AddServerPluginNeeding(string id, string serviceName)
+        {
+            string folder = AddServerPlugin(id);
+            Write(folder, "needed-service", serviceName);
+            return folder;
+        }
+
         /// <summary>Writes a file of the plugin in <paramref name="folder"/>, making the folders on its way.</summary>
         public static void Write(string folder, string relativePath, string contents)
         {
