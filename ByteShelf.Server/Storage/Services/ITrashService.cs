@@ -49,7 +49,8 @@ namespace ByteShelf.Server.Storage.Services
 
         /// <summary>
         /// Removes every row deleted longer ago than the restore window, then every object those rows
-        /// pointed at that nothing else does. Answers how many files were purged.
+        /// pointed at that nothing else does. Answers how many files were purged. Files holding contents of which
+        /// the server has something it could not remove are left for the next purge, and logged.
         /// </summary>
         Task<int> PurgeExpiredAsync(CancellationToken cancellationToken);
 
@@ -60,6 +61,10 @@ namespace ByteShelf.Server.Storage.Services
         /// cancellation leaves is purged by maintenance's next pass. A deletion made while it purges is
         /// kept. Answers how many files were purged.
         /// </summary>
+        /// <exception cref="TracesNotRemovedException">
+        /// The server has something of contents some files hold that it could not remove: those files stay in the
+        /// trash, past their window, for the next purge, and the rest is purged.
+        /// </exception>
         Task<int> EmptyAsync(Shelf shelf, CancellationToken cancellationToken);
     }
 }

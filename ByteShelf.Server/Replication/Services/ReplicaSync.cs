@@ -216,7 +216,8 @@ namespace ByteShelf.Server.Replication.Services
                 after = page.Entries[^1].Sequence;
             }
 
-            IReadOnlyCollection<string>? released = null;
+            bool committed;
+            IReadOnlyCollection<string> released = [];
             AppliedChanges changes = new AppliedChanges();
             await using (ContentsSession session = await _contentsSessions.CreateAsync())
             {
@@ -240,14 +241,15 @@ namespace ByteShelf.Server.Replication.Services
                 // No fingerprint: the entry at startedAt may not be in the copy, which holds only the newest
                 // state of each entity. The next page applied gives one.
                 await _copyRepository.ClearAsync(session);
-                if (await _sourceRepository.SetProgressAsync(source, startedAt.Value, appliedFingerprint: null, _timeProvider.GetUtcNow(), session))
+                committed = await _sourceRepository.SetProgressAsync(source, startedAt.Value, appliedFingerprint: null, _timeProvider.GetUtcNow(), session);
+                if (committed)
                 {
                     await session.CommitAsync();
                     released = session.Released;
                 }
             }
 
-            if (released != null)
+            if (committed)
             {
                 await FinishAsync(changes, released);
                 return;

@@ -1,5 +1,6 @@
 using ByteShelf.Server.Derived.Models;
 using ByteShelf.Server.Derived.Repositories;
+using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
 using EasyReasy.Database;
 
@@ -52,7 +53,7 @@ namespace ByteShelf.Server.Derived.Services
                 else
                 {
                     more -= had;
-                    weighed.Add(new KeptFile(file.Kind, file.Entry with { Outcome = new DerivedOutcome.NoRoom(bytes) }, SourcePath: null));
+                    weighed.Add(file.WithNoRoom(bytes));
                 }
             }
 
@@ -63,9 +64,9 @@ namespace ByteShelf.Server.Derived.Services
         /// Whether the shelves would have room for the derived file <paramref name="entry"/> is about, were it made again:
         /// always, unless it was made with none, and then whether they have room for as many bytes now.
         /// </summary>
-        public async Task<bool> HasRoomForAsync(string sha256, DerivedEntry? entry)
+        public Task<bool> HasRoomForAsync(string sha256, DerivedEntry? entry)
         {
-            return entry?.Outcome is not DerivedOutcome.NoRoom noRoom || await _shelves.HasRoomForMoreOfAsync(sha256, noRoom.Bytes);
+            return HasRoomForAsync(entry, bytes => _shelves.HasRoomForMoreOfAsync(sha256, bytes));
         }
 
         /// <summary>
@@ -74,38 +75,33 @@ namespace ByteShelf.Server.Derived.Services
         /// </summary>
         public async Task<RoomNow> MeasureAsync()
         {
-            return new RoomNow(await _shelves.GetFreeBytesAsync(), _files);
+            return new RoomNow(await _shelves.MeasureRoomAsync(), _files);
+        }
+
+        /// <summary>Whether there is room for the file <paramref name="entry"/> is about: always, unless it was made with none.</summary>
+        /// <param name="entry">What is known of it; null when nothing is.</param>
+        /// <param name="hasRoomFor">Whether the shelves that hold the contents have room for so many bytes more on each row.</param>
+        private static async Task<bool> HasRoomForAsync(DerivedEntry? entry, Func<long, Task<bool>> hasRoomFor)
+        {
+            return entry?.Outcome is not DerivedOutcome.NoRoom noRoom || await hasRoomFor(noRoom.Bytes);
         }
 
         /// <summary>The room shelves had as it was measured (<see cref="MeasureAsync"/>).</summary>
         internal sealed class RoomNow
         {
-            private readonly IReadOnlyDictionary<Guid, long> _free;
+            private readonly MeasuredRoom _room;
             private readonly IFileRepository _files;
 
-            public RoomNow(IReadOnlyDictionary<Guid, long> free, IFileRepository files)
+            public RoomNow(MeasuredRoom room, IFileRepository files)
             {
-                _free = free;
+                _room = room;
                 _files = files;
             }
 
-            /// <summary>As <see cref="HasRoomForAsync"/>, by the room measured, asking only which shelves hold the contents.</summary>
-            public async Task<bool> HasRoomForAsync(string sha256, DerivedEntry? entry)
+            /// <summary>As <see cref="DerivedRoom.HasRoomForAsync(string, DerivedEntry?)"/>, by the room measured, asking only which shelves hold the contents.</summary>
+            public Task<bool> HasRoomForAsync(string sha256, DerivedEntry? entry)
             {
-                if (entry?.Outcome is not DerivedOutcome.NoRoom noRoom || _free.Count == 0)
-                {
-                    return true;
-                }
-
-                foreach ((Guid shelfId, int rows) in await _files.CountByShelfWithObjectAsync(sha256))
-                {
-                    if (_free.TryGetValue(shelfId, out long free) && free < noRoom.Bytes * rows)
-                    {
-                        return false;
-                    }
-                }
-
-                return true;
+                return DerivedRoom.HasRoomForAsync(entry, async bytes => _room.IsUnbounded || _room.HasRoomForMoreOf(await _files.CountByShelfWithObjectAsync(sha256), bytes));
             }
         }
     }

@@ -90,7 +90,8 @@ live plain file of those types holds, and whose answers it keeps as the plugin's
 reader is made with no services (`new()`), in a process of the plugin's own, which loads the plugin anew and
 shares no state with the rest of it ([Processes](Processes/Processes.md)); not by `--check-plugin`.
 `IPluginReaders` is the one place that says which readers there are, and how each is run. One that cannot be
-made reads nothing until it can: it is logged, and admins see why on the Settings page (`ReaderProblems`). What it
+made reads nothing until it can: it is logged, and admins see why on the Settings page (`PluginProblems`), as they
+see why a maker could not run ([Derived files](../Derived/Derived.md)). What it
 would have read stays to be read. Its plugin's controllers and web UI go on, and so does its maker when the
 reader's constructor throws; one that crashes or takes over 60 seconds keeps the whole process from loading,
 and so the maker from running, as a maker's does the reader. A read that takes over 60 seconds, throws,
@@ -148,7 +149,9 @@ A module's default export is `definePlugin({ viewers, fileActions, folderTypes }
   too: `has(kind)` says whether its record names one, so its URL is known at once, and `url(kind, signal)` answers
   the URL an `<img>` loads it from, waiting while one its record does not name is made, or null when there is
   none, as of an encrypted file. One its record names may have gone since: when its URL does not load,
-  `forget(kind)` has `url` ask the server, and wait.
+  `forget(kind)` has `url` ask the server, and wait. `loadDerived(reader, kind, load, signal)` does that: it hands
+  the URL to `load`, and once more after `forget` when that fails. `loadImage(image, url, signal)` is such a `load`
+  for an `<img>`: it loads and decodes the image, so it is drawn whole at once.
   `neighbours` are the files the arrow keys move to, the one before it and the one after, each with such a
   reader, to load ahead what they will show: only files a viewer takes, none in the trash or of a file
   previewed alone, and none after the last of those fetched so far.
@@ -160,7 +163,8 @@ A module's default export is `definePlugin({ viewers, fileActions, folderTypes }
   unavailable cannot, or that no other viewer shows the file.
   `useZoom` zooms and moves an element of the plugin's as the app's image viewer does, with the wheel, a pinch or
   a double-click and a drag: it gives `frame`, to spread on a `div` that fills the space and centres what it
-  holds, and `zoomed`, the ref and transform of the element in it.
+  holds, and `zoomed`, the ref and transform of the element in it. `mediaTypeOf(contentType)` is a file's type as
+  viewers' `mediaTypes` are matched against it: lowercase, without parameters such as `; charset=utf-8`.
 - **File actions** are items in the menus of live files: `{ id, label, icon?, showsFor, run }`.
   `showsFor` is asked as a menu is drawn. `run` gets the shelf, the file, its content reader and
   `showDialog`, which shows a dialog of the plugin's until it calls the `close` it is given. The contents

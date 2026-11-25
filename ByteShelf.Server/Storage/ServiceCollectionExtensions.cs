@@ -35,6 +35,8 @@ namespace ByteShelf.Server.Storage
             services.AddScoped<ShelfTree>();
             services.AddScoped<ShelfEncryption>();
             services.AddScoped<ContentsSessions>();
+            services.AddSingleton<ContentsLocks>();
+            services.AddScoped<ContentsTransactions>();
             services.AddScoped<ObjectCollector>();
             services.AddScoped<IShelfService, ShelfService>();
             services.AddScoped<ITrashService, TrashService>();

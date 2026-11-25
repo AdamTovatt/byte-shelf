@@ -33,8 +33,8 @@ namespace ByteShelf.Server.Storage.Repositories
         /// </summary>
         Task<bool> HasRoomForMoreOfAsync(string sha256, long moreBytesPerRow, IDbSession? session = null);
 
-        /// <summary>How many bytes each shelf with a quota has left of it, at most 0 or less when it is over.</summary>
-        Task<IReadOnlyDictionary<Guid, long>> GetFreeBytesAsync(IDbSession? session = null);
+        /// <summary>The room each shelf with a quota has left of it now, to ask of many contents as <see cref="HasRoomForMoreOfAsync"/> does.</summary>
+        Task<MeasuredRoom> MeasureRoomAsync(IDbSession? session = null);
 
         /// <summary>
         /// Writes a shelf as a primary's change log holds it, logged as <paramref name="action"/>. A

@@ -206,7 +206,7 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<IReadOnlyDictionary<Guid, long>> GetFreeBytesAsync(IDbSession? session = null)
+        public async Task<MeasuredRoom> MeasureRoomAsync(IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>
             {
@@ -215,7 +215,7 @@ namespace ByteShelf.Server.Storage.Repositories
                     FROM shelf WHERE shelf.quota_bytes IS NOT NULL";
 
                 IEnumerable<FreeEntity> rows = await dbSession.Connection.QueryAsync<FreeEntity>(query, transaction: dbSession.Transaction);
-                return (IReadOnlyDictionary<Guid, long>)rows.ToDictionary(row => row.ShelfId, row => row.FreeBytes);
+                return new MeasuredRoom(rows.ToDictionary(row => row.ShelfId, row => row.FreeBytes));
             }, session);
         }
 

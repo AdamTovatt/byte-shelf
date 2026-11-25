@@ -85,6 +85,28 @@ describe('what plugins made from a file', () => {
     expect(sent).toHaveLength(1);
   });
 
+  it('fails at once on a 503 whose body names another error than its being made', async () => {
+    vi.stubGlobal('isSecureContext', false);
+    const body = JSON.stringify({ code: 'conflict', message: 'Something else.' });
+    const sent = stubServer(async () => new Response(body, { status: 503, headers: { 'Retry-After': '3', 'Content-Type': 'application/json' } }));
+
+    await expect(derivedReader(PHOTO, LIVE).url('full')).rejects.toMatchObject({ status: 503, code: 'conflict' });
+    expect(sent).toHaveLength(1);
+  });
+
+  it('waits a second before asking again when the server says to ask again at once', async () => {
+    const answers = [notReady('0'), made()];
+    const sent = stubServer(async () => answers.shift()!);
+    const url = derivedReader(PHOTO, LIVE).url('full');
+    await sentOnce(sent);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(sent).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(await url).not.toBeNull();
+    expect(sent).toHaveLength(2);
+  });
+
   it('is asked of the server once the address a listing named did not load', async () => {
     const answers = [notReady(), made()];
     const sent = stubServer(async () => answers.shift()!);

@@ -3,10 +3,12 @@ using ByteShelf.Server.Derived.Repositories;
 using ByteShelf.Server.Derived.Services;
 using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Storage.Models;
+using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using EasyReasy.Database;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace ByteShelf.Server.Tests.Derived
 {
@@ -14,7 +16,15 @@ namespace ByteShelf.Server.Tests.Derived
     public sealed class DerivedFilesTests : DerivedTestBase
     {
         private static readonly string Sha256 = TestHashes.Sha256Of("contents");
-        private static readonly DerivedEntry Failed = new DerivedEntry(TestMaker.Spec.DefaultId, 1, new DerivedOutcome.Failed());
+
+        private HookedCommitSessionFactory _sessions = null!;
+
+        protected override void ConfigureServices(IServiceCollection services)
+        {
+            base.ConfigureServices(services);
+            _sessions = new HookedCommitSessionFactory(TestRoot.Root.Database);
+            services.Replace(ServiceDescriptor.Scoped<IDbSessionFactory>(_ => _sessions));
+        }
 
         [Fact]
         public async Task Keep_WritesTheSizeOfWhatIsKept()
@@ -29,7 +39,7 @@ namespace ByteShelf.Server.Tests.Derived
         {
             await PutAsync(Sha256, Made(DerivedKind.Thumbnail, "small"));
 
-            await PutAsync(Sha256, new KeptFile(DerivedKind.Thumbnail, Failed, SourcePath: null));
+            await PutAsync(Sha256, FailedByTestMaker(DerivedKind.Thumbnail));
             Assert.Empty(await SizesAsync());
 
             await PutAsync(Sha256, Made(DerivedKind.Thumbnail, "larger"));
@@ -51,7 +61,7 @@ namespace ByteShelf.Server.Tests.Derived
         [Fact]
         public async Task Keep_OfAFileThatIsGone_ChangesNothing()
         {
-            KeptFile gone = new KeptFile(DerivedKind.Preview, MadeByTestMaker(), Path.Combine(TestRoot.Root.StagingPath, "gone"));
+            KeptFile gone = KeptByTestMaker(DerivedKind.Preview, Path.Combine(TestRoot.Root.StagingPath, "gone"));
 
             await Assert.ThrowsAnyAsync<IOException>(() => PutAsync(Sha256, Made(DerivedKind.Thumbnail, "small"), gone));
 
@@ -107,6 +117,27 @@ namespace ByteShelf.Server.Tests.Derived
         }
 
         [Fact]
+        public async Task TrimFull_OfOneUsedSinceItWasListed_KeepsIt()
+        {
+            string old = TestHashes.Sha256Of("old");
+            await PutSizedAsync(old, DerivedStore.MaxFullBytes);
+            Clock.Advance(TimeSpan.FromMinutes(1));
+            await PutSizedAsync(Sha256, 1);
+            Clock.Advance(TimeSpan.FromMinutes(1));
+
+            // Served after the trim listed it, before it holds its lock.
+            _sessions.BeforeNextTransaction("ContentsTransactions.TryRunAsync", async () =>
+            {
+                await using (Store.TryOpenRead(DerivedKind.Full, old))
+                {
+                }
+            });
+
+            Assert.Equal(0, await TrimFullAsync());
+            Assert.Equal(Sizes((old, DerivedKind.Full, DerivedStore.MaxFullBytes), (Sha256, DerivedKind.Full, 1)), await SizesAsync());
+        }
+
+        [Fact]
         public async Task Recount_WritesWhatTheFolderHolds()
         {
             Shelf shelf = await CreateShelfAsync();
@@ -115,7 +146,7 @@ namespace ByteShelf.Server.Tests.Derived
             ShelfFile unwritten = await StoreTextAsync(shelf, "/unwritten.txt", "unwritten");
             await PutAsync(file.Sha256, Made(DerivedKind.Thumbnail, "small"), Made(DerivedKind.Preview, "edited"));
             await PutAsync(emptied.Sha256, Made(DerivedKind.Thumbnail, "gone"));
-            await PutAsync(unwritten.Sha256, Made(DerivedKind.Thumbnail, "kept"), new KeptFile(DerivedKind.Agent, Failed, SourcePath: null));
+            await PutAsync(unwritten.Sha256, Made(DerivedKind.Thumbnail, "kept"), FailedByTestMaker(DerivedKind.Agent));
             await File.WriteAllTextAsync(Store.GetPath(DerivedKind.Preview, file.Sha256), "edited further");
             Directory.Delete(Path.GetDirectoryName(Store.GetPath(DerivedKind.Thumbnail, emptied.Sha256))!, recursive: true);
             await using (IDbTransactionSession session = await TestRoot.SessionFactory.CreateSessionWithTransactionAsync())
@@ -124,6 +155,7 @@ namespace ByteShelf.Server.Tests.Derived
                 await session.CommitAsync();
             }
 
+            // The edited preview, the emptied thumbnail and the unwritten one; a failure has no size to count.
             Assert.Equal(3, (await RunMaintenanceAsync()).Recounted);
 
             Assert.Equal(
@@ -166,7 +198,7 @@ namespace ByteShelf.Server.Tests.Derived
         {
             string source = Path.Combine(TestRoot.Root.StagingPath, Guid.NewGuid().ToString("N"));
             File.WriteAllText(source, text);
-            return new KeptFile(kind, MadeByTestMaker(), source);
+            return KeptByTestMaker(kind, source);
         }
 
         // A sparse file, so it takes no disk.
@@ -178,7 +210,7 @@ namespace ByteShelf.Server.Tests.Derived
                 file.SetLength(bytes);
             }
 
-            return PutAsync(sha256, new KeptFile(DerivedKind.Full, MadeByTestMaker(), source));
+            return PutAsync(sha256, KeptByTestMaker(DerivedKind.Full, source));
         }
 
         private async Task<int> TrimFullAsync()

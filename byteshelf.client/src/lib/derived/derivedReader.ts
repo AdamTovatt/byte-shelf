@@ -86,6 +86,24 @@ export function derivedReader(file: ShelfFile, source: ContentSource): ClosableD
   };
 }
 
+/**
+ * What `load` makes of the file of `kind` from its URL, as an `<img>` loading it; when that fails, once more with
+ * its URL asked for anew, as what was listed may have gone since. Null when there is none; what fails the second
+ * time, or once `signal` is aborted, is thrown.
+ */
+export async function loadDerived<T>(reader: DerivedReader, kind: DerivedKind, load: (url: string) => Promise<T>, signal?: AbortSignal): Promise<T | null> {
+  for (let isFirst = true; ; isFirst = false) {
+    const url = await reader.url(kind, signal);
+    if (url === null) return null;
+    try {
+      return await load(url);
+    } catch (error) {
+      if (!isFirst || signal?.aborted) throw error;
+      reader.forget(kind);
+    }
+  }
+}
+
 /** What `ask` answers once the file has been made; null when there is none. */
 async function whenMade<T>(ask: () => Promise<T>, signal: AbortSignal): Promise<T | null> {
   for (;;) {

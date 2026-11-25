@@ -4,7 +4,7 @@ namespace ByteShelf.Server.Plugins.Processes
     /// A plugin could not run, which says nothing of the contents. The message ends a sentence about the plugin or its
     /// process: a clause in lower case, with no full stop.
     /// </summary>
-    public sealed class PluginUnavailableException : Exception
+    internal sealed class PluginUnavailableException : Exception
     {
         public PluginUnavailableException(string message, Exception? innerException = null)
             : base(message, innerException)

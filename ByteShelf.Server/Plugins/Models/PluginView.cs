@@ -17,5 +17,8 @@ namespace ByteShelf.Server.Plugins.Models
 
         /// <summary>Why its reader of files' contents could not run when it last had something to read, as a sentence; null when it is run or there is none, and for anyone but an admin.</summary>
         public required string? ReaderProblem { get; init; }
+
+        /// <summary>Why its maker of derived files could not run when it last had something to make, as a sentence; null when it is run or there is none, and for anyone but an admin.</summary>
+        public required string? MakerProblem { get; init; }
     }
 }

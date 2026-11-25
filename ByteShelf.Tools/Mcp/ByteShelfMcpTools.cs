@@ -36,8 +36,8 @@ namespace ByteShelf.Tools.Mcp
         /// <summary>The largest file download_file answers inline as text, and upload_file takes as text or base64.</summary>
         public const int MaxInlineBytes = 256 * 1024;
 
-        /// <summary>The largest image download_file answers as an image the agent sees.</summary>
-        public const int MaxInlineImageBytes = 1024 * 1024;
+        /// <summary>The largest image download_file answers as an image the agent sees: as large as an agent file may be.</summary>
+        public static readonly int MaxInlineImageBytes = (int)DerivedFileLimits.MaxBytesOf(DerivedKind.Agent);
 
         /// <summary>The image kinds download_file answers as images, as the descriptions and messages name them; <see cref="ImageTypeOf"/> recognises them.</summary>
         internal const string InlineImageKinds = "PNG, JPEG, GIF or WebP";

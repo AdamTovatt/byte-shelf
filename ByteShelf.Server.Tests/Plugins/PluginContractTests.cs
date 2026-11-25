@@ -33,8 +33,6 @@ namespace ByteShelf.Server.Tests.Plugins
                     "ByteShelf.Plugins.DerivedFileDeclaration: Int32 Version",
                     "ByteShelf.Plugins.DerivedFileDeclaration: System.Collections.Generic.IReadOnlyList`1[System.String] MediaTypes",
                     "ByteShelf.Plugins.DerivedFileDeclaration: Void .ctor(ByteShelfCommon.DerivedKind, Int32, System.Collections.Generic.IReadOnlyList`1[System.String])",
-                    "ByteShelf.Plugins.DerivedFileLimits",
-                    "ByteShelf.Plugins.DerivedFileLimits: Int64 MaxBytesOf(ByteShelfCommon.DerivedKind)",
                     "ByteShelf.Plugins.IByteShelfPlugin",
                     "ByteShelf.Plugins.IByteShelfPlugin: Void Configure(ByteShelf.Plugins.IPluginBuilder)",
                     "ByteShelf.Plugins.IContentDocumentReader",

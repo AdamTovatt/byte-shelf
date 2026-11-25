@@ -27,6 +27,7 @@ namespace ByteShelf.Server.Storage.Services
         private readonly ObjectStore _objectStore;
         private readonly StorageOptions _options;
         private readonly TimeProvider _timeProvider;
+        private readonly ILogger<TrashService> _logger;
 
         public TrashService(
             IDbSessionFactory sessionFactory,
@@ -40,7 +41,8 @@ namespace ByteShelf.Server.Storage.Services
             ObjectCollector objectCollector,
             ObjectStore objectStore,
             StorageOptions options,
-            TimeProvider timeProvider)
+            TimeProvider timeProvider,
+            ILogger<TrashService> logger)
         {
             _sessionFactory = sessionFactory;
             _contentsSessions = contentsSessions;
@@ -54,6 +56,7 @@ namespace ByteShelf.Server.Storage.Services
             _objectStore = objectStore;
             _options = options;
             _timeProvider = timeProvider;
+            _logger = logger;
         }
 
         /// <inheritdoc />
@@ -214,7 +217,13 @@ namespace ByteShelf.Server.Storage.Services
         /// <inheritdoc />
         public async Task<int> PurgeExpiredAsync(CancellationToken cancellationToken)
         {
-            return await PurgeDeletedBeforeAsync(RestorableSince(), shelfId: null, cancellationToken);
+            Purge purge = await PurgeDeletedBeforeAsync(RestorableSince(), shelfId: null, cancellationToken);
+            foreach (TracesNotRemovedException refused in purge.Refusals)
+            {
+                _logger.LogWarning(refused, "The files in the trash holding the contents {Sha256} stay there until the next purge.", refused.Sha256);
+            }
+
+            return purge.Files;
         }
 
         /// <inheritdoc />
@@ -232,7 +241,8 @@ namespace ByteShelf.Server.Storage.Services
                 await session.CommitAsync();
             }
 
-            return await PurgeDeletedBeforeAsync(RestorableSince(), shelf.Id, cancellationToken);
+            Purge purge = await PurgeDeletedBeforeAsync(RestorableSince(), shelf.Id, cancellationToken);
+            return purge.Refusals.Count == 0 ? purge.Files : throw purge.Refusals[0];
         }
 
         /// <summary>
@@ -241,35 +251,50 @@ namespace ByteShelf.Server.Storage.Services
         /// the server has beside contents no plain file holds any more is gone (<see cref="ContentsSession"/>),
         /// and the objects only those files pointed at go after it.
         /// </summary>
-        /// <exception cref="TracesNotRemovedException">Some could not be removed; that batch is not purged.</exception>
-        private async Task<int> PurgeDeletedBeforeAsync(DateTimeOffset cutoff, Guid? shelfId, CancellationToken cancellationToken)
+        /// <remarks>
+        /// A batch whose commit is refused, as what the server has of some contents could not be removed, is not
+        /// purged, and the batches after it leave out the files holding those contents, which stay in the trash for
+        /// the next purge: so the rest is purged, rather than that batch asked for again and again.
+        /// </remarks>
+        private async Task<Purge> PurgeDeletedBeforeAsync(DateTimeOffset cutoff, Guid? shelfId, CancellationToken cancellationToken)
         {
             int purgedFiles = 0;
+            List<TracesNotRemovedException> refusals = new List<TracesNotRemovedException>();
+            HashSet<string> skippedContents = new HashSet<string>(StringComparer.Ordinal);
 
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                IReadOnlyList<FileRecord> files = await _fileRepository.GetTrashedBeforeAsync(cutoff, shelfId, PurgeBatchSize);
+                IReadOnlyList<FileRecord> files = await _fileRepository.GetTrashedBeforeAsync(cutoff, shelfId, skippedContents, PurgeBatchSize);
                 if (files.Count == 0)
                 {
                     break;
                 }
 
                 IReadOnlyCollection<string> released;
-                await using (ContentsSession session = await _contentsSessions.CreateAsync())
+                try
                 {
+                    await using ContentsSession session = await _contentsSessions.CreateAsync();
                     DateTimeOffset now = _timeProvider.GetUtcNow();
+                    int purged = 0;
                     foreach (FileRecord file in files)
                     {
                         if (await _fileRepository.PurgeAsync(file.Id, now, session))
                         {
-                            purgedFiles++;
+                            purged++;
                         }
                     }
 
                     await session.CommitAsync();
                     released = session.Released;
+                    purgedFiles += purged;
+                }
+                catch (TracesNotRemovedException refused)
+                {
+                    refusals.Add(refused);
+                    skippedContents.Add(refused.Sha256);
+                    continue;
                 }
 
                 await _objectCollector.RemoveReleasedAsync(released, cancellationToken);
@@ -297,7 +322,7 @@ namespace ByteShelf.Server.Storage.Services
                 }
             }
 
-            return purgedFiles;
+            return new Purge(purgedFiles, refusals);
         }
 
         /// <summary>
@@ -359,5 +384,8 @@ namespace ByteShelf.Server.Storage.Services
             string containerPath = await _shelfTree.GetDirectoryPathAsync(entry.ContainerId, session);
             return StorageContracts.ToTrashEntry(entry, containerPath, _options);
         }
+
+        /// <summary>How many files a purge removed, and why it left any it was to remove.</summary>
+        private sealed record Purge(int Files, IReadOnlyList<TracesNotRemovedException> Refusals);
     }
 }

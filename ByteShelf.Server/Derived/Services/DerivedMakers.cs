@@ -17,6 +17,15 @@ namespace ByteShelf.Server.Derived.Services
         }
 
         /// <summary>
+        /// Whether <paramref name="file"/> may have a derived file of <paramref name="kind"/>: one that is plain, of a
+        /// type something makes it from. An encrypted file has none, even when a plain file holds the same bytes.
+        /// </summary>
+        public bool MayHave(FileRecord file, DerivedKind kind)
+        {
+            return !file.Encrypted && For(kind, [ContentTypes.MediaTypeOf(file.ContentType)]) != null;
+        }
+
+        /// <summary>
         /// What makes <paramref name="kind"/> from contents that files of <paramref name="mediaTypes"/> hold; null
         /// when nothing does. One plugin whatever file is asked about, since identical contents have one derived
         /// file of a kind: one that takes one of the types exactly before one that takes its family, then the

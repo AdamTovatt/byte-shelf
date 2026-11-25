@@ -1,18 +1,10 @@
 import { useEffect, useEffectEvent, useRef } from 'react';
 import { cn } from '@byteshelf/plugin';
-import { loadImage } from './loadImage';
 import type { ImageSize } from './recordedImage';
 
-/** Where a layer is loaded from. */
-export interface LayerAddress {
-  url: string;
-  /** Has the address asked for anew, for one that may have gone. */
-  forget?: () => void;
-}
-
 interface ImageLayerProps {
-  /** Answers where it is loaded from; null when there is none. Asked again once when what it answers does not load and can be forgotten. */
-  address: (signal: AbortSignal) => Promise<LayerAddress | null>;
+  /** Loads the layer into `image` and decodes it, as `loadImage` does; fails when there is none, or it does not load. */
+  load: (image: HTMLImageElement, signal: AbortSignal) => Promise<void>;
   /** Its name while it is the layer that is seen; null until then. */
   alt: string | null;
   className?: string;
@@ -23,28 +15,17 @@ interface ImageLayerProps {
 }
 
 /** One version of an image, in all of its box: unseen until it has an `alt`. */
-export function ImageLayer({ address, alt, className, fetchPriority, onDecoded, onFailed }: ImageLayerProps) {
+export function ImageLayer({ load, alt, className, fetchPriority, onDecoded, onFailed }: ImageLayerProps) {
   const image = useRef<HTMLImageElement>(null);
 
-  const load = useEffectEvent(async (element: HTMLImageElement, signal: AbortSignal) => {
-    for (let isFirst = true; ; isFirst = false) {
-      const found = await address(signal);
-      if (!found) throw new Error('There is none.');
-      try {
-        return await loadImage(element, found.url, signal);
-      } catch (error) {
-        if (!isFirst || !found.forget || signal.aborted) throw error;
-        found.forget();
-      }
-    }
-  });
+  const loadInto = useEffectEvent(load);
   const decoded = useEffectEvent((element: HTMLImageElement) => onDecoded({ width: element.naturalWidth, height: element.naturalHeight }));
   const failed = useEffectEvent(onFailed);
 
   useEffect(() => {
     const element = image.current!;
     const loading = new AbortController();
-    load(element, loading.signal).then(
+    loadInto(element, loading.signal).then(
       () => decoded(element),
       () => {
         if (!loading.signal.aborted) failed();

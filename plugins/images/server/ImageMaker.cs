@@ -9,7 +9,11 @@ namespace ByteShelf.Plugins.Images
     /// </summary>
     public sealed class ImageMaker : IDerivedFileMaker
     {
-        /// <summary>The most an agent's model looks at.</summary>
+        /// <summary>
+        /// The most pixels an agent's has on its long side: the long side past which Claude's API scales an image down
+        /// before the model sees it (Anthropic's vision documentation), so a larger one would only cost more. Re-check it
+        /// there when that changes.
+        /// </summary>
         internal const int AgentLongSide = 1568;
 
         private const string WebP = "image/webp";

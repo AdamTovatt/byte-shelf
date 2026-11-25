@@ -2,17 +2,10 @@
 import { act, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { stubIntersectionObserver, type Watching } from '../test/intersectionObserver';
 import { useInView } from './useInView';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
-/** One that watches, and what it was made with. */
-interface Watching {
-  see: (isIntersecting: boolean) => void;
-  options: IntersectionObserverInit;
-  observed: Element[];
-  isDisconnected: boolean;
-}
 
 describe('whether an element is in view', () => {
   let root: Root;
@@ -24,20 +17,7 @@ describe('whether an element is in view', () => {
   }
 
   beforeEach(() => {
-    watching = [];
-    vi.stubGlobal('IntersectionObserver', class {
-      private readonly mine: Watching;
-      constructor(seen: (entries: { isIntersecting: boolean }[]) => void, options: IntersectionObserverInit) {
-        this.mine = { see: (isIntersecting) => seen([{ isIntersecting }]), options, observed: [], isDisconnected: false };
-        watching.push(this.mine);
-      }
-      observe(element: Element) {
-        this.mine.observed.push(element);
-      }
-      disconnect() {
-        this.mine.isDisconnected = true;
-      }
-    });
+    watching = stubIntersectionObserver();
     root = createRoot(document.body.appendChild(document.createElement('div')));
   });
 

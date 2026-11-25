@@ -10,8 +10,8 @@ namespace ByteShelf.Server.Plugins.Processes
         /// <summary>The contents.</summary>
         string Sha256 { get; }
 
-        /// <summary>What to do, as the plugin's work names it (<see cref="PluginWork"/>).</summary>
-        string Work { get; }
+        /// <summary>What to do: the type of a <see cref="ProcessWork"/>.</summary>
+        Type Work { get; }
 
         /// <summary>The answer when there is nothing to do, as when no plain file holds the contents.</summary>
         T Nothing { get; }

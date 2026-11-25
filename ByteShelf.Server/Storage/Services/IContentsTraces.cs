@@ -16,6 +16,13 @@ namespace ByteShelf.Server.Storage.Services
         /// <exception cref="TracesNotRemovedException">Some could not be removed.</exception>
         Task<IDisposable> RemoveForCommitAsync(string sha256, IDbSession session);
 
+        /// <summary>
+        /// Brings what the database says of the contents' traces back in line with what is left of them, after a session
+        /// that removed some (<see cref="RemoveForCommitAsync"/>) did not commit: its writes were undone, the removal not.
+        /// Hold no lock of the contents.
+        /// </summary>
+        Task ReconcileAsync(string sha256);
+
         /// <summary>Removes what there is of the contents unless a plain file holds them; answers whether none does.</summary>
         /// <exception cref="TracesNotRemovedException">Some could not be removed.</exception>
         Task<bool> RemoveUnheldAsync(string sha256, CancellationToken cancellationToken = default);

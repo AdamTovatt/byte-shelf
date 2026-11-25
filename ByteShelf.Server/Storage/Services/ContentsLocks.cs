@@ -1,11 +1,12 @@
 using ByteShelf.Server.Shared.Concurrency;
 
-namespace ByteShelf.Server.Plugins.Processes
+namespace ByteShelf.Server.Storage.Services
 {
     /// <summary>
-    /// A lock on what plugins read and make from one contents. Whether they may (a plain file holds the contents) is
-    /// for the database to say, so whoever starts reading, keeps what was made or removes it holds the lock from
-    /// that question to the answer's commit.
+    /// A lock on what the server has of one contents beside the files that hold them (<see cref="IContentsTraces"/>):
+    /// what plugins read and make from them. Whether there may be any (a plain file holds the contents) is for the
+    /// database to say, so whoever starts reading, keeps what was made or removes it holds the lock from that question
+    /// to the answer's commit.
     /// </summary>
     /// <remarks>
     /// Only a swap, which holds the database's write lock too, waits for a second one while it holds one, and a

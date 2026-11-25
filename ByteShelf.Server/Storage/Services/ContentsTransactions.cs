@@ -1,10 +1,10 @@
 using EasyReasy.Database;
 
-namespace ByteShelf.Server.Plugins.Processes
+namespace ByteShelf.Server.Storage.Services
 {
     /// <summary>
-    /// Writes over what plugins have of one contents in a transaction begun before the contents' lock is taken, as a swap
-    /// of contents does: a swap holds the database while it waits for that lock, so whoever held the lock while waiting
+    /// Writes over what the server has of one contents beside its files in a transaction begun before the contents' lock
+    /// (<see cref="ContentsLocks"/>) is taken, as a swap of contents does: a swap holds the database while it waits for that lock, so whoever held the lock while waiting
     /// for the database would wait for the swap as it waits for them.
     /// </summary>
     public sealed class ContentsTransactions
@@ -31,10 +31,10 @@ namespace ByteShelf.Server.Plugins.Processes
         }
 
         /// <summary>
-        /// As <see cref="RunAsync"/>, unless somebody holds or waits for the lock, as it is in use: then it writes nothing
-        /// and answers false, waiting for nobody.
+        /// As <see cref="RunAsync"/>, answering what <paramref name="write"/> does, unless somebody holds or waits for the
+        /// lock, as it is in use: then it writes nothing and answers false, waiting for nobody.
         /// </summary>
-        public async Task<bool> TryRunAsync(string sha256, Func<IDbTransactionSession, Task> write)
+        public async Task<bool> TryRunAsync(string sha256, Func<IDbTransactionSession, Task<bool>> write)
         {
             await using IDbTransactionSession session = await _sessions.CreateSessionWithTransactionAsync();
             using IDisposable? held = _locks.TryLock(sha256);
@@ -43,9 +43,9 @@ namespace ByteShelf.Server.Plugins.Processes
                 return false;
             }
 
-            await write(session);
+            bool written = await write(session);
             await session.CommitAsync(CancellationToken.None);
-            return true;
+            return written;
         }
     }
 }

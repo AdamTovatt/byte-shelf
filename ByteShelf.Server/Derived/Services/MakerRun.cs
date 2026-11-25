@@ -6,6 +6,7 @@ using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Shared.Json;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Repositories;
+using ByteShelf.Server.Storage.Services;
 using ByteShelfCommon;
 using EasyReasy.Database;
 
@@ -44,7 +45,7 @@ namespace ByteShelf.Server.Derived.Services
 
         public string Sha256 { get; }
 
-        public string Work => MakeWork.Name;
+        public Type Work => typeof(MakeWork);
 
         public TakenFiles? Nothing => null;
 
@@ -83,7 +84,10 @@ namespace ByteShelf.Server.Derived.Services
             }
         }
 
-        /// <summary>Keeps what was taken, unless no plain file holds the contents any more, and removes the rest with its folder.</summary>
+        /// <summary>
+        /// Keeps what was taken, unless no plain file holds the contents any more or a removal of them took it, and removes
+        /// the rest with its folder. Of what was taken, the next to ask makes it again.
+        /// </summary>
         public async Task<MakingOutcome> KeepAsync(TakenFiles taken, CancellationToken cancellationToken)
         {
             await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
@@ -94,7 +98,7 @@ namespace ByteShelf.Server.Derived.Services
             {
                 outcome = await scope.ServiceProvider.GetRequiredService<ContentsTransactions>().RunAsync(Sha256, async session =>
                 {
-                    if ((await contents.GetUnheldAsync([Sha256], session)).Count > 0)
+                    if ((await contents.GetUnheldAsync([Sha256], session)).Count > 0 || taken.WasRemoved)
                     {
                         return MakingOutcome.NothingToMake;
                     }
@@ -150,14 +154,12 @@ namespace ByteShelf.Server.Derived.Services
             bool mayBeKept = file is { Exists: true, LinkTarget: null } && file.Length <= DerivedFileLimits.MaxBytesOf(kind);
             if (made == null || !MediaTypeHeaderValue.TryParse(made.MediaType, out _) || !mayBeKept)
             {
-                return new KeptFile(kind, new DerivedEntry(_plugin.Id, maker.Declaration.Version, new DerivedOutcome.Failed()), SourcePath: null);
+                return KeptFile.Failed(kind, _plugin.Id, maker.Declaration.Version);
             }
-
-            DerivedEntry entry = new DerivedEntry(_plugin.Id, maker.Declaration.Version, new DerivedOutcome.Made(made.MediaType));
 
             string source = Path.Combine(taken.Path, DerivedKinds.NameOf(kind));
             file.MoveTo(source);
-            return new KeptFile(kind, entry, source);
+            return KeptFile.Made(kind, _plugin.Id, maker.Declaration.Version, made.MediaType, source);
         }
     }
 }

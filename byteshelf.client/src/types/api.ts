@@ -5669,6 +5669,7 @@ export interface components {
             moduleUrl: string | null;
             stylesheetUrl: string | null;
             readerProblem: string | null;
+            makerProblem: string | null;
         };
         PromoteResponse: {
             primaryTold: boolean;

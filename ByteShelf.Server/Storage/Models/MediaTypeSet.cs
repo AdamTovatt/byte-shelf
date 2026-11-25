@@ -51,19 +51,6 @@ namespace ByteShelf.Server.Storage.Models
             return new MediaTypeSet(sets.SelectMany(set => set._patterns).Distinct().ToList());
         }
 
-        /// <summary>
-        /// The condition that <paramref name="column"/>, a media type, is one of them. The types are written
-        /// into it rather than bound: <see cref="Of"/> takes no character a string literal could end with.
-        /// </summary>
-        internal string Sql(string column)
-        {
-            IEnumerable<string> conditions = _patterns.Select(pattern => pattern.Prefix == null
-                ? $"{column} = '{pattern.Type}'"
-                : $"substr({column}, 1, {pattern.Prefix.Length}) = '{pattern.Prefix}'");
-
-            return $"({string.Join(" OR ", conditions.DefaultIfEmpty("0"))})";
-        }
-
         // The characters RFC 6838 allows in a media type's names.
         [GeneratedRegex(@"\A[a-z0-9!#$&^_.+-]+/(\*|[a-z0-9!#$&^_.+-]+)\z")]
         private static partial Regex Pattern();

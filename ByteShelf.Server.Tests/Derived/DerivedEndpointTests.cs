@@ -8,6 +8,8 @@ using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Tests.TestUtilities;
+using ByteShelfClient;
+using ByteShelfClient.Http;
 using ByteShelfCommon;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -119,6 +121,24 @@ namespace ByteShelf.Server.Tests.Derived
         }
 
         [Fact]
+        public async Task HttpClient_OneNotMadeYet_ThrowsNotReady()
+        {
+            await using ServerTestHost host = await ServerTestHost.StartAsync(services =>
+            {
+                _plugins.AddTo(services);
+                services.AddScoped<IDerivedFileService>(_ => new NotReady());
+            });
+            await host.CreateShelfAsync("docs");
+            using HttpClient http = host.CreateClient();
+            CreatedShelfKey key = await host.CreateKeyAsync("docs", ShelfPermission.Read);
+            IShelfClient shelf = new ByteShelfHttpClient(http, new ShelfKeyCredentials(key.Secret)).Shelf("docs");
+
+            ByteShelfException refused = await Assert.ThrowsAsync<ByteShelfException>(() => shelf.OpenDerivedAsync("/a.txt", DerivedKind.Full));
+
+            Assert.Equal((HttpStatusCode.ServiceUnavailable, ErrorCodes.NotReady), (refused.StatusCode, refused.Code));
+        }
+
+        [Fact]
         public async Task Upload_HasThumbnailAndPreviewMadeWithoutAsking()
         {
             await _host.PutAsAdminAsync("docs", "/b.txt", "stored"u8.ToArray(), "text/plain");
@@ -194,6 +214,20 @@ namespace ByteShelf.Server.Tests.Derived
 
             Assert.True(Directory.Exists(left!.Path));
             left.Release();
+        }
+
+        [UnixFact]
+        public async Task EmptyTrash_OnceARunLeftWhatCannotBeRemoved_IsUnavailableWithWhenToComeBack()
+        {
+            ShelfFile file = await _host.PutAsAdminAsync("docs", "/u.txt", "undeletable"u8.ToArray(), "text/plain");
+            (await _host.AdminClient.GetAsync($"/api/shelves/docs/files/derived?id={file.Id}&kind=thumbnail")).EnsureSuccessStatusCode();
+            using UndeletableFolder left = new UndeletableFolder(_host.TestRoot, file.Sha256);
+            (await _host.AdminClient.DeleteAsync("/api/shelves/docs/files?path=/u.txt")).EnsureSuccessStatusCode();
+
+            using HttpResponseMessage response = await _host.AdminClient.DeleteAsync("/api/shelves/docs/trash");
+
+            ErrorResponse? error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+            Assert.Equal((HttpStatusCode.ServiceUnavailable, "30", ErrorCodes.NotReady), (response.StatusCode, response.Headers.RetryAfter?.ToString(), error?.Code));
         }
 
         [Fact]

@@ -42,9 +42,10 @@ holds them, once a row, as a file's own bytes do ([Shelves](../Storage/Shelves.m
 every such shelf has room for what it adds, its bytes less those of the one it replaces, asked in the
 transaction that keeps it (`DerivedRoom`, `IShelfRepository.HasRoomForMoreOfAsync`), so two keeping at once
 cannot both take the last of the room. Otherwise it is not kept, nor is the one it would replace, and its
-entry says how many bytes it took (`DerivedOutcome.NoRoom`), which is not a failure: the hourly pass makes it
-again once every such shelf has room for as many, by the room each shelf had as the pass began, and asking
-for it is a 507 `quota_exceeded` until then. Of kinds made in one run, each is weighed in turn, so a
+entry says how many bytes it took (`DerivedOutcome.NoRoom`), which is not a failure: asking for it is a 507
+`quota_exceeded` while a shelf that holds the contents has no room for as many, and makes it again once every
+one has. A thumbnail or a preview is also made again by the hourly pass once every such shelf has room, by the
+room each shelf had as the pass began. Of kinds made in one run, each is weighed in turn, so a
 thumbnail may be kept where its preview is not.
 
 An upload's reservation is measured against usage that includes derived files. An upload of contents
@@ -79,7 +80,9 @@ A maker runs in its plugin's process ([Processes](../Plugins/Processes/Processes
 time, with all the kinds to be made from one read (`MakingGroup`). It writes each to a file that the process
 opens and limits for it (`MadeFiles`); one it did not finish is not kept. However many ask for one, it is made
 once, and goes on though nobody waits. What fails because of the contents is kept as a failure; where they are not to
-blame nothing is kept, and the next one to ask, or the next pass, tries again.
+blame nothing is kept, and the next one to ask, or the next pass, tries again. A maker that could not run, whatever
+the contents, is logged, and admins see why with its plugin (`PluginProblems`, [Plugins](../Plugins/Plugins.md))
+until one of its runs begins.
 
 `DerivedBackground` makes thumbnails and previews of live plain files: of contents as uploads and a
 replica's sync store them (`StoredContents`, an `IStoredContentsListener`), and of everything already

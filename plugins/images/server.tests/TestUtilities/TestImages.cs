@@ -15,6 +15,28 @@ namespace ByteShelf.Plugins.Images.Tests.TestUtilities
         /// <summary>The colours of the quarters of <see cref="Quarters"/>, as it is stored: top left, top right, bottom left, bottom right.</summary>
         public static IReadOnlyList<MagickColor> QuarterColors { get; } = [MagickColors.Red, MagickColors.Lime, MagickColors.Blue, MagickColors.White];
 
+        /// <summary>The formats that have EXIF's orientation.</summary>
+        public static IReadOnlyList<string> FormatsWithOrientation { get; } = ["jpeg", "png", "webp", "tiff"];
+
+        /// <summary>EXIF's orientations, by their values.</summary>
+        public static IReadOnlyList<ushort> Orientations { get; } = [1, 2, 3, 4, 5, 6, 7, 8];
+
+        /// <summary>The colours of the quarters of <see cref="Quarters"/> stored as <paramref name="orientation"/> says, upright, in the order of <see cref="QuarterColors"/>.</summary>
+        public static IReadOnlyList<MagickColor> UprightQuarterColors(ushort orientation)
+        {
+            int[][] upright = [[0, 1, 2, 3], [1, 0, 3, 2], [3, 2, 1, 0], [2, 3, 0, 1], [0, 2, 1, 3], [2, 0, 3, 1], [3, 1, 2, 0], [1, 3, 0, 2]];
+            return [.. upright[orientation - 1].Select(quarter => QuarterColors[quarter])];
+        }
+
+        /// <summary><see cref="Quarters"/>, stored as <paramref name="orientation"/> says.</summary>
+        public static MagickImage QuartersStored(int width, int height, ushort orientation)
+        {
+            MagickImage image = Quarters(width, height);
+            image.SetProfile(new ImageProfile("exif", Exif(orientation)));
+            image.Orientation = (Orientation)orientation;
+            return image;
+        }
+
         public static MagickImage Plain(int width, int height, byte red, byte green, byte blue)
         {
             return Drawn(width, height, (_, _) => (red, green, blue, 255));
@@ -200,6 +222,39 @@ namespace ByteShelf.Plugins.Images.Tests.TestUtilities
             byte[] exif = [.. Encoding.ASCII.GetBytes("Exif\0\0MM\0*"), 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0];
             BinaryPrimitives.WriteUInt16BigEndian(exif.AsSpan(24), orientation);
             return exif;
+        }
+
+        /// <summary>An EXIF profile that says the orientation is upright and has a GPS part, whose map datum is <paramref name="mapDatum"/>.</summary>
+        public static byte[] ExifWithGps(string mapDatum)
+        {
+            // Offsets are from the TIFF header, after "Exif\0\0": the first IFD at 8 with two entries, then the GPS IFD with one, then the datum.
+            const int GpsIfd = 8 + 2 + (2 * 12) + 4;
+            const int Datum = GpsIfd + 2 + 12 + 4;
+            byte[] datum = [.. Encoding.ASCII.GetBytes(mapDatum), 0];
+            using MemoryStream tiff = new MemoryStream();
+            void Write16(int value) => tiff.Write([(byte)(value >> 8), (byte)value]);
+            void Write32(int value) => tiff.Write([(byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value]);
+            tiff.Write("MM\0*"u8);
+            Write32(8);
+            Write16(2);
+            Write16(0x0112);
+            Write16(3);
+            Write32(1);
+            Write16(1);
+            Write16(0);
+            Write16(0x8825);
+            Write16(4);
+            Write32(1);
+            Write32(GpsIfd);
+            Write32(0);
+            Write16(1);
+            Write16(0x0012);
+            Write16(2);
+            Write32(datum.Length);
+            Write32(Datum);
+            Write32(0);
+            tiff.Write(datum);
+            return [.. Encoding.ASCII.GetBytes("Exif\0\0"), .. tiff.ToArray()];
         }
 
         private static byte[] PngChunk(string type, byte[] data)

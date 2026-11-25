@@ -16,6 +16,7 @@ namespace ByteShelf.Server.Plugins.Processes
         private readonly PluginProcess _process;
         private Lease? _lease;
         private ITimer? _idle;
+        private object? _rest;
         private bool _stopped;
         private bool _ended;
 
@@ -72,25 +73,39 @@ namespace ByteShelf.Server.Plugins.Processes
             }
         }
 
-        /// <summary>Has it ended by <paramref name="end"/> once it has not been used for <paramref name="limit"/>.</summary>
-        public void Rest(TimeProvider timeProvider, TimeSpan limit, Action end)
+        /// <summary>
+        /// Has it be used no more once it has not been used for <paramref name="limit"/>, and then calls
+        /// <paramref name="retired"/> to end it. Using it, or resting it again, starts the wait anew.
+        /// </summary>
+        public void Rest(TimeProvider timeProvider, TimeSpan limit, Action retired)
         {
             lock (_lock)
             {
                 if (_lease == null && !_stopped)
                 {
                     StopResting();
-                    _idle = timeProvider.CreateTimer(_ => end(), null, limit, Timeout.InfiniteTimeSpan);
+                    object rest = new object();
+                    _rest = rest;
+                    _idle = timeProvider.CreateTimer(_ =>
+                    {
+                        if (TryRetire(rest))
+                        {
+                            retired();
+                        }
+                    }, null, limit, Timeout.InfiniteTimeSpan);
                 }
             }
         }
 
-        /// <summary>Has it be used no more, unless it is in use; answers whether it is not.</summary>
-        public bool TryRetire()
+        /// <summary>
+        /// Has it be used no more, unless it was used or rested again since <paramref name="rest"/> began: a timer that
+        /// fired as it was disposed is of a rest that is over.
+        /// </summary>
+        private bool TryRetire(object rest)
         {
             lock (_lock)
             {
-                if (_lease != null)
+                if (_lease != null || _rest != rest)
                 {
                     return false;
                 }
@@ -146,6 +161,7 @@ namespace ByteShelf.Server.Plugins.Processes
         {
             _idle?.Dispose();
             _idle = null;
+            _rest = null;
         }
 
         /// <summary>One run's use of it.</summary>

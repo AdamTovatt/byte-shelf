@@ -1,6 +1,7 @@
 using System.Text.Json;
 using ByteShelf.Plugins;
 using ByteShelf.Server.Derived.Models;
+using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Shared.Json;
 using ByteShelfCommon;
@@ -8,12 +9,16 @@ using ByteShelfCommon;
 namespace ByteShelf.Server.Derived.Services
 {
     /// <summary>What a plugin's process does for derived files: has the plugin's maker make some kinds, and leaves them in its folder.</summary>
-    internal static class MakeWork
+    internal sealed class MakeWork : ProcessWork
     {
-        public const string Name = "make";
+        public override PluginWork For(PluginRegistrations registered)
+        {
+            Func<IDerivedFileMaker> maker = Ready("maker", registered.Maker?.Make);
+            return (arguments, contents, folder) => RunAsync(maker(), registered.Maker!.Makes, arguments, contents, folder);
+        }
 
         /// <exception cref="PluginUnavailableException">The maker makes other versions, or what it made could not be written.</exception>
-        public static async Task<JsonElement> RunAsync(IDerivedFileMaker maker, IReadOnlyList<DeclaredKind> makes, JsonElement arguments, Stream contents, string folder)
+        private static async Task<JsonElement> RunAsync(IDerivedFileMaker maker, IReadOnlyList<DeclaredKind> makes, JsonElement arguments, Stream contents, string folder)
         {
             MakeArguments asked = arguments.Deserialize<MakeArguments>(JsonDefaults.CamelCase)!;
             if (!asked.Kinds.All(requested => makes.Any(declared => declared.Kind == requested.Kind && declared.Version == requested.Version)))

@@ -49,7 +49,11 @@ namespace ByteShelf.Server.Storage.Services
             _stored.Add(sha256);
         }
 
-        /// <summary>Commits once nothing else the server has of the contents released is left, and none comes to be until it has.</summary>
+        /// <summary>
+        /// Commits once nothing else the server has of the contents released is left, and none comes to be until it has.
+        /// What does not commit is rolled back, and what the database says of the traces removed is brought in line with
+        /// what is left of them (<see cref="IContentsTraces.ReconcileAsync"/>).
+        /// </summary>
         /// <exception cref="TracesNotRemovedException">Something is; nothing is committed.</exception>
         public Task CommitAsync(CancellationToken cancellationToken = default)
         {
@@ -61,20 +65,19 @@ namespace ByteShelf.Server.Storage.Services
         /// <param name="cancellationToken">Cancels the commit.</param>
         public async Task CommitAsync(Action beforeCommit, CancellationToken cancellationToken = default)
         {
-            List<IDisposable> held = new List<IDisposable>();
+            List<string> removing = new List<string>();
             try
             {
-                foreach (string sha256 in _released)
+                await CommitRemovingAsync(removing, beforeCommit, cancellationToken);
+            }
+            catch
+            {
+                foreach (string sha256 in removing)
                 {
-                    held.Add(await _traces.RemoveForCommitAsync(sha256, _session));
+                    await _traces.ReconcileAsync(sha256);
                 }
 
-                beforeCommit();
-                await _session.CommitAsync(cancellationToken);
-            }
-            finally
-            {
-                held.ForEach(contents => contents.Dispose());
+                throw;
             }
 
             foreach (IStoredContentsListener listener in _listeners)
@@ -83,6 +86,46 @@ namespace ByteShelf.Server.Storage.Services
                 {
                     listener.Stored(sha256);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Removes the traces of what is released, notes each in <paramref name="removing"/> as it begins, and commits;
+        /// rolls back what does not commit before it lets go of the contents' locks, so the database they are reconciled
+        /// with after is what it was before.
+        /// </summary>
+        private async Task CommitRemovingAsync(List<string> removing, Action beforeCommit, CancellationToken cancellationToken)
+        {
+            List<IDisposable> held = new List<IDisposable>();
+            bool committing = false;
+            try
+            {
+                foreach (string sha256 in _released)
+                {
+                    removing.Add(sha256);
+                    held.Add(await _traces.RemoveForCommitAsync(sha256, _session));
+                }
+
+                beforeCommit();
+                committing = true;
+                await _session.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                try
+                {
+                    await _session.RollbackAsync(CancellationToken.None);
+                }
+                catch (Exception) when (committing)
+                {
+                    // A commit that failed may have ended the transaction itself; what it failed with is what is told.
+                }
+
+                throw;
+            }
+            finally
+            {
+                held.ForEach(contents => contents.Dispose());
             }
         }
 
@@ -101,6 +144,11 @@ namespace ByteShelf.Server.Storage.Services
             public Task<IDisposable> RemoveForCommitAsync(string sha256, IDbSession session)
             {
                 return Task.FromResult<IDisposable>(this);
+            }
+
+            public Task ReconcileAsync(string sha256)
+            {
+                return Task.CompletedTask;
             }
 
             public Task<bool> RemoveUnheldAsync(string sha256, CancellationToken cancellationToken = default)

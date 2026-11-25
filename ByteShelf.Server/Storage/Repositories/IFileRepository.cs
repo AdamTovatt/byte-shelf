@@ -97,9 +97,10 @@ namespace ByteShelf.Server.Storage.Repositories
 
         /// <summary>
         /// Files deleted before <paramref name="deletedBefore"/>, on the shelf <paramref name="shelfId"/> or
-        /// any shelf when it is null, oldest first, at most <paramref name="limit"/>.
+        /// any shelf when it is null, but none holding any of <paramref name="skippedContents"/>, oldest first, at
+        /// most <paramref name="limit"/>.
         /// </summary>
-        Task<IReadOnlyList<FileRecord>> GetTrashedBeforeAsync(DateTimeOffset deletedBefore, Guid? shelfId, int limit, IDbSession? session = null);
+        Task<IReadOnlyList<FileRecord>> GetTrashedBeforeAsync(DateTimeOffset deletedBefore, Guid? shelfId, IReadOnlyCollection<string> skippedContents, int limit, IDbSession? session = null);
 
         /// <summary>Removes a trashed file's row for good, releasing its contents. False when it is not in the trash.</summary>
         Task<bool> PurgeAsync(Guid id, DateTimeOffset purgedAt, IContentsSession session);

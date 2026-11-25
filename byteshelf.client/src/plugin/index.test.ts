@@ -245,6 +245,8 @@ it('promises plugins these, and taking away one a release holds raises PluginApi
       "getFileIcon",
       "iconMap",
       "invalidateResource",
+      "loadDerived",
+      "loadImage",
       "mediaTypeOf",
       "readText",
       "relativeTo",

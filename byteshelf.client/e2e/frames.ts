@@ -67,6 +67,22 @@ export async function recordFrames(browser: Browser, page: Page, during: () => P
   return shown;
 }
 
+/**
+ * Watches the image called `name` in every frame the page draws from now on, which the browser's own recording
+ * samples: of each frame from the first it is in, whether it is there once and loaded whole.
+ */
+export function watchLoaded(page: Page, name: string): Promise<JSHandle<boolean[]>> {
+  return page.evaluateHandle((alt) => {
+    const frames: boolean[] = [];
+    (function look() {
+      const seen = Array.from(document.querySelectorAll<HTMLImageElement>(`img[alt="${alt}"]`));
+      if (frames.length > 0 || seen.length > 0) frames.push(seen.length === 1 && seen[0].complete && seen[0].naturalWidth > 0);
+      requestAnimationFrame(look);
+    })();
+    return frames;
+  }, name);
+}
+
 /** Records in which places the image called `name` is, in every frame from now on. */
 export function recordPlaces(page: Page, name: string): Promise<JSHandle<string[]>> {
   return page.evaluateHandle((alt) => {

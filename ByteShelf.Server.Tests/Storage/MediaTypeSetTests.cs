@@ -1,4 +1,5 @@
 using ByteShelf.Server.Storage.Models;
+using ByteShelf.Server.Storage.Repositories;
 using ByteShelf.Server.Tests.TestUtilities;
 using EasyReasy.Database;
 using EasyReasy.Database.Mapping;
@@ -39,7 +40,7 @@ namespace ByteShelf.Server.Tests.Storage
         [InlineData("application/pdf", 1)]
         [InlineData("application/pdfx", 0)]
         [InlineData("text/plain", 0)]
-        public async Task Sql_IsTrueOfWhatTheSetIncludes(string mediaType, long expected)
+        public async Task PlainContentsOneOf_IsTrueOfWhatTheSetIncludes(string mediaType, long expected)
         {
             Assert.Equal(expected, await EvaluateAsync(MediaTypeSet.Of("image/*", "application/pdf"), mediaType));
             Assert.Equal(0, await EvaluateAsync(MediaTypeSet.Of(), mediaType));
@@ -48,7 +49,7 @@ namespace ByteShelf.Server.Tests.Storage
         private Task<long> EvaluateAsync(MediaTypeSet set, string mediaType)
         {
             return Services.InTransactionAsync((_, session) => session.Connection.QuerySingleAsync<long>(
-                $"SELECT {set.Sql($"'{mediaType}'")}", transaction: session.Transaction));
+                $"SELECT {PlainContents.OneOf(set, $"'{mediaType}'")}", transaction: session.Transaction));
         }
     }
 }

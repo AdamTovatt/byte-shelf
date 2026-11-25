@@ -1,5 +1,7 @@
 using ByteShelf.Server.Derived.Models;
+using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Plugins.Processes;
+using ByteShelf.Server.Plugins.Services;
 using ByteShelfCommon;
 
 namespace ByteShelf.Server.Derived.Services
@@ -12,12 +14,14 @@ namespace ByteShelf.Server.Derived.Services
 
         private readonly PluginProcesses _processes;
         private readonly MakerRuns _runs;
+        private readonly PluginProblems _problems;
         private readonly ILogger<DerivedMaking> _logger;
 
-        public DerivedMaking(PluginProcesses processes, MakerRuns runs, ILogger<DerivedMaking> logger)
+        public DerivedMaking(PluginProcesses processes, MakerRuns runs, PluginProblems problems, ILogger<DerivedMaking> logger)
         {
             _processes = processes;
             _runs = runs;
+            _problems = problems;
             _logger = logger;
         }
 
@@ -51,11 +55,24 @@ namespace ByteShelf.Server.Derived.Services
             {
                 MakerRun run = _runs.Of(plugin, key.Sha256, key.Group);
                 TakenFiles? taken = await _processes.RunAsync(run, turn, CancellationToken.None);
-                return taken == null ? MakingOutcome.NothingToMake : await run.KeepAsync(taken, CancellationToken.None);
+                if (taken == null)
+                {
+                    // No process ran, so it says nothing of whether one can.
+                    return MakingOutcome.NothingToMake;
+                }
+
+                _problems.Clear(plugin.Id, PluginPart.Maker);
+                return await run.KeepAsync(taken, CancellationToken.None);
             }
             catch (OperationCanceledException)
             {
                 return MakingOutcome.Stopped;
+            }
+            catch (PluginUnavailableException exception)
+            {
+                _problems.Report(plugin.Id, PluginPart.Maker, $"Its maker of derived files could not run, so it makes nothing until it can: {exception.Message}.");
+                _logger.LogError(exception, "The plugin {Plugin} could not be run to make derived files.", plugin.Id);
+                throw;
             }
             catch (Exception exception)
             {

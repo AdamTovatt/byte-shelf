@@ -43,6 +43,7 @@ namespace ByteShelf.Server.Tests.Storage
             Assert.Equal(["old"], session.Released);
             Assert.Equal([("old", session.Transaction)], _traces.Released);
             Assert.Equal(0, _traces.Held);
+            Assert.Empty(_traces.Reconciled);
         }
 
         [Fact]
@@ -62,6 +63,25 @@ namespace ByteShelf.Server.Tests.Storage
             Assert.Empty(_done);
             Assert.Equal(0, _traces.Held);
             Assert.False(await IsWrittenAsync());
+            Assert.Equal([("first", 0), ("second", 0)], _traces.Reconciled);
+        }
+
+        [Fact]
+        public async Task Commit_ThatFails_ReconcilesWhatItRemovedOnceItHasRolledBack()
+        {
+            await using ContentsSession session = await CreateAsync();
+            await WriteAsync(session);
+            session.Release("old");
+            _traces.Reconciling = async () =>
+            {
+                // A write of its own, as reconciling is, waits for no transaction left open.
+                await using IDbTransactionSession other = await TestRoot.SessionFactory.CreateSessionWithTransactionAsync();
+                _done.Add($"reconciled, written: {await IsWrittenAsync()}");
+            };
+
+            await Assert.ThrowsAsync<IOException>(() => session.CommitAsync(() => throw new IOException("It was told to fail.")));
+
+            Assert.Equal(["reconciled, written: False"], _done);
         }
 
         [Fact]
@@ -274,6 +294,17 @@ namespace ByteShelf.Server.Tests.Storage
                 await Releasing();
                 Held++;
                 return new Hold(this);
+            }
+
+            /// <summary>Each reconciled, with how many locks were held as it was.</summary>
+            public List<(string Sha256, int Held)> Reconciled { get; } = new List<(string Sha256, int Held)>();
+
+            public Func<Task> Reconciling { get; set; } = () => Task.CompletedTask;
+
+            public async Task ReconcileAsync(string sha256)
+            {
+                Reconciled.Add((sha256, Held));
+                await Reconciling();
             }
 
             public Task<bool> RemoveUnheldAsync(string sha256, CancellationToken cancellationToken = default)

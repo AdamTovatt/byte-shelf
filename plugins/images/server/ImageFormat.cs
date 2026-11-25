@@ -54,8 +54,10 @@ namespace ByteShelf.Plugins.Images
                 // 43 is a BigTIFF.
                 [(byte)'I', (byte)'I', 42 or 43, 0, ..] or [(byte)'M', (byte)'M', 0, 42 or 43, ..] => Tiff,
                 [(byte)'B', (byte)'M', ..] => IsBmp(head) ? Bmp : null,
-                [0, 0, 1, 0, not 0, _, ..] or [0, 0, 1, 0, 0, not 0, ..] => Ico,
+
+                // Before an icon's, which a first box of 256 bytes (00 00 01 00) would also match.
                 [_, _, _, _, (byte)'f', (byte)'t', (byte)'y', (byte)'p', ..] => OfBrands(head),
+                [0, 0, 1, 0, not 0, _, ..] or [0, 0, 1, 0, 0, not 0, ..] => Ico,
                 _ => null,
             };
         }

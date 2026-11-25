@@ -436,20 +436,22 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<IReadOnlyList<FileRecord>> GetTrashedBeforeAsync(DateTimeOffset deletedBefore, Guid? shelfId, int limit, IDbSession? session = null)
+        public async Task<IReadOnlyList<FileRecord>> GetTrashedBeforeAsync(DateTimeOffset deletedBefore, Guid? shelfId, IReadOnlyCollection<string> skippedContents, int limit, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>
             {
+                string skippedJson = JsonSerializer.Serialize(skippedContents);
                 string query = $@"
                     SELECT {SelectColumns}
                     FROM file
                     WHERE deleted_at IS NOT NULL AND deleted_at < @{nameof(deletedBefore)}
                       AND (@{nameof(shelfId)} IS NULL OR shelf_id = @{nameof(shelfId)})
+                      AND sha256 NOT IN (SELECT value FROM json_each(@{nameof(skippedJson)}))
                     ORDER BY deleted_at
                     LIMIT @{nameof(limit)}";
 
                 IEnumerable<FileEntity> entities = await dbSession.Connection.QueryAsync<FileEntity>(
-                    query, new { deletedBefore, shelfId, limit }, transaction: dbSession.Transaction);
+                    query, new { deletedBefore, shelfId, skippedJson, limit }, transaction: dbSession.Transaction);
 
                 return (IReadOnlyList<FileRecord>)entities.Select(entity => entity.ToDomain()).ToList();
             }, session);

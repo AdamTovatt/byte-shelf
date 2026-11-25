@@ -49,6 +49,10 @@ namespace ByteShelf.Plugins.Images.Tests
                 { "\0\0\0\u0018ftypmif1\0\0\0\0mif1heic", "image/heic" },
                 { "\0\0\0\u0018ftypmif1\0\0\0\0mif1avif", "image/avif" },
                 { "\0\0\0\u001Cftypavif\0\0\0\0mif1heicavif", "image/avif" },
+
+                // A first box of 256 bytes begins as an icon does.
+                { "\0\0\u0001\0ftypheic\0\0\0\0", "image/heic" },
+                { "\0\0\u0001\0ftypavif\0\0\0\0", "image/avif" },
             };
             foreach (char size in (char[])['\u000C', '\u0010', '(', '4', '8', '@', 'l', '|'])
             {

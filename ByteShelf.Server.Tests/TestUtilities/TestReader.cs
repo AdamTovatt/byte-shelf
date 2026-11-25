@@ -1,5 +1,7 @@
 using System.Text.Json.Nodes;
 using ByteShelf.Plugins;
+using ByteShelf.Server.Derived.Services;
+using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Plugins.Services;
@@ -27,9 +29,9 @@ namespace ByteShelf.Server.Tests.TestUtilities
         }
 
         /// <summary>What its child process does.</summary>
-        internal static PluginWork LoadWork()
+        internal static PluginWorks LoadWork()
         {
-            return PluginWorkLoader.Of(Registration(), null);
+            return PluginWorks.Of([new ReadWork(), new MakeWork()], new PluginRegistrations(Registration(), null));
         }
 
         private static PluginReaderRegistration Registration()

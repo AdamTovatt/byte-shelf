@@ -20,7 +20,7 @@ namespace ByteShelf.Server.Metadata.Services
 
         public string Sha256 { get; }
 
-        public string Work => ReadWork.Name;
+        public Type Work => typeof(ReadWork);
 
         public PluginReading Nothing => new PluginReading.NotRead();
 

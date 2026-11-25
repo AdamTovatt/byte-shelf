@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { expect, test, type Browser, type BrowserContext, type Page, type Request } from '@playwright/test';
 import { ADMIN_EMAIL, ADMIN_PASSWORD } from './e2eConfig';
-import { quarteredImage, recordFrames, recordPlaces } from './frames';
+import { quarteredImage, recordFrames, recordPlaces, watchLoaded } from './frames';
 
 // What only a browser shows: signing in, a file uploaded in one tab appearing in another without a
 // reload (the server's live updates reaching the query cache), and a download through a link the
@@ -313,6 +313,14 @@ test('an image becomes sharp with no frame that is blank, partly drawn or moved,
 
   await test.step('the whole takes the preview\'s place in every frame, whole, where the preview was, under its zoom', async () => {
     const image = page.getByRole('dialog', { name: 'b.png' }).getByRole('img', { name: 'b.png' });
+    // Its whole arrives only once let, so it is still loading while the image is zoomed and moved.
+    let letWhole!: () => void;
+    const wholeLet = new Promise<void>((resolve) => (letWhole = resolve));
+    await page.route((url) => url.pathname.endsWith('/content') && url.searchParams.get('id') === b, async (route) => {
+      await wholeLet;
+      await route.continue();
+    });
+    const loaded = await watchLoaded(page, 'b.png');
     let places: Awaited<ReturnType<typeof recordPlaces>> | undefined;
     const frames = await recordFrames(browser, page, async () => {
       await page.getByRole('button', { name: 'b.png', exact: true }).dblclick();
@@ -325,19 +333,23 @@ test('an image becomes sharp with no frame that is blank, partly drawn or moved,
       await page.mouse.move(x + 20, y + 15, { steps: 4 });
       await page.mouse.up();
       places = await recordPlaces(page, 'b.png');
-      expect(finished, 'the whole is still loading once the image is zoomed and moved').not.toContain(`contents of ${b}`);
+      letWhole();
       await expect.poll(() => finished, { message: 'the whole is loaded', timeout: 30_000 }).toContain(`contents of ${b}`);
       await expect(image, 'the whole is shown').toHaveAttribute('src', /\/content\?/);
-      // Frames it draws after, if it does.
-      await page.waitForTimeout(500);
+      // The frames it draws after, if it does.
+      const framesThen = await loaded.evaluate((each) => each.length);
+      await expect.poll(() => loaded.evaluate((each) => each.length), 'frames drawn after the whole is shown').toBeGreaterThan(framesThen + 30);
       return box;
     });
 
+    // Of every frame: what a plain src swap shows, an image that has yet to load.
+    expect(await loaded.jsonValue(), 'frames from the preview on that have it once, loaded whole').not.toContain(false);
+    // Of the frames the browser recorded: what one shown before it is decoded draws, part of it or none.
     const shown = frames.slice(frames.indexOf(true));
     // At least the preview, the frame the whole is first seen in and some after: fewer would mean the browser
     // recorded too few to tell.
     expect(shown.length, 'frames recorded from the preview on').toBeGreaterThan(3);
-    expect(shown, 'frames from the preview on that show all of the image').not.toContain(false);
+    expect(shown, 'frames recorded from the preview on that show all of the image').not.toContain(false);
     expect(await places!.jsonValue(), 'the places the image is seen in from the zoom on').toHaveLength(1);
   });
 

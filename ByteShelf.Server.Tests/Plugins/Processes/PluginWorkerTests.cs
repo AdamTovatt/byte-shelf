@@ -6,8 +6,12 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
     /// <summary>Who may use a worker, and when it is used no more.</summary>
     public sealed class PluginWorkerTests : IAsyncLifetime
     {
+        private static readonly TimeSpan IdleLimit = TimeSpan.FromMinutes(1);
+
         private readonly TestRoot _root = TestRoot.Create();
+        private readonly TestClock _clock = new TestClock(TestInstants.Now);
         private PluginWorker _worker = null!;
+        private int _retired;
 
         public Task InitializeAsync()
         {
@@ -35,24 +39,46 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
         }
 
         [UnixFact]
-        public void TryRetire_OneInUse_GoesOn()
+        public void Rest_UnusedForTheLimit_IsUsedNoMoreAndRetired()
         {
+            _worker.Rest(_clock, IdleLimit, () => _retired++);
+
+            _clock.Advance(IdleLimit);
+
+            Assert.Equal(1, _retired);
+            using PluginWorker.Lease? lease = _worker.TryUse("a");
+            Assert.Null(lease);
+        }
+
+        [UnixFact]
+        public void Rest_UsedBeforeTheLimit_GoesOn()
+        {
+            _worker.Rest(_clock, IdleLimit, () => _retired++);
             using (_worker.TryUse("a"))
             {
-                Assert.False(_worker.TryRetire());
+                _clock.Advance(IdleLimit);
             }
 
+            Assert.Equal(0, _retired);
             using PluginWorker.Lease? lease = _worker.TryUse("b");
             Assert.NotNull(lease);
         }
 
         [UnixFact]
-        public void TryRetire_OneNotInUse_IsUsedNoMore()
+        public void Rest_AgainAfterAUse_WaitsTheWholeLimitAnew()
         {
-            Assert.True(_worker.TryRetire());
+            _worker.Rest(_clock, IdleLimit, () => _retired++);
+            _clock.Advance(IdleLimit / 2);
+            using (_worker.TryUse("a"))
+            {
+            }
 
-            using PluginWorker.Lease? lease = _worker.TryUse("a");
-            Assert.Null(lease);
+            _worker.Rest(_clock, IdleLimit, () => _retired++);
+            _clock.Advance(IdleLimit / 2);
+            Assert.Equal(0, _retired);
+
+            _clock.Advance(IdleLimit / 2);
+            Assert.Equal(1, _retired);
         }
     }
 }

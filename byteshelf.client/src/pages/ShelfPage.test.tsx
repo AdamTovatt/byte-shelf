@@ -12,6 +12,7 @@ import { encryptBlob } from '../lib/encryption/age';
 import { removePdfViewer, restorePdfViewer, stubTabs } from '../test/browser';
 import { button, dialogTitles, dimmingTitles, field, fill, labelled, press, shows, submitPassword, untilFound } from '../test/dom';
 import { json, stubServer } from '../test/fakeServer';
+import { stubIntersectionObserver } from '../test/intersectionObserver';
 import type { pageHistory } from '../test/pageHistory';
 import { shelfDirectory, shelfFile } from '../test/shelfFiles';
 import { renderShelfPage, row, signIn } from '../test/shelfPage';
@@ -159,16 +160,7 @@ describe('the shelf page\'s rows', () => {
 
   it('shows a file\'s thumbnail in its row, and none in one without', async () => {
     vi.stubGlobal('isSecureContext', true);
-    vi.stubGlobal('IntersectionObserver', class {
-      private readonly seen: (entries: { isIntersecting: boolean }[]) => void;
-      constructor(seen: (entries: { isIntersecting: boolean }[]) => void) {
-        this.seen = seen;
-      }
-      observe() {
-        this.seen([{ isIntersecting: true }]);
-      }
-      disconnect() {}
-    });
+    stubIntersectionObserver({ isInView: true });
     rootFiles = [shelfFile('photo.jpg', { derived: { thumbnail: 'images-1' } }), shelfFile('b.txt')];
     leave();
     await renderAt('/shelves/docs');

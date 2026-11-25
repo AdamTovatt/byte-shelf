@@ -4,6 +4,8 @@ using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Metadata.Services;
+using ByteShelf.Server.Plugins.Models;
+using ByteShelf.Server.Plugins.Services;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
@@ -156,17 +158,17 @@ namespace ByteShelf.Server.Tests.Metadata
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
             await StoreTextAsync(shelf, "/b.txt", "b");
-            ReaderProblems problems = Services.GetRequiredService<ReaderProblems>();
+            PluginProblems problems = Services.GetRequiredService<PluginProblems>();
 
             Assert.Equal((2, 0), Counts(await RunAsync()));
             Assert.Equal((1, 2), (unavailable.Asked, other.Reads));
             Assert.Null(await Rows.GetAsync("unavailable", file.Sha256));
-            Assert.Equal("Its reader of files' contents could not run, so it reads nothing until it can: it was told to fail.", problems.Of("unavailable"));
+            Assert.Equal("Its reader of files' contents could not run, so it reads nothing until it can: it was told to fail.", problems.Of("unavailable", PluginPart.Reader));
 
             unavailable.Unavailable = null;
             Assert.Equal((2, 0), Counts(await RunAsync()));
             Assert.NotNull(await Rows.GetAsync("unavailable", file.Sha256));
-            Assert.Null(problems.Of("unavailable"));
+            Assert.Null(problems.Of("unavailable", PluginPart.Reader));
         }
 
         [Fact]

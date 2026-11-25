@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { showsType } from './showsType';
 
+// What was answered of a type is kept for the page's life, so each test asks of types no other does.
 describe('whether a browser shows a type', () => {
   afterEach(() => vi.restoreAllMocks());
 
@@ -18,5 +19,22 @@ describe('whether a browser shows a type', () => {
     shows('image/jpeg');
 
     expect(await Promise.all(['image/jpeg', 'image/heic'].map(showsType))).toEqual([true, false]);
+  });
+
+  it('is not when the browser loads neither source', async () => {
+    vi.spyOn(HTMLImageElement.prototype, 'currentSrc', 'get').mockReturnValue('');
+    vi.spyOn(HTMLImageElement.prototype, 'src', 'set').mockImplementation(function (this: HTMLImageElement) {
+      queueMicrotask(() => this.onerror!(new Event('error')));
+    });
+
+    expect(await showsType('image/png')).toBe(false);
+  });
+
+  it('is asked of the browser once for each type', async () => {
+    shows('image/avif');
+    const made = vi.spyOn(document, 'createElement');
+
+    expect([await showsType('image/avif'), await showsType('image/avif'), await showsType('image/tiff')]).toEqual([true, true, false]);
+    expect(made.mock.calls.filter(([tag]) => tag === 'picture')).toHaveLength(2);
   });
 });

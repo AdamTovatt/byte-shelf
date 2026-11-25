@@ -19,10 +19,14 @@ namespace ByteShelf.Server.Storage.Repositories
             return $"EXISTS (SELECT 1 FROM file WHERE file.sha256 = {sha256} AND file.encrypted = 0 AND file.deleted_at IS NULL)";
         }
 
-        /// <summary>The condition that a plain file, live or in the trash (for a restore), holds the contents <paramref name="sha256"/>, a column or parameter.</summary>
-        public static string HeldByFile(string sha256)
+        /// <summary>
+        /// The condition that a plain file, live or in the trash (for a restore), holds the contents <paramref name="sha256"/>,
+        /// a column or parameter; but for the file <paramref name="unless"/> names, when it names one.
+        /// </summary>
+        public static string HeldByFile(string sha256, string? unless = null)
         {
-            return $"EXISTS (SELECT 1 FROM file WHERE file.sha256 = {sha256} AND file.encrypted = 0)";
+            string other = unless == null ? string.Empty : $" AND file.id <> {unless}";
+            return $"EXISTS (SELECT 1 FROM file WHERE file.sha256 = {sha256} AND file.encrypted = 0{other})";
         }
 
         /// <summary>
@@ -54,7 +58,7 @@ namespace ByteShelf.Server.Storage.Repositories
             return $@"
                 DELETE FROM {table}
                 WHERE {table}.sha256 = @sha256
-                  AND NOT EXISTS (SELECT 1 FROM file WHERE file.sha256 = @sha256 AND file.encrypted = 0 AND file.id <> @fileId)
+                  AND NOT {HeldByFile("@sha256", unless: "@fileId")}
                 RETURNING id";
         }
 
@@ -80,11 +84,25 @@ namespace ByteShelf.Server.Storage.Repositories
                 FROM file
                 WHERE file.deleted_at IS NULL
                   AND file.encrypted = 0
-                  AND {mediaTypes.Sql("file.media_type")}
+                  AND {OneOf(mediaTypes, "file.media_type")}
                   {(unless == null ? string.Empty : $"AND NOT ({unless})")}
                   AND (@after IS NULL OR file.sha256 > @after)
                 ORDER BY file.sha256
                 LIMIT @limit";
+        }
+
+        /// <summary>
+        /// The condition that <paramref name="column"/>, a media type, is one of <paramref name="mediaTypes"/>. The types
+        /// are written into it rather than bound: <see cref="MediaTypeSet.Of"/> takes no character a string literal could
+        /// end with.
+        /// </summary>
+        public static string OneOf(MediaTypeSet mediaTypes, string column)
+        {
+            IEnumerable<string> conditions = mediaTypes.Patterns.Select(pattern => pattern.Prefix == null
+                ? $"{column} = '{pattern.Type}'"
+                : $"substr({column}, 1, {pattern.Prefix.Length}) = '{pattern.Prefix}'");
+
+            return $"({string.Join(" OR ", conditions.DefaultIfEmpty("0"))})";
         }
     }
 }

@@ -18,20 +18,20 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
 
         private readonly TestDerivedPlugins _plugins = new TestDerivedPlugins();
         private readonly string _folder = Directory.CreateTempSubdirectory("byteshelf-process-").FullName;
+        private readonly List<Process> _started = new List<Process>();
 
         [LinuxFact]
         public async Task Run_LeavesItsMemoryOutOfCoreDumps()
         {
-            using Process process = await StartHangingAsync();
+            Process process = await StartHangingAsync();
 
             Assert.Equal("00000000", (await File.ReadAllTextAsync($"/proc/{process.Id}/coredump_filter")).Trim());
-            process.Kill();
         }
 
         [Fact]
         public async Task Run_OnceTheServersEndOfItsInputCloses_Ends()
         {
-            using Process process = await StartHangingAsync();
+            Process process = await StartHangingAsync();
             Assert.False(process.HasExited);
 
             process.StandardInput.Close();
@@ -42,7 +42,7 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
         [UnixFact]
         public async Task Run_OnceTheServersEndOfItsInputCloses_TakesWhatItStartedWithIt()
         {
-            using Process process = Start(TestDerivedPlugins.Executable, _plugins.Plugin().Target.Location);
+            Process process = Start(TestDerivedPlugins.Executable, _plugins.Plugin().Target.Location);
             Task running = RunAsync(process, _plugins.WithChild("a", "wait"), DerivedKind.Thumbnail);
             int child = await OfAsync(_plugins.ChildOfAsync("a"), running);
             Assert.True(TestDerivedPlugins.IsRunning(child));
@@ -55,7 +55,7 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
         [LinuxFact]
         public async Task Run_WhatItStarts_HasNoneOfThePipesToTheServer()
         {
-            using Process process = Start(TestDerivedPlugins.Executable, _plugins.Plugin().Target.Location);
+            Process process = Start(TestDerivedPlugins.Executable, _plugins.Plugin().Target.Location);
             Task running = RunAsync(process, _plugins.WithChild("a", "wait"), DerivedKind.Thumbnail);
             int child = await OfAsync(_plugins.ChildOfAsync("a"), running);
 
@@ -70,7 +70,7 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
         [Fact]
         public async Task Run_AnsweredAsItStillReads_AnswersOnceItHasRead()
         {
-            using Process process = Start(TestDerivedPlugins.Executable, _plugins.Plugin().Target.Location);
+            Process process = Start(TestDerivedPlugins.Executable, _plugins.Plugin().Target.Location);
 
             // More than it asks for at once, so that reading its start again is asked for.
             byte[] contents = Encoding.UTF8.GetBytes("reads on\n" + new string('x', 200_000));
@@ -93,7 +93,6 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
 
             await GiveAsync(process, contents, frame, patience.Token);
             Assert.Equal(FrameType.Answer, (await next).Type);
-            process.Kill();
         }
 
         [Theory]
@@ -101,32 +100,30 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
         [InlineData("kinds twice", typeof(InvalidOperationException))]
         public async Task Run_KindsTheMakerWasNotAskedForOrMakesTwice_AreRefused(string contents, Type refusal)
         {
-            using Process process = Start(TestDerivedPlugins.Executable, _plugins.Plugin().Target.Location);
+            Process process = Start(TestDerivedPlugins.Executable, _plugins.Plugin().Target.Location);
 
             Frame answer = await RunAsync(process, contents, DerivedKind.Agent);
 
             Assert.Equal((FrameType.Failed, refusal.FullName), (answer.Type, Encoding.UTF8.GetString(answer.Payload)));
             Assert.Equal(TestMaker.Made(DerivedKind.Agent, contents), await File.ReadAllTextAsync(Path.Combine(_folder, "agent")));
             Assert.Equal([Path.Combine(_folder, "agent")], Directory.GetFileSystemEntries(_folder));
-            process.Kill();
         }
 
         [Fact]
         public async Task Run_AFileLargerThanItMayBe_IsNotWrittenPastThat()
         {
-            using Process process = Start(TestDerivedPlugins.Executable, _plugins.Plugin().Target.Location);
+            Process process = Start(TestDerivedPlugins.Executable, _plugins.Plugin().Target.Location);
 
             Frame answer = await RunAsync(process, "large thumbnail", DerivedKind.Thumbnail);
 
             Assert.Equal((FrameType.Answer, "[]"), (answer.Type, Encoding.UTF8.GetString(answer.Payload)));
             Assert.Equal(DerivedFileLimits.MaxBytesOf(DerivedKind.Thumbnail), new FileInfo(Path.Combine(_folder, "thumbnail")).Length);
-            process.Kill();
         }
 
         [Fact]
         public async Task Run_SeveralOneAfterTheOther_AreAllAnswered()
         {
-            using Process process = Start(TestDerivedPlugins.Executable, _plugins.Plugin().Target.Location);
+            Process process = Start(TestDerivedPlugins.Executable, _plugins.Plugin().Target.Location);
 
             FrameType[] answers =
             [
@@ -137,22 +134,20 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
 
             Assert.Equal([FrameType.Answer, FrameType.Failed, FrameType.Answer], answers);
             Assert.Equal("Agent of last by test-maker 1", await File.ReadAllTextAsync(Path.Combine(_folder, "agent")));
-            process.Kill();
         }
 
         [Fact]
         public async Task Server_StartedAsAPluginsProcess_StartsNothingElse()
         {
-            using Process withoutALocation = Start(TestDerivedPlugins.ServerExecutable);
+            Process withoutALocation = Start(TestDerivedPlugins.ServerExecutable);
             Assert.Equal(PluginProcessCommand.WrongArguments, await ExitCodeAsync(withoutALocation));
 
-            using Process process = Start(TestDerivedPlugins.ServerExecutable, "nowhere");
+            Process process = Start(TestDerivedPlugins.ServerExecutable, "nowhere");
             using CancellationTokenSource patience = new CancellationTokenSource(Patience);
             Frame? frame = await Frame.ReadAsync(process.StandardOutput.BaseStream, patience.Token);
 
             Assert.Equal(FrameType.Unavailable, frame!.Type);
             Assert.Empty(Directory.GetFileSystemEntries(_folder));
-            process.Kill();
         }
 
         [Theory]
@@ -175,7 +170,8 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
         [UnixFact]
         public async Task PluginMemory_AProcessOverItsLimit_IsFound()
         {
-            using Process process = Process.Start("sleep", "1000");
+            Process process = Process.Start("sleep", "1000");
+            _started.Add(process);
             using CancellationTokenSource patience = new CancellationTokenSource(Patience);
 
             Assert.True(await PluginMemory.ExceededAsync(process, maxBytes: 1, patience.Token));
@@ -188,6 +184,18 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
 
         public void Dispose()
         {
+            // Here, not at each test's end, so one whose assertions fail leaves no process running either.
+            foreach (Process process in _started)
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                    process.WaitForExit();
+                }
+
+                process.Dispose();
+            }
+
             Directory.Delete(_folder, recursive: true);
             _plugins.Dispose();
         }
@@ -224,7 +232,7 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
         private static async Task AskAsync(Process process, int length, DerivedKind kind, CancellationToken cancellationToken)
         {
             JsonElement arguments = JsonSerializer.SerializeToElement(new MakeArguments([new RequestedKind(kind, 1)]), JsonDefaults.CamelCase);
-            byte[] request = JsonSerializer.SerializeToUtf8Bytes(new RunRequest(MakeWork.Name, arguments, length), JsonDefaults.CamelCase);
+            byte[] request = JsonSerializer.SerializeToUtf8Bytes(new RunRequest(ProcessWork.NameOf(typeof(MakeWork)), arguments, length), JsonDefaults.CamelCase);
             await Frame.WriteAsync(process.StandardInput.BaseStream, FrameType.Run, request, cancellationToken);
         }
 
@@ -271,7 +279,9 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
                 RedirectStandardOutput = true,
             };
 
-            return Process.Start(start)!;
+            Process process = Process.Start(start)!;
+            _started.Add(process);
+            return process;
         }
     }
 }

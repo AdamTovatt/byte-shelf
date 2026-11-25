@@ -46,7 +46,7 @@ namespace ByteShelf.Server.Tests.Derived
                 ShelfFile file = await StoreTextAsync(shelf, $"/{text}.txt", text);
                 foreach (DerivedKind kind in DerivedKinds.In(MakingGroup.Background))
                 {
-                    await PutAsync(file.Sha256, new KeptFile(kind, new DerivedEntry(TestMaker.Spec.DefaultId, 1, new DerivedOutcome.Failed()), SourcePath: null));
+                    await PutAsync(file.Sha256, FailedByTestMaker(kind));
                 }
             }
 
@@ -168,7 +168,7 @@ namespace ByteShelf.Server.Tests.Derived
             Shelf shelf = await CreateShelfAsync();
             ShelfFile kept = await StoreTextAsync(shelf, "/kept.txt", "kept");
             await GetAsync(shelf, kept);
-            await PutAsync(TestHashes.Sha256Of("gone"), new KeptFile(DerivedKind.Thumbnail, new DerivedEntry(TestMaker.Spec.DefaultId, 1, new DerivedOutcome.Failed()), SourcePath: null));
+            await PutAsync(TestHashes.Sha256Of("gone"), FailedByTestMaker(DerivedKind.Thumbnail));
 
             Assert.Equal(new DerivedMaintenanceSummary(Unheld: 1, Orphaned: 0, Trimmed: 0, Recounted: 0), await MaintainAsync());
 

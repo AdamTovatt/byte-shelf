@@ -131,7 +131,7 @@ namespace ByteShelf.Server.Tests.Derived
             string larger = TestMaker.Made(DerivedKind.Thumbnail, "a") + "!";
             DerivedEntry version2 = new DerivedEntry(TestMaker.Spec.DefaultId, 2, new DerivedOutcome.Made(TestMaker.MediaType));
 
-            await PutAsync(file.Sha256, new KeptFile(DerivedKind.Thumbnail, version2, Source(larger)));
+            await PutAsync(file.Sha256, KeptByTestMaker(DerivedKind.Thumbnail, Source(larger), version: 2));
 
             Assert.Equal(version2 with { Outcome = new DerivedOutcome.NoRoom(larger.Length) }, Store.Find(DerivedKind.Thumbnail, file.Sha256));
             Assert.False(File.Exists(Store.GetPath(DerivedKind.Thumbnail, file.Sha256)));
@@ -147,7 +147,7 @@ namespace ByteShelf.Server.Tests.Derived
             await PutAsync(file.Sha256, Thumbnail("a"));
             DerivedEntry version2 = new DerivedEntry(TestMaker.Spec.DefaultId, 2, new DerivedOutcome.Made(TestMaker.MediaType));
 
-            await PutAsync(file.Sha256, new KeptFile(DerivedKind.Thumbnail, version2, Source(TestMaker.Made(DerivedKind.Thumbnail, "b"))));
+            await PutAsync(file.Sha256, KeptByTestMaker(DerivedKind.Thumbnail, Source(TestMaker.Made(DerivedKind.Thumbnail, "b")), version: 2));
 
             Assert.Equal(version2, Store.Find(DerivedKind.Thumbnail, file.Sha256));
             Assert.Equal(ABytes + ThumbnailBytes, await UsedBytesAsync(shelf));
@@ -312,6 +312,8 @@ namespace ByteShelf.Server.Tests.Derived
             await MakeAsync(file);
 
             Directory.Delete(TestRoot.Root.DerivedPath, recursive: true);
+
+            // The sizes of the thumbnail and the preview made of it, which are gone.
             Assert.Equal(new DerivedMaintenanceSummary(Unheld: 0, Orphaned: 0, Trimmed: 0, Recounted: 2), await RunMaintenanceAsync());
 
             Assert.Equal(ABytes, await UsedBytesAsync(shelf));
@@ -330,7 +332,7 @@ namespace ByteShelf.Server.Tests.Derived
 
         private KeptFile Thumbnail(string text)
         {
-            return new KeptFile(DerivedKind.Thumbnail, MadeByTestMaker(), Source(TestMaker.Made(DerivedKind.Thumbnail, text)));
+            return KeptByTestMaker(DerivedKind.Thumbnail, Source(TestMaker.Made(DerivedKind.Thumbnail, text)));
         }
 
         private string Source(string text)

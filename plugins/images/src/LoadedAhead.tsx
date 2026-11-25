@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
-import { usePluginDocuments, type Neighbour } from '@byteshelf/plugin';
-import { loadImage } from './loadImage';
+import { loadImage, usePluginDocuments, type Neighbour } from '@byteshelf/plugin';
 
 /** Loads ahead what a neighbour is first shown with: its size, and its preview when there is one. */
 export function LoadedAhead({ file, derived }: Neighbour) {

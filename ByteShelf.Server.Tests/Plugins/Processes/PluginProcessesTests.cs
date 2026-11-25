@@ -176,10 +176,9 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
             using (await Plugins.StartedAsync("now"))
             using (await Locks.LockAsync(now.Sha256))
             {
-                TaskCompletionSource keeps = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                Locks.Locks.WaitingStarted = _ => keeps.TrySetResult();
+                Task keeps = WaitsForAsync(now.Sha256);
                 Plugins.GoOn("now");
-                await keeps.Task.WaitAsync(RealTimeLimit);
+                await keeps;
 
                 // Taken out of the process's folder already, so nothing waits for the keeping.
                 await Processes.StopAsync(before.Sha256).WaitAsync(RealTimeLimit);

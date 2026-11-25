@@ -4,6 +4,7 @@ using ByteShelf.Server.Derived.Repositories;
 using ByteShelf.Server.Derived.Services;
 using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Storage.Models;
+using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using Microsoft.Extensions.DependencyInjection;
@@ -90,7 +91,19 @@ namespace ByteShelf.Server.Tests.Derived
                 large.SetLength(DerivedStore.MaxFullBytes);
             }
 
-            return PutAsync(file.Sha256, new KeptFile(DerivedKind.Full, MadeByTestMaker(), source));
+            return PutAsync(file.Sha256, KeptByTestMaker(DerivedKind.Full, source));
+        }
+
+        /// <summary>What <see cref="TestMaker"/> made of <paramref name="kind"/>, at <paramref name="source"/>.</summary>
+        internal static KeptFile KeptByTestMaker(DerivedKind kind, string source, int version = 1)
+        {
+            return KeptFile.Made(kind, TestMaker.Spec.DefaultId, version, TestMaker.MediaType, source);
+        }
+
+        /// <summary>That <see cref="TestMaker"/> could not make <paramref name="kind"/>.</summary>
+        internal static KeptFile FailedByTestMaker(DerivedKind kind)
+        {
+            return KeptFile.Failed(kind, TestMaker.Spec.DefaultId, 1);
         }
 
         /// <summary>What <see cref="TestMaker"/> made and kept.</summary>
@@ -127,6 +140,7 @@ namespace ByteShelf.Server.Tests.Derived
         }
 
         /// <summary>Ends once the next caller waits for the contents' lock (<see cref="ContentsLocks"/>).</summary>
+        /// <remarks>Watching from the call, before its first await: so call it before what is to wait, and await it after.</remarks>
         protected async Task WaitsForAsync(string sha256)
         {
             TaskCompletionSource waits = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

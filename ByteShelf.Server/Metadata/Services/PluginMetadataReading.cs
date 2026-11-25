@@ -1,5 +1,6 @@
 using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Metadata.Repositories;
+using ByteShelf.Server.Plugins.Services;
 using ByteShelf.Server.Replication.Services;
 
 namespace ByteShelf.Server.Metadata.Services
@@ -14,7 +15,7 @@ namespace ByteShelf.Server.Metadata.Services
         private readonly IPluginReaders _readers;
         private readonly IContentPluginMetadataRepository _documents;
         private readonly ContentReading _reading;
-        private readonly ReaderProblems _problems;
+        private readonly PluginProblems _problems;
         private readonly ReplicationState _replicationState;
         private readonly ILogger<PluginMetadataReading> _logger;
 
@@ -22,7 +23,7 @@ namespace ByteShelf.Server.Metadata.Services
             IPluginReaders readers,
             IContentPluginMetadataRepository documents,
             ContentReading reading,
-            ReaderProblems problems,
+            PluginProblems problems,
             ReplicationState replicationState,
             ILogger<PluginMetadataReading> logger)
         {

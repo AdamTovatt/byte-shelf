@@ -104,19 +104,19 @@ namespace ByteShelf.Server.Derived.Services
         /// <summary>Puts what is to be kept of the contents in place of what was there of each kind. Hold the lock.</summary>
         public void Put(string sha256, IReadOnlyList<KeptFile> kept)
         {
-            Change(sha256, () => kept.Select(file => Put(sha256, file)).ToList().Contains(true));
+            Change(sha256, () => kept.Select(file => PutOne(sha256, file)).ToList().Contains(true));
         }
 
         /// <summary>Removes one derived file, or what is known of making it. Hold the lock.</summary>
         public void Delete(DerivedKind kind, string sha256)
         {
-            Change(sha256, () => Delete(sha256, kind));
+            Change(sha256, () => DeleteOne(kind, sha256));
         }
 
         /// <summary>Removes everything derived from the contents. Hold the lock.</summary>
         public void Delete(string sha256)
         {
-            Change(sha256, () => DerivedKinds.All.Select(kind => Delete(sha256, kind)).ToList().Contains(true));
+            Change(sha256, () => DerivedKinds.All.Select(kind => DeleteOne(kind, sha256)).ToList().Contains(true));
         }
 
         /// <summary>The contents something of <paramref name="kind"/> is kept of, whole or left by a crash, each once.</summary>
@@ -138,7 +138,7 @@ namespace ByteShelf.Server.Derived.Services
         /// The contents whose <see cref="DerivedKind.Full"/> file is past <see cref="MaxFullBytes"/>, counted from the most
         /// recently used, least recently used last. The most recently used one is never among them, whatever its size.
         /// </summary>
-        public IReadOnlyList<string> GetFullOverTheLimit()
+        public IReadOnlyList<FullFile> GetFullOverTheLimit()
         {
             DirectoryInfo folder = new DirectoryInfo(FolderOf(DerivedKind.Full));
             if (!folder.Exists)
@@ -151,18 +151,25 @@ namespace ByteShelf.Server.Derived.Services
                 .OrderByDescending(file => file.LastWriteTimeUtc)
                 .ToList();
 
-            List<string> over = [];
+            List<FullFile> over = [];
             long bytes = 0;
             foreach (FileInfo file in files)
             {
                 bytes += file.Length;
                 if (bytes > MaxFullBytes && file != files[0])
                 {
-                    over.Add(file.Name);
+                    over.Add(new FullFile(file.Name, file.LastWriteTimeUtc));
                 }
             }
 
             return over;
+        }
+
+        /// <summary>When the <see cref="DerivedKind.Full"/> file kept of the contents was last used; null when none is.</summary>
+        public DateTime? LastUsedOfFull(string sha256)
+        {
+            FileInfo file = new FileInfo(GetPath(DerivedKind.Full, sha256));
+            return file.Exists ? file.LastWriteTimeUtc : null;
         }
 
         /// <summary>How many bytes the derived file kept takes; null when none is.</summary>
@@ -201,7 +208,8 @@ namespace ByteShelf.Server.Derived.Services
             }
         }
 
-        private bool Put(string sha256, KeptFile kept)
+        /// <summary>Puts one kind in place; answers whether a listing would change, as a file came or went.</summary>
+        private bool PutOne(string sha256, KeptFile kept)
         {
             string path = GetPath(kept.Kind, sha256);
             bool wasThere = File.Exists(path);
@@ -223,7 +231,8 @@ namespace ByteShelf.Server.Derived.Services
             return wasThere || kept.SourcePath != null;
         }
 
-        private bool Delete(string sha256, DerivedKind kind)
+        /// <summary>Removes one kind; answers whether a listing would change, as a file went.</summary>
+        private bool DeleteOne(DerivedKind kind, string sha256)
         {
             string path = GetPath(kind, sha256);
             if (!Directory.Exists(Path.GetDirectoryName(path)))

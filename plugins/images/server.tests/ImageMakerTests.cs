@@ -8,7 +8,7 @@ namespace ByteShelf.Plugins.Images.Tests
     public sealed class ImageMakerTests
     {
         /// <summary>The formats that have EXIF's orientation, by its values.</summary>
-        public static TheoryData<string, ushort> Orientations { get; } = new MatrixTheoryData<string, ushort>(["jpeg", "png", "webp", "tiff"], [1, 2, 3, 4, 5, 6, 7, 8]);
+        public static TheoryData<string, ushort> Orientations { get; } = new MatrixTheoryData<string, ushort>(TestImages.FormatsWithOrientation, TestImages.Orientations);
 
         public static TheoryData<DerivedKind, string> TransparentInWebP { get; } =
             new MatrixTheoryData<DerivedKind, string>([DerivedKind.Thumbnail, DerivedKind.Preview], ["png", "gif", "webp", "x-icon"]);
@@ -23,6 +23,23 @@ namespace ByteShelf.Plugins.Images.Tests
             using MagickImage image = TestImages.Quarters(80, 40);
 
             MadeFiles made = await MadeFiles.MakeAsync(TestImages.Of(format, image));
+
+            ImageAssert.AllOf(made, 80, 40, TestImages.QuarterColors);
+        }
+
+        [Fact]
+        public async Task MakeAsync_MakesEveryKindOfASixteenBitPng()
+        {
+            using MagickImage image = TestImages.Quarters(80, 40);
+            image.Depth = 16;
+            image.Settings.SetDefine("png:bit-depth", "16");
+            image.Settings.SetDefine("png:color-type", "2");
+            byte[] png = image.ToByteArray(MagickFormat.Png);
+
+            // The bit depth in its header.
+            Assert.Equal(16, png[24]);
+
+            MadeFiles made = await MadeFiles.MakeAsync(png);
 
             ImageAssert.AllOf(made, 80, 40, TestImages.QuarterColors);
         }
@@ -111,20 +128,12 @@ namespace ByteShelf.Plugins.Images.Tests
         [MemberData(nameof(Orientations))]
         public async Task MakeAsync_TurnsItUpright(string format, ushort orientation)
         {
-            // What quarter is where upright, of those as stored.
-            int[][] upright = [[0, 1, 2, 3], [1, 0, 3, 2], [3, 2, 1, 0], [2, 3, 0, 1], [0, 2, 1, 3], [2, 0, 3, 1], [3, 1, 2, 0], [1, 3, 0, 2]];
-            using MagickImage image = TestImages.Quarters(400, 200);
-            image.SetProfile(new ImageProfile("exif", TestImages.Exif(orientation)));
-            image.Orientation = (Orientation)orientation;
+            using MagickImage image = TestImages.QuartersStored(400, 200, orientation);
 
             MadeFiles made = await MadeFiles.MakeAsync(TestImages.Of(format, image));
 
             (int width, int height) = orientation < 5 ? (400, 200) : (200, 400);
-            ImageAssert.AllOf(
-                made,
-                width,
-                height,
-                upright[orientation - 1].Select(quarter => TestImages.QuarterColors[quarter]).ToList());
+            ImageAssert.AllOf(made, width, height, TestImages.UprightQuarterColors(orientation));
         }
 
         [Theory]
@@ -158,6 +167,8 @@ namespace ByteShelf.Plugins.Images.Tests
             MadeFiles made = await MadeFiles.MakeAsync(image.ToByteArray(MagickFormat.Bmp), DerivedKind.Agent);
 
             Assert.InRange(made.BytesOf(DerivedKind.Agent).Length, 1, 1024 * 1024);
+            using MagickImage agent = made.Decode(DerivedKind.Agent);
+            Assert.InRange(agent.Quality, 1u, 84u);
         }
 
         [Fact]
@@ -174,11 +185,12 @@ namespace ByteShelf.Plugins.Images.Tests
         public async Task MakeAsync_LeavesOutWhatCameWithTheImage()
         {
             using MagickImage image = TestImages.Plain(40, 20, 255, 0, 0);
-            image.SetProfile(new ImageProfile("exif", TestImages.Exif(1)));
+            image.SetProfile(new ImageProfile("exif", TestImages.ExifWithGps("where on earth")));
             image.SetProfile(new XmpProfile(Encoding.UTF8.GetBytes("<x:xmpmeta xmlns:x='adobe:ns:meta/'>where</x:xmpmeta>")));
             image.SetAttribute("comment", "where it was taken");
             byte[] contents = TestImages.Jpeg(image);
             Assert.Contains("where it was taken", Encoding.Latin1.GetString(contents), StringComparison.Ordinal);
+            Assert.Contains("where on earth", Encoding.Latin1.GetString(contents), StringComparison.Ordinal);
 
             MadeFiles made = await MadeFiles.MakeAsync(contents);
 

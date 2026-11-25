@@ -1,5 +1,6 @@
 using ByteShelf.Server.Derived.Repositories;
 using ByteShelf.Server.Derived.Services;
+using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Shared;
 using ByteShelf.Server.Storage.Services;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -17,6 +18,7 @@ namespace ByteShelf.Server.Derived
             services.AddSingleton<DerivedMakers>();
             services.AddScoped<IDerivedSizeRepository, DerivedSizeRepository>();
             services.AddSingleton<DerivedStore>();
+            services.AddSingleton<ProcessWork, MakeWork>();
             services.AddScoped<DerivedRoom>();
             services.AddScoped<DerivedFiles>();
             services.AddSingleton<MakerRuns>();

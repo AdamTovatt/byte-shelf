@@ -5,6 +5,7 @@ namespace ByteShelf.Plugins.Images.Tests.TestUtilities
 {
     internal static class ImageAssert
     {
+        /// <param name="tolerance">How far each of red, green and blue may be off: by default what a lossy WebP or JPEG of a plain colour is.</param>
         public static void Color(IMagickColor<byte> expected, IMagickColor<byte> actual, int tolerance = 6, string? of = null)
         {
             Assert.True(

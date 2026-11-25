@@ -130,25 +130,7 @@ namespace ByteShelf.Server.Derived.Services
                     continue;
                 }
 
-                changed += await _transactions.RunAsync(sha256, async session =>
-                {
-                    long? size = _store.SizeOf(kind, sha256);
-                    if (size == await _sizes.GetAsync(sha256, kind, session))
-                    {
-                        return 0;
-                    }
-
-                    if (size is long counted)
-                    {
-                        await _sizes.SetAsync(sha256, kind, counted, session);
-                    }
-                    else
-                    {
-                        await _sizes.RemoveAsync(sha256, kind, session);
-                    }
-
-                    return 1;
-                }, cancellationToken);
+                changed += await _transactions.RunAsync(sha256, session => _files.CountAgainAsync(kind, sha256, session), cancellationToken) ? 1 : 0;
             }
 
             return changed;

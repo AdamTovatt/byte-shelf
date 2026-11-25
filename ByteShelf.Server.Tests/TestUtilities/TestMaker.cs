@@ -6,6 +6,7 @@ using System.Text.Json;
 using ByteShelf.Plugins;
 using ByteShelf.Server.Derived.Models;
 using ByteShelf.Server.Derived.Services;
+using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Plugins.Services;
@@ -48,10 +49,10 @@ namespace ByteShelf.Server.Tests.TestUtilities
         }
 
         /// <summary>What its child process does.</summary>
-        internal static PluginWork LoadWork(string location)
+        internal static PluginWorks LoadWork(string location)
         {
             Spec spec = location.Length == 0 ? throw new FileNotFoundException("There is no plugin.") : JsonSerializer.Deserialize<Spec>(location)!;
-            return PluginWorkLoader.Of(null, new PluginMakerRegistration(() => new TestMaker(spec), MakesOf(spec)));
+            return PluginWorks.Of([new ReadWork(), new MakeWork()], new PluginRegistrations(null, new PluginMakerRegistration(() => new TestMaker(spec), MakesOf(spec))));
         }
 
         /// <summary>What it makes of the contents <paramref name="text"/>.</summary>
@@ -178,7 +179,8 @@ namespace ByteShelf.Server.Tests.TestUtilities
                     Thread reading = new Thread(() => contents.ReadByte());
                     contents.Position = 0;
                     reading.Start();
-                    while (reading.ThreadState != System.Threading.ThreadState.WaitSleepJoin)
+                    // Until it waits for the server's answer; one that ended instead has the test fail, not hang.
+                    while (reading.IsAlive && reading.ThreadState != System.Threading.ThreadState.WaitSleepJoin)
                     {
                         Thread.Sleep(1);
                     }

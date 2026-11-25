@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from 'react';
-import { Spinner, cn, mediaTypeOf, usePluginDocuments, useZoom, type DerivedKind, type ViewerProps } from '@byteshelf/plugin';
-import { ImageLayer, type LayerAddress } from './ImageLayer';
+import { Spinner, cn, loadDerived, loadImage, mediaTypeOf, usePluginDocuments, useZoom, type DerivedKind, type ViewerProps } from '@byteshelf/plugin';
+import { ImageLayer } from './ImageLayer';
 import { recordedImage, type ImageSize } from './recordedImage';
 import { showsType } from './showsType';
 
@@ -39,12 +39,12 @@ export function SharpeningImage(props: ViewerProps) {
   if ((hasNothingMade || hasNothingToShow) && !isHandedOver) setIsHandedOver(true);
   if (isHandedOver) return <Fallback />;
 
-  function layer(name: LayerName, address: (signal: AbortSignal) => Promise<LayerAddress | null>, look: { className?: string; fetchPriority?: 'high' | 'low' }) {
+  function layer(name: LayerName, load: (image: HTMLImageElement, signal: AbortSignal) => Promise<void>, look: { className?: string; fetchPriority?: 'high' | 'low' }) {
     if (isSharper(shown, name) || hasFailed(name)) return null;
     return (
       <ImageLayer
         key={name}
-        address={address}
+        load={load}
         alt={shown === name ? file.name : null}
         {...look}
         onDecoded={(natural) => {
@@ -56,15 +56,22 @@ export function SharpeningImage(props: ViewerProps) {
     );
   }
 
-  async function derivedAddress(kind: DerivedKind, signal: AbortSignal): Promise<LayerAddress | null> {
-    const url = await derived.url(kind, signal);
-    return url === null ? null : { url, forget: () => derived.forget(kind) };
+  /** Whether `image` was loaded with the file of `kind`: false when there is none. */
+  async function loadsDerived(kind: DerivedKind, image: HTMLImageElement, signal: AbortSignal): Promise<boolean> {
+    return (await loadDerived(derived, kind, (url) => loadImage(image, url, signal), signal)) !== null;
+  }
+
+  function derivedLayer(kind: DerivedKind) {
+    return async (image: HTMLImageElement, signal: AbortSignal) => {
+      if (!(await loadsDerived(kind, image, signal))) throw new Error(`There is no ${kind}.`);
+    };
   }
 
   /** The contents themselves or, where the browser does not show their type, what was made of them for that. */
-  async function wholeAddress(signal: AbortSignal): Promise<LayerAddress | null> {
+  async function loadWhole(image: HTMLImageElement, signal: AbortSignal): Promise<void> {
     const isShown = await showsType(mediaTypeOf(file.contentType));
-    return (isShown ? null : await derivedAddress('full', signal)) ?? { url: await content.url(signal) };
+    if (!isShown && (await loadsDerived('full', image, signal))) return;
+    await loadImage(image, await content.url(signal), signal);
   }
 
   return (
@@ -77,9 +84,9 @@ export function SharpeningImage(props: ViewerProps) {
           style={size ? { ...zoom, '--images-width': size.width, '--images-height': size.height } as CSSProperties : undefined}
         >
           {recorded && shown === null && <Placeholder url={recorded.placeholder} />}
-          {size && (shown === 'thumbnail' || derived.has('thumbnail')) && layer('thumbnail', (signal) => derivedAddress('thumbnail', signal), {})}
-          {layer('preview', (signal) => derivedAddress('preview', signal), { fetchPriority: 'high' })}
-          {(!hadPreview || isPreviewDone) && layer('whole', wholeAddress, { className: 'images-object-contain', fetchPriority: 'low' })}
+          {size && (shown === 'thumbnail' || derived.has('thumbnail')) && layer('thumbnail', derivedLayer('thumbnail'), {})}
+          {layer('preview', derivedLayer('preview'), { fetchPriority: 'high' })}
+          {(!hadPreview || isPreviewDone) && layer('whole', loadWhole, { className: 'images-object-contain', fetchPriority: 'low' })}
         </div>
       </div>
     </div>

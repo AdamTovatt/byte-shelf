@@ -43,7 +43,7 @@ namespace ByteShelf.Server.Plugins.Processes
         /// <summary>Runs it; does not return but for the exit code of a process that was not started as one.</summary>
         /// <param name="location">Where the plugin is (<see cref="PluginTarget.Location"/>).</param>
         /// <param name="load">Loads the plugin at a location, throwing when it cannot be.</param>
-        public static async Task<int> RunAsync(string? location, Func<string, PluginWork> load)
+        public static async Task<int> RunAsync(string? location, Func<string, PluginWorks> load)
         {
             if (location == null || !Console.IsInputRedirected)
             {
@@ -59,10 +59,10 @@ namespace ByteShelf.Server.Plugins.Processes
             PluginProcessCommand process = new PluginProcessCommand(input, output);
             process.ListenUntilTheServerIsGone();
 
-            PluginWork work;
+            PluginWorks works;
             try
             {
-                work = load(location);
+                works = load(location);
             }
             catch (Exception exception)
             {
@@ -76,11 +76,11 @@ namespace ByteShelf.Server.Plugins.Processes
             while (true)
             {
                 Frame request = await process._requests.Reader.ReadAsync();
-                await process.DoAsync(work, JsonSerializer.Deserialize<RunRequest>(request.Payload, JsonDefaults.CamelCase)!);
+                await process.DoAsync(works, JsonSerializer.Deserialize<RunRequest>(request.Payload, JsonDefaults.CamelCase)!);
             }
         }
 
-        private async Task DoAsync(PluginWork work, RunRequest request)
+        private async Task DoAsync(PluginWorks works, RunRequest request)
         {
             Write(FrameType.Started, string.Empty);
             FrameType type;
@@ -88,7 +88,7 @@ namespace ByteShelf.Server.Plugins.Processes
             PipedContents contents = new PipedContents(request.Length, Ask);
             try
             {
-                JsonElement answered = await work(request.Work, request.Arguments, contents, _folder);
+                JsonElement answered = await works.Named(request.Work)(request.Arguments, contents, _folder);
                 (type, answer) = (FrameType.Answer, JsonSerializer.SerializeToUtf8Bytes(answered, JsonDefaults.CamelCase));
                 if (answer.Length > Frame.MaxPayloadBytes)
                 {

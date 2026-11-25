@@ -1,7 +1,9 @@
 using System.Diagnostics;
 using ByteShelf.Server.Derived.Models;
 using ByteShelf.Server.Derived.Services;
+using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Plugins.Processes;
+using ByteShelf.Server.Plugins.Services;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
@@ -204,6 +206,21 @@ namespace ByteShelf.Server.Tests.Derived
             await Assert.ThrowsAsync<PluginUnavailableException>(() => GetAsync(shelf, file));
 
             Assert.Empty(AllDerivedFiles());
+        }
+
+        [Fact]
+        public async Task MakeAsync_AMakerThatCannotRun_IsShownToAdminsUntilOneOfItsRunsBegins()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile unwritable = await StoreTextAsync(shelf, "/a.txt", "full disk");
+            ShelfFile fine = await StoreTextAsync(shelf, "/b.txt", "b");
+            PluginProblems problems = Services.GetRequiredService<PluginProblems>();
+
+            PluginUnavailableException refused = await Assert.ThrowsAsync<PluginUnavailableException>(() => GetAsync(shelf, unwritable));
+            Assert.Equal($"Its maker of derived files could not run, so it makes nothing until it can: {refused.Message}.", problems.Of(TestMaker.Spec.DefaultId, PluginPart.Maker));
+
+            await GetAsync(shelf, fine);
+            Assert.Null(problems.Of(TestMaker.Spec.DefaultId, PluginPart.Maker));
         }
 
         [LinuxFact]

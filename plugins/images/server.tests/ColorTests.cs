@@ -125,6 +125,7 @@ namespace ByteShelf.Plugins.Images.Tests
 
             MadeFiles made = await MadeFiles.MakeAsync(TestImages.Of(format, image));
 
+            // There and back through a press's inks, which are of fewer colours than sRGB, rounds more than a lossy file does.
             AssertSrgb(new MagickColor(200, 100, 100), made, tolerance: 12);
         }
 
@@ -152,6 +153,20 @@ namespace ByteShelf.Plugins.Images.Tests
         public async Task MakeAsync_TurnsAGrayWithAProfileIntoSrgb()
         {
             MadeFiles made = await MadeFiles.MakeAsync(WithProfile(GrayJpeg(128), LinearProfile("GRAY")));
+
+            // A gray is one number, so a lossy file of it is off by less than a colour's three.
+            AssertSrgb(new MagickColor(188, 188, 188), made, tolerance: 4);
+        }
+
+        /// <summary>As <see cref="MakeAsync_TurnsAGrayWithAProfileIntoSrgb"/>, of a PNG.</summary>
+        [Fact]
+        public async Task MakeAsync_TurnsAGrayPngWithAProfileIntoSrgb()
+        {
+            using MagickImage image = TestImages.Plain(40, 20, 128, 128, 128);
+            image.ColorSpace = ColorSpace.Gray;
+            image.SetProfile(new ImageProfile("icc", LinearProfile("GRAY")));
+
+            MadeFiles made = await MadeFiles.MakeAsync(image.ToByteArray(MagickFormat.Png));
 
             AssertSrgb(new MagickColor(188, 188, 188), made, tolerance: 4);
         }

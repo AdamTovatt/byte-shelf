@@ -63,8 +63,7 @@ namespace ByteShelf.Server.Derived.Services
 
         private async Task<DerivedFile> OfAsync(FileRecord file, DerivedKind kind, CancellationToken cancellationToken)
         {
-            // An encrypted file has none, even when a plain file holds the same bytes.
-            if (file.Encrypted || _makers.For(kind, [ContentTypes.MediaTypeOf(file.ContentType)]) == null)
+            if (!_makers.MayHave(file, kind))
             {
                 throw None(file, kind);
             }

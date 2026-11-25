@@ -1,4 +1,5 @@
 import { mediaTypeOf, type ViewerProps } from '@byteshelf/plugin';
+import { isImage } from './imageTypes';
 import { LoadedAhead } from './LoadedAhead';
 import { SharpeningImage } from './SharpeningImage';
 
@@ -11,7 +12,8 @@ export function SharpeningViewer(props: ViewerProps) {
   return (
     <>
       {file.encrypted || type === SVG ? <Fallback /> : <SharpeningImage {...props} />}
-      {neighbours.filter((each) => mediaTypeOf(each.file.contentType).startsWith('image/')).map((each) => <LoadedAhead key={each.file.id} {...each} />)}
+      {/* The files beside it are any the arrow keys move to, whatever shows them. */}
+      {neighbours.filter((each) => isImage(each.file.contentType)).map((each) => <LoadedAhead key={each.file.id} {...each} />)}
     </>
   );
 }

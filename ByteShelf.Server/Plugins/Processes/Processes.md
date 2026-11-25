@@ -8,11 +8,12 @@ them, and nothing keeps it from them.
 
 `PluginProcesses` has a run done: the plugin's turn (`PluginTurns`: one thing at a time per plugin, what somebody
 waits for first, then making from contents just stored, then the backlog, which all reading is), then the process
-(`PluginWorker`), used by one run at a time. Each plugin has one, the
-server's own executable as `--plugin-process <folder>` (`PluginProcessCommand`), which loads the plugin as the
-server does, among the server's registrations on no root, and makes its reader and maker and nothing else. It
-does many things, and is ended when it has had nothing to do for 60 seconds. One that died or was ended is
-replaced by the next run.
+(`PluginWorker`, of `PluginWorkers`), used by one run at a time, noting the run (`PluginClaims`) so a removal of its
+contents finds it. Each plugin has one, the server's own executable as `--plugin-process <folder>`
+(`PluginProcessCommand`), which loads the plugin as the server does, among the server's registrations on no root,
+and makes its reader and maker and nothing else. What it may be asked to do is each module's `ProcessWork`
+(metadata's reading, derived files' making), which a run names by its type. It does many things, and is ended when
+it has had nothing to do for 60 seconds. One that died or was ended is replaced by the next run.
 
 ## What it is given
 

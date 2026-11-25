@@ -18,17 +18,17 @@ namespace ByteShelf.Server.Tests.TestUtilities
         private readonly string _folder = Directory.CreateTempSubdirectory("byteshelf-makers-").FullName;
 
         /// <summary>The tests' own executable: the dotnet they run on, whatever is on PATH, with their assembly.</summary>
-        public static PluginExecutable Executable { get; } = new PluginExecutable(
+        internal static PluginExecutable Executable { get; } = new PluginExecutable(
             Path.GetFullPath(Path.Combine(RuntimeEnvironment.GetRuntimeDirectory(), "..", "..", "..", "dotnet")), [typeof(TestProgram).Assembly.Location]);
 
         /// <summary>The server's own program, which loads plugins as a server's does.</summary>
-        public static PluginExecutable ServerExecutable { get; } = new PluginExecutable(
+        internal static PluginExecutable ServerExecutable { get; } = new PluginExecutable(
             Executable.FileName, [Path.Combine(AppContext.BaseDirectory, "ByteShelf.Server.dll")]);
 
         public IReadOnlyList<DerivedFilePlugin> All { get; set; } = [];
 
         /// <summary>What runs the makers; another than <see cref="Executable"/> is set before <see cref="AddTo"/>.</summary>
-        public PluginExecutable Program { get; set; } = Executable;
+        internal PluginExecutable Program { get; set; } = Executable;
 
         private string LogPath => Path.Combine(_folder, "log");
 

@@ -192,7 +192,7 @@ restarts, which only the log says.
 A plugin's runs in the plugin's process ([Processes](../Plugins/Processes/Processes.md)), which is ended with a
 read over its time or memory, or with one that crashes: those found nothing too. A reader that cannot run,
 whatever the contents, as one that cannot be made, ends its part of the pass, and the next plugin's goes on;
-admins are told why (`ReaderProblems`, [Plugins](../Plugins/Plugins.md)), and the next pass tries again. A read
+admins are told why (`PluginProblems`, [Plugins](../Plugins/Plugins.md)), and the next pass tries again. A read
 that is ended because the contents are swapped or purged records nothing, and the pass goes on with the next.
 
 Uploads never wait for them. Contents that vanish between being listed and read are passed over.

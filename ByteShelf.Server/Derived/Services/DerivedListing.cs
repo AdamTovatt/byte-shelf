@@ -20,13 +20,7 @@ namespace ByteShelf.Server.Derived.Services
         /// <inheritdoc />
         public IReadOnlyDictionary<DerivedKind, string>? Of(FileRecord file)
         {
-            if (file.Encrypted)
-            {
-                return null;
-            }
-
-            string[] mediaType = [ContentTypes.MediaTypeOf(file.ContentType)];
-            List<DerivedKind> kinds = DerivedKinds.All.Where(kind => _makers.For(kind, mediaType) != null).ToList();
+            List<DerivedKind> kinds = DerivedKinds.All.Where(kind => _makers.MayHave(file, kind)).ToList();
             if (kinds.Count == 0)
             {
                 return null;

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.Versioning;
 using ByteShelf.Server.Derived.Models;
 using ByteShelf.Server.Derived.Services;
 using ByteShelf.Server.Plugins.Processes;
@@ -107,6 +108,30 @@ namespace ByteShelf.Server.Tests.Derived
         }
 
         [Fact]
+        public async Task Make_OfContentsAPlainFileHoldsAgainOnceARemovalTookWhatWasMade_KeepsNothing()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", Plugins.Waiting("a"));
+            Task<MakingOutcome> making = MakeAsync(file);
+            using (await Plugins.StartedAsync("a"))
+            {
+                // A removal that took what was made, whose commit then failed, so a plain file holds the contents still.
+                _sessions.BeforeNextTransaction("MakerRun.KeepAsync", async () =>
+                {
+                    using (await Locks.LockAsync(file.Sha256))
+                    {
+                        await Processes.StopAsync(file.Sha256);
+                    }
+                });
+                Plugins.GoOn("a");
+            }
+
+            Assert.Equal(MakingOutcome.NothingToMake, await making);
+            Assert.Empty(AllDerivedFiles());
+            Assert.Empty(await SizesAsync());
+        }
+
+        [Fact]
         public async Task Encrypt_AsWhatWasMadeIsAboutToBeKept_LeavesNothingOfIt()
         {
             Shelf shelf = await CreateShelfAsync();
@@ -198,17 +223,15 @@ namespace ByteShelf.Server.Tests.Derived
             Assert.Equal("Thumbnail of hello by test-maker 1", await GetAsync(shelf, file));
         }
 
+        /// <summary>The derived files' own folder, where <see cref="Encrypt_OnceARunLeftWhatCannotBeRemoved_IsRefusedUntilItCan"/> has a process's.</summary>
         [UnixFact]
-        public async Task Encrypt_WhatCannotBeRemoved_IsRefusedAndTheFileStaysPlain()
+        [UnsupportedOSPlatform("windows")]
+        public async Task Encrypt_ADerivedFileThatCannotBeRemoved_IsRefusedAndTheFileStaysPlain()
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "hello");
             await GetAsync(shelf, file);
             string folder = Path.GetDirectoryName(Store.GetPath(DerivedKind.Thumbnail, file.Sha256))!;
-            if (OperatingSystem.IsWindows())
-            {
-                return;
-            }
 
             File.SetUnixFileMode(folder, UnixFileMode.UserRead | UnixFileMode.UserExecute);
             try
@@ -330,20 +353,30 @@ namespace ByteShelf.Server.Tests.Derived
         }
 
         [UnixFact]
-        public async Task Purge_OnceARunLeftWhatCannotBeRemoved_IsRefusedAndMaintenancePurgesItOnceItCan()
+        public async Task Purge_OnceARunLeftWhatCannotBeRemoved_PurgesTheRestAndLeavesThatForAPassOnceItCan()
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "undeletable");
+            ShelfFile other = await StoreTextAsync(shelf, "/b.txt", "other");
             await GetAsync(shelf, file);
             using UndeletableFolder left = new UndeletableFolder(TestRoot, file.Sha256);
-
             await FileService.DeleteFileAsync(shelf, EntryReference.ForId(file.Id));
+            await FileService.DeleteFileAsync(shelf, EntryReference.ForId(other.Id));
+            IFileRepository files = Services.GetRequiredService<IFileRepository>();
+            IStorageMaintenance maintenance = Services.GetRequiredService<IStorageMaintenance>();
+
             Assert.IsType<PluginNotStoppedException>((await Assert.ThrowsAsync<TracesNotRemovedException>(() => TrashService.EmptyAsync(shelf, CancellationToken.None))).InnerException);
-            Assert.NotNull(await Services.GetRequiredService<IFileRepository>().GetByIdAsync(file.Id));
+            Assert.NotNull(await files.GetByIdAsync(file.Id));
+            Assert.Null(await files.GetByIdAsync(other.Id));
+            Assert.False(ObjectStore.Exists(other.Sha256));
+
+            // A pass goes on past it, to the steps after the purge.
+            Assert.Equal(0, (await maintenance.RunAsync(TestInstants.Now, CancellationToken.None)).PurgedFiles);
+            Assert.NotNull(await files.GetByIdAsync(file.Id));
 
             left.Release();
-            await Services.GetRequiredService<IStorageMaintenance>().RunAsync(TestInstants.Now, CancellationToken.None);
-            Assert.Null(await Services.GetRequiredService<IFileRepository>().GetByIdAsync(file.Id));
+            Assert.Equal(1, (await maintenance.RunAsync(TestInstants.Now, CancellationToken.None)).PurgedFiles);
+            Assert.Null(await files.GetByIdAsync(file.Id));
             Assert.Empty(AllDerivedFiles());
             Assert.False(ObjectStore.Exists(file.Sha256));
         }

@@ -36,7 +36,8 @@ describe('the sharpening viewer', () => {
   async function show(derived: DerivedReader, file: Partial<ShelfFile> = {}, neighbours: Neighbour[] = []): Promise<void> {
     const content: ContentReader = { url: contentUrl, blob: async () => new Blob(), range: async () => new Blob(['a']) };
     const shows = { id: 'f', name: 'a.png', contentType: 'image/png', encrypted: false, ...file } as ShelfFile;
-    await act(async () => root.render(<SharpeningViewer file={shows} content={content} derived={derived} neighbours={neighbours} Fallback={NextViewer} />));
+    // Keyed by the file, as the app keys a viewer.
+    await act(async () => root.render(<SharpeningViewer key={shows.id} file={shows} content={content} derived={derived} neighbours={neighbours} Fallback={NextViewer} />));
   }
 
   /** The images there are, by what they load. */
@@ -282,6 +283,23 @@ describe('the sharpening viewer', () => {
     expect(contentUrl.mock.calls[0][0]!.aborted).toBe(true);
   });
 
+  it('ends what is loading of one image as it moves to the next, which has a box of its own', async () => {
+    decode = () => new Promise(() => {});
+    await show(derivedReader(['preview']));
+    await load('preview.webp');
+    const before = imageOf('preview.webp');
+    const boxBefore = box();
+
+    decode = async () => undefined;
+    await show(derivedReader(['preview'], { preview: Promise.resolve('next.webp') }), { id: 'g', name: 'b.png' });
+    expect(before.hasAttribute('src')).toBe(false);
+    expect(images()).toEqual(['next.webp']);
+    await load('next.webp', 640, 480);
+
+    expect([seen(), boxSize()]).toEqual(['next.webp', ['640', '480']]);
+    expect(box()).not.toBe(boxBefore);
+  });
+
   describe('of which no size is recorded', () => {
     beforeEach(() => {
       documents = { data: { contents: null }, isPending: false };
@@ -380,13 +398,18 @@ describe('the sharpening viewer', () => {
       derived: derivedReader(listed, { preview: Promise.resolve(`${id}.webp`) }),
     });
 
-    it('the previews of the images beside it, and their documents, and nothing else', async () => {
+    it('the previews of the images beside it that have one, and nothing else made of them', async () => {
       const neighbours = [neighbour('before', 'image/jpeg', ['thumbnail', 'preview']), neighbour('after', 'image/png', ['thumbnail'])];
       await show(derivedReader(['preview']), {}, neighbours);
 
       expect(loadedAhead.map((each) => each.getAttribute('src'))).toEqual(['before.webp']);
       expect(neighbours.map(({ derived }) => derived.url.mock.calls.map(([kind]) => kind))).toEqual([['preview'], []]);
-      expect(documentsOf.mock.calls.map(([{ id }]) => id)).toEqual(expect.arrayContaining(['before', 'after']));
+    });
+
+    it('the documents of the images beside it', async () => {
+      await show(derivedReader(['preview']), {}, [neighbour('before', 'image/jpeg', ['preview']), neighbour('after', 'image/png', [])]);
+
+      expect(new Set(documentsOf.mock.calls.map(([{ id }]) => id))).toEqual(new Set(['f', 'before', 'after']));
     });
 
     it('nothing of files beside it that it does not show', async () => {

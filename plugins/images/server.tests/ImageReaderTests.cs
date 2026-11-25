@@ -30,20 +30,32 @@ namespace ByteShelf.Plugins.Images.Tests
             AssertPlaceholder(document, 12, 16, MagickColors.Red, MagickColors.Red);
         }
 
+        public static TheoryData<string, ushort> Orientations { get; } = new MatrixTheoryData<string, ushort>(TestImages.FormatsWithOrientation, TestImages.Orientations);
+
         [Theory]
-        [InlineData("jpeg")]
-        [InlineData("webp")]
-        [InlineData("tiff")]
-        public async Task ReadAsync_SaysThemUpright(string format)
+        [MemberData(nameof(Orientations))]
+        public async Task ReadAsync_SaysThemUpright(string format, ushort orientation)
         {
-            using MagickImage image = TestImages.Quarters(160, 80);
-            image.SetProfile(new ImageProfile("exif", TestImages.Exif(6)));
-            image.Orientation = Orientation.RightTop;
+            using MagickImage image = TestImages.QuartersStored(160, 80, orientation);
 
             JsonObject document = await ReadAsync(TestImages.Of(format, image));
 
-            Assert.Equal((80, 160), ((int)document["width"]!, (int)document["height"]!));
-            AssertPlaceholder(document, 8, 16, MagickColors.Blue, MagickColors.Red);
+            ((int width, int height), (int placeholderWidth, int placeholderHeight)) = orientation < 5 ? ((160, 80), (16, 8)) : ((80, 160), (8, 16));
+            Assert.Equal((width, height), ((int)document["width"]!, (int)document["height"]!));
+            IReadOnlyList<MagickColor> upright = TestImages.UprightQuarterColors(orientation);
+            AssertPlaceholder(document, placeholderWidth, placeholderHeight, upright[0], upright[1]);
+        }
+
+        /// <summary>As the maker shows it (<see cref="ImageMakerTests.MakeAsync_PutsAFirstFrameWhereItIsShown"/>).</summary>
+        [Fact]
+        public async Task ReadAsync_SaysTheSizeAFirstFrameIsShownIn()
+        {
+            using MagickImage frame = TestImages.Plain(10, 10, 255, 0, 0);
+            frame.Page = new MagickGeometry(30, 10, 40, 20);
+
+            JsonObject document = await ReadAsync(frame.ToByteArray(MagickFormat.Gif));
+
+            Assert.Equal((40, 20), ((int)document["width"]!, (int)document["height"]!));
         }
 
         [Fact]
@@ -70,6 +82,8 @@ namespace ByteShelf.Plugins.Images.Tests
             using MagickImage image = new MagickImage(Convert.FromBase64String(url[DataUrl.Length..]), MagickFormat.WebP);
             Assert.Empty(image.ProfileNames);
             ImageAssert.Size(image, width, height);
+
+            // A WebP of 16 pixels at quality 50 bleeds a quarter's colour into its neighbours'.
             ImageAssert.Color(topLeft, ImageAssert.ColorAt(image, 1, 1), tolerance: 20);
             ImageAssert.Color(topRight, ImageAssert.ColorAt(image, width - 2, 1), tolerance: 20);
         }

@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.RegularExpressions;
 using ByteShelf.Server.Tests.TestUtilities;
@@ -152,6 +153,21 @@ namespace ByteShelf.Server.Tests.Mcp
             await made.Content.CopyToAsync(copy);
 
             Assert.Equal((TestMaker.MediaType, 0xFF), (made.ContentType, (int)copy.ToArray()[0]));
+        }
+
+        [Fact]
+        public async Task HttpClient_OpenDerivedOfOneThereIsNoRoomFor_ThrowsQuotaExceeded()
+        {
+            byte[] picture = "picture"u8.ToArray();
+            (await _host.AdminClient.PostAsJsonAsync("/api/shelves", new CreateShelfRequest { Name = "small", QuotaBytes = picture.Length })).EnsureSuccessStatusCode();
+            ShelfFile file = await _host.PutAsAdminAsync("small", "/a.heic", picture, "image/heic");
+            using HttpClient http = _host.CreateClient();
+            CreatedShelfKey key = await _host.CreateKeyAsync("small", ShelfPermission.Read);
+            IShelfClient shelf = new ByteShelfClient.Http.ByteShelfHttpClient(http, new ByteShelfClient.Http.ShelfKeyCredentials(key.Secret)).Shelf("small");
+
+            ByteShelfException refused = await Assert.ThrowsAsync<ByteShelfException>(() => shelf.OpenDerivedAsync(file.Id, DerivedKind.Agent));
+
+            Assert.Equal((HttpStatusCode.InsufficientStorage, ErrorCodes.QuotaExceeded), (refused.StatusCode, refused.Code));
         }
 
         private static Task<CallToolResult> DownloadAsync(McpClient client, string path)

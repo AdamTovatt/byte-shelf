@@ -1,6 +1,8 @@
 using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Metadata.Repositories;
+using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Plugins.Processes;
+using ByteShelf.Server.Plugins.Services;
 using ByteShelfCommon;
 
 namespace ByteShelf.Server.Metadata.Services
@@ -10,11 +12,11 @@ namespace ByteShelf.Server.Metadata.Services
     {
         private readonly PluginReader _reader;
         private readonly IContentPluginMetadataRepository _repository;
-        private readonly ReaderProblems _problems;
+        private readonly PluginProblems _problems;
         private readonly ILogger _logger;
         private bool _unavailable;
 
-        public PluginContentReader(PluginReader reader, IContentPluginMetadataRepository repository, ReaderProblems problems, ILogger logger)
+        public PluginContentReader(PluginReader reader, IContentPluginMetadataRepository repository, PluginProblems problems, ILogger logger)
         {
             _reader = reader;
             _repository = repository;
@@ -39,7 +41,7 @@ namespace ByteShelf.Server.Metadata.Services
             catch (PluginUnavailableException exception)
             {
                 _unavailable = true;
-                _problems.Report(_reader.PluginId, $"Its reader of files' contents could not run, so it reads nothing until it can: {exception.Message}.");
+                _problems.Report(_reader.PluginId, PluginPart.Reader, $"Its reader of files' contents could not run, so it reads nothing until it can: {exception.Message}.");
                 _logger.LogError(exception, "The reader of {Plugin} could not run, and is tried again by the next pass: {Reason}.", _reader.PluginId, exception.Message);
                 return null;
             }
@@ -49,18 +51,19 @@ namespace ByteShelf.Server.Metadata.Services
                 return null;
             }
 
-            _problems.Clear(_reader.PluginId);
-            switch (reading)
+            if (reading is PluginReading.NotRead)
             {
-                case PluginReading.Found { Json: null }:
-                    return new ReadOutcome(Record(null), Failed: false);
-                case PluginReading.Found { Json: string json } when DocumentOf(json) is { } document:
-                    return new ReadOutcome(Record(document), Failed: false);
-                case PluginReading.NotRead:
-                    return null;
-                default:
-                    return new ReadOutcome(Record(null), Failed: true);
+                // No process ran, so it says nothing of whether one can.
+                return null;
             }
+
+            _problems.Clear(_reader.PluginId, PluginPart.Reader);
+            return reading switch
+            {
+                PluginReading.Found { Json: null } => new ReadOutcome(Record(null), Failed: false),
+                PluginReading.Found { Json: string json } when DocumentOf(json) is { } document => new ReadOutcome(Record(document), Failed: false),
+                _ => new ReadOutcome(Record(null), Failed: true),
+            };
         }
 
         private static PluginDocument? DocumentOf(string json)

@@ -41,6 +41,12 @@ namespace ByteShelf.Server.Derived.Services
         }
 
         /// <inheritdoc />
+        public Task ReconcileAsync(string sha256)
+        {
+            return _files.CountAgainAsync(sha256);
+        }
+
+        /// <inheritdoc />
         public Task<bool> RemoveUnheldAsync(string sha256, CancellationToken cancellationToken = default)
         {
             return _transactions.RunAsync(sha256, session => RemoveUnheldAsync(sha256, session), cancellationToken);

@@ -1,6 +1,7 @@
 import createClient from 'openapi-fetch';
 import type { paths } from '../types/api';
 import { getFreshToken, renewAccessToken } from './authService';
+import { ERROR_CODES } from './errorCodes';
 
 /** How long to wait before asking again when the server says to, but not for how many seconds. */
 const ASK_AGAIN_SECONDS = 5;
@@ -21,9 +22,17 @@ export class ApiError extends Error {
   }
 }
 
-/** After how many seconds to ask again for what the server is still making; null when the error is another. The answer to a HEAD has no body to tell it by a code. */
+/** The fewest seconds to wait before asking again for what the server is still making, though it says fewer: none would ask on and on. */
+const LEAST_NOT_READY_SECONDS = 1;
+
+/**
+ * After how many seconds to ask again for what the server is still making; null when the error is another. The
+ * answer to a HEAD has no body to tell it by, so a 503 without a code is taken for one.
+ */
 export function notReadyFor(error: unknown): number | null {
-  return error instanceof ApiError && error.status === 503 ? error.askAgainSeconds : null;
+  if (!(error instanceof ApiError) || error.status !== 503 || error.askAgainSeconds === null) return null;
+  if ((error.code ?? ERROR_CODES.notReady) !== ERROR_CODES.notReady) return null;
+  return Math.max(error.askAgainSeconds, LEAST_NOT_READY_SECONDS);
 }
 
 /** Whether the server refused because what was asked for is not there. */
