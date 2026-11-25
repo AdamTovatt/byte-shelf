@@ -1,6 +1,7 @@
 import type { EncryptedFolder } from '../services/encryptionService';
 import type { ShelfFile } from '../services/shelfService';
 import { createCheck, encryptBlob } from '../lib/encryption/age';
+import { compareNames } from '../lib/shelfPaths';
 import { FAST } from './encryptedShelf';
 import { json } from './fakeServer';
 import { shelfDirectory, shelfFile } from './shelfFiles';
@@ -12,6 +13,14 @@ interface SentFile {
   encrypted: boolean;
   type: string | null;
   contents: Blob;
+}
+
+/** How the id of a file stored from what was sent starts; one put there by a test starts otherwise. */
+const SENT_ID = 'new';
+
+/** Files in the order the server lists them, by name. */
+function byName(one: ShelfFile, other: ShelfFile): number {
+  return compareNames(one.name, other.name);
 }
 
 /** A shelf named docs with one folder, as the server answers for it. */
@@ -44,6 +53,11 @@ export function uploadShelf(path: string) {
       return file;
     },
 
+    /** Whether the file of `id` was stored from what was sent, rather than put there. */
+    isSent(id: string): boolean {
+      return id.startsWith(SENT_ID);
+    },
+
     /** The file there now. */
     file(name: string): ShelfFile {
       return files.get(`${path}/${name}`)!.file;
@@ -63,7 +77,9 @@ export function uploadShelf(path: string) {
         case 'GET /api/shelves/docs/tree':
           return json({ directory: shelf.directory, directories: [], files: [] });
         case 'GET /api/shelves/docs/entries':
-          return json({ directory: shelf.directory, encryptedBy: shelf.encryptedBy, directories: [], files: Array.from(files.values(), ({ file }) => file) });
+          // Any other folder is there, empty; a path is taken composed, as the server takes paths.
+          if (query.get('path')!.normalize('NFC') !== path) return json({ directory: shelfDirectory(query.get('path')!), directories: [], files: [] });
+          return json({ directory: shelf.directory, encryptedBy: shelf.encryptedBy, directories: [], files: Array.from(files.values(), ({ file }) => file).sort(byName) });
         case 'GET /api/shelves/docs/files': {
           const found = files.get(query.get('path')!);
           return found ? json(found.file) : json({ message: 'There is no such file.', code: 'not_found' }, 404);
@@ -87,7 +103,7 @@ export function uploadShelf(path: string) {
     if (shelf.refusal !== null) return json({ message: shelf.refusal, code: 'conflict' }, 409);
     if (shelf.encryptedBy && !encrypted) return json({ message: 'The folder is encrypted.', code: 'conflict' }, 409);
     if (files.has(at) && !overwrite) return json({ message: `A file already exists at '${at}'.`, code: 'conflict' }, 409);
-    const file = shelfFile(at.slice(path.length + 1), { path: at, id: `new${shelf.sent.length}:${at}`, encrypted });
+    const file = shelfFile(at.slice(path.length + 1), { path: at, id: `${SENT_ID}${shelf.sent.length}:${at}`, encrypted });
     files.set(at, { file, contents });
     return json(file);
   }

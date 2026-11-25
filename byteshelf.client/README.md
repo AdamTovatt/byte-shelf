@@ -75,9 +75,21 @@ npm run codegen    # in a second terminal
   (`lib/deviceName.ts`). The ceremonies go through the browser's own WebAuthn JSON helpers
   (`lib/webauthn.ts`); a browser without them gets no passkeys.
 - **Files:** uploads up to 8 MiB go in one request, larger ones as a resumable upload in 8 MiB chunks
-  (`services/uploadService.ts`). They go through one queue (`services/uploadQueue.ts`), which goes on as its
-  page is left, until a reload or the end of the session (`contexts/UploadHost.tsx`). A file whose name is
-  taken is replaced only when asked; a replace that is cancelled or fails is offered again. Nothing is sent
+  (`services/uploadService.ts`), each body through XMLHttpRequest (`authorizedUpload` in `services/apiClient.ts`),
+  which tells of its bytes as they go out. They go through one queue (`services/uploadQueue.ts`), which goes on
+  as its page is left, until a reload or the end of the session (`contexts/UploadHost.tsx`). Each shows as a row
+  among the files of the folder it goes into, in their order by name, as it is queued: once picked or dropped,
+  or, into an encrypted folder whose password is not kept, once that is given (`components/UploadRow.tsx`,
+  merged in by `lib/uploadRows.ts`). The row says it is waiting, encrypting, how much is sent with a bar where a
+  file's size is (on a phone too), then finishing. Until all is sent, Cancel takes the row away at once and the
+  next upload goes on; one cancelled as it is encrypted finishes encrypting behind it and then sends nothing, and
+  a replace cancelled is not offered again. Done, it is the file it was stored as until the listing has that
+  file or is read again after it, so a file deleted or moved by then goes. A folder's list of uploads
+  (`lib/uploadStore.ts`) changes only as one is added, removed, replaces a file or is done, and each row is drawn
+  again alone as its upload moves on. A file whose name is taken is replaced only when asked, from Replace on its
+  row, which then takes the place of the file there; a replace whose password is not given or that fails is
+  offered again. A taken name and a failure stay on their row, with the reason, until Dismiss; in a folder not
+  shown, or hidden by a search, they are also told in a toast. Nothing is sent
   once the folder is gone from its path or not encrypted as it was read, and a password not given ends the
   rest of what was uploaded together. A file the browser has no type for is sent without one, so the server
   types it by its name. "Copy link"

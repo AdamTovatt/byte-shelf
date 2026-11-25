@@ -15,7 +15,11 @@ export function field(label: string): HTMLInputElement {
 
 /** Types `value` into the field labelled `label`, as React sees typing. */
 export function fill(label: string, value: string): void {
-  const input = field(label);
+  typeInto(field(label), value);
+}
+
+/** Types `value` into `input`, as React sees typing. */
+export function typeInto(input: HTMLInputElement, value: string): void {
   act(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
     input.dispatchEvent(new Event('input', { bubbles: true }));

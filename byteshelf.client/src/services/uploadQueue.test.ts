@@ -14,6 +14,9 @@ import { uploadQueue, type QueueUploads, type UploadState } from './uploadQueue'
 /** How often a password was checked against a folder's check. */
 const checks = vi.hoisted(() => ({ count: 0 }));
 
+/** What encrypting a file waits for before it starts, when a test holds it. */
+const encrypting = vi.hoisted(() => ({ held: (() => Promise.resolve()) as (contents: Blob) => Promise<void> }));
+
 vi.mock('../lib/encryption/age', async (original) => {
   const age = await original<typeof import('../lib/encryption/age')>();
   return {
@@ -22,8 +25,17 @@ vi.mock('../lib/encryption/age', async (original) => {
       checks.count++;
       return age.checkMatches(check, password);
     },
+    encryptBlob: async (...args: Parameters<typeof age.encryptBlob>) => {
+      await encrypting.held(args[0]);
+      return age.encryptBlob(...args);
+    },
   };
 });
+
+/** Waits long enough for several requests to the fake server to be answered, one after another. */
+async function afterAWhile(): Promise<void> {
+  for (let turn = 0; turn < 20; turn++) await new Promise((resolve) => setTimeout(resolve));
+}
 
 describe('uploads', () => {
   let shelf: ReturnType<typeof uploadShelf>;
@@ -35,10 +47,14 @@ describe('uploads', () => {
   /** What was told of each upload, by its file's name. */
   let states: Map<string, UploadState[]>;
   let ids: Set<number>;
+  /** Done as each state is told, once it is kept. */
+  let during: (name: string, state: UploadState) => void;
 
   beforeEach(() => {
     states = new Map();
     ids = new Set();
+    during = () => undefined;
+    encrypting.held = () => Promise.resolve();
     checks.count = 0;
     localStorage.clear();
     sessionStorage.clear();
@@ -56,6 +72,7 @@ describe('uploads', () => {
       report: ({ id, file }, state) => {
         ids.add(id);
         states.set(file.name, [...(states.get(file.name) ?? []), state]);
+        during(file.name, state);
       },
       changed,
       workFactor: FAST,
@@ -75,6 +92,22 @@ describe('uploads', () => {
 
   function last(name: string): UploadState | undefined {
     return states.get(name)?.at(-1);
+  }
+
+  /** Cancels the upload of `name`, which is on its way. */
+  function cancel(name: string): void {
+    const state = last(name);
+    if (!state || !('cancel' in state)) throw new Error(`${name} is not on its way.`);
+    state.cancel();
+  }
+
+  function sentPaths(): string[] {
+    return shelf.sent.map(({ path }) => path);
+  }
+
+  /** What `name` was told to be, in order. */
+  function statuses(name: string): UploadState['status'][] {
+    return (states.get(name) ?? []).map(({ status }) => status);
   }
 
   /** Waits until the last that is told of `name` is `status`. */
@@ -133,7 +166,7 @@ describe('uploads', () => {
       'PUT /api/shelves/docs/content?path=%2Fa%2Fa.txt&overwrite=true',
     ]);
     expect(await shelf.sent[1].contents.text()).toBe('new');
-    expect(states.get('a.txt')).toContainEqual({ status: 'uploading', sentBytes: 3 });
+    expect(states.get('a.txt')).toContainEqual(expect.objectContaining({ status: 'uploading', sentBytes: 3, totalBytes: 3, replacing: true }));
   });
 
   it('reports any other refusal as failed, with its reason, also where there is a file', async () => {
@@ -321,7 +354,7 @@ describe('uploads', () => {
 
       await (await asksFor('a')).give('right');
       await until('c.txt', 'done');
-      expect(states.get('b.txt')).toEqual([{ status: 'cancelled' }]);
+      expect(statuses('b.txt')).toEqual(['waiting', 'cancelled']);
     });
   });
 
@@ -349,7 +382,7 @@ describe('uploads', () => {
     (await asksFor('a.txt')).cancel();
 
     await until('b.txt', 'taken');
-    expect(states.get('b.txt')).toHaveLength(1);
+    expect(statuses('b.txt')).toEqual(['waiting', 'taken']);
     expect(prompts.open).toEqual([]);
     await replace('b.txt');
     await asksFor('b.txt');
@@ -410,12 +443,131 @@ describe('uploads', () => {
     await start(['b.txt']);
     await vi.waitFor(() => expect(puts).toEqual(['/a/a.txt']));
     // Long enough for the second one's lookups, had they begun.
-    for (let turn = 0; turn < 20; turn++) await new Promise((resolve) => setTimeout(resolve));
+    await afterAWhile();
     expect(puts).toEqual(['/a/a.txt']);
-    expect(states.has('b.txt')).toBe(false);
+    expect(statuses('b.txt')).toEqual(['waiting']);
 
     finishFirst();
     await until('b.txt', 'done');
     expect(puts).toEqual(['/a/a.txt', '/a/b.txt']);
+  });
+
+  it('tells each queued as waiting at once, then how much of it is sent, of how much, and the file it is stored as', async () => {
+    await start(['a.txt', 'b.txt']);
+    expect(statuses('b.txt')).toEqual(['waiting']);
+
+    const done = await until('b.txt', 'done');
+
+    expect(done.file).toMatchObject({ path: '/a/b.txt' });
+    expect(states.get('a.txt')!.map((state) => (state.status === 'uploading' ? [state.sentBytes, state.totalBytes] : state.status)))
+      .toEqual(['waiting', [0, 3], [1, 3], [3, 3], 'done']);
+    expect(states.get('a.txt')![0]).toMatchObject({ replacing: false });
+  });
+
+  it('stores a file under its name composed, as the server stores names, and reports it so', async () => {
+    const reported: string[] = [];
+    queueUploads = uploadQueue({ askFirst: first.ask, ask: prompts.ask, report: ({ name, path }) => reported.push(`${name} ${path}`), changed, workFactor: FAST });
+
+    await queueUploads('docs', folderNow(), [new File(['new'], 'café.txt')]);
+    await vi.waitFor(() => expect(shelf.sent).toHaveLength(1));
+
+    expect(shelf.sent[0].path).toBe('/a/café.txt');
+    expect(new Set(reported)).toEqual(new Set(['café.txt /a/café.txt']));
+  });
+
+  it('tells one into an encrypted folder as encrypting, then sending as many bytes as that made', async () => {
+    rememberPassword(folderPasswordKey('docs', (await shelf.encrypt('right')).directory.id), 'right');
+
+    await start(['a.txt']);
+    await until('a.txt', 'done');
+
+    const size = shelf.sent[0].contents.size;
+    expect(statuses('a.txt')).toEqual(['waiting', 'encrypting', 'uploading', 'uploading', 'uploading', 'done']);
+    expect(states.get('a.txt')).toContainEqual(expect.objectContaining({ status: 'uploading', sentBytes: size, totalBytes: size }));
+  });
+
+  describe('cancelled', () => {
+    it('as it waits, is told so at once and sends nothing, and the next goes on', async () => {
+      let toldAtOnce: string[] = [];
+      during = (name, state) => {
+        if (name !== 'a.txt' || state.status !== 'uploading' || state.sentBytes !== 0) return;
+        cancel('b.txt');
+        toldAtOnce = statuses('b.txt');
+      };
+
+      await start(['a.txt', 'b.txt', 'c.txt']);
+      await until('c.txt', 'done');
+
+      expect(toldAtOnce).toEqual(['waiting', 'cancelled']);
+      expect(statuses('b.txt')).toEqual(['waiting', 'cancelled']);
+      expect(sentPaths()).toEqual(['/a/a.txt', '/a/c.txt']);
+    });
+
+    it('as it is sent, is ended there, told cancelled and never failed, and the next goes on', async () => {
+      during = (name, state) => {
+        if (name === 'a.txt' && state.status === 'uploading' && state.sentBytes > 0) cancel('a.txt');
+      };
+
+      await start(['a.txt', 'b.txt']);
+      await until('b.txt', 'done');
+
+      expect(statuses('a.txt')).toEqual(['waiting', 'uploading', 'uploading', 'cancelled']);
+      expect(sentPaths()).toEqual(['/a/b.txt']);
+    });
+
+    it('as it is encrypted, lets the next go on at once, and sends nothing once that is done', async () => {
+      rememberPassword(folderPasswordKey('docs', (await shelf.encrypt('right')).directory.id), 'right');
+      let finishEncrypting = (): void => undefined;
+      const held = new Promise<void>((resolve) => { finishEncrypting = resolve; });
+      encrypting.held = (contents) => ((contents as File).name === 'a.txt' ? held : Promise.resolve());
+      during = (name, state) => {
+        if (name === 'a.txt' && state.status === 'encrypting') cancel('a.txt');
+      };
+
+      await start(['a.txt', 'b.txt']);
+      await until('b.txt', 'done');
+      expect(statuses('a.txt')).toEqual(['waiting', 'encrypting', 'cancelled']);
+      finishEncrypting();
+      // Long enough for what it encrypted to be sent, had it been.
+      await afterAWhile();
+
+      expect(sentPaths()).toEqual(['/a/b.txt']);
+      expect(statuses('a.txt')).toEqual(['waiting', 'encrypting', 'cancelled']);
+    });
+
+    it('once all is sent, too late to stop it, tells nothing more, and what shows the shelf reads it again', async () => {
+      let answer = (): void => undefined;
+      const held = new Promise<void>((resolve) => { answer = resolve; });
+      vi.unstubAllGlobals();
+      stubServer(async (request) => {
+        const answered = shelf.answer(request);
+        if (request.method === 'PUT') await held;
+        return answered;
+      });
+
+      await start(['a.txt']);
+      await vi.waitFor(() => expect(sentPaths()).toEqual(['/a/a.txt']));
+      cancel('a.txt');
+      answer();
+      await afterAWhile();
+
+      expect(statuses('a.txt')).toEqual(['waiting', 'uploading', 'uploading', 'uploading', 'cancelled']);
+      expect(changed).toHaveBeenCalledOnce();
+    });
+
+    it('as its password is asked for, takes the prompt back, and the next asks again', async () => {
+      const read = folderNow();
+      await shelf.encrypt('right');
+      await start(['a.txt', 'b.txt'], read);
+      const asked = await asksFor('a');
+
+      cancel('a.txt');
+
+      expect(last('a.txt')?.status).toBe('cancelled');
+      expect(prompts.open).not.toContain(asked);
+      await (await asksFor('a')).give('right');
+      await until('b.txt', 'done');
+      expect(sentPaths()).toEqual(['/a/b.txt']);
+    });
   });
 });
