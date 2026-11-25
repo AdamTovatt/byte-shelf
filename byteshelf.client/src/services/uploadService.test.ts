@@ -33,22 +33,23 @@ describe('uploads', () => {
     vi.unstubAllGlobals();
   });
 
-  it('sends a file of one chunk or less in one request', async () => {
+  it('sends a file of one chunk or less in one request, telling of its bytes as they go out', async () => {
     const sent = stubServer(acceptingServer);
-    const progress: number[] = [];
+    const progress: number[][] = [];
 
-    const stored = await uploadFile({ shelf: 'docs', path: '/a b.bin', file: new Blob([new Uint8Array(CHUNK_BYTES)]), overwrite: true, onProgress: (bytes) => progress.push(bytes) });
+    const stored = await uploadFile({ shelf: 'docs', path: '/a b.bin', file: new Blob([new Uint8Array(CHUNK_BYTES)]), overwrite: true, onProgress: (...told) => progress.push(told) });
 
     expect(stored).toEqual(storedFile);
     expect(routes(sent)).toEqual(['PUT /api/shelves/docs/content?path=%2Fa+b.bin&overwrite=true']);
-    expect(progress).toEqual([CHUNK_BYTES]);
+    expect(progress).toEqual([[0, CHUNK_BYTES], [CHUNK_BYTES / 2, CHUNK_BYTES], [CHUNK_BYTES, CHUNK_BYTES]]);
   });
 
-  it('sends a file larger than a chunk in chunks, then completes it', async () => {
+  it('sends a file larger than a chunk in chunks, then completes it, telling of its bytes as they go out', async () => {
     const sent = stubServer(acceptingServer);
     const progress: number[] = [];
+    const size = CHUNK_BYTES + 2;
 
-    await uploadFile({ shelf: 'docs', path: '/big.bin', file: new Blob([new Uint8Array(CHUNK_BYTES + 1)]), overwrite: false, onProgress: (bytes) => progress.push(bytes) });
+    await uploadFile({ shelf: 'docs', path: '/big.bin', file: new Blob([new Uint8Array(size)]), overwrite: false, onProgress: (bytes, total) => progress.push(bytes, total) });
 
     expect(routes(sent)).toEqual([
       'POST /api/shelves/docs/uploads',
@@ -56,7 +57,24 @@ describe('uploads', () => {
       `PUT /api/shelves/docs/uploads/u1?offset=${CHUNK_BYTES}`,
       'POST /api/shelves/docs/uploads/u1/complete',
     ]);
-    expect(progress).toEqual([CHUNK_BYTES, CHUNK_BYTES + 1]);
+    expect(progress).toEqual([0, CHUNK_BYTES / 2, CHUNK_BYTES, CHUNK_BYTES + 1, CHUNK_BYTES + 2].flatMap((bytes) => [bytes, size]));
+  });
+
+  it('sends nothing more once it is aborted while a chunk is sent, and aborts the upload', async () => {
+    const aborting = new AbortController();
+    const sent = stubServer(acceptingServer);
+
+    const upload = uploadFile({
+      shelf: 'docs',
+      path: '/big.bin',
+      file: new Blob([new Uint8Array(CHUNK_BYTES + 1)]),
+      overwrite: false,
+      onProgress: (bytes) => bytes > 0 && aborting.abort(),
+      signal: aborting.signal,
+    });
+
+    await expect(upload).rejects.toMatchObject({ name: 'AbortError' });
+    await vi.waitFor(() => expect(routes(sent)).toEqual(['POST /api/shelves/docs/uploads', 'DELETE /api/shelves/docs/uploads/u1']));
   });
 
   it('swaps a file\'s contents by its id and the SHA-256 it was read with, in one request or in chunks', async () => {

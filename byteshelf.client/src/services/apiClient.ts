@@ -87,16 +87,78 @@ type PathParams<P extends string> = P extends `${string}{${infer Name}}${infer R
 
 /**
  * The URL of one of the server's paths, each `{name}` in `template` filled in escaped: for requests
- * made with authorizedFetch, so their paths are checked against the API description as apiClient's are.
+ * made with authorizedFetch or authorizedUpload, so their paths are checked against the API description as apiClient's are.
  */
 export function apiUrl<P extends keyof paths>(template: P, params: Record<PathParams<P>, string>, query?: URLSearchParams): string {
   const path = template.replace(/\{(\w+)\}/g, (_, name: PathParams<P>) => encodeURIComponent(params[name]));
   return query ? `${path}?${query}` : path;
 }
 
-/** For requests openapi-fetch does not suit, such as sending a file's bytes. */
+/** For requests openapi-fetch does not suit, such as reading a file's bytes. */
 export function authorizedFetch(input: string, init: RequestInit): Promise<Response> {
   return sendAuthorized(new Request(input, init), (request) => fetch(request));
+}
+
+/** A request that sends a file's bytes. */
+export interface UploadInit {
+  method: string;
+  body: Blob;
+  headers?: Record<string, string>;
+  signal?: AbortSignal;
+  /** Told how many of the bytes have gone out, as they go; sent again after a renewal, from the start again. */
+  onSent?: (sentBytes: number) => void;
+}
+
+/** Sends a file's bytes as `authorizedFetch` sends a request, telling how many of them have gone out, which `fetch` cannot tell. */
+export function authorizedUpload(url: string, { method, body, headers, signal, onSent }: UploadInit): Promise<Response> {
+  // The request carries no body: XMLHttpRequest sends the blob itself, which a Request would only copy.
+  return sendAuthorized(new Request(url, { method, headers }), (request) => sendWithProgress(request, body, signal, onSent));
+}
+
+/** Statuses whose answer has no body, which a Response refuses one for. */
+const NULL_BODY_STATUSES = new Set([101, 204, 205, 304]);
+
+/** Sends `request` with `body` through XMLHttpRequest, whose upload tells of each part sent, and answers as `fetch` would. */
+function sendWithProgress(request: Request, body: Blob, signal: AbortSignal | undefined, onSent: ((sentBytes: number) => void) | undefined): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason as Error);
+      return;
+    }
+
+    const xhr = new XMLHttpRequest();
+    const abort = () => xhr.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    const settle = (end: () => void) => () => {
+      signal?.removeEventListener('abort', abort);
+      end();
+    };
+
+    xhr.open(request.method, request.url);
+    request.headers.forEach((value, name) => xhr.setRequestHeader(name, value));
+    xhr.responseType = 'blob';
+    if (onSent) xhr.upload.onprogress = (event) => onSent(event.loaded);
+    xhr.onload = settle(() => resolve(new Response(NULL_BODY_STATUSES.has(xhr.status) ? null : (xhr.response as Blob), {
+      status: xhr.status,
+      statusText: xhr.statusText,
+      headers: responseHeaders(xhr.getAllResponseHeaders()),
+    })));
+    // As fetch fails: a TypeError for want of an answer, the signal's reason once it aborts.
+    xhr.onerror = settle(() => reject(new TypeError('The server could not be reached.')));
+    xhr.ontimeout = xhr.onerror;
+    xhr.onabort = settle(() => reject((signal?.reason as Error | undefined) ?? new DOMException('The upload was aborted.', 'AbortError')));
+    xhr.send(body);
+  });
+}
+
+/** The headers of an answer, from XMLHttpRequest's lines of them. */
+function responseHeaders(lines: string): Headers {
+  const headers = new Headers();
+  for (const line of lines.trim().split(/[\r\n]+/)) {
+    const colon = line.indexOf(':');
+    if (colon > 0) headers.append(line.slice(0, colon).trim(), line.slice(colon + 1).trim());
+  }
+  return headers;
 }
 
 /** Throws the server's error unless `response` succeeded. */

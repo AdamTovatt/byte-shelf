@@ -5,14 +5,16 @@ import { fetchEncryptedFolder } from './encryptionService';
 import type { OpenFolder } from '../lib/openFolder';
 import type { ShelfPasswords } from './shelfPasswords';
 import { fetchFileAt, requireDirectoryAt, type ShelfFile } from './shelfService';
-import { uploadFile } from './uploadService';
+import { uploadFile, type UploadProgress } from './uploadService';
 
 /** How a file is stored. */
 export interface StoreOptions {
   /** Whether it may go over a file at its path, which then goes to the trash; one that may not is refused where there is one. */
   overwrite: boolean;
-  /** Told how many bytes of it the server has, as it is sent. */
-  onProgress?: (sentBytes: number) => void;
+  /** Told as its contents start being encrypted, before anything is sent; for a plain one, never. */
+  onEncrypting?: () => void;
+  /** Told how many bytes of it have gone out, of how many (encrypted, as many as that makes), as it is sent. */
+  onProgress?: UploadProgress;
   /** Takes back asking for a password, no more. */
   asking?: AbortSignal;
   /** Ends it at any point, but for encrypting the contents, which is ended once that is done. */
@@ -56,13 +58,14 @@ export function fileStoring(shelf: string, { folderPassword, filePassword }: Pic
   }
 
   return async (folder, path, contents, options) => {
-    const { overwrite, onProgress, storing } = options;
+    const { overwrite, onEncrypting, onProgress, storing } = options;
     const sealing = await storePassword(folder, path, options);
     // A prompt taken back answers as one that was cancelled.
     storing?.throwIfAborted();
     if (sealing.kind === 'cancelled') return null;
 
     const encrypted = sealing.kind === 'given';
+    if (encrypted) onEncrypting?.();
     const file = encrypted ? await encryptBlob(contents, sealing.password, contents.type, workFactor) : contents;
     // After what it is encrypted with was looked up by path, so that was this folder's.
     await requireDirectoryAt(shelf, folder.directory, storing);

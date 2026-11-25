@@ -22,6 +22,18 @@ export function nameOf(path: string): string {
   return path.slice(path.lastIndexOf('/') + 1);
 }
 
+/** Orders names as the server lists a folder's entries: by their characters' code points, the order of their UTF-8 bytes. */
+export function compareNames(a: string, b: string): number {
+  for (let index = 0; index < a.length && index < b.length; index++) {
+    const left = a.codePointAt(index)!;
+    const right = b.codePointAt(index)!;
+    if (left !== right) return left - right;
+    // A character past the Basic Multilingual Plane takes two places.
+    if (left > 0xffff) index++;
+  }
+  return a.length - b.length;
+}
+
 /** Each directory from the root down to `path`, for breadcrumbs: [{ name, path }]. */
 export function pathSegments(path: string): { name: string; path: string }[] {
   const names = path.split('/').filter((name) => name.length > 0);

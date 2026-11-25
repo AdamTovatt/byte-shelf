@@ -45,9 +45,9 @@ const uploads = vi.hoisted(() => [] as { path: string; contents: Blob; type: str
 const folderIds = vi.hoisted(() => new Map<string, string>());
 
 vi.mock('./uploadService', () => ({
-  uploadFile: async ({ path, file: contents, overwrite, encrypted, onProgress, signal }: { path: string; file: Blob; overwrite: boolean; encrypted: boolean; onProgress?: (sentBytes: number) => void; signal?: AbortSignal }) => {
+  uploadFile: async ({ path, file: contents, overwrite, encrypted, onProgress, signal }: { path: string; file: Blob; overwrite: boolean; encrypted: boolean; onProgress?: (sentBytes: number, totalBytes: number) => void; signal?: AbortSignal }) => {
     steps.take('uploadFile', signal);
-    onProgress?.(contents.size);
+    onProgress?.(contents.size, contents.size);
     uploads.push({ path, contents, type: contents.type, overwrite, encrypted });
     return { id: `stored:${path}`, path, encrypted };
   },
@@ -275,12 +275,27 @@ describe('storing a file', () => {
     });
   });
 
-  it('tells how much of it is sent', async () => {
-    const sent: number[] = [];
+  it('tells how much of it is sent, of how much, and nothing of encrypting a plain one', async () => {
+    const told: unknown[] = [];
 
-    await store(into('/a'), '/a/new.txt', contents, { onProgress: (sentBytes) => sent.push(sentBytes) });
+    await store(into('/a'), '/a/new.txt', contents, { onEncrypting: () => told.push('encrypting'), onProgress: (...sent) => told.push(sent) });
 
-    expect(sent).toEqual([contents.size]);
+    expect(told).toEqual([[contents.size, contents.size]]);
+  });
+
+  it('tells of encrypting before anything is sent, then how much is sent of as many bytes as that made', async () => {
+    const vault = await encryptedFolder('/vault', 'right');
+    rememberPassword(folderPasswordKey('docs', vault.id), 'right');
+    const told: unknown[] = [];
+
+    await store(into('/vault', vault), '/vault/a.txt', contents, {
+      onEncrypting: () => told.push(['encrypting', ...steps.called]),
+      onProgress: (...sent) => told.push(sent),
+    });
+
+    const encryptedSize = uploads[0].contents.size;
+    expect(encryptedSize).toBeGreaterThan(contents.size);
+    expect(told).toEqual([['encrypting', 'fetchEncryptedFolder'], [encryptedSize, encryptedSize]]);
   });
 
   it('goes on where a password is no longer asked for, when it needs none', async () => {

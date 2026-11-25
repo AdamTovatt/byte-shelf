@@ -46,8 +46,11 @@ it('shows the toast left for it as it starts', async () => {
 describe('a file replaced after its page is left', () => {
   let shelf: ReturnType<typeof uploadShelf>;
 
-  /** Drops a file, whose name a file with a password of its own has, on its folder, and leaves for another page. */
-  async function dropThenLeave(): Promise<void> {
+  /**
+   * Drops a file, whose name a file with a password of its own has, on its folder, replaces that file from the
+   * upload's row, and leaves for another page as its password is asked for.
+   */
+  async function replaceThenLeave(): Promise<void> {
     signIn();
     shelf = uploadShelf('/a');
     await shelf.put('a.txt', 'own');
@@ -59,32 +62,28 @@ describe('a file replaced after its page is left', () => {
     const row = await untilFound('[data-selectable-row]');
 
     await dropFiles(row, [new File(['new'], 'a.txt')]);
-    await shows(`A file already exists at '/a/a.txt'.`);
+    await shows('A file with this name is already here.');
+    await press('Replace');
+    await shows('Unlock a.txt');
     await act(async () => document.querySelector<HTMLAnchorElement>('nav a[href="/"]')!.click());
     await vi.waitFor(() => expect(location.pathname).toBe('/'));
     expect(document.querySelector('[data-selectable-row]')).toBeNull();
   }
 
   it('is encrypted with the password asked for there', async () => {
-    await dropThenLeave();
+    await replaceThenLeave();
 
-    await press('Replace');
-    await shows('Unlock a.txt');
-    expect(location.pathname).toBe('/');
+    expect(dialogTitles()).toEqual(['Unlock a.txt']);
     await submitPassword('own');
 
     await vi.waitFor(() => expect(shelf.sent).toHaveLength(2), { timeout: 10_000 });
     expect(shelf.sent[1]).toMatchObject({ overwrite: true, encrypted: true });
     expect(await (await decryptBlob(shelf.sent[1].contents, 'own', '')).text()).toBe('new');
-    await shows('Uploaded a.txt');
-    await vi.waitFor(() => expect(document.body.textContent).not.toContain('Uploaded a.txt'), { timeout: 5_000 });
   }, 20_000);
 
   it('is not asked for once the person is signed out', async () => {
     vi.spyOn(window.location, 'reload').mockImplementation(() => undefined);
-    await dropThenLeave();
-    await press('Replace');
-    await shows('Unlock a.txt');
+    await replaceThenLeave();
 
     await act(async () => {
       clearTokens();

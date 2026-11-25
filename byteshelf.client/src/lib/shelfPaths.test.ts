@@ -1,6 +1,7 @@
 import { matchRoutes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import {
+  compareNames,
   folderListingRoute,
   joinPath,
   nameOf,
@@ -25,6 +26,12 @@ function match(url: string) {
 }
 
 describe('shelf paths', () => {
+  it('orders names by their code points, as the server lists them: capitals first, and past the Basic Multilingual Plane last', () => {
+    const sorted = ['b', '😀', 'B', 'ｚ', 'a', 'ab'].sort(compareNames);
+
+    expect(sorted).toEqual(['B', 'a', 'ab', 'b', 'ｚ', '😀']);
+  });
+
   it('joins a name to the root or a directory', () => {
     expect(joinPath('/', 'a.txt')).toBe('/a.txt');
     expect(joinPath('/docs', 'a.txt')).toBe('/docs/a.txt');

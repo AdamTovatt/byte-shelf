@@ -31,7 +31,10 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useCreateDownloadLink } from '../hooks/useLinkQueries';
 import { useSelection, type SelectionClickModifiers } from '../hooks/useSelection';
 import { useFoundFiles } from '../hooks/useFoundFiles';
-import { useUploadFiles } from '../contexts/UploadHost';
+import { useUploadFiles, useUploadRows } from '../contexts/UploadHost';
+import { UploadRow } from './UploadRow';
+import { FILE_ROW } from './fileRowLayout';
+import type { FileRow } from '../lib/uploadRows';
 import { useFilePicker } from '../hooks/useFilePicker';
 import { MobileTopBarActions, MobileTopBarOverlay } from './layout/MobileTopBar';
 import { encryptionActions } from '../hooks/useEncryption';
@@ -79,7 +82,7 @@ interface FolderListingProps {
 export function FolderListing({ shelf, path, work: { encryption, reading, fileActions }, toViewer }: FolderListingProps) {
   const navigate = useNavigate();
   const { plugins } = usePluginHost();
-  const { data: listing, isLoading, error } = useListing(shelf, path);
+  const { data: listing, dataUpdatedAt, isLoading, error } = useListing(shelf, path);
   const folder = listing ? listedFolder(listing) : null;
   const openableHere = (file: ShelfFile) => openable({ file, reading });
   const overlayOpen = useIsOverlayOpen();
@@ -103,6 +106,9 @@ export function FolderListing({ shelf, path, work: { encryption, reading, fileAc
   const criteria = searchCriteria(settledText, filters);
   const found = useFileSearch(shelf, path, criteria, isSearch(settledText, filters) && !filters.duplicates);
   const duplicates = useDuplicateSearch(shelf, path, criteria, filters.duplicates);
+  const listedFolderFiles = useMemo(() => (listing ? { path: listing.directory.path, files: listing.files, readAt: dataUpdatedAt } : null), [listing, dataUpdatedAt]);
+  // A search hides the uploads' rows, so a taken name or a failure is then told of as for a folder not open.
+  const fileRows = useUploadRows(shelf, listedFolderFiles, !searching);
 
   const picker = useFilePicker();
 
@@ -181,12 +187,10 @@ export function FolderListing({ shelf, path, work: { encryption, reading, fileAc
     });
   }
 
-  const entries: Entry[] = useMemo(() => (listing
-    ? [
-        ...listing.directories.map(directoryEntry),
-        ...listing.files.map((value): Entry => ({ kind: 'file', value })),
-      ]
-    : []), [listing]);
+  // The folder's own rows: its folders, then its files with what is being uploaded into it.
+  const rows: (Entry | FileRow)[] = useMemo(() => (listing ? [...listing.directories.map(directoryEntry), ...fileRows] : []), [listing, fileRows]);
+  const entries = useMemo(() => rows.filter((shown): shown is Entry => shown.kind !== 'upload'), [rows]);
+  const files = useMemo(() => entries.flatMap((entry) => (entry.kind === 'file' ? [entry.value] : [])), [entries]);
 
   // Opening a subfolder should be instant: fetch the first ones ahead as this folder opens, and any
   // other as the pointer or focus reaches it (onPrefetch below). Only as it opens: the listing is
@@ -211,7 +215,7 @@ export function FolderListing({ shelf, path, work: { encryption, reading, fileAc
   // The preview goes through the files shown: the folder's own, or the search's results so far.
   const foundFiles = useFoundFiles(found, filesOfResults);
   const duplicateFiles = useFoundFiles(duplicates, filesOfGroups);
-  const shownFiles = !searching ? { files: listing?.files ?? [] } : filters.duplicates ? duplicateFiles : foundFiles;
+  const shownFiles = !searching ? { files } : filters.duplicates ? duplicateFiles : foundFiles;
   const preview = useShelfPreview(shelf, shownFiles, reading);
 
   // ⌘A or Ctrl+A selects every row, unless a field has the keys; Escape clears the selection. A
@@ -405,15 +409,17 @@ export function FolderListing({ shelf, path, work: { encryption, reading, fileAc
           <>
             {isLoading && <Spinner />}
             <LoadError error={error} failure="Could not list this directory" />
-            {listing && entries.length === 0 && (
+            {listing && rows.length === 0 && (
               <EmptyState
                 message={dragging ? 'Drop to upload into this folder.' : 'Nothing here yet. Upload files, or drop them anywhere on the page.'}
                 className={cn('rounded-xl border-2 border-dashed', dragging ? 'border-brand-border' : 'border-transparent')}
               />
             )}
-            {entries.length > 0 && (
+            {rows.length > 0 && (
               <CardList hideDividersBesideLitRows className={cn('overflow-hidden', dragging && 'ring-2 ring-brand-border')}>
-                {entries.map((entry) => row(entry, { selectable: true }))}
+                {rows.map((shown) => (shown.kind === 'upload'
+                  ? <UploadRow key={`upload-${shown.value.id}`} upload={shown.value} />
+                  : row(shown, { selectable: true })))}
               </CardList>
             )}
           </>
@@ -568,7 +574,7 @@ function EntryRow({ source, entry, label, selection, opensIn, type, onOpen, onSh
     <div
       data-selectable-row={selection ? true : undefined}
       data-active={selected || undefined}
-      className={cn('flex items-center gap-2 px-2 py-1 transition-colors', selected ? 'bg-selected/15 hover:bg-selected/20' : 'hover:bg-row-hover')}
+      className={cn(FILE_ROW.row, 'transition-colors', selected ? 'bg-selected/15 hover:bg-selected/20' : 'hover:bg-row-hover')}
     >
       <button
         type="button"
@@ -590,15 +596,15 @@ function EntryRow({ source, entry, label, selection, opensIn, type, onOpen, onSh
         title={selection ? `${openName}: double-click or press Enter` : isFile && opensIn === 'tab' ? 'Opens in a new tab' : undefined}
         aria-label={selection ? label ?? name : openName}
         aria-pressed={selection ? selected : undefined}
-        className="flex min-w-0 flex-1 select-none items-center gap-3 rounded-lg px-2 py-2 text-left"
+        className={cn(FILE_ROW.main, 'select-none text-left')}
       >
         {isFile
           ? <FileThumbnail file={entry.value} source={source} />
           : <RowIcon><FolderIcon type={type} size={18} className="text-muted" /></RowIcon>}
-        <span className="min-w-0 truncate text-body-md text-fg">{label ?? name}</span>
+        <span className={FILE_ROW.name}>{label ?? name}</span>
         {entry.value.encrypted && <Icon icon={iconMap.lock} size={14} className="shrink-0 text-muted" aria-label="Encrypted" />}
         {isFile && (
-          <span className="ml-auto hidden shrink-0 pl-2 text-body-sm text-muted sm:inline">
+          <span className={cn(FILE_ROW.size, 'hidden sm:inline')}>
             {formatBytes(entry.value.sizeBytes)} · {formatTime(entry.value.updatedAt)}
           </span>
         )}

@@ -33,6 +33,11 @@ async function upload(page: Page, files: { name: string; mimeType: string; buffe
   await (await picker).setFiles(files);
 }
 
+/** Waits until the file uploaded as `name` is stored: its upload's row is then the file's, which opens it. */
+async function untilStored(page: Page, name: string, timeout?: number): Promise<void> {
+  await expect(page.getByRole('button', { name, exact: true })).toBeVisible({ timeout });
+}
+
 /** What the server holds of a file, as the page's session reads it. */
 function storedText(page: Page, url: string): Promise<string> {
   return page.evaluate(async (at) => {
@@ -58,7 +63,7 @@ test('a file uploaded in one tab appears in another and downloads intact', async
   // the second upload's own can bring the second file in.
   async function uploadWatched(name: string, text: string): Promise<void> {
     await upload(uploader, [{ name, mimeType: 'text/plain', buffer: Buffer.from(text) }]);
-    await expect(uploader.getByText(`Uploaded ${name}`)).toBeVisible();
+    await untilStored(uploader, name);
     await expect(watcher.getByRole('button', { name, exact: true })).toBeVisible({ timeout: 15_000 });
   }
 
@@ -100,7 +105,7 @@ test('a folder encrypted in the browser keeps its files encrypted and opens them
   await owner.getByRole('button', { name: 'secret', exact: true }).dblclick();
   await expect(owner).toHaveURL('/shelves/vault/files/secret');
   await upload(owner, [{ name: 'note.txt', mimeType: 'text/plain', buffer: Buffer.from('for my eyes only') }]);
-  await expect(owner.getByText('Uploaded note.txt')).toBeVisible({ timeout: 15_000 });
+  await untilStored(owner, 'note.txt', 15_000);
   const stored = await storedText(owner, '/api/shelves/vault/content?path=/secret/note.txt');
   expect(stored.startsWith('age-encryption.org/v1\n')).toBe(true);
   expect(stored).not.toContain('for my eyes only');
@@ -134,7 +139,7 @@ test('a file opens in a preview over the shelf, and an encrypted one once it is 
     { name: 'pixel.png', mimeType: 'image/png', buffer: pixel },
     { name: 'todo.txt', mimeType: 'text/plain', buffer: Buffer.from('the last') },
   ]);
-  await expect(page.getByText('Uploaded todo.txt')).toBeVisible();
+  await untilStored(page, 'todo.txt');
 
   const preview = page.getByRole('dialog', { name: 'note.txt' });
   await page.getByRole('button', { name: 'note.txt', exact: true }).dblclick();
@@ -196,7 +201,7 @@ test('a Markdown file is previewed by the plugin that takes it', async ({ browse
   await expect(page).toHaveURL('/shelves/plugins');
   const text = '# Title\n\n| Name | Size |\n| --- | --- |\n| a.txt | 1 |\n\n<b>markup</b> [web](https://elsewhere.test) [near](other.md)\n';
   await upload(page, [{ name: 'notes.md', mimeType: 'text/markdown', buffer: Buffer.from(text) }]);
-  await expect(page.getByText('Uploaded notes.md')).toBeVisible();
+  await untilStored(page, 'notes.md');
 
   await page.getByRole('button', { name: 'notes.md', exact: true }).dblclick();
   const preview = page.getByRole('dialog', { name: 'notes.md' });
