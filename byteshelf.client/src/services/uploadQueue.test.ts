@@ -148,11 +148,11 @@ describe('uploads', () => {
     return shelf.sent.some(({ overwrite }) => overwrite);
   }
 
-  it('tells what shows the shelf as one is stored', async () => {
+  it('tells one stored as done with its file, leaving the listing of it to what is told', async () => {
     await start(['a.txt']);
-    await until('a.txt', 'done');
 
-    expect(changed).toHaveBeenCalledOnce();
+    expect((await until('a.txt', 'done')).file).toMatchObject({ path: '/a/a.txt' });
+    expect(changed).not.toHaveBeenCalled();
   });
 
   it('offers a plain file whose name is taken for replacing, then sends it plain with overwrite', async () => {

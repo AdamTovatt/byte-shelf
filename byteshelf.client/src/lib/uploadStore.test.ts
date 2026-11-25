@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { shelfFile } from '../test/shelfFiles';
-import type { Upload, UploadState } from '../services/uploadQueue';
-import { uploadStore } from './uploadStore';
+import type { Upload } from '../services/uploadQueue';
+import { uploadStore, type HeldState } from './uploadStore';
 
 function upload(id: number, folderPath = '/a'): Upload {
   return { id, shelf: 'docs', folderPath, file: new File(['new'], `${id}.txt`), name: `${id}.txt`, path: `${folderPath}/${id}.txt` };
@@ -9,13 +8,13 @@ function upload(id: number, folderPath = '/a'): Upload {
 
 const underway = { replacing: false, cancel: () => undefined };
 
-function sending(sentBytes: number): UploadState {
+function sending(sentBytes: number): HeldState {
   return { status: 'uploading', sentBytes, totalBytes: 10, ...underway };
 }
 
 describe('the uploads shown', () => {
-  it('keep a folder\'s list as its uploads are sent, and change it as one is added, replaces, is done or goes', () => {
-    const store = uploadStore(() => undefined, () => 42);
+  it('keep a folder\'s list as its uploads are sent, and change it as one is added, replaces or goes', () => {
+    const store = uploadStore(() => undefined);
     const lists = [store.inFolder('docs', '/a')];
     const listNow = () => lists.push(store.inFolder('docs', '/a'));
 
@@ -27,19 +26,10 @@ describe('the uploads shown', () => {
     store.report(upload(1), { status: 'taken', replace: () => undefined });
     store.report(upload(1), { status: 'waiting', ...underway, replacing: true });
     listNow();
-    store.report(upload(1), { status: 'done', file: shelfFile('1.txt') });
-    listNow();
     store.remove(1);
     listNow();
 
-    expect(lists.map((list) => list.map(({ replacing, stored }) => [replacing, stored && [stored.file.id, stored.at]]))).toEqual([
-      [],
-      [[false, null]],
-      [[false, null]],
-      [[true, null]],
-      [[false, ['1.txt', 42]]],
-      [],
-    ]);
+    expect(lists.map((list) => list.map(({ replacing }) => replacing))).toEqual([[], [false], [false], [true], []]);
     expect(lists[2]).toBe(lists[1]);
   });
 
@@ -71,8 +61,8 @@ describe('the uploads shown', () => {
   it('tell of a name taken or a failure where nothing shows its folder, and only then', () => {
     const missed = vi.fn();
     const store = uploadStore(missed);
-    const taken: UploadState = { status: 'taken', replace: () => undefined };
-    const failed: UploadState = { status: 'failed', error: new Error('Full.') };
+    const taken: HeldState = { status: 'taken', replace: () => undefined };
+    const failed: HeldState = { status: 'failed', error: new Error('Full.') };
 
     const hide = store.show('docs', '/a');
     const hideAgain = store.show('docs', '/a');

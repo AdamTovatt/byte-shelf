@@ -6,9 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { queryKeys } from '../lib/queryKeys';
 import { decryptBlob } from '../lib/encryption/age';
 import { folderPasswordKey, rememberPassword } from '../lib/encryption/passwords';
-import type { QueryClient } from '@tanstack/react-query';
 import { button, dialogTitles, dropFiles, giveFiles, labelled, press, shows, submitPassword, textOf, typeInto, untilFound } from '../test/dom';
-import { json, stubServer } from '../test/fakeServer';
+import { stubServer } from '../test/fakeServer';
 import { renderShelfPage, row, signIn } from '../test/shelfPage';
 import { uploadShelf } from '../test/uploadShelf';
 
@@ -66,6 +65,12 @@ describe('uploading into the folder shown', () => {
     return release;
   }
 
+  /** Answers no listing read from here on, so only what is put into the cached listing shows a file stored. */
+  function answerNoListings(): void {
+    const served = serve;
+    serve = (request) => (new URL(request.url).pathname.endsWith('/entries') ? new Promise(() => undefined) : served(request));
+  }
+
   /** The names of the listing's rows, in order, an upload's marked with an arrow. */
   function rowNames(): string[] {
     return Array.from(document.body.querySelectorAll('li')).flatMap((item) => {
@@ -83,14 +88,18 @@ describe('uploading into the folder shown', () => {
     });
   }
 
-  /** Reads the listing again, and waits until what shows it is told, which is after a timer. */
-  async function readListing(client: QueryClient): Promise<void> {
-    await act(() => client.refetchQueries({ queryKey: queryKeys.shelfContents.root }));
-    await act(() => new Promise((resolve) => setTimeout(resolve)));
-  }
-
   function uploadRowText(name: string): string {
     return document.body.querySelector(`[data-upload-row="${name}"]`)?.textContent ?? '';
+  }
+
+  /** How a request for the listing of the folder at `path` starts, as the server is sent it. */
+  function listingRequest(path: string): string {
+    return `GET /api/shelves/docs/entries?${new URLSearchParams({ path })}`;
+  }
+
+  /** How many times the listing of the folder at `path` was asked for. */
+  function listingReads(path: string): number {
+    return requests.filter((line) => line.startsWith(listingRequest(path))).length;
   }
 
   /** What was looked up to store a file, or sent. */
@@ -164,44 +173,57 @@ describe('uploading into the folder shown', () => {
     await untilRows('a.txt', 'aa.txt', 'b.txt');
   });
 
-  it('keeps a stored file\'s row until the listing is read again, and then leaves it to the listing', async () => {
-    let listingRead: Promise<void> | null = null;
-    let readThem = (): void => undefined;
-    let gone = false;
-    serve = async (request) => {
-      if (!new URL(request.url).pathname.endsWith('/entries')) return shelf.answer(request);
-      if (listingRead) await listingRead;
-      const listing = (await (await shelf.answer(request)).json()) as { files: { id: string }[] };
-      return json({ ...listing, files: listing.files.filter(({ id }) => !gone || !shelf.isSent(id)) });
-    };
-    const { client } = await open();
-    listingRead = new Promise((resolve) => { readThem = resolve; });
+  it('lists the folders and files in order by name, whatever order the server has them in', async () => {
+    shelf.folders = ['b', 'A', 'a'];
+    await shelf.put('d.txt');
+    await shelf.put('C.txt');
 
-    await drop(page!);
-    await untilRows('a.txt', 'b.txt');
-    readThem();
-    await readListing(client);
-    expect(rowNames()).toEqual(['a.txt', 'b.txt']);
-    // Left to the listing, they go as it no longer has them, as once they are deleted elsewhere.
-    gone = true;
-    await readListing(client);
-    expect(rowNames()).toEqual([]);
+    await open('d.txt');
+
+    expect(rowNames()).toEqual(['A', 'a', 'b', 'C.txt', 'd.txt']);
   });
 
-  it('lets go of a stored file\'s row once the listing is read again without it, as once it is deleted before that', async () => {
+  it('turns an upload\'s row into its file\'s as it is stored, without the listing being read again', async () => {
+    await open();
+    answerNoListings();
+
+    await drop(page!);
+
+    await untilRows('a.txt', 'b.txt');
+  });
+
+  it('keeps a listing read begun before a file was stored from landing over it, in a folder left meanwhile', async () => {
+    const release = holdStoring();
+    const storeHeld = serve;
+    let answerListings = (): void => undefined;
+    let listings = new Promise<void>((resolve) => { answerListings = resolve; });
+    let holdListings = false;
     serve = async (request) => {
-      const answered = await shelf.answer(request);
-      if (!new URL(request.url).pathname.endsWith('/entries')) return answered;
-      const listing = (await answered.json()) as { files: { id: string }[] };
-      return json({ ...listing, files: listing.files.filter(({ id }) => !shelf.isSent(id)) });
+      if (request.method === 'PUT') return storeHeld(request);
+      // A listing of the folder is read as it is asked for, and answered later.
+      const answered = shelf.answer(request);
+      const { pathname, search } = new URL(request.url);
+      if (holdListings && `GET ${pathname}${search}`.startsWith(listingRequest('/a'))) await listings;
+      return answered;
     };
     const { client } = await open();
-
     await drop(page!, [FILES[0]]);
-    await vi.waitFor(() => expect(shelf.sent).toHaveLength(1));
-    await readListing(client);
+    await untilRows('↑a.txt');
 
-    expect(rowNames()).toEqual([]);
+    holdListings = true;
+    const staleRead = client.refetchQueries({ queryKey: queryKeys.shelfContents.listing('docs', '/a') });
+    await page!.page.to('/shelves/docs/files/b');
+    await vi.waitFor(() => expect(listingReads('/b')).toBe(1));
+    release();
+    // The shelf is read again once the stored file is in the cached listing.
+    await vi.waitFor(() => expect(listingReads('/b')).toBe(2));
+    answerListings();
+    await act(() => staleRead);
+    // Back in the folder, it shows what is cached, as no read of it answers any more.
+    listings = new Promise(() => undefined);
+    await page!.page.to('/shelves/docs/files/a');
+
+    await untilRows('a.txt');
   });
 
   it('shows the rows of a folder whose path came decomposed in the address, as the server has it composed', async () => {
@@ -209,6 +231,7 @@ describe('uploading into the folder shown', () => {
     const release = holdStoring();
     page = await renderShelfPage('/shelves/docs/files/café');
     await shows('Nothing here yet');
+    answerNoListings();
 
     await drop(page, [FILES[0]]);
 
@@ -237,12 +260,15 @@ describe('uploading into the folder shown', () => {
     await shows('A file with this name is already here.');
     expect(rowNames()).toEqual(['a.txt', '↑a.txt']);
     const release = holdStoring();
+    answerNoListings();
 
     await press('Replace');
 
     await untilRows('↑a.txt');
     release();
     await untilRows('a.txt');
+    // The stored file's row, not the old one's: what was sent is 3 bytes, the file put there 5.
+    expect(row('a.txt')!.closest('li')!.textContent).toContain('3 B');
     expect(shelf.sent.at(-1)).toMatchObject({ path: '/a/a.txt', overwrite: true });
     expect(told).not.toHaveBeenCalled();
   });

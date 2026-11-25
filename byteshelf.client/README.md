@@ -83,16 +83,19 @@ npm run codegen    # in a second terminal
   merged in by `lib/uploadRows.ts`). The row says it is waiting, encrypting, how much is sent with a bar where a
   file's size is (on a phone too), then finishing. Until all is sent, Cancel takes the row away at once and the
   next upload goes on; one cancelled as it is encrypted finishes encrypting behind it and then sends nothing, and
-  a replace cancelled is not offered again. Done, it is the file it was stored as until the listing has that
-  file or is read again after it, so a file deleted or moved by then goes. A folder's list of uploads
-  (`lib/uploadStore.ts`) changes only as one is added, removed, replaces a file or is done, and each row is drawn
-  again alone as its upload moves on. A file whose name is taken is replaced only when asked, from Replace on its
-  row, which then takes the place of the file there; a replace whose password is not given or that fails is
-  offered again. A taken name and a failure stay on their row, with the reason, until Dismiss; in a folder not
-  shown, or hidden by a search, they are also told in a toast. Nothing is sent
-  once the folder is gone from its path or not encrypted as it was read, and a password not given ends the
-  rest of what was uploaded together. A file the browser has no type for is sent without one, so the server
-  types it by its name. "Copy link"
+  a replace cancelled is not offered again. Done, the file it was stored as is put into the folder's cached
+  listing, a read of that already under way cancelled first so it cannot land without it, and its row is then
+  that file's (`listStoredFile` in `hooks/useShelfQueries.ts`). The app orders a folder's folders, and its files
+  with the uploads among them, by name itself (`folderRows` in `lib/uploadRows.ts`): uploads and a file put into
+  the cached listing are not in the server's order, and one compare for all of them keeps any row from moving as
+  they come and go. A folder's list of uploads (`lib/uploadStore.ts`) changes only as one is added or removed or
+  replaces a file, and each row is drawn again alone as its upload moves on. A file whose name is taken is
+  replaced only when asked, from Replace on its row, which then takes the place of the file there; a replace
+  whose password is not given or that fails is offered again. A taken name and a failure stay on their row,
+  with the reason, until Dismiss; in a folder not shown, or hidden by a search, they are also told in a toast.
+  Nothing is sent once the folder is gone from its path or not encrypted as it was read, and a password not
+  given ends the rest of what was uploaded together. A file the browser has no type for is sent without one, so
+  the server types it by its name. "Copy link"
   in a file's menu copies one that works for a day, for someone without access; where the browser
   offers no clipboard (plain HTTP), the toast shows it to copy by hand. A shelf's settings show
   everyone a Links tab listing the share and upload links that have not run out (their own, or every one
