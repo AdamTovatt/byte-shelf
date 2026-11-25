@@ -6,8 +6,9 @@ namespace ByteShelf.Server.Replication.Services
     /// </summary>
     public sealed class ReplicaOutdatedException : Exception
     {
-        public ReplicaOutdatedException(string entityType)
-            : base($"The primary logged a change to '{entityType}', which this server does not know; update it to the primary's version.")
+        /// <param name="unknown">What this build does not know, as "a change to 'gadget'".</param>
+        public ReplicaOutdatedException(string unknown)
+            : base($"The primary logged {unknown}, which this server does not know; update it to the primary's version.")
         {
         }
     }

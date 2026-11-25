@@ -343,9 +343,12 @@ row once it is purged from the trash. The write goes to the write-ahead log, `by
 it is when the server is stopped normally; until then the old bytes are still in `byteshelf.db`.
 
 The change log keeps what its entries said until they are compacted, up to about 30 days
-([Background work](#background-work)): a deleted file's name and description, a replaced password's hash, and
-the SHA-256 and size of the plain contents of a file encrypted since. What was read from contents it forgets at
-once, but for part of the contents' SHA-256, in the entry of the removal.
+([Background work](#background-work)): a deleted file's name and description, and a replaced password's hash.
+What was read from contents it forgets at once. What tells of the plain contents of a file encrypted in place
+it keeps for a day, so up to about 25 hours while the server runs: the contents' SHA-256 and size in the file's
+earlier entries, and part of the SHA-256 in the entries of what was read from them. A replica counts the day
+from when it applies the encryption. Another file that held the same plain contents, or still holds them,
+keeps its entries for the 30 days.
 
 This covers the database's rows and nothing else. It does not reach:
 
@@ -399,10 +402,11 @@ itself moves in the same way, to any address: its primary never calls it, and it
 ## Background work
 
 The server cleans up after itself: hourly it removes abandoned uploads, staging leftovers, the trash
-past its restore window, and objects no file points at, and drops what was read from contents no longer
-stored; daily it deletes expired sign-in and reset tokens and compacts the change log (entries older
-than 30 days that something newer replaced, removals that old, and entries of what plugins kept about
-files purged since). After every upload, and hourly, it reads what the contents of new files say, and has
+past its restore window, and objects no file points at, drops what was read from contents no longer
+stored, and compacts the change log (entries older than 30 days that something newer replaced, removals
+that old, and entries of what plugins kept about files purged since; and, a day after a file is encrypted
+in place, its plain states and the entries of what was read from its plain contents); daily it deletes
+expired sign-in and reset tokens. After every upload, and hourly, it reads what the contents of new files say, and has
 plugins read them. A failed pass is logged as an error and the next one runs on schedule. A replica
 also follows its primary continuously, every two seconds when caught up, and every minute each
 server checks replication for the alerts above.

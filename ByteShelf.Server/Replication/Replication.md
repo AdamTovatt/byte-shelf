@@ -95,7 +95,7 @@ person confirmed cannot be undone ([Storage](../Storage/Storage.md#encryption-sh
 SHA-256 changes in no other way, so when an applied state points a file here at other contents, the old
 object is removed once the page (or the whole copy) commits, unless a row here still points at it, such
 as another file with the same contents. What was read from them has gone by then: the primary logs those
-removals before the swap ([Metadata](../Metadata/Metadata.md)). What plugins made from them here goes in the
+removals, as released, before the swap ([Metadata](../Metadata/Metadata.md)). What plugins made from them here goes in the
 transaction that applies the swap, also when only the file's encrypted flag changes, as for an age file
 stored as a plain one; what cannot be removed stops the step, which is tried again
 ([Derived files](../Derived/Derived.md)). Once that has committed, removed users' sessions end first, and an
@@ -119,23 +119,32 @@ Either order stops the replica only until both are upgraded; it then picks up wh
 A replica takes a whole copy when it is paired, and when the primary says it must:
 
 - it is behind an entry compaction dropped (`change_log_state.pruned_through`): replaying what is left
-  could miss a removal, or meet a row before the only entry for the parent it names;
+  could miss a removal, or meet a row before the only entry for the parent it names. What tells of the
+  plain contents of a file encrypted in place goes a day after the swap
+  ([ChangeLog.md](../ChangeLog/ChangeLog.md), *Compaction*), so a replica more than a day behind an
+  encryption copies, as one more than 30 days behind anything does. One at `pruned_through`, which applied
+  the entry dropped last, lacks nothing and follows on;
 - it is ahead of the log, as after the primary was restored from a backup;
 - the entry it applied last is no longer the one under that number. A restored primary gives the numbers
   it lost to other changes, so the replica sends the fingerprint of the entry it applied last
   (`ChangeLogEntry.GetFingerprint`: its entity and instant) and the primary compares. Right after a copy
   the replica has none until it applies an entry, so a restore in that gap goes unnoticed unless the
-  replica is ahead.
+  replica is ahead. Nor is there an entry to compare at `pruned_through`, which compaction dropped, so a
+  restore is not noticed at that one position either; a replica caught up when its last entry went would
+  otherwise copy.
 
 The copy is read from the log itself (see [ChangeLog.md](../ChangeLog/ChangeLog.md), *Compaction*), page
 by page in order of sequence (`GET api/replication/feed/copy`): the newest entry of every entity, which is
 its state, or its removal once it is gone. The pages go into `replication_copy`, the bytes are fetched as
-they arrive, and then one transaction removes what the copy does not hold (files and directories only to
+they arrive, only those not here already, so a copy fetches nothing the replica holds, and then one
+transaction removes what the copy does not hold (files and directories only to
 the trash, as above) and writes everything it does. `ReplicaApplier` holds, for each entity type, its table
 and how to write and remove one, so the removal pass and applying entries cannot disagree on the types
 there are. What goes with its owner unlogged (`ChangeEntityType.Owned`: a plugin's document about a file) is
 removed only when the copy holds its owner: without the file, the copy says nothing of its documents, which
-stay while this server keeps the file in its trash.
+stay while this server keeps the file in its trash. The copy cannot tell what was read from contents that a
+swap released from what was purged, so the removal pass logs what it removes of that as released, which this
+server's own compaction drops a day later, as the primary did.
 
 The pages are not one snapshot: each is read when it is asked for, and the primary goes on changing in
 between. An entity that changes after its page was read has a newer entry, so it comes again on a later

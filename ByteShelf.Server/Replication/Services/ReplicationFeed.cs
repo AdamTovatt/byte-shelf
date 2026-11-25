@@ -59,9 +59,10 @@ namespace ByteShelf.Server.Replication.Services
             // this page would skip without saying a copy is needed.
             await using IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync();
             long latest = await _changeLog.GetLatestSequenceAsync(session);
-            bool copyNeeded = afterSequence < await _changeLog.GetPrunedThroughAsync(session)
+            long prunedThrough = await _changeLog.GetPrunedThroughAsync(session);
+            bool copyNeeded = afterSequence < prunedThrough
                 || afterSequence > latest
-                || !await HoldsAsync(afterSequence, afterFingerprint, session);
+                || !await HoldsAsync(afterSequence, afterFingerprint, prunedThrough, session);
 
             if (copyNeeded)
             {
@@ -93,11 +94,13 @@ namespace ByteShelf.Server.Replication.Services
         /// <summary>
         /// Whether the entry a replica applied last is still the one numbered <paramref name="sequence"/>
         /// here. A primary restored from a backup gives the numbers it lost to other entries; without a
-        /// fingerprint (a replica fresh from a copy) there is nothing to compare.
+        /// fingerprint (a replica fresh from a copy) there is nothing to compare. Nor at
+        /// <paramref name="prunedThrough"/>, whose entry compaction dropped: a replica that applied it lacks
+        /// nothing, so it follows on, and a restore is not noticed there (Replication.md, <i>Whole copies</i>).
         /// </summary>
-        private async Task<bool> HoldsAsync(long sequence, string? fingerprint, IDbSession session)
+        private async Task<bool> HoldsAsync(long sequence, string? fingerprint, long prunedThrough, IDbSession session)
         {
-            if (fingerprint == null || sequence == 0)
+            if (fingerprint == null || sequence == 0 || sequence == prunedThrough)
             {
                 return true;
             }

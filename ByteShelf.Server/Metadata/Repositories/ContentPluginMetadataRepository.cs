@@ -118,9 +118,9 @@ namespace ByteShelf.Server.Metadata.Repositories
         }
 
         /// <inheritdoc />
-        public async Task DeleteUnheldByOthersAsync(string sha256, Guid fileId, DateTimeOffset at, IDbSession session)
+        public async Task ReleaseUnheldByOthersAsync(string sha256, Guid fileId, DateTimeOffset at, IDbSession session)
         {
-            await _changeLog.DeleteAndLogAsync(ChangeEntityType.ContentPluginMetadata, PlainContents.DeleteUnheldByOthersSql("content_plugin_metadata"), new { sha256, fileId }, at, session);
+            await _changeLog.ReleaseAndLogAsync(ChangeEntityType.ContentPluginMetadata, PlainContents.DeleteUnheldByOthersSql("content_plugin_metadata"), new { sha256, fileId }, at, session);
         }
 
         /// <inheritdoc />
@@ -130,11 +130,18 @@ namespace ByteShelf.Server.Metadata.Repositories
             await WrittenAsync(metadata, action, at, session);
         }
 
+        private const string DeleteByIdSql = "DELETE FROM content_plugin_metadata WHERE id = @id RETURNING id";
+
         /// <inheritdoc />
         public async Task<bool> DeleteByIdAsync(Guid id, DateTimeOffset at, IDbSession session)
         {
-            string query = $"DELETE FROM content_plugin_metadata WHERE id = @{nameof(id)} RETURNING id";
-            return await _changeLog.DeleteAndLogAsync(ChangeEntityType.ContentPluginMetadata, query, new { id }, at, session) > 0;
+            return await _changeLog.DeleteAndLogAsync(ChangeEntityType.ContentPluginMetadata, DeleteByIdSql, new { id }, at, session) > 0;
+        }
+
+        /// <inheritdoc />
+        public async Task<bool> ReleaseByIdAsync(Guid id, DateTimeOffset at, IDbSession session)
+        {
+            return await _changeLog.ReleaseAndLogAsync(ChangeEntityType.ContentPluginMetadata, DeleteByIdSql, new { id }, at, session) > 0;
         }
 
         /// <summary>What every write of a row is followed by: its fields' values are taken, and it is logged.</summary>

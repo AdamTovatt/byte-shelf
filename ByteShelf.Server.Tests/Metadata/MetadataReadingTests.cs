@@ -206,7 +206,7 @@ namespace ByteShelf.Server.Tests.Metadata
 
             Assert.Null(await Services.GetRequiredService<IObjectMetadataRepository>().GetBySha256Async(photo.Sha256));
             List<ChangeLogEntry> logged = (await ChangeLog.GetAfterAsync(before, 100)).Where(entry => entry.EntityId == ObjectMetadata.IdFor(photo.Sha256)).ToList();
-            Assert.Equal([ChangeAction.Added, ChangeAction.Purged], logged.Select(entry => entry.Action));
+            Assert.Equal([ChangeAction.Added, ChangeAction.Released], logged.Select(entry => entry.Action));
             Assert.All(logged, entry => Assert.Null(entry.Payload));
             Assert.Equal(0, (await Reading.RunAsync(CancellationToken.None)).Removed);
         }

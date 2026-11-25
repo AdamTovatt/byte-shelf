@@ -51,14 +51,25 @@ namespace ByteShelf.Server.ChangeLog.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<int> DeleteAndLogAsync(string entityType, string deleteReturningIds, object parameters, DateTimeOffset at, IDbSession session)
+        public Task<int> DeleteAndLogAsync(string entityType, string deleteReturningIds, object parameters, DateTimeOffset at, IDbSession session)
+        {
+            return DeleteAndLogAsAsync(ChangeAction.Purged, entityType, deleteReturningIds, parameters, at, session);
+        }
+
+        /// <inheritdoc />
+        public Task<int> ReleaseAndLogAsync(string entityType, string deleteReturningIds, object parameters, DateTimeOffset at, IDbSession session)
+        {
+            return DeleteAndLogAsAsync(ChangeAction.Released, entityType, deleteReturningIds, parameters, at, session);
+        }
+
+        private async Task<int> DeleteAndLogAsAsync(string removal, string entityType, string deleteReturningIds, object parameters, DateTimeOffset at, IDbSession session)
         {
             List<Guid> deleted = (await session.Connection.QueryAsync<Guid>(
                 deleteReturningIds, parameters, transaction: session.Transaction)).ToList();
 
             foreach (Guid id in deleted)
             {
-                await AppendAsync<object>(entityType, id, ChangeAction.Purged, null, at, session);
+                await AppendAsync<object>(entityType, id, removal, null, at, session);
             }
 
             return deleted.Count;
@@ -114,25 +125,17 @@ namespace ByteShelf.Server.ChangeLog.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<int> CompactAsync(DateTimeOffset before, IDbSession session)
+        public async Task<int> CompactAsync(DateTimeOffset now, IDbSession session)
         {
-            // The newest entry of a row that went with its owner, unlogged, would stay for good.
-            string goneWithOwner = string.Concat(ChangeEntityType.Owned.Select(owned => $@"
-                       OR (entity_type = '{owned.Key}'
-                           AND NOT EXISTS (SELECT 1 FROM {owned.Value.OwnedTable} WHERE id = change_log.entity_id))"));
+            DateTimeOffset before = now - ChangeLogRetention.Entries;
+            DateTimeOffset plainTracesBefore = now - ChangeLogRetention.PlainTraces;
 
-            string deleteQuery = $@"
-                DELETE FROM change_log
-                WHERE created_at < @{nameof(before)}
-                  AND (payload IS NULL
-                       OR EXISTS (
-                           SELECT 1 FROM change_log AS newer
-                           WHERE newer.entity_type = change_log.entity_type
-                             AND newer.entity_id = change_log.entity_id
-                             AND newer.sequence > change_log.sequence){goneWithOwner})
-                RETURNING sequence";
+            List<long> dropped = new List<long>();
+            dropped.AddRange(await DeleteReturningSequencesAsync(SupersededOrRemovedSql(), new { before }, session));
+            dropped.AddRange(await DeleteReturningSequencesAsync(
+                PlainStatesSql, new { plainTracesBefore, ChangeEntityType.EncryptedFlag.EntityType, ChangeEntityType.EncryptedFlag.JsonPath }, session));
+            dropped.AddRange(await DeleteReturningSequencesAsync(ReleasedSql(), new { plainTracesBefore, released = ChangeAction.Released }, session));
 
-            List<long> dropped = (await session.Connection.QueryAsync<long>(deleteQuery, new { before }, transaction: session.Transaction)).ToList();
             if (dropped.Count > 0)
             {
                 long prunedThrough = dropped.Max();
@@ -143,6 +146,76 @@ namespace ByteShelf.Server.ChangeLog.Repositories
             }
 
             return dropped.Count;
+        }
+
+        /// <summary>
+        /// Entries older than <c>@before</c> that a newer one for the same entity supersedes, removals that old,
+        /// and those of rows that went with their owner unlogged, whose newest entry would otherwise stay for good.
+        /// </summary>
+        private static string SupersededOrRemovedSql()
+        {
+            string goneWithOwner = string.Concat(ChangeEntityType.Owned.Select(owned => $@"
+                       OR (entity_type = '{owned.Key}'
+                           AND NOT EXISTS (SELECT 1 FROM {owned.Value.OwnedTable} WHERE id = change_log.entity_id))"));
+
+            return $@"
+                DELETE FROM change_log
+                WHERE created_at < @before
+                  AND (payload IS NULL
+                       OR EXISTS (
+                           SELECT 1 FROM change_log AS newer
+                           WHERE newer.entity_type = change_log.entity_type
+                             AND newer.entity_id = change_log.entity_id
+                             AND newer.sequence > change_log.sequence){goneWithOwner})
+                RETURNING sequence";
+        }
+
+        /// <summary>
+        /// A file's entries whose state is not encrypted, before an entry of the file whose state is that was made
+        /// before <c>@plainTracesBefore</c>. Found from the encrypted entries, through the entity index. By the state
+        /// and not the swapped action: a replica that took a whole copy logs the file's newer state without one.
+        /// </summary>
+        private const string PlainStatesSql = @"
+            DELETE FROM change_log
+            WHERE sequence IN (
+                SELECT plain.sequence
+                FROM change_log AS encrypted
+                JOIN change_log AS plain
+                  ON plain.entity_type = encrypted.entity_type
+                 AND plain.entity_id = encrypted.entity_id
+                 AND plain.sequence < encrypted.sequence
+                WHERE encrypted.entity_type = @EntityType
+                  AND encrypted.created_at < @plainTracesBefore
+                  AND json_extract(encrypted.payload, @JsonPath) = 1
+                  AND json_extract(plain.payload, @JsonPath) = 0)
+            RETURNING sequence";
+
+        /// <summary>
+        /// The entries of what was read from contents up to and with its release, made before
+        /// <c>@plainTracesBefore</c>: the states forgotten before it name the contents by their id as well.
+        /// </summary>
+        private static string ReleasedSql()
+        {
+            string readFromContents = string.Join(", ", ChangeEntityType.ReadFromContents.Select(type => $"'{type}'"));
+
+            return $@"
+                DELETE FROM change_log
+                WHERE sequence IN (
+                    SELECT traced.sequence
+                    FROM change_log AS released
+                    JOIN change_log AS traced
+                      ON traced.entity_type = released.entity_type
+                     AND traced.entity_id = released.entity_id
+                     AND traced.sequence <= released.sequence
+                    WHERE released.entity_type IN ({readFromContents})
+                      AND released.action = @released
+                      AND released.created_at < @plainTracesBefore)
+                RETURNING sequence";
+        }
+
+        private static async Task<IEnumerable<long>> DeleteReturningSequencesAsync(string deleteQuery, object parameters, IDbSession session)
+        {
+            return await session.Connection.QueryAsync<long>(deleteQuery, parameters, transaction: session.Transaction);
         }
 
         /// <inheritdoc />

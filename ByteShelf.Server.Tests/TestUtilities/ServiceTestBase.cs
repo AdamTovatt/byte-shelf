@@ -150,11 +150,21 @@ namespace ByteShelf.Server.Tests.TestUtilities
             await scope.ServiceProvider.GetRequiredService<IUploadService>().SwapAsync(shelf, request, Uploader, new MemoryStream(AgeBytes), CancellationToken.None).WaitAsync(SwapPatience);
         }
 
+        /// <summary>Swaps an encrypted file's contents for <paramref name="text"/>, decrypting it in place.</summary>
+        protected async Task DecryptInPlaceAsync(Shelf shelf, Guid fileId, string text)
+        {
+            byte[] bytes = Encoding.UTF8.GetBytes(text);
+            ShelfFile file = await FileService.GetFileAsync(shelf, EntryReference.ForId(fileId));
+            StartContentSwapRequest request = new StartContentSwapRequest { FileId = fileId, Sha256 = file.Sha256, SizeBytes = bytes.Length, Encrypted = false };
+            using IServiceScope scope = Services.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IUploadService>().SwapAsync(shelf, request, Uploader, new MemoryStream(bytes), CancellationToken.None).WaitAsync(SwapPatience);
+        }
+
         /// <summary>Compacts the change log as the job does at the clock's time.</summary>
         protected async Task CompactChangeLogAsync()
         {
             await using IDbTransactionSession session = await Services.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync();
-            await ChangeLog.CompactAsync(Clock.GetUtcNow() - ChangeLogCompactionWorker.Retention, session);
+            await ChangeLog.CompactAsync(Clock.GetUtcNow(), session);
             await session.CommitAsync();
         }
 

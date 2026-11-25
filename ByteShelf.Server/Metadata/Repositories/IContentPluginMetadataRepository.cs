@@ -36,15 +36,18 @@ namespace ByteShelf.Server.Metadata.Repositories
         Task<int> DeleteUnheldAsync(DateTimeOffset at, IDbSession session);
 
         /// <summary>
-        /// Removes every plugin's row of the contents <paramref name="sha256"/>, logged as purged, unless a plain file
+        /// Removes every plugin's row of the contents <paramref name="sha256"/>, logged as released (the file is swapped away from them), unless a plain file
         /// row, live or trashed, other than <paramref name="fileId"/> holds them.
         /// </summary>
-        Task DeleteUnheldByOthersAsync(string sha256, Guid fileId, DateTimeOffset at, IDbSession session);
+        Task ReleaseUnheldByOthersAsync(string sha256, Guid fileId, DateTimeOffset at, IDbSession session);
 
         /// <summary>Writes a row as a primary's change log holds it, logged as <paramref name="action"/>.</summary>
         Task UpsertReplicatedAsync(ContentPluginMetadata metadata, string action, DateTimeOffset at, IDbSession session);
 
         /// <summary>Removes a row, logged as purged; false when there was none.</summary>
         Task<bool> DeleteByIdAsync(Guid id, DateTimeOffset at, IDbSession session);
+
+        /// <summary>Removes a row, logged as released, as a primary's release is applied; false when there was none.</summary>
+        Task<bool> ReleaseByIdAsync(Guid id, DateTimeOffset at, IDbSession session);
     }
 }

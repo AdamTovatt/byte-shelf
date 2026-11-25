@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text;
 using ByteShelf.Server.ChangeLog.Repositories;
+using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
@@ -175,12 +176,27 @@ namespace ByteShelf.Server.Tests.Replication
             (await Primary.AdminClient.DeleteAsync($"/api/shelves/{shelf}/trash")).EnsureSuccessStatusCode();
         }
 
-        /// <summary>Compacts the primary's log as if every entry were older than the retention; this host runs on the real clock.</summary>
-        public async Task CompactPrimaryAsync()
+        /// <summary>Compacts the primary's log as if every entry were older than the retention.</summary>
+        public Task CompactPrimaryAsync()
         {
-            using IServiceScope scope = Primary.Services.CreateScope();
+            return CompactPastRetentionAsync(Primary);
+        }
+
+        /// <summary>Compacts <paramref name="host"/>'s log as if every entry were older than the retention.</summary>
+        public static Task CompactPastRetentionAsync(ServerTestHost host)
+        {
+            return CompactAsync(host, ChangeLogRetention.Entries + TimeSpan.FromDays(1));
+        }
+
+        /// <summary>
+        /// Compacts <paramref name="host"/>'s log as the job does once <paramref name="elapsed"/> has passed;
+        /// the hosts run on the real clock, which their entries' times come from.
+        /// </summary>
+        public static async Task CompactAsync(ServerTestHost host, TimeSpan elapsed)
+        {
+            using IServiceScope scope = host.Services.CreateScope();
             await using IDbTransactionSession session = await scope.ServiceProvider.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync();
-            await scope.ServiceProvider.GetRequiredService<IChangeLogRepository>().CompactAsync(DateTimeOffset.UtcNow.AddYears(1), session);
+            await scope.ServiceProvider.GetRequiredService<IChangeLogRepository>().CompactAsync(DateTimeOffset.UtcNow + elapsed, session);
             await session.CommitAsync();
         }
 
