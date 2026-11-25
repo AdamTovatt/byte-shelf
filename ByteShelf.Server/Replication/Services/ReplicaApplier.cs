@@ -88,12 +88,14 @@ namespace ByteShelf.Server.Replication.Services
                     ChangeEntityType.ObjectMetadata,
                     "object_metadata",
                     (entry, at, session) => metadataRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<ObjectMetadata>(entry.Payload!), entry.Action, at, session),
-                    metadataRepository.DeleteByIdAsync),
+                    metadataRepository.DeleteByIdAsync,
+                    ReleaseAsync: metadataRepository.ReleaseByIdAsync),
                 new EntityHandler(
                     ChangeEntityType.ContentPluginMetadata,
                     "content_plugin_metadata",
                     (entry, at, session) => contentPluginMetadataRepository.UpsertReplicatedAsync(ChangePayload.Deserialize<ContentPluginMetadata>(entry.Payload!), entry.Action, at, session),
-                    contentPluginMetadataRepository.DeleteByIdAsync),
+                    contentPluginMetadataRepository.DeleteByIdAsync,
+                    ReleaseAsync: contentPluginMetadataRepository.ReleaseByIdAsync),
                 new EntityHandler(
                     ChangeEntityType.FilePluginMetadata,
                     ChangeEntityType.Owned[ChangeEntityType.FilePluginMetadata].OwnedTable,
@@ -151,7 +153,7 @@ namespace ByteShelf.Server.Replication.Services
         /// to do. <see cref="SettleAsync"/> follows the last call in the same transaction, whose commit a row
         /// without its owner would otherwise fail.
         /// </summary>
-        /// <exception cref="ReplicaOutdatedException">An entry is of a type this build does not know.</exception>
+        /// <exception cref="ReplicaOutdatedException">An entry is of a type, or by an action, this build does not know.</exception>
         /// <exception cref="PrimaryFailedException">An entry's state is in a shape this build does not take, as from a primary on another version.</exception>
         public async Task ApplyAsync(IReadOnlyList<ChangeLogEntry> entries, IContentsSession session, AppliedChanges changes)
         {
@@ -162,11 +164,15 @@ namespace ByteShelf.Server.Replication.Services
             foreach (ChangeLogEntry entry in entries)
             {
                 EntityHandler handler = _handlers.FirstOrDefault(candidate => candidate.EntityType == entry.EntityType)
-                    ?? throw new ReplicaOutdatedException(entry.EntityType);
+                    ?? throw new ReplicaOutdatedException($"a change to '{entry.EntityType}'");
+                if (!ChangeAction.All.Contains(entry.Action))
+                {
+                    throw new ReplicaOutdatedException($"a change to '{entry.EntityType}' by '{entry.Action}'");
+                }
 
                 if (entry.Payload == null)
                 {
-                    await RemoveAsync(handler, entry.EntityId, now, session, changes);
+                    await RemoveAsync(handler, entry.EntityId, entry.Action == ChangeAction.Released, now, session, changes);
                 }
                 else
                 {
@@ -201,9 +207,11 @@ namespace ByteShelf.Server.Replication.Services
                 // What goes with an owner the copy lacks leaves no removal and no entries on the primary: it
                 // stays until this server purges the owner.
                 EntityOwner? owner = ChangeEntityType.Owned.GetValueOrDefault(handler.EntityType);
+                // A copy cannot tell what was released from what was purged; it takes what was read from contents as
+                // released, so a trace of contents encrypted since goes from this log as soon as from the primary's.
                 foreach (Guid id in await _copyRepository.GetIdsMissingAsync(handler.EntityType, handler.Table, owner, session))
                 {
-                    await RemoveAsync(handler, id, now, session, changes);
+                    await RemoveAsync(handler, id, released: true, now, session, changes);
                 }
             }
         }
@@ -225,15 +233,17 @@ namespace ByteShelf.Server.Replication.Services
                 {
                     foreach (Guid id in await OwnedRows.GetIdsWithoutOwnerAsync(owner, session))
                     {
-                        await RemoveAsync(handler, id, now, session, changes);
+                        await RemoveAsync(handler, id, released: false, now, session, changes);
                     }
                 }
             }
         }
 
-        private static async Task RemoveAsync(EntityHandler handler, Guid id, DateTimeOffset at, IContentsSession session, AppliedChanges changes)
+        /// <param name="released">Whether to log it as released (<see cref="ChangeAction.Released"/>), where its type is ever released.</param>
+        private static async Task RemoveAsync(EntityHandler handler, Guid id, bool released, DateTimeOffset at, IContentsSession session, AppliedChanges changes)
         {
-            if (await handler.RemoveAsync(id, at, session) && handler.RemovalEndsSessions)
+            Func<Guid, DateTimeOffset, IContentsSession, Task<bool>> remove = released && handler.ReleaseAsync != null ? handler.ReleaseAsync : handler.RemoveAsync;
+            if (await remove(id, at, session) && handler.RemovalEndsSessions)
             {
                 changes.UserRemoved(id);
             }
@@ -244,11 +254,13 @@ namespace ByteShelf.Server.Replication.Services
         /// <param name="WriteAsync">Writes an entry's state.</param>
         /// <param name="RemoveAsync">Removes one by id; false when there was none.</param>
         /// <param name="RemovalEndsSessions">Whether removing one ends the sessions of the user it is.</param>
+        /// <param name="ReleaseAsync">Removes one by id, logged as released; null for a type that is never released.</param>
         private sealed record EntityHandler(
             string EntityType,
             string Table,
             Func<ChangeLogEntry, DateTimeOffset, IContentsSession, Task> WriteAsync,
             Func<Guid, DateTimeOffset, IContentsSession, Task<bool>> RemoveAsync,
-            bool RemovalEndsSessions = false);
+            bool RemovalEndsSessions = false,
+            Func<Guid, DateTimeOffset, IContentsSession, Task<bool>>? ReleaseAsync = null);
     }
 }

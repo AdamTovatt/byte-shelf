@@ -1,3 +1,4 @@
+using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Jobs.Models;
 using ByteShelf.Server.Jobs.Services;
@@ -6,16 +7,11 @@ using EasyReasy.Database;
 namespace ByteShelf.Server.ChangeLog.Services
 {
     /// <summary>
-    /// Compacts the change log daily: an entry older than <see cref="Retention"/> goes once a newer one
-    /// for its entity exists, a removal goes once it is that old, and so does an entry of what went with its
-    /// owner unlogged (a plugin's document about a file that is gone). A replica behind anything dropped,
-    /// which in practice means one that has not followed the log for that long, takes a whole copy.
+    /// Compacts the change log hourly by <see cref="ChangeLogRetention"/>, on a primary and on a replica alike
+    /// (<see cref="IChangeLogRepository.CompactAsync"/>). A replica behind anything dropped takes a whole copy.
     /// </summary>
     public sealed class ChangeLogCompactionWorker : PeriodicJobWorker<int>
     {
-        /// <summary>How long every entry is kept, and so how long a replica may fall behind before it needs a copy.</summary>
-        public static readonly TimeSpan Retention = TimeSpan.FromDays(30);
-
         private readonly TimeProvider _timeProvider;
 
         public ChangeLogCompactionWorker(IServiceScopeFactory scopeFactory, TimeProvider timeProvider, ILogger<ChangeLogCompactionWorker> logger)
@@ -26,13 +22,14 @@ namespace ByteShelf.Server.ChangeLog.Services
 
         protected override string JobName => JobNames.ChangeLogCompaction;
 
-        protected override TimeSpan Interval => TimeSpan.FromDays(1);
+        /// <summary>Hourly, so <see cref="ChangeLogRetention.PlainTraces"/> is kept to within about an hour while the server runs.</summary>
+        protected override TimeSpan Interval => TimeSpan.FromHours(1);
 
         protected override async Task<int> RunOnceAsync(IServiceProvider services, CancellationToken cancellationToken)
         {
             IDbSessionFactory sessionFactory = services.GetRequiredService<IDbSessionFactory>();
             await using IDbTransactionSession session = await sessionFactory.CreateSessionWithTransactionAsync();
-            int dropped = await services.GetRequiredService<IChangeLogRepository>().CompactAsync(_timeProvider.GetUtcNow() - Retention, session);
+            int dropped = await services.GetRequiredService<IChangeLogRepository>().CompactAsync(_timeProvider.GetUtcNow(), session);
             await session.CommitAsync();
             return dropped;
         }

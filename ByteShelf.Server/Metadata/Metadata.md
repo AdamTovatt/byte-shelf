@@ -57,8 +57,9 @@ says [what that does not reach](../../DEPLOYMENT.md#deleted-data), such as the w
 - A file encrypted in place drops what was read from its plain contents in the swap's transaction
   (`FileRepository.SwapContentAsync`, the one way to swap contents, for a backup too, through
   `MetadataUpkeep`, which knows every table of metadata), unless another plain file, live or in the
-  trash, holds them, and the change log forgets those rows' earlier states
-  ([Change log](../ChangeLog/ChangeLog.md)). An encrypted file with the same bytes does not count.
+  trash, holds them, and the change log forgets those rows' earlier states. The removals are logged as
+  released, and compaction drops them and the forgotten states a day later, with the file's plain states
+  ([Change log](../ChangeLog/ChangeLog.md#compaction)). An encrypted file with the same bytes does not count.
 - Those removals are in the log **before** the swap, so a replica, which applies the log in pages, never
   holds a reading of contents it has applied the swap of, wherever a page ends and whether or not it ever
   fetched them.

@@ -29,14 +29,24 @@ namespace ByteShelf.Server.ChangeLog.Models
         };
 
         /// <summary>
+        /// The entity types of what was read from contents, by the server or a plugin's reader, each named by an
+        /// id made from the contents' SHA-256; the only ones removed as <see cref="ChangeAction.Released"/>.
+        /// </summary>
+        public static IReadOnlyList<string> ReadFromContents { get; } = [ObjectMetadata, ContentPluginMetadata];
+
+        /// <summary>Where a file's state says whether its contents are encrypted (<see cref="ChangeLogRetention.PlainTraces"/>).</summary>
+        public static StateFlag EncryptedFlag { get; } = new StateFlag(File, "$.encrypted");
+
+        /// <summary>
         /// Whether the log forgets an entity of <paramref name="entityType"/>'s earlier states once it changes
-        /// or is removed. True for what was read from contents: a photo encrypted in place loses it at once,
-        /// and its position, camera and title must not outlive it in the log for the compaction window. And
-        /// for plugins' documents, whose size and how often they are written nothing else bounds.
+        /// or is removed. True for what was read from contents (<see cref="ReadFromContents"/>): a photo
+        /// encrypted in place loses it at once, and its position, camera and title must not outlive it in the
+        /// log for the compaction window. And for plugins' documents, whose size and how often they are
+        /// written nothing else bounds.
         /// </summary>
         public static bool ForgetsEarlierStates(string entityType)
         {
-            return entityType is ObjectMetadata or ContentPluginMetadata or FilePluginMetadata;
+            return ReadFromContents.Contains(entityType) || entityType == FilePluginMetadata;
         }
     }
 }

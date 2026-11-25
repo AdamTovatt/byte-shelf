@@ -132,7 +132,7 @@ namespace ByteShelf.Server.Tests.Replication
             ShelfFile file = await pair.PutOnPrimaryAsync("docs", "/a.txt", "a");
             FilePluginMetadata document = await pair.Primary.Services.SetFileDocumentAsync(file.Id, Rating);
             await MoveOnPrimaryAsync(pair, "/a.txt", "/b.txt");
-            await CompactAsync(pair.Primary);
+            await ReplicationPair.CompactPastRetentionAsync(pair.Primary);
             List<Guid> copied = (await pair.Primary.Services.GetLatestStatesAsync()).Select(entry => entry.EntityId).ToList();
             Assert.True(copied.IndexOf(document.Id) < copied.IndexOf(file.Id), "The copy does not give the document before its file, so this proves nothing.");
 
@@ -222,7 +222,7 @@ namespace ByteShelf.Server.Tests.Replication
             await pair.PurgeOnPrimaryAsync("docs", "/a.txt");
             if (compacted)
             {
-                await CompactAsync(pair.Primary);
+                await ReplicationPair.CompactPastRetentionAsync(pair.Primary);
                 Assert.DoesNotContain(await pair.Primary.Services.GetLatestStatesAsync(), entry => entry.EntityId == document.Id);
             }
 
@@ -244,7 +244,7 @@ namespace ByteShelf.Server.Tests.Replication
             await pair.SyncAsync();
 
             await pair.Primary.Services.RemoveFileDocumentAsync(file.Id);
-            await CompactAsync(pair.Primary);
+            await ReplicationPair.CompactPastRetentionAsync(pair.Primary);
             await RequireCopyAsync(pair.Replica);
             await pair.SyncAsync();
 
@@ -310,7 +310,7 @@ namespace ByteShelf.Server.Tests.Replication
             Assert.Equal(RootCommand.Done, await PluginMetadataCommand.RunAsync(["--forget-plugin", TestPluginMetadata.Plugin], pair.Primary.TestRoot.Root.Path, new RecordingLoggerFactory()));
             if (byCopy)
             {
-                await CompactAsync(pair.Primary);
+                await ReplicationPair.CompactPastRetentionAsync(pair.Primary);
                 await RequireCopyAsync(pair.Replica);
             }
 
@@ -458,7 +458,7 @@ namespace ByteShelf.Server.Tests.Replication
             await pair.SyncAsync();
 
             await pair.SwapOnPrimaryAsync("docs", file, "encrypted");
-            await CompactAsync(pair.Primary);
+            await ReplicationPair.CompactPastRetentionAsync(pair.Primary);
             await RequireCopyAsync(pair.Replica);
             await pair.SyncAsync();
 
@@ -524,12 +524,6 @@ namespace ByteShelf.Server.Tests.Replication
         private static async Task MoveOnPrimaryAsync(ReplicationPair pair, string path, string toPath)
         {
             (await pair.Primary.AdminClient.PostAsJsonAsync($"/api/shelves/docs/files/move?path={path}", new MoveRequest { ToPath = toPath })).EnsureSuccessStatusCode();
-        }
-
-        /// <summary>Compacts a server's log as if every entry were older than the retention; the hosts run on the real clock.</summary>
-        private static async Task CompactAsync(ServerTestHost host)
-        {
-            await host.Services.InTransactionAsync((provider, session) => provider.GetRequiredService<IChangeLogRepository>().CompactAsync(DateTimeOffset.UtcNow.AddYears(1), session));
         }
 
         private static async Task RequireCopyAsync(ServerTestHost replica)

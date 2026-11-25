@@ -215,6 +215,11 @@ namespace ByteShelf.Server.Tests.Invalidation
                 throw new NotSupportedException();
             }
 
+            public Task<int> ReleaseAndLogAsync(string entityType, string deleteReturningIds, object parameters, DateTimeOffset at, IDbSession session)
+            {
+                throw new NotSupportedException();
+            }
+
             public Task<ChangeLogPage> GetPageAsync(long afterSequence, ChangeLogPageLimit limit, IDbSession session)
             {
                 throw new NotSupportedException();
@@ -225,7 +230,7 @@ namespace ByteShelf.Server.Tests.Invalidation
                 throw new NotSupportedException();
             }
 
-            public Task<int> CompactAsync(DateTimeOffset before, IDbSession session)
+            public Task<int> CompactAsync(DateTimeOffset now, IDbSession session)
             {
                 throw new NotSupportedException();
             }

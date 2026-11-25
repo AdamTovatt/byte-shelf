@@ -43,7 +43,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
         public static async Task<bool> RecordContentDocumentAsync(this IServiceProvider services, string sha256, string json, string plugin = Plugin, int version = 1)
         {
             return await services.InTransactionAsync((provider, session) => provider.GetRequiredService<IContentPluginMetadataRepository>()
-                .RecordAsync(ContentPluginMetadata.Of(plugin, sha256, version, DateTimeOffset.UtcNow, PluginDocument.Parse(json)), session));
+                .RecordAsync(ContentPluginMetadata.Of(plugin, sha256, version, provider.GetRequiredService<TimeProvider>().GetUtcNow(), PluginDocument.Parse(json)), session));
         }
 
         public static async Task<string?> GetContentDocumentAsync(this IServiceProvider services, string sha256, string plugin = Plugin)

@@ -155,8 +155,8 @@ namespace ByteShelf.Server.Tests.Storage
             Assert.Null(await Services.GetRequiredService<IObjectMetadataRepository>().GetBySha256Async(file.Sha256));
             Assert.Equal(
                 [
-                    (ChangeEntityType.ObjectMetadata, ChangeAction.Purged),
-                    (ChangeEntityType.ContentPluginMetadata, ChangeAction.Purged),
+                    (ChangeEntityType.ObjectMetadata, ChangeAction.Released),
+                    (ChangeEntityType.ContentPluginMetadata, ChangeAction.Released),
                     (ChangeEntityType.File, ChangeAction.Swapped),
                     (ChangeEntityType.FilePluginMetadata, ChangeAction.Updated),
                 ],

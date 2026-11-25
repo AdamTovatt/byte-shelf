@@ -19,6 +19,12 @@ namespace ByteShelf.Server.ChangeLog.Repositories
         /// </summary>
         Task<int> DeleteAndLogAsync(string entityType, string deleteReturningIds, object parameters, DateTimeOffset at, IDbSession session);
 
+        /// <summary>
+        /// As <see cref="DeleteAndLogAsync"/>, logging each row removed as <see cref="ChangeAction.Released"/>: what
+        /// was read from contents (<see cref="ChangeEntityType.ReadFromContents"/>) a file was swapped away from.
+        /// </summary>
+        Task<int> ReleaseAndLogAsync(string entityType, string deleteReturningIds, object parameters, DateTimeOffset at, IDbSession session);
+
         /// <summary>The entries after <paramref name="afterSequence"/>, oldest first, at most <paramref name="limit"/>.</summary>
         Task<IReadOnlyList<ChangeLogEntry>> GetAfterAsync(long afterSequence, int limit, IDbSession? session = null);
 
@@ -38,12 +44,14 @@ namespace ByteShelf.Server.ChangeLog.Repositories
         Task<ChangeLogPage> GetLatestStatesPageAsync(long afterSequence, ChangeLogPageLimit limit, IDbSession session);
 
         /// <summary>
-        /// Compacts the log: drops entries made before <paramref name="before"/> that a newer entry for the
-        /// same entity supersedes, removals made before it, and those of rows that went with their owner
-        /// unlogged (<see cref="ChangeEntityType.Owned"/>), in <paramref name="session"/>'s transaction, and
-        /// records the highest sequence dropped. Answers how many were dropped.
+        /// Compacts the log as of <paramref name="now"/> by <see cref="ChangeLogRetention"/>: drops the entries
+        /// older than <see cref="ChangeLogRetention.Entries"/> that a newer entry for the same entity supersedes,
+        /// removals that old, and those of rows that went with their owner unlogged
+        /// (<see cref="ChangeEntityType.Owned"/>), and what tells of plain contents a file was encrypted away from
+        /// once <see cref="ChangeLogRetention.PlainTraces"/> has passed. In <paramref name="session"/>'s
+        /// transaction, recording the highest sequence dropped. Answers how many were dropped.
         /// </summary>
-        Task<int> CompactAsync(DateTimeOffset before, IDbSession session);
+        Task<int> CompactAsync(DateTimeOffset now, IDbSession session);
 
         /// <summary>
         /// The highest sequence compaction dropped. A follower behind it cannot replay the log: it may miss

@@ -39,7 +39,8 @@ namespace ByteShelf.Server.Metadata.Services
         /// </summary>
         /// <remarks>
         /// Before it, what was read from the contents goes unless another plain file, live or in the trash,
-        /// holds them, so the log has the removals before the swap: a replica applies it a page at a time, and
+        /// holds them, logged as released (<see cref="ChangeLog.Models.ChangeAction.Released"/>), so the log has
+        /// the removals before the swap: a replica applies it a page at a time, and
         /// none it has applied may leave there what was read from plaintext the file no longer holds, whether
         /// or not it ever had those contents. After it, what plugins keep about the file is logged again: a
         /// replica that had not fetched the old contents passed over the file until now, and its documents
@@ -47,8 +48,8 @@ namespace ByteShelf.Server.Metadata.Services
         /// </remarks>
         public async Task<TSwapped> AroundSwapAsync<TSwapped>(Guid fileId, string sha256, DateTimeOffset at, IDbSession session, Func<Task<TSwapped>> swap)
         {
-            await _objectMetadata.DeleteUnheldByOthersAsync(sha256, fileId, at, session);
-            await _contentPluginMetadata.DeleteUnheldByOthersAsync(sha256, fileId, at, session);
+            await _objectMetadata.ReleaseUnheldByOthersAsync(sha256, fileId, at, session);
+            await _contentPluginMetadata.ReleaseUnheldByOthersAsync(sha256, fileId, at, session);
 
             TSwapped swapped = await swap();
 

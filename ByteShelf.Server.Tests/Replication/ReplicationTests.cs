@@ -1,8 +1,11 @@
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
+using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
+using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Replication.Models;
 using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared.Errors;
@@ -262,6 +265,129 @@ namespace ByteShelf.Server.Tests.Replication
 
             Assert.True((await replica.GetFromJsonAsync<ShelfFile>("/api/shelves/docs/files?path=/b.txt"))!.Encrypted);
             Assert.False(replicaObjects.Exists(plain.Sha256));
+        }
+
+        [Fact]
+        public async Task Sync_ContentsSwappedMovedAndCopied_TheReplicasOwnLogKeepsThePlainStatesLessThanADay()
+        {
+            ShelfFile plain = await CopyAfterSwapAndMoveAsync();
+
+            await ReplicationPair.CompactAsync(_pair.Replica, ChangeLogRetention.PlainTraces - TimeSpan.FromHours(1));
+
+            Assert.NotEqual(0, await CountOnAsync(_pair.Replica, StatesNaming(plain.Sha256)));
+        }
+
+        [Fact]
+        public async Task Sync_ContentsSwappedMovedAndCopied_TheReplicasOwnLogDropsThePlainStatesADayLater()
+        {
+            ShelfFile plain = await CopyAfterSwapAndMoveAsync();
+
+            await ReplicationPair.CompactAsync(_pair.Replica, ChangeLogRetention.PlainTraces + TimeSpan.FromHours(1));
+
+            Assert.Equal(0, await CountOnAsync(_pair.Replica, StatesNaming(plain.Sha256)));
+            Assert.Equal(1, await CountOnAsync(_pair.Replica, $"entity_id = '{plain.Id}' AND json_extract(payload, '{ChangeEntityType.EncryptedFlag.JsonPath}') = 1"));
+        }
+
+        [Fact]
+        public async Task Sync_WhatWasReadFromContentsReleasedOnThePrimary_IsReleasedInTheReplicasLogAndGoesFromItADayLater()
+        {
+            ShelfFile pdf = await PutPdfOnPrimaryAsync("/q3.pdf", "Q3 report");
+            await ReadMetadataOnPrimaryAsync();
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+            string read = $"entity_id = '{ObjectMetadata.IdFor(pdf.Sha256)}'";
+
+            await _pair.SwapOnPrimaryAsync("docs", pdf, "the file");
+            await _pair.SyncAsync();
+            Assert.Equal(1, await CountOnAsync(_pair.Replica, $"{read} AND action = '{ChangeAction.Released}'"));
+            await ReplicationPair.CompactAsync(_pair.Replica, ChangeLogRetention.PlainTraces + TimeSpan.FromHours(1));
+
+            Assert.Equal(0, await CountOnAsync(_pair.Replica, read));
+        }
+
+        [Fact]
+        public async Task Sync_ACopyMissingWhatWasReadFromContents_LogsItReleased()
+        {
+            ShelfFile pdf = await PutPdfOnPrimaryAsync("/q3.pdf", "Q3 report");
+            await ReadMetadataOnPrimaryAsync();
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+
+            // More than a day behind the swap: its release is compacted away, and the copy lacks the row.
+            await _pair.SwapOnPrimaryAsync("docs", pdf, "the file");
+            await ReplicationPair.CompactAsync(_pair.Primary, ChangeLogRetention.PlainTraces + TimeSpan.FromHours(1));
+            await _pair.SyncOnceAsync();
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            Assert.True((await ReplicationPair.GetStatusAsync(replica)).Source!.Copying);
+            await _pair.SyncAsync();
+
+            Assert.Equal(0, await QueryOnAsync<long>(_pair.Replica, $"SELECT COUNT(*) FROM object_metadata WHERE sha256 = '{pdf.Sha256}'"));
+            Assert.Equal(1, await CountOnAsync(_pair.Replica, $"entity_id = '{ObjectMetadata.IdFor(pdf.Sha256)}' AND action = '{ChangeAction.Released}'"));
+        }
+
+        [Fact]
+        public async Task Sync_LessThanADayBehindAnEncryption_FollowsOn()
+        {
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+            ShelfFile plain = await _pair.PutOnPrimaryAsync("docs", "/a.txt", "known plain contents");
+            ShelfFile swapped = await _pair.SwapOnPrimaryAsync("docs", plain, "the file");
+
+            await ReplicationPair.CompactAsync(_pair.Primary, ChangeLogRetention.PlainTraces - TimeSpan.FromHours(1));
+            await _pair.SyncOnceAsync();
+
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            Assert.False((await ReplicationPair.GetStatusAsync(replica)).Source!.Copying);
+            Assert.Equal(swapped.Sha256, (await replica.GetFromJsonAsync<ShelfFile>("/api/shelves/docs/files?path=/a.txt"))!.Sha256);
+        }
+
+        [Fact]
+        public async Task Sync_CaughtUpAtAnEntryCompactionDropped_FollowsOn()
+        {
+            // Following the log, not fresh from the pairing's copy: it sends the fingerprint of the entry it applied last.
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+            ShelfFile plain = await _pair.PutOnPrimaryAsync("docs", "/a.txt", "known plain contents");
+            await _pair.SyncAsync();
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            long applied = (await ReplicationPair.GetStatusAsync(replica)).Source!.AppliedSequence;
+            ShelfFile swapped = await _pair.SwapOnPrimaryAsync("docs", plain, "the file");
+
+            // The plain state the replica applied last goes a day after the swap, and nothing after it.
+            await ReplicationPair.CompactAsync(_pair.Primary, ChangeLogRetention.PlainTraces + TimeSpan.FromHours(1));
+            Assert.Equal(applied, await QueryOnAsync<long>(_pair.Primary, "SELECT pruned_through FROM change_log_state"));
+            await _pair.SyncOnceAsync();
+
+            Assert.False((await ReplicationPair.GetStatusAsync(replica)).Source!.Copying);
+            Assert.Equal(swapped.Sha256, (await replica.GetFromJsonAsync<ShelfFile>("/api/shelves/docs/files?path=/a.txt"))!.Sha256);
+        }
+
+        [Fact]
+        public async Task Sync_MoreThanADayBehindAnEncryption_TakesAWholeCopyFetchingNothingItHolds()
+        {
+            ObjectRequestsHandler? requests = null;
+            await using ReplicationPair pair = await ReplicationPair.StartAsync(primary => requests = new ObjectRequestsHandler(primary));
+            await pair.CreateShelfAsync("docs");
+            await pair.PairAsync();
+            await pair.PutOnPrimaryAsync("docs", "/held.txt", "held by the replica already");
+            await pair.SyncAsync();
+            ShelfFile plain = await pair.PutOnPrimaryAsync("docs", "/a.txt", "known plain contents");
+            ShelfFile swapped = await pair.SwapOnPrimaryAsync("docs", plain, "the file");
+
+            await ReplicationPair.CompactAsync(pair.Primary, ChangeLogRetention.PlainTraces + TimeSpan.FromHours(1));
+            requests!.Sha256s.Clear();
+            await pair.SyncOnceAsync();
+            using HttpClient replica = await pair.SignInOnReplicaAsync();
+            Assert.True((await ReplicationPair.GetStatusAsync(replica)).Source!.Copying);
+            await pair.SyncAsync();
+
+            Assert.Equal(new[] { swapped.Sha256 }, requests.Sha256s);
+            DirectoryListing onPrimary = (await pair.Primary.AdminClient.GetFromJsonAsync<DirectoryListing>("/api/shelves/docs/entries?path=/"))!;
+            DirectoryListing onReplica = (await replica.GetFromJsonAsync<DirectoryListing>("/api/shelves/docs/entries?path=/"))!;
+            Assert.Equal(
+                onPrimary.Files.Select(file => (file.Name, file.Sha256, file.Encrypted)),
+                onReplica.Files.Select(file => (file.Name, file.Sha256, file.Encrypted)));
+            Assert.False(pair.Replica.Services.GetRequiredService<ObjectStore>().Exists(plain.Sha256));
         }
 
         [Fact]
@@ -752,6 +878,25 @@ namespace ByteShelf.Server.Tests.Replication
         }
 
         [Fact]
+        public async Task Sync_AChangeByAnUnknownAction_StopsReplicationWithoutSkippingIt()
+        {
+            ShelfFile file = await _pair.PutOnPrimaryAsync("docs", "/a.txt", "a");
+            await _pair.PairAsync();
+            await _pair.SyncAsync();
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            long applied = (await ReplicationPair.GetStatusAsync(replica)).Source!.AppliedSequence;
+            await ExecuteOnAsync(
+                _pair.Primary,
+                $"INSERT INTO change_log (entity_type, entity_id, action, payload, created_at) VALUES ('file', '{file.Id:D}', 'vanished', NULL, '2026-01-01T00:00:00.0000000Z')");
+
+            ReplicaOutdatedException outdated = await Assert.ThrowsAsync<ReplicaOutdatedException>(() => _pair.SyncOnceAsync());
+
+            Assert.Contains("'vanished'", outdated.Message, StringComparison.Ordinal);
+            Assert.Equal(applied, (await ReplicationPair.GetStatusAsync(replica)).Source!.AppliedSequence);
+            Assert.Equal("a", await replica.GetStringAsync("/api/shelves/docs/content?path=/a.txt"));
+        }
+
+        [Fact]
         public async Task Pair_CodeUsedOnce_IsRefusedTheSecondTime()
         {
             string code = await _pair.CreateCodeAsync();
@@ -870,6 +1015,27 @@ namespace ByteShelf.Server.Tests.Replication
                 }
 
                 return response;
+            }
+        }
+
+        /// <summary>Records the contents of each file's bytes the replica asks for.</summary>
+        private sealed class ObjectRequestsHandler : DelegatingHandler
+        {
+            public ObjectRequestsHandler(HttpMessageHandler primary)
+                : base(primary)
+            {
+            }
+
+            public ConcurrentQueue<string> Sha256s { get; } = new ConcurrentQueue<string>();
+
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                if (request.RequestUri!.AbsolutePath.EndsWith("/object", StringComparison.Ordinal))
+                {
+                    Sha256s.Enqueue(QueryHelpers.ParseQuery(request.RequestUri.Query)["sha256"].ToString());
+                }
+
+                return base.SendAsync(request, cancellationToken);
             }
         }
 
@@ -1096,6 +1262,38 @@ namespace ByteShelf.Server.Tests.Replication
         {
             using IServiceScope scope = host.Services.CreateScope();
             return await scope.ServiceProvider.GetRequiredService<IChangeLogRepository>().GetLatestSequenceAsync();
+        }
+
+        /// <summary>
+        /// Encrypts a file in place on the primary the replica had followed, moves it, and compacts the primary so
+        /// the replica takes a whole copy, which logs the file's state here without a swap; answers the file as stored.
+        /// </summary>
+        private async Task<ShelfFile> CopyAfterSwapAndMoveAsync()
+        {
+            await _pair.PairAsync();
+            ShelfFile plain = await _pair.PutOnPrimaryAsync("docs", "/a.txt", "known plain contents");
+            await _pair.SyncAsync();
+            await _pair.SwapOnPrimaryAsync("docs", plain, "the file");
+            (await _pair.Primary.AdminClient.PostAsJsonAsync("/api/shelves/docs/files/move?path=/a.txt", new MoveRequest { ToPath = "/b.txt" })).EnsureSuccessStatusCode();
+            await _pair.CompactPrimaryAsync();
+            await _pair.SyncOnceAsync();
+            using HttpClient replica = await _pair.SignInOnReplicaAsync();
+            Assert.True((await ReplicationPair.GetStatusAsync(replica)).Source!.Copying);
+            await _pair.SyncAsync();
+            Assert.Equal(0, await CountOnAsync(_pair.Replica, $"action = '{ChangeAction.Swapped}'"));
+            return plain;
+        }
+
+        /// <summary>Where a state names the contents <paramref name="sha256"/>.</summary>
+        private static string StatesNaming(string sha256)
+        {
+            return $"payload LIKE '%{sha256}%'";
+        }
+
+        /// <summary>How many of <paramref name="host"/>'s change-log entries match <paramref name="where"/>.</summary>
+        private static Task<long> CountOnAsync(ServerTestHost host, string where)
+        {
+            return QueryOnAsync<long>(host, $"SELECT COUNT(*) FROM change_log WHERE {where}");
         }
 
         private static async Task ExecuteOnAsync(ServerTestHost host, string sql)

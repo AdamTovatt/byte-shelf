@@ -1,6 +1,5 @@
 using System.Data.Common;
 using ByteShelf.Server.ChangeLog.Models;
-using ByteShelf.Server.ChangeLog.Services;
 using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Storage.Models;
@@ -176,7 +175,7 @@ namespace ByteShelf.Server.Tests.Metadata
             await CompactChangeLogAsync();
             Assert.Contains(await ChangeLog.GetAfterAsync(0, 100), entry => entry.EntityId == gone.Id);
 
-            Clock.Advance(ChangeLogCompactionWorker.Retention + TimeSpan.FromDays(1));
+            Clock.Advance(ChangeLogRetention.Entries + TimeSpan.FromDays(1));
             await CompactChangeLogAsync();
 
             IReadOnlyList<ChangeLogEntry> left = await ChangeLog.GetAfterAsync(0, 100);
