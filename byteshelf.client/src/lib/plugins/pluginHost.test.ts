@@ -115,6 +115,7 @@ describe('the plugin host', () => {
     ['a viewer without extensions', { viewers: [{ ...viewer, extensions: undefined }] }, lacking('viewers')],
     ['a viewer without a component', { viewers: [{ ...viewer, component: undefined }] }, lacking('viewers')],
     ['a viewer whose unavailable is no function', { viewers: [{ ...viewer, unavailable: 'no' }] }, lacking('viewers')],
+    ['a viewer whose clearOfBars is no boolean', { viewers: [{ ...viewer, clearOfBars: 'yes' }] }, lacking('viewers')],
     ['two viewers of one id', { viewers: [viewer, { ...viewer }] }, 'Two of its viewers have the id a.'],
     ['file actions that are no list', { fileActions: 1 }, 'Its fileActions are not a list.'],
     ['a missing file action', { fileActions: [null] }, lacking('fileActions')],

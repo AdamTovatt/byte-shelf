@@ -19,7 +19,7 @@ export function FileActionItems({ actions, target }: FileActionsProps): ReactNod
 export function FileActionsMenu({ actions, target }: FileActionsProps): ReactNode {
   const offered = actions.actionsFor(target.file);
   return offered.length > 0 && (
-    <Dropdown align="right" trigger={<IconButton variant="ghost" size="sm" icon={iconMap.more} aria-label="More actions" title="More actions" />}>
+    <Dropdown align="right" trigger={<IconButton variant="ghost" size="sm" shape="pill" icon={iconMap.more} aria-label="More actions" title="More actions" />}>
       {itemsOf(offered, { actions, target })}
     </Dropdown>
   );

@@ -15,6 +15,7 @@ import { iconMap } from '../../lib/iconMap';
 import { springs } from '../../lib/springs';
 import { cn } from '../../lib/utils';
 import { resolveSidebarDrag } from './sidebarResize';
+import { DarkTheme } from './DarkTheme';
 
 /* ------------------------------------------------------------------ */
 /*  Context                                                            */
@@ -301,11 +302,7 @@ export function Sidebar({
     </SidebarStateContext.Provider>
   );
 
-  if (forceDark) {
-    // `data-theme` picks the dark CSS-variable set; the `.dark` class is kept so Tailwind's `dark:`
-    // variants still activate inside the subtree.
-    return <div className="dark shrink-0" data-theme="dark">{sidebar}</div>;
-  }
+  if (forceDark) return <DarkTheme className="shrink-0">{sidebar}</DarkTheme>;
 
   return sidebar;
 }

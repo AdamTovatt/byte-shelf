@@ -9,4 +9,6 @@ export const PDF: Viewer = {
   component: PdfViewer,
   // Most phones show no PDF inside a page, only in a tab.
   unavailable: () => (navigator.pdfViewerEnabled === false ? 'This browser does not show a PDF inside a page.' : null),
+  // Its toolbar is the browser's, along its top.
+  clearOfBars: true,
 };

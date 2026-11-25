@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FilePreview } from './FilePreview';
+import { CLEAR_OF_BARS } from './previewBars';
 import { BUILT_IN_VIEWERS } from './viewers';
 import { usePluginId } from '../../contexts/PluginIdentity';
 import { neighboursOf } from '../../lib/preview/neighbours';
@@ -14,7 +15,9 @@ import type { ContentSource } from '../../services/contentService';
 import type { FileReading } from '../../services/fileReading';
 import type { ShelfFile } from '../../services/shelfService';
 import { removePdfViewer, restorePdfViewer, stubTabs } from '../../test/browser';
-import { labelled, press, shows, untilFound } from '../../test/dom';
+import { button, dialogTitles, labelled, press, shows, untilFound } from '../../test/dom';
+import { DRAGS_ITSELF } from '../../lib/dragsItself';
+import { useZoom } from '../../hooks/useZoom';
 import { json, stubServer } from '../../test/fakeServer';
 import { shelfFile } from '../../test/shelfFiles';
 
@@ -47,6 +50,29 @@ function DerivedViewer({ file, derived, neighbours }: ViewerProps) {
   return <p>{`${file.id} at ${url}, beside ${neighbours.map((each) => `${each.file.id} ${each.derived.has('preview')}`).join(' and ')}`}</p>;
 }
 
+/** Shows a file zoomed in, as `useZoom` marks its frame then. */
+function ZoomedViewer() {
+  return <div {...{ [DRAGS_ITSELF]: true }}><p>zoomed in</p></div>;
+}
+
+/** Shows a picture that zooms, as the image viewers do. */
+function ZoomingViewer() {
+  const { frame, zoomed } = useZoom<HTMLDivElement>();
+  return <div {...frame} data-testid="frame"><div {...zoomed}>a picture</div></div>;
+}
+
+/** Shows what moves with a drag of its own: a player, a slider and a row that scrolls sideways, which the test page does not lay out. */
+function DraggingViewer() {
+  return (
+    <div>
+      <video data-testid="player" />
+      <input type="range" />
+      <div style={{ overflowX: 'auto' }} data-testid="row"><p>a long row</p></div>
+      <p>plain</p>
+    </div>
+  );
+}
+
 /** Leaves every file to the viewer after it, as one does that has nothing to show of a file. */
 function DecliningViewer({ Fallback }: ViewerProps) {
   return <Fallback />;
@@ -62,6 +88,9 @@ const WITH_PLUGINS = BUILT_IN_VIEWERS.with('test', [
   { id: 'lazy', mediaTypes: ['x-test/lazy'], extensions: [], component: LazyViewer },
   { id: 'owned', mediaTypes: ['x-test/owned'], extensions: [], component: OwnedViewer },
   { id: 'derived', mediaTypes: ['x-test/derived'], extensions: [], component: DerivedViewer },
+  { id: 'zoomed', mediaTypes: ['x-test/zoomed'], extensions: [], component: ZoomedViewer },
+  { id: 'dragging', mediaTypes: ['x-test/dragging'], extensions: [], component: DraggingViewer },
+  { id: 'zooming', mediaTypes: ['x-test/zooming'], extensions: [], component: ZoomingViewer },
   { id: 'declining', mediaTypes: ['x-test/chain', 'x-test/alone', 'x-test/gone', 'text/plain'], extensions: [], component: DecliningViewer },
 ]).with('zz', [
   { id: 'next', mediaTypes: ['x-test/chain'], extensions: [], component: OwnedViewer },
@@ -183,6 +212,226 @@ describe('the preview', () => {
     expect(labelled('Next file')?.disabled).toBe(true);
     await key('ArrowLeft');
     await shows('text of b');
+  });
+
+  describe('its controls', () => {
+    const files = [shelfFile('a'), shelfFile('b'), shelfFile('c')];
+
+    beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
+
+    afterEach(() => {
+      vi.useRealTimers();
+      restorePdfViewer();
+    });
+
+    /** Whether the bars of controls show. */
+    function controlsShown(): boolean {
+      return document.querySelector('[data-shown]')!.getAttribute('data-shown') === 'true';
+    }
+
+    function idle(ms: number): void {
+      act(() => vi.advanceTimersByTime(ms));
+    }
+
+    function pointer(type: string, target: Element, init: PointerEventInit = {}): void {
+      act(() => void target.dispatchEvent(new PointerEvent(type, { bubbles: true, ...init })));
+    }
+
+    /** A tap of a finger on `target`, which the browser follows with a click. */
+    function tap(target: HTMLElement): void {
+      pointer('pointerdown', target, { pointerType: 'touch' });
+      act(() => target.click());
+    }
+
+    /** One finger put down at `from` and lifted at `to`, as the test page has no touch events of its own. */
+    function swipe(target: Element, from: [number, number], to: [number, number]): void {
+      const touchEvent = (type: string, touches: [number, number][], changed: [number, number]) => {
+        const event = new Event(type, { bubbles: true, cancelable: true });
+        const point = ([clientX, clientY]: [number, number]) => ({ clientX, clientY });
+        return Object.assign(event, { touches: touches.map(point), changedTouches: [point(changed)] });
+      };
+      act(() => {
+        target.dispatchEvent(touchEvent('touchstart', [from], from));
+        target.dispatchEvent(touchEvent('touchend', [], to));
+      });
+    }
+
+    const text = () => document.querySelector('pre')!;
+
+    function ancestors(element: Element): Element[] {
+      return element.parentElement ? [element.parentElement, ...ancestors(element.parentElement)] : [];
+    }
+
+    it('go after two seconds of nothing, and come back as the mouse moves or at a click, not as a key moves on', async () => {
+      await show(files[0], files);
+      await shows('text of a');
+
+      expect(controlsShown()).toBe(true);
+      idle(2000);
+      expect(controlsShown()).toBe(false);
+      await key('ArrowRight');
+      await shows('text of b');
+      expect(controlsShown()).toBe(false);
+
+      pointer('pointermove', text(), { pointerType: 'mouse', clientX: 10, clientY: 10 });
+      expect(controlsShown()).toBe(true);
+      idle(1000);
+      // A move told of where the mouse already was is what is under it changing, and brings nothing back.
+      pointer('pointermove', text(), { pointerType: 'mouse', clientX: 10, clientY: 10 });
+      idle(1000);
+      expect(controlsShown()).toBe(false);
+
+      act(() => text().click());
+      expect(controlsShown()).toBe(true);
+    });
+
+    it('stay while the mouse is on them, and go two seconds after it leaves', async () => {
+      await show(files[0], files);
+      await shows('text of a');
+      // Over one of them, and out from it onto the file.
+      pointer('pointerover', labelled('Close')!, { pointerType: 'mouse' });
+      idle(5000);
+      expect(controlsShown()).toBe(true);
+      pointer('pointerout', labelled('Close')!, { pointerType: 'mouse', relatedTarget: text() });
+      idle(1999);
+      expect(controlsShown()).toBe(true);
+      idle(1);
+      expect(controlsShown()).toBe(false);
+    });
+
+    it('are hidden and shown again by a tap, and kept by one on a control', async () => {
+      await show(files[0], files);
+      await shows('text of a');
+
+      tap(text());
+      expect(controlsShown()).toBe(false);
+      tap(text());
+      expect(controlsShown()).toBe(true);
+      tap(labelled('Download')!);
+      expect(controlsShown()).toBe(true);
+    });
+
+    it('move on at a swipe, left to the next file and right to the previous, which shows no controls', async () => {
+      await show(files[1], files);
+      await shows('text of b');
+      idle(2000);
+
+      swipe(text(), [300, 200], [100, 220]);
+      await shows('text of c');
+      swipe(text(), [100, 200], [300, 180]);
+      await shows('text of b');
+      expect(controlsShown()).toBe(false);
+    });
+
+    it('take no swipe that is short, or more up or down than across', async () => {
+      await show(files[1], files);
+      await shows('text of b');
+
+      swipe(text(), [300, 200], [260, 200]);
+      swipe(text(), [300, 100], [200, 300]);
+      await act(async () => {});
+      expect(document.querySelector('h2')?.textContent).toBe('b');
+    });
+
+    it('leave a swipe to what is zoomed in, which a drag moves', async () => {
+      const zoomed = [shelfFile('y', { contentType: 'x-test/zoomed' }), shelfFile('z', { contentType: 'x-test/zoomed' })];
+      await show(zoomed[0], zoomed);
+      await shows('zoomed in');
+
+      swipe(document.querySelector(`[${DRAGS_ITSELF}] p`)!, [300, 200], [100, 200]);
+      await act(async () => {});
+      expect(document.querySelector('h2')?.textContent).toBe('y');
+    });
+
+    it('stay while the mouse is over a PDF, whose moves the page does not hear, which they keep clear of', async () => {
+      await show(shelfFile('a.pdf', { contentType: 'application/pdf' }));
+      const frame = await untilFound<HTMLIFrameElement>('iframe');
+
+      pointer('pointerover', frame, { pointerType: 'mouse' });
+      idle(5000);
+      expect(controlsShown()).toBe(true);
+      // Back on the page.
+      pointer('pointermove', document.querySelector('h2')!, { pointerType: 'mouse', clientX: 5, clientY: 5 });
+      idle(2000);
+      expect(controlsShown()).toBe(false);
+
+      expect(ancestors(frame).some((each) => each.className.includes(CLEAR_OF_BARS))).toBe(true);
+      expect(frame.closest<HTMLElement>('[style*="--preview-bar-top"]')).not.toBeNull();
+    });
+
+    it('go under no viewer that is not clear of them', async () => {
+      await show(files[0], files);
+      await shows('text of a');
+
+      expect(ancestors(text()).some((each) => each.className.includes(CLEAR_OF_BARS))).toBe(false);
+    });
+
+    it('are kept by a tap on a button of what is shown, and by a dialog over the preview', async () => {
+      removePdfViewer();
+      await show(shelfFile('a.pdf', { contentType: 'application/pdf' }), [shelfFile('a.pdf', { contentType: 'application/pdf' })]);
+      await shows('This browser does not show a PDF inside a page.');
+
+      tap(button('Download')!);
+      expect(controlsShown()).toBe(true);
+
+      await act(async () => labelled('Details')!.click());
+      const backdrops = document.querySelectorAll<HTMLElement>('[data-testid="modal-backdrop"]');
+      tap(backdrops[backdrops.length - 1]);
+      expect(dialogTitles()).toEqual(['a.pdf']);
+      expect(controlsShown()).toBe(true);
+    });
+
+    it('take no swipe that starts on a player, a slider or a row that scrolls sideways', async () => {
+      const dragging = [shelfFile('y', { contentType: 'x-test/dragging' }), shelfFile('z', { contentType: 'x-test/dragging' })];
+      await show(dragging[0], dragging);
+      await shows('a long row');
+      const row = document.querySelector<HTMLElement>('[data-testid="row"]')!;
+      Object.defineProperty(row, 'scrollWidth', { value: 800 });
+      Object.defineProperty(row, 'clientWidth', { value: 400 });
+
+      for (const start of [document.querySelector('video')!, document.querySelector('input')!, row.querySelector('p')!]) swipe(start, [300, 200], [100, 200]);
+      await act(async () => {});
+      expect(document.querySelector('h2')?.textContent).toBe('y');
+
+      swipe(row.parentElement!.lastElementChild!, [300, 200], [100, 200]);
+      await shows('2 of 2');
+    });
+
+    it('stay while the focus from the keyboard is on them, and not for a button clicked', async () => {
+      await show(files[0], files);
+      await shows('text of a');
+      const close = labelled('Close')!;
+
+      // The test page does not tell focus from the keyboard from a click's.
+      vi.spyOn(close, 'matches').mockImplementation((selector) => selector === ':focus-visible');
+      act(() => close.focus());
+      idle(5000);
+      expect(controlsShown()).toBe(true);
+      act(() => close.blur());
+      idle(2000);
+      expect(controlsShown()).toBe(false);
+
+      vi.spyOn(close, 'matches').mockReturnValue(false);
+      act(() => close.focus());
+      act(() => close.click());
+      expect(controlsShown()).toBe(true);
+      idle(2000);
+      expect(controlsShown()).toBe(false);
+    });
+  });
+
+  it('closes at a click beside a picture, as at Close', async () => {
+    await show(shelfFile('a', { contentType: 'x-test/zooming' }));
+    await shows('a picture');
+    const frame = document.querySelector('[data-testid="frame"]')!;
+    // The test page lays nothing out: the picture takes no room, and the click is beside it.
+    frame.setPointerCapture = () => {};
+
+    act(() => {
+      frame.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: 200, clientY: 20, button: 0, pointerType: 'mouse' }));
+      frame.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 200, clientY: 20 }));
+    });
+    expect(closed).toBe(1);
   });
 
   it('gives a viewer what plugins made from the file and from those beside it', async () => {

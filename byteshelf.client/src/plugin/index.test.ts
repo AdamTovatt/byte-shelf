@@ -77,6 +77,7 @@ it('promises plugins this of viewers, and changing what a release holds of it, b
       "Viewer.extensions: readonly string[]",
       "Viewer.component: ComponentType<ViewerProps>",
       "Viewer.unavailable?: () => string | null",
+      "Viewer.clearOfBars?: boolean",
       "ViewerProps.file: ShelfFile",
       "ViewerProps.content: ContentReader",
       "ViewerProps.derived: DerivedReader",

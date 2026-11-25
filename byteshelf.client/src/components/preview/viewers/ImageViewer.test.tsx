@@ -61,9 +61,17 @@ describe('the image viewer', () => {
   it('zooms its image, as useZoom does', async () => {
     const image = await show('image/png');
     Object.defineProperties(image, { offsetWidth: { value: 400 }, offsetHeight: { value: 200 } });
-    Object.defineProperties(image.parentElement!, { clientWidth: { value: 400 }, clientHeight: { value: 300 } });
+    const frame = image.parentElement!;
+    Object.defineProperties(frame, { clientWidth: { value: 400 }, clientHeight: { value: 300 } });
+    frame.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 300 }) as DOMRect;
+    frame.setPointerCapture = () => {};
+    image.getBoundingClientRect = () => ({ left: 0, right: 400, top: 50, bottom: 250 }) as DOMRect;
 
-    act(() => void image.parentElement!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
+    // A click in its middle.
+    act(() => {
+      frame.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: 200, clientY: 150, button: 0, pointerType: 'mouse' }));
+      frame.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 200, clientY: 150 }));
+    });
 
     expect(image.style.transform).toBe('translate(0px, 0px) scale(2.5)');
   });

@@ -107,7 +107,7 @@ npm run codegen    # in a second terminal
   neighbours; Open shows it there whatever its type, saying so of one no viewer takes. A viewer also gets what
   plugins made from the file and from the two beside it (`lib/derived/derivedReader.ts`), which an `<img>`
   loads by its address, or from a blob where the page cannot keep the session's cookie.
-  - *Viewers* (`components/preview/viewers/`) are `{ id, mediaTypes, extensions, component, unavailable? }`,
+  - *Viewers* (`components/preview/viewers/`) are `{ id, mediaTypes, extensions, component, unavailable?, clearOfBars? }`,
     held by a registry that never changes (`lib/preview/viewerRegistry.ts`) and is read through
     `hooks/useViewers.ts` alone: the built-in ones, listed in `BUILT_IN_VIEWERS` (`viewers/index.ts`), and
     those of the plugins loaded so far. A preview waits for plugins still loading, at most 3 seconds
@@ -117,8 +117,11 @@ npm run codegen    # in a second terminal
     `application/octet-stream`. A viewer may leave a file to the next in that order through its `Fallback`
     (`components/preview/ViewerChain.tsx`). The built-in ones render nothing as HTML: HTML shows as its source, and SVG
     through an `<img>`, where its scripts do not run. Text shows its first 1 MiB, decoded as a tab would; an
-    image zooms with the wheel, a pinch or a double-click and moves with a drag (`hooks/useZoom.ts`, which
-    plugins have too).
+    image zooms with the wheel, a pinch, a click or a double tap and moves with a drag (`hooks/useZoom.ts`, which
+    plugins have too). The preview is the whole screen, on black, its controls in bars over the file
+    that fade after 2 seconds of no clicks or mouse moves and show or hide at a tap (`hooks/useFadingControls.ts`);
+    a swipe across moves on (`hooks/useSwipe.ts`), and a click with the mouse beside an image that zooms closes it
+    (`BackdropClick`). A viewer that is `clearOfBars` is drawn between the bars.
   - *Contents* reach a viewer through a `ContentReader` (`lib/content/contentReader.ts`): `url()`, `blob()`
     and `range()`, whatever they come from. A blob-backed file (`isBlobBacked`) is read whole into the page
     first (`lib/preview/fileContents.ts`), over 100 MiB only once Load, Download or Open in new tab is

@@ -370,7 +370,9 @@ describe('the shelf page\'s rows', () => {
   function previewed(): { name: string; position: string | undefined } | null {
     const dialog = document.querySelector('[role="dialog"]');
     if (!dialog) return null;
-    return { name: dialog.querySelector('h2')!.textContent!, position: dialog.textContent!.match(/\d+ of \d+\+?/)?.[0] };
+    // Said in the header and again in the footer, which phones show instead, so each is read on its own.
+    const position = [...dialog.querySelectorAll('span')].map((span) => span.textContent!).find((text) => /^\d+ of \d+\+?$/.test(text));
+    return { name: dialog.querySelector('h2')!.textContent!, position };
   }
 
   function previews(expected: ReturnType<typeof previewed>): Promise<void> {

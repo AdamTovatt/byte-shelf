@@ -192,9 +192,17 @@ describe('the sharpening viewer', () => {
     await load('preview.webp');
     // Laid out in a 400 by 300 frame, which the test page does not do itself.
     Object.defineProperties(box(), { offsetWidth: { value: 400 }, offsetHeight: { value: 300 } });
-    Object.defineProperties(container.querySelector('.images-stage')!.parentElement!, { clientWidth: { value: 400 }, clientHeight: { value: 300 } });
+    const stage = container.querySelector('.images-stage')!;
+    const frame = stage.parentElement!;
+    Object.defineProperties(frame, { clientWidth: { value: 400 }, clientHeight: { value: 300 } });
+    frame.setPointerCapture = () => {};
+    box().getBoundingClientRect = () => ({ left: 0, right: 400, top: 0, bottom: 300 }) as DOMRect;
     const fitted = box().style.transform;
-    act(() => void container.querySelector('.images-stage')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
+    // A click on the image.
+    act(() => {
+      stage.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: 100, clientY: 100, button: 0, pointerType: 'mouse' }));
+      stage.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 100, clientY: 100 }));
+    });
     const zoom = box().style.transform;
     expect(zoom).not.toBe(fitted);
 

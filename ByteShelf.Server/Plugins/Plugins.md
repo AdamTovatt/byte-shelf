@@ -142,7 +142,7 @@ the app, so there is one React and one of each context.
 A module's default export is `definePlugin({ viewers, fileActions, folderTypes })`, from `@byteshelf/plugin`:
 
 - **Viewers** show files in the preview, as the app's own do: `{ id, mediaTypes, extensions, component,
-  unavailable? }`. `extensions` count only for files stored without a type
+  unavailable?, clearOfBars? }`. `extensions` count only for files stored without a type
   (`application/octet-stream`). The component, which may be a `lazy` one, gets the file's record and a
   content reader, which answers plain contents wherever they come from, until the preview closes or
   moves on. It gets a reader of what plugins made from the file (`derived`, [Derived files](../Derived/Derived.md))
@@ -157,13 +157,18 @@ A module's default export is `definePlugin({ viewers, fileActions, folderTypes }
   previewed alone, and none after the last of those fetched so far.
   A plugin's beats a built-in one for the same type; between two plugins the first id does.
   `unavailable` says why this browser cannot show the files, and the next viewer that takes them does.
+  The preview is the whole screen, with its controls floating over the file in bars at the top and, on a
+  phone, the bottom, that fade when nothing happens. A viewer is drawn under them, edge to edge, unless it is
+  `clearOfBars`, for controls of its own they would cover, as a PDF's toolbar: then it is drawn between them.
   The component also gets `Fallback`, a component without props, for a file it finds it has nothing to show of, or
   nothing better than the next viewer: it shows the file in the viewer that would show it were there not this one,
   by the order above and passing over those that are unavailable, or, when none is left, says why the first that is
   unavailable cannot, or that no other viewer shows the file.
-  `useZoom` zooms and moves an element of the plugin's as the app's image viewer does, with the wheel, a pinch or
-  a double-click and a drag: it gives `frame`, to spread on a `div` that fills the space and centres what it
-  holds, and `zoomed`, the ref and transform of the element in it. `mediaTypeOf(contentType)` is a file's type as
+  `useZoom` zooms and moves an element of the plugin's as the app's image viewer does, with the wheel, a pinch, a
+  click or a double tap, and a drag: it gives `frame`, to spread on a `div` that fills the space and centres what it
+  holds, and `zoomed`, the ref and transform of the element in it. A click with the mouse on that element zooms in
+  where it is, and once zoomed in one anywhere zooms out; one beside it, fitted, closes the preview, as its Close
+  does. A tap shows or hides the preview's controls instead. `mediaTypeOf(contentType)` is a file's type as
   viewers' `mediaTypes` are matched against it: lowercase, without parameters such as `; charset=utf-8`.
 - **File actions** are items in the menus of live files: `{ id, label, icon?, showsFor, run }`.
   `showsFor` is asked as a menu is drawn. `run` gets the shelf, the file, its content reader and

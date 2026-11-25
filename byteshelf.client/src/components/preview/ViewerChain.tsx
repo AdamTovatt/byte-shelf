@@ -3,6 +3,8 @@ import { PluginIdentity } from '../../contexts/PluginIdentity';
 import { contentsKey } from '../../lib/preview/fileContents';
 import type { ShownBy, ViewerProps } from '../../lib/preview/viewerRegistry';
 import { ErrorBoundary } from '../ErrorBoundary';
+import { cn } from '../../ui';
+import { CLEAR_OF_BARS } from './previewBars';
 import { PreviewSpinner } from './PreviewSpinner';
 
 interface ViewerChainProps extends Omit<ViewerProps, 'Fallback'> {
@@ -17,11 +19,14 @@ interface ViewerChainProps extends Omit<ViewerProps, 'Fallback'> {
 /** What comes after the viewer it is given to: one context for every viewer, so its `Fallback` is one component that never changes. */
 const AfterViewer = createContext<ViewerChainProps | null>(null);
 
-/** A file in the first of `viewers`, in an error boundary and drawn as its plugin's. */
+/**
+ * A file in the first of `viewers`, in an error boundary and drawn as its plugin's, and between the preview's
+ * bars when it keeps clear of them. A viewer it leaves the file to is drawn within that room too.
+ */
 export function ViewerChain({ viewers: [first, ...rest], failed, none, ...props }: ViewerChainProps) {
   if (!first) return none;
-  const { viewer: { id, component: Viewer }, pluginId } = first;
-  return (
+  const { viewer: { id, component: Viewer, clearOfBars = false }, pluginId } = first;
+  const viewer = (
     <ErrorBoundary key={`${contentsKey(props.file)} ${pluginId} ${id}`} fallback={failed}>
       <Suspense fallback={<PreviewSpinner />}>
         <PluginIdentity id={pluginId}>
@@ -32,6 +37,7 @@ export function ViewerChain({ viewers: [first, ...rest], failed, none, ...props 
       </Suspense>
     </ErrorBoundary>
   );
+  return clearOfBars ? <div className={cn('flex min-h-0 flex-1 flex-col', CLEAR_OF_BARS)}>{viewer}</div> : viewer;
 }
 
 /** The file in the viewer after the one that draws this. */

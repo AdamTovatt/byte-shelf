@@ -5,7 +5,7 @@ import { IconButton } from './IconButton';
 import { EnclosingOverlaysContext, useOverlay, type OverlayPlace } from '../../hooks/useOverlay';
 import { cn } from '../../lib/utils';
 import { Card } from './Card';
-import { CustomScroll } from './CustomScroll';
+import { DarkTheme } from './DarkTheme';
 
 const modalBg = 'bg-canvas dark:bg-panel/80 dark:backdrop-blur-sm';
 
@@ -45,7 +45,7 @@ interface ModalBaseProps {
 
 /** A dialog in a card: a header with the title and a close button, over a scrolling body. */
 interface FramedModalProps extends ModalBaseProps {
-  variant?: 'centered' | 'fullscreen';
+  variant?: 'centered';
   title?: string;
   /**
    * Lets the title wrap onto further lines rather than truncating. For a modal whose title is content
@@ -67,9 +67,14 @@ interface FramedModalProps extends ModalBaseProps {
  * and the header's and body's options do not apply, so they do not type-check here. Escape and the
  * backdrop close it — Escape only while focus is in the app's page: a key pressed inside a cross-origin
  * frame is that frame's document's, and never reaches this one's listener. The backdrop always works.
+ *
+ * `fullscreen` is bare too, and its children are the whole screen, on black, edge to edge: for content that
+ * is looked at, such as a photo, which floats its own controls over itself. What stands on black is drawn
+ * in the dark theme, so that it reads there. Nothing of the backdrop is left to click, so Escape and the
+ * children's own close are the ways out.
  */
 interface BareModalProps extends ModalBaseProps {
-  variant: 'bare';
+  variant: 'bare' | 'fullscreen';
   title: string;
   wrapTitle?: never;
   headerActions?: never;
@@ -109,14 +114,14 @@ const headerColumns = 'grid-cols-[minmax(0,1fr)_auto_auto]';
  * on it would turn the dialog the person was using into a black slab behind the new one. The lowest dims,
  * whatever opened over it.
  */
-function ModalShell({ dismiss, gutter, backdropClassName, place, children }: { dismiss: () => void; gutter: string; backdropClassName?: string; place: OverlayPlace; children: ReactNode }) {
+function ModalShell({ dismiss, gutter, place, children }: { dismiss: () => void; gutter: string; place: OverlayPlace; children: ReactNode }) {
   return createPortal(
     // The topmost is level with the menus and tooltips, which come after it in the document as they open.
     <div className={cn('fixed inset-0 flex items-center justify-center', gutter)} style={{ zIndex: 50 - place.above }}>
       <div
         // Not stated and then overridden: `cn` concatenates, so a clear class beside `bg-black/80` would be
-        // decided by the stylesheet's order. The variant's own backdrop colour is a dimming too, and goes.
-        className={cn('fixed inset-0 animate-modal-backdrop', place.dimsPage ? ['bg-black/80', backdropClassName] : 'bg-transparent')}
+        // decided by the stylesheet's order.
+        className={cn('fixed inset-0 animate-modal-backdrop', place.dimsPage ? 'bg-black/80' : 'bg-transparent')}
         data-testid="modal-backdrop"
         onClick={dismiss}
       />
@@ -187,44 +192,32 @@ export function Modal(props: ModalProps) {
     );
   }
 
-  const { wrapTitle = false, headerActions, disableContentScroll = false, disableContentPadding = false, variant = 'centered' } = props;
-  const header = <ModalHeader onClose={onClose} title={title} wrapTitle={wrapTitle} headerActions={headerActions} dismissible={dismissible} />;
-
-  if (variant === 'centered') {
+  if (props.variant === 'fullscreen') {
     return (
-      <ModalShell dismiss={dismiss} gutter="p-4" place={place}>
-        <Card
-          padding="none"
-          defaultBackground={false}
-          {...dialogProps}
-          className={cn(focusTarget, 'z-10 w-full max-w-lg max-h-[90vh] shadow-login-card flex flex-col', slideIn, modalBg, className)}
-        >
-          {header}
-          {/* The body that scrolls, for a capture to put at its top before framing the card (#2514). A
-              fixed id rather than one per caller: it is looked up inside a card, which several open
-              modals each have one of, so it never has to tell two dialogs apart on its own. */}
-          <div data-testid="modal-body" className={cn('flex-1', disableContentScroll ? 'overflow-hidden flex flex-col' : 'overflow-y-auto', !disableContentPadding && 'p-5')}>{scopedChildren}</div>
-        </Card>
+      <ModalShell dismiss={dismiss} gutter="" place={place}>
+        <DarkTheme>
+          <div {...dialogProps} className={cn('fixed inset-0 z-10 flex flex-col bg-black text-fg animate-fade-in', focusTarget, className)}>
+            {scopedChildren}
+          </div>
+        </DarkTheme>
       </ModalShell>
     );
   }
 
+  const { wrapTitle = false, headerActions, disableContentScroll = false, disableContentPadding = false } = props;
   return (
-    <ModalShell dismiss={dismiss} gutter="p-6" backdropClassName="dark:bg-black/60" place={place}>
+    <ModalShell dismiss={dismiss} gutter="p-4" place={place}>
       <Card
         padding="none"
         defaultBackground={false}
         {...dialogProps}
-        className={cn(focusTarget, 'z-10 w-full h-full shadow-login-card flex flex-col', slideIn, modalBg, className)}
+        className={cn(focusTarget, 'z-10 w-full max-w-lg max-h-[90vh] shadow-login-card flex flex-col', slideIn, modalBg, className)}
       >
-        {header}
-        {disableContentScroll ? (
-          <div className={cn('flex-1 min-h-0 overflow-hidden flex flex-col', !disableContentPadding && 'p-5')}>{scopedChildren}</div>
-        ) : (
-          <CustomScroll flex="1 1 auto" heightRelativeToParent="100%" className={cn('min-h-0', !disableContentPadding && 'p-5')}>
-            {scopedChildren}
-          </CustomScroll>
-        )}
+        <ModalHeader onClose={onClose} title={title} wrapTitle={wrapTitle} headerActions={headerActions} dismissible={dismissible} />
+        {/* The body that scrolls, for a capture to put at its top before framing the card (#2514). A
+            fixed id rather than one per caller: it is looked up inside a card, which several open
+            modals each have one of, so it never has to tell two dialogs apart on its own. */}
+        <div data-testid="modal-body" className={cn('flex-1', disableContentScroll ? 'overflow-hidden flex flex-col' : 'overflow-y-auto', !disableContentPadding && 'p-5')}>{scopedChildren}</div>
       </Card>
     </ModalShell>
   );

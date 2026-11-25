@@ -37,6 +37,11 @@ export interface Viewer {
   component: ComponentType<ViewerProps>;
   /** Why this browser cannot show files with it now; null when it can, as one without this always can. */
   unavailable?: () => string | null;
+  /**
+   * Whether it is drawn between the preview's bars rather than under them, for controls of its own they would
+   * cover, as a PDF's toolbar. False when left out: what is looked at, a photo say, fills all of the screen.
+   */
+  clearOfBars?: boolean;
 }
 
 /** A viewer and the plugin it came with, null for a built-in one. */

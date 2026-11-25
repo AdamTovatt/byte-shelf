@@ -328,7 +328,7 @@ test('an image becomes sharp with no frame that is blank, partly drawn or moved,
       await expect.poll(() => asked, 'the whole is asked for once the preview is there').toContain(`contents of ${b}`);
       const box = (await image.boundingBox())!;
       const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
-      await page.mouse.dblclick(x, y);
+      await page.mouse.click(x, y);
       await page.mouse.down();
       await page.mouse.move(x + 20, y + 15, { steps: 4 });
       await page.mouse.up();

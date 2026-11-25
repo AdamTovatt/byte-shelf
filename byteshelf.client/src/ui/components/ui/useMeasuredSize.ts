@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 
 /**
  * Measure an element's layout size with a `ResizeObserver`, via a **callback ref**. Returns the ref to
- * attach and the current `width`/`height`.
+ * attach and the current `width`/`height`, which are 0 while no element is attached.
  *
  * Callback ref (not `useRef` + effect) so it measures whenever the element actually attaches — required
  * for portaled / conditionally-rendered nodes (e.g. a Popover's content, which mounts only when open,
@@ -24,7 +24,11 @@ export function useMeasuredSize<T extends Element = HTMLElement>(): {
   const ref = useCallback((node: T | null) => {
     observerRef.current?.disconnect();
     observerRef.current = null;
-    if (!node) return;
+    // An element no longer drawn takes no room, as the size of one drawn now and then must say while it is not.
+    if (!node) {
+      setSize({ width: 0, height: 0 });
+      return;
+    }
 
     const rect = node.getBoundingClientRect();
     setSize({ width: rect.width, height: rect.height });

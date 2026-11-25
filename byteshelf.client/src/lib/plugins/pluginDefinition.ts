@@ -31,8 +31,9 @@ export function partsOf(exported: unknown): PluginParts {
 
   const { viewers = [], fileActions = [], folderTypes = [] } = exported as Record<keyof PluginDefinition, unknown>;
   return {
-    viewers: listOf<Viewer, 'id'>('viewers', viewers, 'id', ({ mediaTypes, extensions, component, unavailable }) => (
+    viewers: listOf<Viewer, 'id'>('viewers', viewers, 'id', ({ mediaTypes, extensions, component, unavailable, clearOfBars }) => (
       isTexts(mediaTypes) && isTexts(extensions) && isComponent(component) && (unavailable === undefined || typeof unavailable === 'function')
+      && (clearOfBars === undefined || typeof clearOfBars === 'boolean')
     )),
     fileActions: listOf<FileAction, 'id'>('fileActions', fileActions, 'id', ({ label, showsFor, run }) => (
       typeof label === 'string' && typeof showsFor === 'function' && typeof run === 'function'
