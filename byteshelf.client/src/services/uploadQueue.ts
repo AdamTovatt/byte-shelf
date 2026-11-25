@@ -17,8 +17,6 @@ export interface Upload {
   file: File;
   /** The name it is stored under: its file's, composed as the server stores names, so it compares with theirs. */
   name: string;
-  /** Where it is stored: in its folder, under its name. */
-  path: string;
 }
 
 /** What an upload on its way has: whether it goes over the file at its path, and the way to end it. */
@@ -71,7 +69,7 @@ export interface UploadQueueAccess {
   ask: AskPassword;
   /** Told how each upload goes; one done is told with the file it was stored as, for what shows the shelf to list. */
   report: UploadReporter;
-  /** Told once a file may have been stored that is not told done: one cancelled once all of it was sent. */
+  /** Told once a file may have been stored that is not told done: one cancelled once it began to be sent. */
   changed: () => void;
   /** What an encrypted upload is encrypted at; only tests lower it. */
   workFactor?: number;
@@ -115,14 +113,20 @@ export function uploadQueue({ askFirst, ask, report, changed, workFactor = DEFAU
       };
       const underway: Underway = { replacing: overwrite, cancel: () => end({ status: 'cancelled' }) };
       const passOver = () => end(notGiven(upload, overwrite));
+      const path = joinPath(upload.folderPath, upload.name);
+      /** Whether it began to be sent before it was cancelled: only then may it be stored though not told done. */
+      let sendingBegan = false;
 
       async function send(): Promise<void> {
         try {
-          const stored = await store(folder, upload.path, upload.file, {
+          const stored = await store(folder, path, upload.file, {
             overwrite,
             storing: signal,
             onEncrypting: () => tell({ status: 'encrypting', ...underway }),
-            onProgress: (sentBytes, totalBytes) => tell({ status: 'uploading', sentBytes, totalBytes, ...underway }),
+            onProgress: (sentBytes, totalBytes) => {
+              if (!signal.aborted) sendingBegan = true;
+              tell({ status: 'uploading', sentBytes, totalBytes, ...underway });
+            },
           });
           if (!stored) {
             for (const other of waiting) other();
@@ -133,7 +137,7 @@ export function uploadQueue({ askFirst, ask, report, changed, workFactor = DEFAU
         } catch (error) {
           if (signal.aborted) return;
           if (overwrite) tell(offerReplacing(upload, error));
-          else if (await isNameTaken(upload, error)) tell(offerReplacing(upload));
+          else if (await isNameTaken(path, error)) tell(offerReplacing(upload));
           else tell({ status: 'failed', error });
         }
       }
@@ -146,10 +150,10 @@ export function uploadQueue({ askFirst, ask, report, changed, workFactor = DEFAU
         // Waited for no longer once it is cancelled: what it does goes on, telling nothing. Not waited out,
         // though encrypting goes on until it is done, holding what it makes: one cancelled, often for being
         // slow, is not to hold back the rest, and what goes on at once is only as many as are cancelled then.
-        // Cancelled once all was sent, it may be stored all the same, though not told done, whether or not its
-        // answer came: what shows the shelf reads it again as it ends.
+        // Cancelled once it began to be sent, it may be stored all the same, though not told done, whether or not
+        // its answer came: what shows the shelf reads it again as it ends.
         const sent = send().finally(() => {
-          if (signal.aborted) changed();
+          if (signal.aborted && sendingBegan) changed();
         });
         await untilAborted(sent, signal).catch(() => undefined);
       });
@@ -164,17 +168,14 @@ export function uploadQueue({ askFirst, ask, report, changed, workFactor = DEFAU
       return overwrite ? offerReplacing(upload) : { status: 'cancelled' };
     }
 
-    /** Whether an upload was refused for a file at its path: the server answers a conflict for more than that. */
-    async function isNameTaken(upload: Upload, refusal: unknown): Promise<boolean> {
+    /** Whether an upload to `path` was refused for a file there: the server answers a conflict for more than that. */
+    async function isNameTaken(path: string, refusal: unknown): Promise<boolean> {
       if (!(refusal instanceof ApiError) || refusal.code !== ERROR_CODES.conflict) return false;
       // Not known, it is the refusal that is said.
-      return (await fetchFileAt(shelf, upload.path).catch(() => null)) !== null;
+      return (await fetchFileAt(shelf, path).catch(() => null)) !== null;
     }
 
     const folderPath = folder.directory.path;
-    for (const file of files) {
-      const name = file.name.normalize('NFC');
-      enqueue({ id: ++lastId, shelf, folderPath, file, name, path: joinPath(folderPath, name) }, false);
-    }
+    for (const file of files) enqueue({ id: ++lastId, shelf, folderPath, file, name: file.name.normalize('NFC') }, false);
   };
 }

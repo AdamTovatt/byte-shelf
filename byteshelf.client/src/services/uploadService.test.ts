@@ -41,6 +41,7 @@ describe('uploads', () => {
 
     expect(stored).toEqual(storedFile);
     expect(routes(sent)).toEqual(['PUT /api/shelves/docs/content?path=%2Fa+b.bin&overwrite=true']);
+    // None sent, then half and then all of it, as the fake server reports what goes out.
     expect(progress).toEqual([[0, CHUNK_BYTES], [CHUNK_BYTES / 2, CHUNK_BYTES], [CHUNK_BYTES, CHUNK_BYTES]]);
   });
 
@@ -57,6 +58,7 @@ describe('uploads', () => {
       `PUT /api/shelves/docs/uploads/u1?offset=${CHUNK_BYTES}`,
       'POST /api/shelves/docs/uploads/u1/complete',
     ]);
+    // Half and then all of each chunk, as the fake server reports what goes out, counted from the chunk's offset.
     expect(progress).toEqual([0, CHUNK_BYTES / 2, CHUNK_BYTES, CHUNK_BYTES + 1, CHUNK_BYTES + 2].flatMap((bytes) => [bytes, size]));
   });
 

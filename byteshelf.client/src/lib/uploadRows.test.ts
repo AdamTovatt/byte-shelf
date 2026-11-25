@@ -7,7 +7,7 @@ import type { ListedUpload } from './uploadStore';
 let lastId = 0;
 
 function upload(name: string, replacing = false): ListedUpload {
-  return { upload: { id: ++lastId, shelf: 'docs', folderPath: '/a', file: new File(['new'], name), name, path: `/a/${name}` }, replacing };
+  return { upload: { id: ++lastId, shelf: 'docs', folderPath: '/a', file: new File(['new'], name), name }, replacing };
 }
 
 /** Each row as its name, a folder's ending in a slash and an upload's marked with an arrow. */

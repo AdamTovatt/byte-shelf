@@ -4,7 +4,7 @@ import { toastMissedUpload } from '../components/uploadToasts';
 import { listStoredFile } from '../hooks/useShelfQueries';
 import { useUploadQueue, type UploadFiles } from '../hooks/useUploadQueue';
 import { folderRows, type FolderRow } from '../lib/uploadRows';
-import { uploadStore, type HeldState, type ListedUpload, type UploadStore } from '../lib/uploadStore';
+import { NO_UPLOADS, uploadStore, type HeldState, type UploadStore } from '../lib/uploadStore';
 import type { DirectoryListing } from '../services/shelfService';
 import type { UploadReporter } from '../services/uploadQueue';
 
@@ -44,7 +44,6 @@ export function useUploadFiles(): UploadFiles {
   return useUploads().uploadFiles;
 }
 
-const NO_UPLOADS: readonly ListedUpload[] = [];
 const NO_ROWS: readonly FolderRow[] = [];
 
 /**

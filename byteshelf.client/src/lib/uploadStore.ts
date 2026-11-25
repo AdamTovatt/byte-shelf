@@ -31,7 +31,8 @@ export interface UploadStore {
   show: (shelf: string, folderPath: string) => () => void;
 }
 
-const NONE: readonly ListedUpload[] = [];
+/** The uploads into a folder that has none: always this same list. */
+export const NO_UPLOADS: readonly ListedUpload[] = [];
 
 /** What tells the uploads into one folder from those into another. */
 function uploadsKey(shelf: string, folderPath: string): string {
@@ -55,7 +56,7 @@ export function uploadStore(missed: (upload: Upload, state: MissedState) => void
   /** Puts an upload in its folder's list, or takes it out with `listed` null; a list that would not change stays as it is. */
   function relist(upload: Upload, listed: ListedUpload | null): void {
     const key = uploadsKey(upload.shelf, upload.folderPath);
-    const list = folders.get(key) ?? NONE;
+    const list = folders.get(key) ?? NO_UPLOADS;
     const was = list.find((item) => item.upload.id === upload.id);
     if (listed && was && was.replacing === listed.replacing) return;
 
@@ -92,7 +93,7 @@ export function uploadStore(missed: (upload: Upload, state: MissedState) => void
       return () => listeners.delete(listener);
     },
 
-    inFolder: (shelf, folderPath) => folders.get(uploadsKey(shelf, folderPath)) ?? NONE,
+    inFolder: (shelf, folderPath) => folders.get(uploadsKey(shelf, folderPath)) ?? NO_UPLOADS,
     stateOf: (id) => uploads.get(id)?.state ?? null,
     remove,
 

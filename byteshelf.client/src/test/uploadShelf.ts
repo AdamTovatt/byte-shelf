@@ -14,9 +14,6 @@ interface SentFile {
   contents: Blob;
 }
 
-/** How the id of a file stored from what was sent starts; one put there by a test starts otherwise. */
-const SENT_ID = 'new';
-
 /** A shelf named docs with one folder, as the server answers for it. */
 export function uploadShelf(path: string) {
   const directory = shelfDirectory(path);
@@ -47,11 +44,6 @@ export function uploadShelf(path: string) {
       const file = shelfFile(name, { path: at, id: `old:${name}`, encrypted: password !== undefined });
       files.set(at, { file, contents: password === undefined ? plain : await encryptBlob(plain, password, '', FAST) });
       return file;
-    },
-
-    /** Whether the file of `id` was stored from what was sent, rather than put there. */
-    isSent(id: string): boolean {
-      return id.startsWith(SENT_ID);
     },
 
     /** The file there now. */
@@ -105,7 +97,7 @@ export function uploadShelf(path: string) {
     if (shelf.refusal !== null) return json({ message: shelf.refusal, code: 'conflict' }, 409);
     if (shelf.encryptedBy && !encrypted) return json({ message: 'The folder is encrypted.', code: 'conflict' }, 409);
     if (files.has(at) && !overwrite) return json({ message: `A file already exists at '${at}'.`, code: 'conflict' }, 409);
-    const file = shelfFile(at.slice(path.length + 1), { path: at, id: `${SENT_ID}${shelf.sent.length}:${at}`, encrypted, sizeBytes: contents.size });
+    const file = shelfFile(at.slice(path.length + 1), { path: at, id: `new${shelf.sent.length}:${at}`, encrypted, sizeBytes: contents.size });
     files.set(at, { file, contents });
     return json(file);
   }
