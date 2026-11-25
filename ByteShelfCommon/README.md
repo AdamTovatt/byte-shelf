@@ -10,7 +10,7 @@ AOT-compatible.
 |---|---|
 | `ShelfInfo`, `ShelfPermission` | A shelf with its quota and usage, what the caller may do with its files, and whether the server is a replica. `ShelfPermission` is also what a key's grant gives. |
 | `CreateShelfRequest`, `UpdateShelfRequest` | Creates a shelf, and replaces its name and quota. |
-| `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps, description, whether its contents are encrypted (`Encrypted`), and in listings the values of the fields plugins declare for them (`PluginFields`). |
+| `ShelfFile` | A file's record: id, path, size, content type, SHA-256, timestamps, description, whether its contents are encrypted (`Encrypted`), and in listings the values of the fields plugins declare for them (`PluginFields`) and, as in its own record, which derived files there are (`Derived`). |
 | `SetDescriptionRequest`, `FileDescription` | Setting a file's description, and its rules. |
 | `FileCriteria` | Which of a shelf's files a search looks at: the directory, text, type, sizes, times, SHA-256, whether it has a description, and what the server read from the contents (taken times, a GPS position, durations, page counts) or plugins keep (`PluginFields`), checked by `NormalizeCriteria`. Both searches below take their criteria from it. |
 | `FileSearch`, `FileSearchResults` | The files that meet the criteria, a page at a time by path, and one page of them. |
@@ -23,6 +23,7 @@ AOT-compatible.
 | `PluginFileDetails`, `PluginFieldEntry`, `PluginFieldValue`, `SetPluginMetadataRequest` | What one plugin keeps about a file, with its declared fields and their values, and writing its document about the file. |
 | `PluginFieldFilter`, `PluginFieldCondition` | A search's criterion on a field a plugin declares. |
 | `PluginDocument` | What a plugin keeps about a file or its contents: one JSON object, which is how it is written in JSON. |
+| `DerivedKind` | The kinds of files plugins make from a file's contents: a thumbnail, a preview, the whole in a type a browser shows, and what an agent is shown. |
 | `MediaTypePattern` | One media type or a family such as `image/*`, and which media types it covers. |
 | `LinkLifetime` | One kind of link's lifetime rule: its default, its bounds and `Normalize`. |
 | `FileEncryption`, `EncryptedFolder`, `PathEncryption`, `SetFolderEncryptionRequest` | Password encryption: how an age file starts, an encrypted directory's check text, an encrypted directory with its check, what a path is encrypted under, and encrypting a directory. |

@@ -1,3 +1,4 @@
+using ByteShelf.Server.Derived.Services;
 using ByteShelf.Server.Metadata;
 using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Plugins.Controllers;
@@ -21,7 +22,7 @@ namespace ByteShelf.Server.Plugins
 
         /// <summary>
         /// Loads the plugins under <paramref name="pluginsPath"/>, none when it is null, adding their
-        /// registrations to the server's own, which must all be there, and has files' metadata know them.
+        /// registrations to the server's own, which must all be there, and has files' metadata and derived files know them.
         /// </summary>
         public static void LoadPlugins(this IMvcBuilder mvc, string? pluginsPath, ILogger logger)
         {
@@ -29,6 +30,7 @@ namespace ByteShelf.Server.Plugins
             mvc.Services.AddSingleton<IPluginCatalog>(catalog);
             mvc.Services.AddInstalledPlugins(new InstalledPlugins(catalog.Loaded.Select(plugin => plugin.Manifest.Declaration)));
             mvc.Services.AddSingleton<IPluginReaders, LoadedPluginReaders>();
+            mvc.Services.AddSingleton<IDerivedFilePlugins, LoadedDerivedFilePlugins>();
         }
 
         /// <summary>

@@ -4,10 +4,9 @@ ByteShelf is installed and updated with updaemon 1.0 or later from this reposito
 `dotnet publish ByteShelf.Server` produces the executable with its `updaemon.json`, which tells
 updaemon how to run it and which settings it reads, and the web UI's build in `wwwroot/`. Publishing
 builds the web UI, so it needs Node.js and npm. The running server needs one writable folder, the
-root, and nothing else on disk. The publish carries SkiaSharp's native library, which `/mcp` makes
-image previews with, for Linux x64 and arm64 (glibc, no system libraries needed), macOS and Windows
-x64 (`Directory.Build.targets`). Elsewhere (musl, 32-bit arm, Windows on arm) the server runs, but
-`/mcp`'s `download_file` fails on an image it would preview.
+root, and nothing else on disk. It makes no pictures itself: thumbnails, previews and those `/mcp`
+shows agents come from plugins that make them ([Plugins](ByteShelf.Server/Plugins/Plugins.md)), and
+without one there are none.
 
 The server finds `wwwroot/` and `appsettings.json` beside its executable, whichever folder it is
 started from; `--contentRoot` and `ASPNETCORE_CONTENTROOT` are ignored.
@@ -105,7 +104,7 @@ contents again ([Metadata](ByteShelf.Server/Metadata/Metadata.md)).
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `BYTESHELF_ROOT` | yes | The root folder. Created on first start, or by `--create-user` or `--follow` run before it, with `objects/`, `staging/` and `keys/` inside, owned by whoever created it. The server makes it reachable by its owner only on every start, so it must be owned by the user the server runs as. |
+| `BYTESHELF_ROOT` | yes | The root folder. Created on first start, or by `--create-user` or `--follow` run before it, with `objects/`, `staging/` and `keys/` inside (and `derived/`, which may be emptied while the server is stopped), owned by whoever created it. The server makes it reachable by its owner only on every start, so it must be owned by the user the server runs as. |
 | `APP_BASE_URL` | outside Development | The public URL, e.g. `https://shelf.example.com`. Password-reset links, the download links the API answers (share links, the web UI's Copy link, MCP's `share_file`) and upload links point at it. Passkeys are made for its host, and are off without it or when it is plain http to anything but this machine. |
 | `POSTMARK_API_KEY` | to send email | A Postmark server token. Without it no email is sent (see [Email](#email)). |
 | `EMAIL_FROM_ADDRESS` | with `POSTMARK_API_KEY` | The address mail is from, a sender confirmed in Postmark. The server refuses to start with a token and no address. |
@@ -115,7 +114,7 @@ contents again ([Metadata](ByteShelf.Server/Metadata/Metadata.md)).
 | `INITIAL_ADMIN_DISPLAY_NAME` | no | The first admin's display name; the email's local part otherwise. |
 | `BYTESHELF_RESTORE_WINDOW_DAYS` | no | How long a deletion can be restored before it is purged. Whole days, 30 by default, at most 3650. |
 | `BYTESHELF_REPLICATION_ALERT_MINUTES` | no | How long replication may go wrong before the admins are emailed (see [Replicas](#replicas)). Whole minutes, 60 by default; at least 10, twice the longest a replica waits between failed attempts, and at most 43200 (30 days). |
-| `BYTESHELF_PLUGINS` | no | The folder whose folders are plugins (see [Plugins](#plugins)). Unset, none are loaded. updaemon sets it, and refuses it as a setting. |
+| `BYTESHELF_PLUGINS` | no | The folder whose folders are plugins (see [Plugins](#plugins)). Unset, none are loaded. updaemon 1.1 or later sets it, and refuses it as a setting. |
 | `BYTESHELF_TRUSTED_PROXIES` | behind a proxy | Comma-separated IPs or CIDR ranges of the reverse proxies in front of the server. Their `X-Forwarded-For` and `X-Forwarded-Proto` are believed, so rate limits and the sign-in delay count each client rather than the proxy. Loopback is always trusted. |
 | `ASPNETCORE_URLS` | no | Where Kestrel listens. |
 
@@ -208,8 +207,7 @@ rate limit beside the MCP request itself.
 
 ## Plugins
 
-An updaemon that supports extensions installs a plugin as one of the server's and keeps it updated with
-it: `updaemon install byteshelf/<id>` for one released with the server, and with `--from`, such as
+updaemon 1.1 or later installs a plugin as one of the server's and keeps it updated with it: `updaemon install byteshelf/<id>` for one released with the server, and with `--from`, such as
 `--from github:<owner>/<repository>/<asset>`, for another. It sets `BYTESHELF_PLUGINS` itself, so a
 plugin built by hand ([from a checkout](plugins/README.md)) is for a server without updaemon: set the
 variable and put plugins into folders under the one it names.
@@ -224,7 +222,8 @@ server has those installed on it. What they keep about files is both: it is in t
 
 **A plugin runs with full trust, and there is no sandbox.** In the web UI it can do what the
 signed-in user can and reads what the page holds, the session and unlocked passwords included; on the
-server it can do what the server can. Install only what you trust that far, at your own risk.
+server it can do what the server can. Install only what you trust that far, at your own risk. On a machine others
+use, run the server with systemd's `PrivateTmp=yes`: the images plugin's ImageMagick reads settings from `/tmp`.
 
 A plugin the server cannot load is skipped and logged, and admins see it with the reason on the
 Settings page; the server starts without it. `ByteShelf.Server --check-plugin <folder>` says
@@ -233,8 +232,9 @@ with the reason, 2 for wrong arguments. It starts nothing, needs no root and goe
 settings above. What it cannot tell is in
 [Plugins](ByteShelf.Server/Plugins/Plugins.md#loading-plugindiscovery-pluginloader): above all, whether
 the plugin works once running. One whose services break the server as it is built or started stops it
-from starting. One whose reader of files' contents cannot be made, or does not stop when told to, runs
-without it, and the Settings page says so; contents it fails on are in the server's log alone.
+from starting. One whose reader of files' contents cannot run reads nothing until it can, which every pass
+tries anew, and the Settings page says why; what keeps its maker of thumbnails and the like from running, and
+contents either fails on, are in the server's log alone.
 
 ## Replicas
 
@@ -372,6 +372,30 @@ SQLITE_TMPDIR="$BYTESHELF_ROOT" sqlite3 "$BYTESHELF_ROOT/byteshelf.db" 'VACUUM;'
 It writes two more copies of the database while it runs, one of them in a temporary folder, which
 `SQLITE_TMPDIR` puts inside the root, where no other user reaches it; the root's disk needs room for both.
 
+## Moving to another machine
+
+All an instance has is in its root, but for its settings and its plugins' code.
+
+1. Stop the server, and keep it from starting again, as two would go their own ways. updaemon starts a
+   stopped one again when it updates it; `updaemon remove byteshelf` ends that and leaves the root, but forgets
+   the settings, so note them first.
+2. Copy the whole root, modes kept, to a folder owned by the user the server will run as there: what is in
+   `keys/` only its owner can read. `staging/` holds uploads in progress, which go on there. A server that
+   stopped normally leaves no `byteshelf.db-wal`; one that was killed does, with changes that are not in
+   `byteshelf.db` yet, so copy it too. `derived/` may be left out: what is in it is made again.
+3. Install the server ([Installing](#installing)), in the same version or a newer one, with the settings
+   noted and `BYTESHELF_ROOT` naming the copy. Copy first: updaemon starts what it installs, which makes a new
+   root where there is none. Skip step 4 there: the users are in the root.
+4. Install the plugins. What they kept about files is in the root. A server that starts without those that made
+   what is in `derived/`, as it does with updaemon until they are installed, removes it.
+5. Have the address in `APP_BASE_URL` lead to the new machine, and set anew what names the old one, such as
+   `BYTESHELF_TRUSTED_PROXIES`.
+
+At the same `APP_BASE_URL`, sessions, shelf keys, passkeys and links go on working, and replicas go on from where
+they were. At another one, a link works only with the new address put into it, passkeys do not work, and
+replicas cannot follow: each keeps the URL it was paired with, and pairing it again takes a new root. A replica
+itself moves in the same way, to any address: its primary never calls it, and its pairing is in its root.
+
 ## Background work
 
 The server cleans up after itself: hourly it removes abandoned uploads, staging leftovers, the trash
@@ -382,3 +406,15 @@ files purged since). After every upload, and hourly, it reads what the contents 
 plugins read them. A failed pass is logged as an error and the next one runs on schedule. A replica
 also follows its primary continuously, every two seconds when caught up, and every minute each
 server checks replication for the alerts above.
+
+Plugins that make thumbnails and previews have them made as files are uploaded and asked for, and hourly for
+files that lack them; daily, what nothing needs any more is removed. What they make is in `derived/`, and counts
+in the quota of every shelf with a file that holds what it was made from
+([Derived files](ByteShelf.Server/Derived/Derived.md)). So a shelf's usage can pass its quota without an upload:
+when the files already there gain thumbnails and previews, and when what is on disk is counted again, as it is at
+every start and daily. Such a shelf takes no new uploads until it has room again; raise its quota or empty its
+trash. What a plugin does over files'
+contents it does in a child process of the server's own executable (`--plugin-process`), one a plugin, one file
+at a time, for at most a minute a file, ended when it has had nothing to do for a minute. Each may take 1.5 GiB
+of private memory; memory it shares, and that of processes it starts, comes on top
+([Processes](ByteShelf.Server/Plugins/Processes/Processes.md)).

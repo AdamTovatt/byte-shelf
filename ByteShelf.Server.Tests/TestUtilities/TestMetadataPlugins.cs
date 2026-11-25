@@ -1,4 +1,5 @@
 using ByteShelf.Server.Metadata.Services;
+using ByteShelf.Server.Storage.Services;
 using ByteShelfCommon;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -9,7 +10,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
     public sealed record TestMetadataPlugin(PluginDeclaration Declaration, TestDocumentReader? Reader = null);
 
     /// <summary>The plugins a test says are installed. Others set since are what services made after have, as after a restart.</summary>
-    public sealed class TestMetadataPlugins : IPluginReaders
+    public sealed class TestMetadataPlugins
     {
         public TestMetadataPlugins(params TestMetadataPlugin[] plugins)
         {
@@ -22,11 +23,6 @@ namespace ByteShelf.Server.Tests.TestUtilities
         }
 
         public IReadOnlyList<TestMetadataPlugin> All { get; set; }
-
-        IReadOnlyList<PluginReader> IPluginReaders.All => All
-            .Where(plugin => plugin.Reader != null)
-            .Select(plugin => plugin.Reader!.AsReaderOf(plugin.Declaration.Id))
-            .ToList();
 
         /// <summary>A plugin with a field of every kind in its document about a file, and two in the one about its contents.</summary>
         public static PluginDeclaration Declaration { get; } = new PluginDeclaration(
@@ -53,7 +49,24 @@ namespace ByteShelf.Server.Tests.TestUtilities
         {
             services.Replace(ServiceDescriptor.Transient(_ => new InstalledPlugins(All.Select(plugin => plugin.Declaration))));
             services.Replace(ServiceDescriptor.Transient(provider => KnownPlugins.Of(provider.GetRequiredService<InstalledPlugins>())));
-            services.Replace(ServiceDescriptor.Singleton<IPluginReaders>(this));
+            services.Replace(ServiceDescriptor.Singleton<IPluginReaders>(provider => new Readers(this, provider.GetRequiredService<ObjectStore>())));
+        }
+
+        private sealed class Readers : IPluginReaders
+        {
+            private readonly TestMetadataPlugins _plugins;
+            private readonly ObjectStore _objectStore;
+
+            public Readers(TestMetadataPlugins plugins, ObjectStore objectStore)
+            {
+                _plugins = plugins;
+                _objectStore = objectStore;
+            }
+
+            public IReadOnlyList<PluginReader> All => _plugins.All
+                .Where(plugin => plugin.Reader != null)
+                .Select(plugin => plugin.Reader!.AsReaderOf(plugin.Declaration.Id, _objectStore))
+                .ToList();
         }
     }
 }

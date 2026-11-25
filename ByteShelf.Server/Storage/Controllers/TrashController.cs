@@ -14,11 +14,13 @@ namespace ByteShelf.Server.Storage.Controllers
     /// and emptying it.
     /// </summary>
     [ApiController]
-    [Route("api/shelves/{shelf}/trash")]
+    [Route(ShelfTrashRoute)]
     public class TrashController : ShelfControllerBase
     {
-        /// <summary>The deleted contents route where the token may come in a cookie, for what a browser loads by itself (<see cref="AuthSetup.CookieTokenPath"/>).</summary>
-        private const string OpenDeletedContentRoute = AuthSetup.CookieTokenPath + "/{shelf}/trash/{deletionId:guid}/content";
+        /// <summary>Where a shelf's trash is.</summary>
+        internal const string ShelfTrashRoute = EntriesController.ShelfRoute + "/trash";
+
+        private const string OpenDeletedContentRoute = EntriesController.OpenShelfRoute + "/trash/{deletionId:guid}/content";
 
         private readonly ITrashService _trashService;
 

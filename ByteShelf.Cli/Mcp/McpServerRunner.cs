@@ -14,10 +14,10 @@ namespace ByteShelf.Cli.Mcp
     internal static class McpServerRunner
     {
         /// <summary>
-        /// <see cref="ToolInstructions.Text"/>, and what only this server can do: work with the agent's
+        /// <see cref="ToolInstructions.For"/>, and what only this server can do: work with the agent's
         /// own files, and reach every shelf the login can.
         /// </summary>
-        internal const string Instructions = ToolInstructions.Text + """
+        internal static readonly string Instructions = ToolInstructions.For(ToolHost.Local) + """
 
 
             This server runs on your machine, signed in as the byteshelf CLI is, so list_shelves shows
@@ -34,10 +34,9 @@ namespace ByteShelf.Cli.Mcp
             builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
 
             builder.Services.AddSingleton<IShelfClientSource>(clients);
-            builder.Services.AddSingleton(ToolHost.Local);
             builder.Services.AddMcpServer(options => options.ServerInstructions = Instructions)
                 .WithStdioServerTransport()
-                .WithByteShelfTools();
+                .WithByteShelfTools(_ => ToolHost.Local);
 
             using IHost host = builder.Build();
             await host.RunAsync(cancellationToken);

@@ -39,7 +39,7 @@ server read from a file's contents and what plugins keep (`GetFileMetadataAsync`
 one request with `SetDescriptionsAsync`), share by a link, make an upload
 link, encrypt directories and swap a file's contents in place (`SwapContentAsync`), create
 directories, move (many entries in one request with `MoveAsync`; a batch applies each item on its
-own, in order, and answers each one's result), delete, the trash (`ListDeletionAsync` and `OpenDeletedReadAsync` read what a
+own, in order, and answers each one's result), delete, the trash (`ListDeletionAsync`, `OpenDeletedReadAsync` and `OpenDeletedDerivedAsync` read what a
 deletion took without restoring it, on a replica too; the listing also says what the deletion took
 and the encrypted folder its files were stored in), and for admins the shelf's settings, grants
 and keys. A key may work on several shelves: a shelf's `GetKeysAsync` lists each key with all its
@@ -110,6 +110,13 @@ contents have changed since is refused with `content_changed` rather than answer
 contents. Part of a file cannot be checked against its SHA-256, so only a range that turns out to be
 the whole file is checked. An encrypted file's range is over its stored age bytes, as
 `OpenReadAsync` reads them.
+
+`OpenDerivedAsync` opens what a plugin of the server's made from a file's contents, such as its thumbnail, and
+`OpenDeletedDerivedAsync` the same of a file in the trash. Dispose the result to dispose its stream. One that is
+missing is made, which the server waits for, at most 10 seconds: `not_ready` (`ByteShelfException.IsNotReady`) says
+it is still being made, `not_found` that there is none, and `quota_exceeded` (507) that a shelf holding the contents
+has no room in its quota to keep it. `ShelfFile.Derived`, in listings and a file's own record,
+names those there are. The in-memory client has none.
 
 ## Links
 

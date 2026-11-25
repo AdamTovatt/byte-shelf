@@ -1,10 +1,11 @@
-using System.Diagnostics;
 using System.Text;
 using System.Text.Json.Nodes;
 using ByteShelf.Server.ChangeLog.Models;
 using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Metadata.Services;
+using ByteShelf.Server.Plugins.Models;
+using ByteShelf.Server.Plugins.Services;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
@@ -147,152 +148,37 @@ namespace ByteShelf.Server.Tests.Metadata
             Assert.Null((await Rows.GetAsync(TestPluginMetadata.Plugin, file.Sha256))!.Document);
         }
 
+        /// <summary>As one whose constructor fails: what it would have read stays to be read, and the other readers go on.</summary>
         [Fact]
-        public async Task RunAsync_AReadOverItsTimeThatStopsWhenCancelled_IsRecordedAsNothingAndTheReaderGoesOn()
+        public async Task RunAsync_AReaderThatCannotRun_LeavesWhatItWouldReadForTheNextPassAndStopsNoOther()
         {
-            // The first read, so the clock's one timer is that read's: an ended read's may linger a moment.
-            TaskCompletionSource started = NewSignal();
-            string? slow = null;
-            TestDocumentReader reader = Install(new TestDocumentReader(async (contents, cancellationToken) =>
-            {
-                string text = await TestDocumentReader.ReadTextAsync(contents, cancellationToken);
-                if (slow == null)
-                {
-                    slow = text;
-                    started.SetResult();
-                    await Task.Delay(Timeout.Infinite, cancellationToken);
-                }
-
-                return new JsonObject { ["read"] = true };
-            }));
-            Shelf shelf = await CreateShelfAsync();
-            ShelfFile a = await StoreTextAsync(shelf, "/a.txt", "a");
-            ShelfFile b = await StoreTextAsync(shelf, "/b.txt", "b");
-
-            Task<PluginMetadataReadingSummary> run = RunAsync();
-            await started.Task.WaitAsync(TestReadLimits.Real);
-            await Clock.WaitForTimerAsync(TestReadLimits.Read);
-            Clock.Advance(TestReadLimits.Read);
-            PluginMetadataReadingSummary summary = await run.WaitAsync(TestReadLimits.Real);
-
-            Assert.Equal((2, 1), (summary.Read, summary.Failed));
-            Assert.Equal(2, reader.Reads);
-            foreach ((string text, ShelfFile file) in new[] { ("a", a), ("b", b) })
-            {
-                Assert.Equal(text == slow, (await Rows.GetAsync(TestPluginMetadata.Plugin, file.Sha256))!.Document == null);
-            }
-        }
-
-        [Fact]
-        public async Task RunAsync_AReadThatOnlyReadsItsStream_StopsWhenCancelledThoughItLooksAtNoToken()
-        {
-            // Bounded, so a break that never stops it fails the test rather than hanging the run.
-            Stopwatch running = Stopwatch.StartNew();
-            Install(new TestDocumentReader((contents, _) =>
-            {
-                while (contents.Length == 1 && running.Elapsed < TestReadLimits.Real)
-                {
-                    contents.Position = 0;
-                    contents.ReadByte();
-                }
-
-                return Task.FromResult<JsonObject?>(new JsonObject());
-            }));
-            Shelf shelf = await CreateShelfAsync();
-            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
-
-            Task<PluginMetadataReadingSummary> run = RunAsync();
-            await Clock.WaitForTimerAsync(TestReadLimits.Read);
-            Clock.Advance(TestReadLimits.Read);
-
-            // The clock stands still from here, so it stops of its own and is never left behind: it is run again.
-            Assert.Equal(1, (await run.WaitAsync(TestReadLimits.Real)).Failed);
-            Assert.Null((await Rows.GetAsync(TestPluginMetadata.Plugin, file.Sha256))!.Document);
-            await StoreTextAsync(shelf, "/b.txt", "another");
-            Assert.Equal((1, 0), Counts(await RunAsync()));
-        }
-
-        /// <summary>As one whose constructor hangs, or fails: the rest waits for a restart, and the other readers go on.</summary>
-        [Theory]
-        [InlineData(true)]
-        [InlineData(false)]
-        public async Task RunAsync_AReaderThatIsNotMade_ReadsNothingAndLeavesItUnreadAndStopsNoOther(bool hangs)
-        {
-            Task making = hangs ? new TaskCompletionSource().Task : Task.FromException(new InvalidOperationException("It was told to fail."));
-            TestDocumentReader unmade = new TestDocumentReader((_, _) => Task.FromResult<JsonObject?>(new JsonObject())) { Making = making };
+            TestDocumentReader unavailable = new TestDocumentReader((_, _) => Task.FromResult<JsonObject?>(new JsonObject())) { Unavailable = "it was told to fail" };
             TestDocumentReader other = new TestDocumentReader((_, _) => Task.FromResult<JsonObject?>(new JsonObject()));
-            InstallPlugins(Plugin(unmade, "unmade"), Plugin(other, "other"));
+            InstallPlugins(Plugin(unavailable, "unavailable"), Plugin(other, "other"));
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
-
-            Task<PluginMetadataReadingSummary> run = RunAsync();
-            if (hangs)
-            {
-                await Clock.WaitForTimerAsync(TestReadLimits.Prepare);
-                Clock.Advance(TestReadLimits.Prepare);
-            }
-
-            Assert.Equal((1, 0), Counts(await run.WaitAsync(TestReadLimits.Real)));
             await StoreTextAsync(shelf, "/b.txt", "b");
-            Assert.Equal((1, 0), Counts(await RunAsync().WaitAsync(TestReadLimits.Real)));
-            Assert.Equal((0, 2), (unmade.Reads, other.Reads));
-            Assert.Null(await Rows.GetAsync("unmade", file.Sha256));
+            PluginProblems problems = Services.GetRequiredService<PluginProblems>();
+
+            Assert.Equal((2, 0), Counts(await RunAsync()));
+            Assert.Equal((1, 2), (unavailable.Asked, other.Reads));
+            Assert.Null(await Rows.GetAsync("unavailable", file.Sha256));
+            Assert.Equal("Its reader of files' contents could not run, so it reads nothing until it can: it was told to fail.", problems.Of("unavailable", PluginPart.Reader));
+
+            unavailable.Unavailable = null;
+            Assert.Equal((2, 0), Counts(await RunAsync()));
+            Assert.NotNull(await Rows.GetAsync("unavailable", file.Sha256));
+            Assert.Null(problems.Of("unavailable", PluginPart.Reader));
         }
 
         [Fact]
-        public async Task RunAsync_AReaderThatIgnoresBeingCancelled_IsLeftBehindAndNotRunAgain()
-        {
-            // Bounded, so a break that never leaves it behind fails the test rather than hanging the run.
-            using ManualResetEventSlim release = new ManualResetEventSlim();
-            TestDocumentReader stuck = new TestDocumentReader((_, _) =>
-            {
-                release.Wait(TestReadLimits.Real);
-                return Task.FromResult<JsonObject?>(new JsonObject { ["late"] = true });
-            });
-            TestDocumentReader other = new TestDocumentReader((_, _) => Task.FromResult<JsonObject?>(new JsonObject()));
-            InstallPlugins(Plugin(stuck, "stuck"), Plugin(other, "other"));
-            Shelf shelf = await CreateShelfAsync();
-            ShelfFile first = await StoreTextAsync(shelf, "/a.txt", "a");
-            ShelfFile second = await StoreTextAsync(shelf, "/b.txt", "b");
-
-            Task<PluginMetadataReadingSummary> run = RunAsync();
-            await Clock.WaitForTimerAsync(TestReadLimits.Read);
-            Clock.Advance(TestReadLimits.Read);
-            await Clock.WaitForTimerAsync(TestReadLimits.Stop);
-            Clock.Advance(TestReadLimits.Stop);
-            PluginMetadataReadingSummary summary = await run.WaitAsync(TestReadLimits.Real);
-            await StoreTextAsync(shelf, "/c.txt", "c");
-            PluginMetadataReadingSummary again = await RunAsync();
-
-            // The one it hung on is recorded as nothing, the rest wait for a restart; another reader goes on.
-            Assert.Equal((3, 1), Counts(summary));
-            Assert.Equal((1, 0), Counts(again));
-            Assert.Equal((1, 3), (stuck.Reads, other.Reads));
-            string[] hashes = [first.Sha256, second.Sha256];
-            string hungOn = hashes.Order(StringComparer.Ordinal).First();
-            release.Set();
-            await stuck.AllReadsEndedAsync();
-            Assert.Null((await Rows.GetAsync("stuck", hungOn))!.Document);
-            Assert.Null(await Rows.GetAsync("stuck", hashes.Single(hash => hash != hungOn)));
-        }
-
-        [Theory]
-        [InlineData(true)]
-        [InlineData(false)]
-        public async Task RunAsync_ShuttingDown_IsNoFailureOfTheReader(bool stopsWhenCancelled)
+        public async Task RunAsync_ShuttingDown_IsNoFailureOfTheReader()
         {
             TaskCompletionSource started = NewSignal();
-            using ManualResetEventSlim release = new ManualResetEventSlim();
             TestDocumentReader interrupted = Install(new TestDocumentReader(async (_, cancellationToken) =>
             {
                 started.SetResult();
-                if (stopsWhenCancelled)
-                {
-                    await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
-                    throw new InvalidOperationException("whatever a reader throws when it is cancelled");
-                }
-
-                release.Wait(TestReadLimits.Real, CancellationToken.None);
+                await Task.Delay(Timeout.Infinite, cancellationToken);
                 return null;
             }));
             Shelf shelf = await CreateShelfAsync();
@@ -304,8 +190,6 @@ namespace ByteShelf.Server.Tests.Metadata
             await stopping.CancelAsync();
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(TestReadLimits.Real));
-            release.Set();
-            await interrupted.AllReadsEndedAsync();
             Assert.Null(await Rows.GetAsync(TestPluginMetadata.Plugin, file.Sha256));
             Install(TestDocumentReader.OfText());
             Assert.Equal(1, (await RunAsync()).Read);
@@ -322,41 +206,6 @@ namespace ByteShelf.Server.Tests.Metadata
             await RunAsync();
 
             Assert.Equal(0, reader.Reads);
-        }
-
-        [Fact]
-        public async Task RunAsync_FileEncryptedInPlaceWhileItIsRead_RecordsNothing()
-        {
-            Shelf shelf = await CreateShelfAsync();
-            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a secret");
-            TestDocumentReader reader = Install(new TestDocumentReader(async (contents, cancellationToken) =>
-            {
-                string text = await TestDocumentReader.ReadTextAsync(contents, cancellationToken);
-                await EncryptInPlaceAsync(shelf, file);
-                return new JsonObject { ["text"] = text };
-            }));
-
-            PluginMetadataReadingSummary summary = await RunAsync();
-
-            Assert.Equal((1, 0), (reader.Reads, summary.Read));
-            await AssertNothingOutlivesAsync(file.Sha256, "a secret");
-        }
-
-        [Fact]
-        public async Task RunAsync_OnlyAnEncryptedFileHoldsTheBytesOnceRead_RecordsNothing()
-        {
-            Shelf shelf = await CreateShelfAsync();
-            (ShelfFile plain, _) = await StorePlainAndEncryptedAsync(shelf);
-            TestDocumentReader reader = Install(new TestDocumentReader(async (_, _) =>
-            {
-                await EncryptInPlaceAsync(shelf, plain);
-                return new JsonObject();
-            }));
-
-            PluginMetadataReadingSummary summary = await RunAsync();
-
-            Assert.Equal((1, 0), (reader.Reads, summary.Read));
-            Assert.Null(await Rows.GetAsync(TestPluginMetadata.Plugin, plain.Sha256));
         }
 
         [Fact]

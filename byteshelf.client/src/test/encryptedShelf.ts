@@ -87,9 +87,13 @@ export const encryptionService = {
   }),
 };
 
+/** What plugins made of a file that they made nothing of. */
+const noDerived: ContentSource['derived'] = () => ({ navigationUrl: async () => '', version: async () => '', read: async () => new Blob([]) });
+
 /** In place of contentService's live content, on the shelf in memory. */
 export const liveContent = () => ({
   navigationUrl: async () => '',
+  derived: noDerived,
   read: async (id: string) => fakeShelf.files.get(id)!.content,
   open: async (id: string, signal: AbortSignal) => {
     fakeShelf.headerReads.push(id);
@@ -117,6 +121,7 @@ export async function storedFile(path: string, text: string, password?: string):
 export function deletedSource(encryptedBy: EncryptedFolder | null, reads: string[] = []): ContentSource {
   return {
     navigationUrl: async () => '',
+    derived: noDerived,
     read: async () => {
       throw new Error('An encrypted file is decrypted as it is downloaded.');
     },

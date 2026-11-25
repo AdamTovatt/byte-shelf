@@ -54,7 +54,7 @@ namespace ByteShelf.Server.Mcp
             // server; CalledAt is the tools' own rule for where to call it, kept beside them in Mcp.
             Uri server = services.GetRequiredService<PublicAddress>().Configured ?? CallerKeyClientSource.CalledAt(httpContext.Request);
             string release = services.GetRequiredService<IVersionService>().GetRelease().Version;
-            options.ServerInstructions = InstructionsFor(shelves, isReplica, server, release);
+            options.ServerInstructions = InstructionsFor(shelves, isReplica, server, release, host);
         }
 
         /// <summary>
@@ -89,7 +89,8 @@ namespace ByteShelf.Server.Mcp
         /// <param name="shelves">The key's access to each shelf it reaches (a key reaches at least one), whose permission the instructions name and which decides the ways in shown, as it decides the tools offered.</param>
         /// <param name="server">The server's root, ending in <c>/</c>, for the curl commands.</param>
         /// <param name="release">The release the server runs, which every caller here may know, since each holds a key.</param>
-        internal static string InstructionsFor(IReadOnlyList<ShelfAccess> shelves, bool isReplica, Uri server, string release)
+        /// <param name="host">Where the tools run.</param>
+        internal static string InstructionsFor(IReadOnlyList<ShelfAccess> shelves, bool isReplica, Uri server, string release, ToolHost host)
         {
             bool oneShelf = shelves.Count == 1;
             string reach = oneShelf
@@ -129,7 +130,7 @@ namespace ByteShelf.Server.Mcp
             }
 
             return $"""
-                {ToolInstructions.Text}
+                {ToolInstructions.For(host)}
 
                 This server is the ByteShelf server itself, release {release}, reached with a shelf key. {reach}
                 {offer}

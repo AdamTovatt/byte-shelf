@@ -1,6 +1,8 @@
 using ByteShelf.Tools;
 using ByteShelf.Tools.Mcp;
 using ByteShelf.Server.Access.Auth;
+using ByteShelf.Server.Derived.Services;
+using ByteShelfCommon;
 
 namespace ByteShelf.Server.Mcp
 {
@@ -21,7 +23,6 @@ namespace ByteShelf.Server.Mcp
             services.AddHttpContextAccessor();
             services.AddHttpClient(SelfApi.HttpClientName);
             services.AddSingleton<SelfApi>();
-            services.AddSingleton(ToolHost.Server(new SkiaImagePreviews()));
             services.AddScoped<IShelfClientSource, CallerKeyClientSource>();
 
             services.AddAuthorization(options => options.AddPolicy(McpCallerPolicy, policy => policy
@@ -34,7 +35,7 @@ namespace ByteShelf.Server.Mcp
                     options.Stateless = true;
                     options.ConfigureSessionOptions = McpCallerSetup.ConfigureAsync;
                 })
-                .WithByteShelfTools();
+                .WithByteShelfTools(provider => ToolHost.Server(provider.GetRequiredService<DerivedMakers>().MediaTypesOf(DerivedKind.Agent).Patterns));
 
             return services;
         }

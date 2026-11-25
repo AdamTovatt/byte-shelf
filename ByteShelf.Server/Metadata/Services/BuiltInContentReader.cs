@@ -4,36 +4,34 @@ using ByteShelf.Server.Metadata.Repositories;
 namespace ByteShelf.Server.Metadata.Services
 {
     /// <summary>
-    /// The server's own reader: <see cref="MetadataReader"/>, whose findings go to <c>object_metadata</c>.
-    /// Contents another <see cref="MetadataReader.Version"/> read are read again.
+    /// The server's own reader: <see cref="MetadataReader"/>, in the server's process, whose findings go to
+    /// <c>object_metadata</c>. Contents another <see cref="MetadataReader.Version"/> read are read again.
     /// </summary>
+    /// <remarks>
+    /// A swap does not end a read under way: what is left of it is memory of a process that held the plaintext to
+    /// store it, and what it finds is recorded only while a plain file holds the contents.
+    /// </remarks>
     internal sealed class BuiltInContentReader : ContentReader
     {
         private readonly IObjectMetadataRepository _repository;
+        private readonly ContentReadRunner _runner;
 
-        public BuiltInContentReader(IObjectMetadataRepository repository)
+        public BuiltInContentReader(IObjectMetadataRepository repository, ContentReadRunner runner)
         {
             _repository = repository;
+            _runner = runner;
         }
 
-        // The colon is in no plugin's id, so it is never a plugin's reader's.
-        public override string Id => "byteshelf:own";
-
-        public override RecordReading Nothing => Record(ContentMetadata.None);
-
-        public override Task PrepareAsync()
-        {
-            return Task.CompletedTask;
-        }
+        public override bool MayRun => _runner.MayRun;
 
         public override Task<IReadOnlyList<string>> GetUnreadAsync(string? after, int limit)
         {
             return _repository.GetUnreadAsync(MetadataReader.Version, ReadMediaTypes.All, after, limit);
         }
 
-        public override Task<RecordReading> ReadAsync(Stream contents, CancellationToken cancellationToken)
+        public override Task<ReadOutcome?> ReadAsync(string sha256, CancellationToken cancellationToken)
         {
-            return Task.FromResult(Record(MetadataReader.Read(contents)));
+            return _runner.ReadAsync(sha256, contents => Record(MetadataReader.Read(contents)), Record(ContentMetadata.None), cancellationToken);
         }
 
         private RecordReading Record(ContentMetadata found)

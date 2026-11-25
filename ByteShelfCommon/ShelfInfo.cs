@@ -12,7 +12,7 @@ namespace ByteShelfCommon
         /// <summary>How many bytes the shelf may hold; null for no limit.</summary>
         public long? QuotaBytes { get; init; }
 
-        /// <summary>The size of every file on the shelf, the trash included.</summary>
+        /// <summary>The size of every file on the shelf, the trash included, and of what the server's plugins made of their contents.</summary>
         public required long UsedBytes { get; init; }
 
         /// <summary>Bytes held back for uploads in progress.</summary>

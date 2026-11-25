@@ -1,8 +1,10 @@
 using System.Net.Http.Json;
 using System.Text;
+using ByteShelf.Server.ChangeLog.Repositories;
 using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
+using EasyReasy.Database;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -31,16 +33,19 @@ namespace ByteShelf.Server.Tests.Replication
         /// <param name="pageSize">How many entries the replica asks for at a time; the server's own by default.</param>
         /// <param name="primaryClock">The clock the replica times its calls to the primary by; the real one by default.</param>
         /// <param name="withPasskeys">Whether both servers make passkeys, for the one public address (<see cref="ServerTestHost.StartWithPasskeysAsync"/>).</param>
+        /// <param name="replicaPlugin">The plugin the replica has, as far as metadata goes; none by default.</param>
+        /// <param name="configureReplica">Changes the replica's services further.</param>
         public static async Task<ReplicationPair> StartAsync(
             Func<HttpMessageHandler, HttpMessageHandler>? wrapPrimary = null,
             TimeSpan? idleTimeout = null,
             int? pageSize = null,
             TimeProvider? primaryClock = null,
             bool withPasskeys = false,
-            PluginDeclaration? replicaPlugin = null)
+            PluginDeclaration? replicaPlugin = null,
+            Action<IServiceCollection>? configureReplica = null)
         {
             ServerTestHost primary = withPasskeys ? await ServerTestHost.StartWithPasskeysAsync() : await ServerTestHost.StartAsync();
-            return new ReplicationPair(primary, await StartServerToFollowAsync(primary, wrapPrimary, idleTimeout, pageSize, primaryClock, withPasskeys, replicaPlugin));
+            return new ReplicationPair(primary, await StartServerToFollowAsync(primary, wrapPrimary, idleTimeout, pageSize, primaryClock, withPasskeys, replicaPlugin, configureReplica));
         }
 
         /// <summary>
@@ -54,7 +59,8 @@ namespace ByteShelf.Server.Tests.Replication
             int? pageSize = null,
             TimeProvider? primaryClock = null,
             bool withPasskeys = false,
-            PluginDeclaration? plugin = null)
+            PluginDeclaration? plugin = null,
+            Action<IServiceCollection>? configure = null)
         {
             void Configure(IServiceCollection services)
             {
@@ -75,6 +81,8 @@ namespace ByteShelf.Server.Tests.Replication
                 {
                     new TestMetadataPlugins(plugin).AddTo(services);
                 }
+
+                configure?.Invoke(services);
 
                 if (primaryClock != null)
                 {
@@ -165,6 +173,15 @@ namespace ByteShelf.Server.Tests.Replication
         {
             (await Primary.AdminClient.DeleteAsync($"/api/shelves/{shelf}/files?path={Uri.EscapeDataString(path)}")).EnsureSuccessStatusCode();
             (await Primary.AdminClient.DeleteAsync($"/api/shelves/{shelf}/trash")).EnsureSuccessStatusCode();
+        }
+
+        /// <summary>Compacts the primary's log as if every entry were older than the retention; this host runs on the real clock.</summary>
+        public async Task CompactPrimaryAsync()
+        {
+            using IServiceScope scope = Primary.Services.CreateScope();
+            await using IDbTransactionSession session = await scope.ServiceProvider.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync();
+            await scope.ServiceProvider.GetRequiredService<IChangeLogRepository>().CompactAsync(DateTimeOffset.UtcNow.AddYears(1), session);
+            await session.CommitAsync();
         }
 
         /// <summary>The replication status <paramref name="client"/>'s server answers.</summary>

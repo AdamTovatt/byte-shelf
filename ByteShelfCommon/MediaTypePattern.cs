@@ -26,6 +26,12 @@ namespace ByteShelfCommon
                 : new MediaTypePattern(pattern, null);
         }
 
+        /// <summary>The pattern as <see cref="Of"/> takes it.</summary>
+        public override string ToString()
+        {
+            return Type ?? $"{Prefix}*";
+        }
+
         /// <summary>Whether it covers <paramref name="mediaType"/>, without parameters and lowercase.</summary>
         public bool Includes(string mediaType)
         {

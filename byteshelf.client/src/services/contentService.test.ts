@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installFakeWebLocks } from '../test/fakeWebLocks';
 import { inAnHour, stubServer } from '../test/fakeServer';
 import { saveTokens } from './authService';
-import { liveContent } from './contentService';
+import { deletedContent, liveContent } from './contentService';
 
 describe('a shelf\'s contents', () => {
   beforeEach(() => {
@@ -25,5 +25,18 @@ describe('a shelf\'s contents', () => {
     stubServer(async () => new Response(null));
 
     await expect(liveContent('docs').open('f', new AbortController().signal)).rejects.toThrow('The server sent no contents.');
+  });
+
+  it.each([
+    ['live', liveContent('docs')],
+    ['deleted', deletedContent('docs', 'del', null)],
+  ])('%s, and what plugins made of them, have an address only while the session goes on', async (_, source) => {
+    stubServer(async () => new Response(null, { status: 401 }));
+    expect(await source.navigationUrl('f', false)).toContain('id=f');
+    expect(await source.derived('f', 'preview').navigationUrl('1')).toContain('kind=preview&v=1');
+
+    localStorage.clear();
+    await expect(source.navigationUrl('f', false)).rejects.toThrow('The session has ended.');
+    await expect(source.derived('f', 'preview').navigationUrl('1')).rejects.toThrow('The session has ended.');
   });
 });

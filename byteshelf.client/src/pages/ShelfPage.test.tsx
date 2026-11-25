@@ -12,6 +12,7 @@ import { encryptBlob } from '../lib/encryption/age';
 import { removePdfViewer, restorePdfViewer, stubTabs } from '../test/browser';
 import { button, dialogTitles, dimmingTitles, field, fill, labelled, press, shows, submitPassword, untilFound } from '../test/dom';
 import { json, stubServer } from '../test/fakeServer';
+import { stubIntersectionObserver } from '../test/intersectionObserver';
 import type { pageHistory } from '../test/pageHistory';
 import { shelfDirectory, shelfFile } from '../test/shelfFiles';
 import { renderShelfPage, row, signIn } from '../test/shelfPage';
@@ -156,6 +157,17 @@ describe('the shelf page\'s rows', () => {
   function listingRequests(path: string): number {
     return sent.filter((line) => line.startsWith(`GET /api/shelves/docs/entries?path=${encodeURIComponent(path)} `)).length;
   }
+
+  it('shows a file\'s thumbnail in its row, and none in one without', async () => {
+    vi.stubGlobal('isSecureContext', true);
+    stubIntersectionObserver({ isInView: true });
+    rootFiles = [shelfFile('photo.jpg', { derived: { thumbnail: 'images-1' } }), shelfFile('b.txt')];
+    leave();
+    await renderAt('/shelves/docs');
+
+    await vi.waitFor(() => expect(row('photo.jpg')?.querySelector('img')?.getAttribute('src')).toContain('/api/open/docs/files/derived?id=photo.jpg&kind=thumbnail'));
+    expect(row('b.txt')?.querySelector('img')).toBeNull();
+  });
 
   it.each([['ctrlKey'], ['metaKey']])('selects every row on %s and A', (modifier) => {
     key(document, { key: 'a', [modifier]: true });

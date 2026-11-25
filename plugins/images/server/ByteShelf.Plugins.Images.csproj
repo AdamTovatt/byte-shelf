@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The images plugin's server assembly; `npm run build` in the folder above publishes it into dist. -->
+  <PropertyGroup>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Magick.NET-Q8-AnyCPU" Version="15.1.0" GeneratePathProperty="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\ByteShelf.Plugins\ByteShelf.Plugins.csproj" Private="false" ExcludeAssets="runtime" />
+    <ProjectReference Include="..\..\..\ByteShelfCommon\ByteShelfCommon.csproj" Private="false" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="policy.xml" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The licences of the libraries in the native ones, which must come with them. -->
+    <None Include="$(PkgMagick_NET-Q8-AnyCPU)\Notice.txt" Link="Magick.NET.Notice.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ByteShelf.Plugins.Images.Tests" />
+  </ItemGroup>
+
+</Project>

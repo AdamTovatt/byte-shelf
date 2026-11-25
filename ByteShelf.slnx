@@ -10,4 +10,6 @@
   <Project Path="ByteShelf.Tools/ByteShelf.Tools.csproj" />
   <Project Path="ByteShelf.Server.Tests/ByteShelf.Server.Tests.csproj" />
   <Project Path="ByteShelf.Server.Tests.Plugin/ByteShelf.Server.Tests.Plugin.csproj" />
+  <Project Path="plugins/images/server/ByteShelf.Plugins.Images.csproj" />
+  <Project Path="plugins/images/server.tests/ByteShelf.Plugins.Images.Tests.csproj" />
 </Solution>

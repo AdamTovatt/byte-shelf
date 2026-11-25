@@ -1,41 +1,33 @@
-using System.Runtime.ExceptionServices;
-using ByteShelf.Plugins;
 using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Plugins.Models;
+using ByteShelf.Server.Plugins.Processes;
 
 namespace ByteShelf.Server.Plugins.Services
 {
-    /// <summary>The readers of the plugins in the catalog, each made once and run in this process.</summary>
+    /// <summary>The readers of the plugins in the catalog, each run in its plugin's process.</summary>
     internal sealed class LoadedPluginReaders : IPluginReaders
     {
-        public LoadedPluginReaders(IPluginCatalog catalog)
+        private readonly PluginProcesses _processes;
+
+        public LoadedPluginReaders(IPluginCatalog catalog, PluginProcesses processes)
         {
+            _processes = processes;
             All = catalog.Loaded
                 .Where(plugin => plugin.Reader != null)
-                .Select(plugin => ReaderOf(plugin.Manifest.Id, plugin.Reader!))
+                .Select(plugin => ReaderOf(plugin, plugin.Reader!))
                 .ToList();
         }
 
         public IReadOnlyList<PluginReader> All { get; }
 
-        private static PluginReader ReaderOf(string pluginId, PluginReaderRegistration registered)
+        private PluginReader ReaderOf(LoadedPlugin plugin, PluginReaderRegistration registered)
         {
-            // Off the caller's thread: its constructor is the plugin's code, and may block.
-            Lazy<Task<IContentDocumentReader>> made = new Lazy<Task<IContentDocumentReader>>(() => Task.Run(() => Make(registered)));
-            return new PluginReader(pluginId, () => made.Value, registered.Version, registered.MediaTypes);
-        }
-
-        private static IContentDocumentReader Make(PluginReaderRegistration registered)
-        {
-            try
+            PluginTarget target = new PluginTarget(plugin.Manifest.Id, plugin.Folder);
+            return new PluginReader(target.Id, registered.Version, registered.MediaTypes, async (sha256, cancellationToken) =>
             {
-                return registered.Make();
-            }
-            catch (Exception exception)
-            {
-                ExceptionDispatchInfo.Throw(PluginFailure.CauseOf(exception));
-                throw;
-            }
+                using PluginTurns.Turn turn = _processes.Enter(target.Id, PluginPriority.Backlog);
+                return await _processes.RunAsync(new ReadRun(target, sha256, registered.Version), turn, cancellationToken);
+            });
         }
     }
 }

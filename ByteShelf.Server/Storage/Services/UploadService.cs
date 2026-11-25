@@ -1,5 +1,4 @@
 using ByteShelf.Server.Metadata.Repositories;
-using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
@@ -12,6 +11,7 @@ namespace ByteShelf.Server.Storage.Services
     public class UploadService : IUploadService
     {
         private readonly IDbSessionFactory _sessionFactory;
+        private readonly ContentsSessions _contentsSessions;
         private readonly IShelfRepository _shelfRepository;
         private readonly IUploadRepository _uploadRepository;
         private readonly IFileRepository _fileRepository;
@@ -22,12 +22,12 @@ namespace ByteShelf.Server.Storage.Services
         private readonly ObjectStore _objectStore;
         private readonly ObjectCollector _objectCollector;
         private readonly UploadLocks _uploadLocks;
-        private readonly MetadataReadingSignal _metadataSignal;
         private readonly StorageOptions _options;
         private readonly TimeProvider _timeProvider;
 
         public UploadService(
             IDbSessionFactory sessionFactory,
+            ContentsSessions contentsSessions,
             IShelfRepository shelfRepository,
             IUploadRepository uploadRepository,
             IFileRepository fileRepository,
@@ -38,11 +38,11 @@ namespace ByteShelf.Server.Storage.Services
             ObjectStore objectStore,
             ObjectCollector objectCollector,
             UploadLocks uploadLocks,
-            MetadataReadingSignal metadataSignal,
             StorageOptions options,
             TimeProvider timeProvider)
         {
             _sessionFactory = sessionFactory;
+            _contentsSessions = contentsSessions;
             _shelfRepository = shelfRepository;
             _uploadRepository = uploadRepository;
             _fileRepository = fileRepository;
@@ -53,7 +53,6 @@ namespace ByteShelf.Server.Storage.Services
             _objectStore = objectStore;
             _objectCollector = objectCollector;
             _uploadLocks = uploadLocks;
-            _metadataSignal = metadataSignal;
             _options = options;
             _timeProvider = timeProvider;
         }
@@ -272,25 +271,40 @@ namespace ByteShelf.Server.Storage.Services
         /// <exception cref="QuotaExceededException">The shelf has too little room.</exception>
         private async Task ReserveAsync(Shelf shelf, UploadRecord upload, IDbSession session)
         {
-            Shelf current = await _shelfRepository.GetByIdAsync(shelf.Id, session)
-                ?? throw new NotFoundException($"There is no shelf '{shelf.Name}'.");
-
-            if (current.QuotaBytes is not long quota)
+            if (await MeasuredAsync(shelf.Id, () => _uploadRepository.InsertAsync(upload, session), session) is { IsOver: true } change)
             {
-                await _uploadRepository.InsertAsync(upload, session);
-                return;
+                throw change.UploadRefused();
+            }
+        }
+
+        /// <inheritdoc cref="MeasuredAsync{T}"/>
+        private async Task<QuotaChange?> MeasuredAsync(Guid shelfId, Func<Task> change, IDbSession session)
+        {
+            (bool _, QuotaChange? measured) = await MeasuredAsync(shelfId, async () =>
+            {
+                await change();
+                return true;
+            }, session);
+
+            return measured;
+        }
+
+        /// <summary>
+        /// Makes <paramref name="change"/>, measuring what counts against the shelf's quota before and after it, so the usage
+        /// query alone says what it adds; answers what the change does, and the measure, which is null, and nothing
+        /// measured, when the shelf has no quota. Throwing leaves the caller's transaction uncommitted, and the change with it.
+        /// </summary>
+        private async Task<(T Result, QuotaChange? Change)> MeasuredAsync<T>(Guid shelfId, Func<Task<T>> change, IDbSession session)
+        {
+            Shelf shelf = await _shelfRepository.GetByIdAsync(shelfId, session) ?? throw new NotFoundException("The shelf is gone.");
+            if (shelf.QuotaBytes is not long quota)
+            {
+                return (await change(), null);
             }
 
-            // Measured before and after, so the usage query alone says what an upload holds. Throwing
-            // leaves the caller's transaction uncommitted, and the row with it.
-            long before = (await _shelfRepository.GetUsageAsync(shelf.Id, session)).TotalBytes;
-            await _uploadRepository.InsertAsync(upload, session);
-            long after = (await _shelfRepository.GetUsageAsync(shelf.Id, session)).TotalBytes;
-            if (after > quota)
-            {
-                throw new QuotaExceededException(
-                    $"The shelf '{shelf.Name}' has {Math.Max(quota - before, 0)} bytes free of its {quota}, too few for {after - before} more.");
-            }
+            long before = (await _shelfRepository.GetUsageAsync(shelfId, session)).TotalBytes;
+            T result = await change();
+            return (result, new QuotaChange(shelf.Name, quota, before, (await _shelfRepository.GetUsageAsync(shelfId, session)).TotalBytes));
         }
 
         /// <summary>
@@ -298,10 +312,14 @@ namespace ByteShelf.Server.Storage.Services
         /// or swaps its contents (<see cref="SwapInAsync"/>) and removes the upload, placing the object last
         /// before the commit. The object's lock is held from placing it until the row commits, so no
         /// removal can take it away in between. A swap's old contents are removed once it commits, unless
-        /// another file holds them. Hold the upload's lock. An upload <paramref name="throughLink"/> is held
-        /// to <see cref="ShelfEncryption.RequireLinkTargetAsync"/> again in that transaction: the place may
-        /// have been encrypted while the body arrived.
+        /// another file holds them, and what else the server has of them before it does. Hold the upload's lock.
+        /// An upload <paramref name="throughLink"/> is held to <see cref="ShelfEncryption.RequireLinkTargetAsync"/>
+        /// again in that transaction: the place may have been encrypted while the body arrived.
         /// </summary>
+        /// <exception cref="QuotaExceededException">
+        /// The row takes more of the shelf than the upload reserved, by the derived files the server already has of its
+        /// contents, which usage counts on every row that holds them, and that puts the shelf over its quota.
+        /// </exception>
         private async Task<ShelfFile> FinishAsync(UploadRecord upload, bool throughLink, CancellationToken cancellationToken)
         {
             // The server cannot tell a right password, but it can tell what is no age file at all.
@@ -314,26 +332,40 @@ namespace ByteShelf.Server.Storage.Services
 
             string sha256 = await _stagingArea.ComputeSha256Async(upload.Id, cancellationToken);
             ShelfFile stored;
+            IReadOnlyCollection<string> released;
 
             using (await _objectStore.LockAsync(sha256, CancellationToken.None))
             {
                 bool placed = false;
                 try
                 {
-                    await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+                    await using (ContentsSession session = await _contentsSessions.CreateAsync())
                     {
                         DateTimeOffset now = _timeProvider.GetUtcNow();
-                        stored = upload.Target switch
+                        (stored, QuotaChange? change) = await MeasuredAsync(upload.ShelfId, async () =>
                         {
-                            StoreAtPath store => await StoreNewAsync(upload, store, sha256, throughLink, now, session),
-                            ContentSwap swap => await SwapInAsync(upload, swap, sha256, now, session),
-                            _ => throw new InvalidOperationException($"No upload stores to a {upload.Target.GetType().Name}."),
-                        };
-                        await _uploadRepository.DeleteAsync(upload.Id, session);
+                            ShelfFile file = upload.Target switch
+                            {
+                                StoreAtPath store => await StoreNewAsync(upload, store, sha256, throughLink, now, session),
+                                ContentSwap swap => await SwapInAsync(upload, swap, sha256, now, session),
+                                _ => throw new InvalidOperationException($"No upload stores to a {upload.Target.GetType().Name}."),
+                            };
+                            await _uploadRepository.DeleteAsync(upload.Id, session);
+                            return file;
+                        }, session);
 
-                        _objectStore.Place(_stagingArea.GetPath(upload.Id), sha256);
-                        placed = true;
-                        await session.CommitAsync();
+                        // Only what it adds past its reservation: one started before the quota was lowered finishes.
+                        if (change is { IsOver: true, Adds: true })
+                        {
+                            throw change.DerivedRefused();
+                        }
+
+                        await session.CommitAsync(beforeCommit: () =>
+                        {
+                            _objectStore.Place(_stagingArea.GetPath(upload.Id), sha256);
+                            placed = true;
+                        });
+                        released = session.Released;
                     }
                 }
                 catch when (placed)
@@ -345,12 +377,7 @@ namespace ByteShelf.Server.Storage.Services
                 }
             }
 
-            if (upload.Target is ContentSwap committed)
-            {
-                await _objectCollector.RemoveReleasedAsync([committed.Sha256]);
-            }
-
-            _metadataSignal.ContentsStored();
+            await _objectCollector.RemoveReleasedAsync(released);
             return stored;
         }
 
@@ -358,7 +385,7 @@ namespace ByteShelf.Server.Storage.Services
         /// Creates missing directories, moves a file the upload replaces to the trash, and inserts the new
         /// file's row.
         /// </summary>
-        private async Task<ShelfFile> StoreNewAsync(UploadRecord upload, StoreAtPath store, string sha256, bool throughLink, DateTimeOffset now, IDbSession session)
+        private async Task<ShelfFile> StoreNewAsync(UploadRecord upload, StoreAtPath store, string sha256, bool throughLink, DateTimeOffset now, IContentsSession session)
         {
             await EnsureTargetAcceptsAsync(upload.ShelfId, store.Path, store.Overwrite, upload.Encrypted, session);
             if (throughLink)
@@ -401,7 +428,7 @@ namespace ByteShelf.Server.Storage.Services
         /// Points the swap's file at the new contents in place, checked again as things stand now
         /// (<see cref="GetSwappableAsync"/>): the file may have moved, changed or gone since the swap started.
         /// </summary>
-        private async Task<ShelfFile> SwapInAsync(UploadRecord upload, ContentSwap swap, string sha256, DateTimeOffset now, IDbSession session)
+        private async Task<ShelfFile> SwapInAsync(UploadRecord upload, ContentSwap swap, string sha256, DateTimeOffset now, IContentsSession session)
         {
             (FileRecord file, string path) = await GetSwappableAsync(upload.ShelfId, swap, upload.Encrypted, session);
 
@@ -470,6 +497,32 @@ namespace ByteShelf.Server.Storage.Services
         {
             await _uploadRepository.DeleteAsync(uploadId);
             _stagingArea.Delete(uploadId);
+        }
+
+        /// <summary>What counted against a shelf's quota before and after a change (<see cref="MeasuredAsync"/>).</summary>
+        private sealed record QuotaChange(string Shelf, long Quota, long Before, long After)
+        {
+            public bool IsOver => After > Quota;
+
+            public bool Adds => After > Before;
+
+            /// <summary>The refusal of an upload, whose reservation takes what it adds.</summary>
+            public QuotaExceededException UploadRefused()
+            {
+                return Refused(string.Empty);
+            }
+
+            /// <summary>The refusal of a row that takes more than its upload reserved, by what plugins made of its contents.</summary>
+            public QuotaExceededException DerivedRefused()
+            {
+                return Refused(" for what plugins made of these contents");
+            }
+
+            private QuotaExceededException Refused(string forWhat)
+            {
+                return new QuotaExceededException(
+                    $"The shelf '{Shelf}' has {Math.Max(Quota - Before, 0)} bytes free of its {Quota}, too few for {After - Before} more{forWhat}.");
+            }
         }
     }
 }

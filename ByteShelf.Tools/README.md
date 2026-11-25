@@ -13,7 +13,7 @@ the same words:
 | `ShelfLocation` | A place on a shelf, `shelf:/path` or `shelf` alone for its root. |
 | `Entries` | A file or directory by path, whichever is there. |
 | `Transfers` | Moving one file between a local file or stream and a shelf; a download is checked against its SHA-256 and written to a side file first. |
-| `FileSource` | Where a download reads a file from: the shelf as it is, or one deletion in its trash, for the CLI's `get-deleted` and MCP's `download_deleted`. |
+| `FileSource` | Where a file's contents, and what plugins made of them, are read from: the shelf as it is, or one deletion in its trash, for the CLI's `get-deleted` and MCP's `download_deleted`. |
 | `FolderTransfers` | Moving a whole local folder or shelf directory. An entry that cannot move is left out and listed; a refusal that would fail every entry (signed out, no permission, over quota, a replica, the server out of reach) stops the transfer. Symbolic links are never followed. |
 | `Encryptor` | A password to encrypt with and its scrypt work factor, which `Transfers` and `FolderTransfers` take to encrypt on the way up. |
 | `EncryptedFiles` | What a download does with an encrypted file: saves it as the age file it is (named `.age` when the download picks the name), decrypts it with a password, or leaves it out. |
@@ -36,17 +36,15 @@ the same words:
   access allows, and a tool without the mark to no one.
 - `ToolHost` says where the tools run. On the agent's machine a tool takes a local path; on the
   server it refuses one, since the server cannot reach the agent's files. The server's host also
-  carries `IImagePreviews`, the server's SkiaSharp previews (`Mcp/SkiaImagePreviews.cs` there), so
-  these tools take no image library of their own and the CLI carries none.
+  carries the types its plugins make previews for agents from (`ToolHost.PreviewedTypes`).
 - `upload_file` takes text or base64 of up to `MaxInlineBytes` (256 KiB), and `download_file`
   answers text up to the same size: what an agent can carry in its own context. It answers a PNG,
-  JPEG, GIF or WebP of up to `MaxInlineImageBytes` (1 MiB) as image content the model sees. On a
-  host with previews, any other file stored as an image, up to `ImagePreview.MaxSourceBytes` (32
-  MiB), comes as a JPEG preview of at most `ImagePreview.LongSide` (1568) pixels on its long side,
-  with its full size and where to get it whole; one the host makes no preview of (`NoPreview` says
-  why) gets only the pointer. The host reads such an image itself, in its turn. Without previews
-  (the CLI), only a file stored as one of those four kinds is read past 256 KiB, and an agent saves
-  a larger image with `localPath` and looks at it there.
+  JPEG, GIF or WebP of up to `MaxInlineImageBytes` (1 MiB) as image content the model sees. Only a
+  file stored as one of those four kinds is read past 256 KiB. On a host with previews, any other
+  file of their types comes as what the server's plugin makes of it for agents, read with
+  `IShelfClient.OpenDerivedAsync` and waited for (`AgentPreviews`), with where to get it whole; one
+  there is none of gets only the pointer. Through the CLI an agent saves a larger image with
+  `localPath` and looks at it there.
   Anything else moves as a local file, through the API, or by a link: `share_file` to fetch one,
   `create_upload_link` to have one sent in, answered with the `curl` command that sends it. Both
   answer the link's id; `list_links` shows the links that have not run out and `revoke_link` ends
@@ -61,7 +59,9 @@ the same words:
   the caller reaches. A caller reaching several (a user, or a key given several shelves) names it.
 - `RequiredArguments` is a call-tool filter both servers add, so a call missing a required argument
   is answered naming it rather than with the SDK's bare "An error occurred invoking".
-- `ToolInstructions` is what both servers tell an agent when it connects. Tests check what each
+- `ToolInstructions` is what both servers tell an agent when it connects. What `download_file` does with a file
+  it does not answer as it is depends on the host, so `OtherFilesOn` says it there and at the end of the tool's
+  description, which `WithByteShelfTools` completes as it registers the tools. Tests check what each
   server actually sends: the stdio server's instructions name every tool except the admin-only
   `create_shelf`, and `/mcp`'s name every tool it offers a read-write key. Other tests check that the
   limits the instructions and the tool descriptions state match the constants they come from.

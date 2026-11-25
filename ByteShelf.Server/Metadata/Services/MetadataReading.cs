@@ -14,6 +14,7 @@ namespace ByteShelf.Server.Metadata.Services
     {
         private readonly IObjectMetadataRepository _objectMetadata;
         private readonly ContentReading _reading;
+        private readonly ContentReadRunner _runner;
         private readonly MetadataUpkeep _upkeep;
         private readonly IDbSessionFactory _sessionFactory;
         private readonly ReplicationState _replicationState;
@@ -22,6 +23,7 @@ namespace ByteShelf.Server.Metadata.Services
         public MetadataReading(
             IObjectMetadataRepository objectMetadata,
             ContentReading reading,
+            ContentReadRunner runner,
             MetadataUpkeep upkeep,
             IDbSessionFactory sessionFactory,
             ReplicationState replicationState,
@@ -29,6 +31,7 @@ namespace ByteShelf.Server.Metadata.Services
         {
             _objectMetadata = objectMetadata;
             _reading = reading;
+            _runner = runner;
             _upkeep = upkeep;
             _sessionFactory = sessionFactory;
             _replicationState = replicationState;
@@ -49,7 +52,7 @@ namespace ByteShelf.Server.Metadata.Services
                 await session.CommitAsync();
             }
 
-            (int read, int failed) = await _reading.RunAsync(new BuiltInContentReader(_objectMetadata), cancellationToken);
+            (int read, int failed) = await _reading.RunAsync(new BuiltInContentReader(_objectMetadata, _runner), cancellationToken);
             return new MetadataReadingSummary(OnReplica: false, read, failed, removed);
         }
     }

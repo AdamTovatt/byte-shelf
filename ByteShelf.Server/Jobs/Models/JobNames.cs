@@ -20,5 +20,11 @@ namespace ByteShelf.Server.Jobs.Models
 
         /// <summary>Has plugins read stored files' contents.</summary>
         public const string PluginMetadataReading = "metadata.plugin_reading";
+
+        /// <summary>Makes the thumbnails and previews that are missing, from files already stored.</summary>
+        public const string DerivedMaking = "derived.making";
+
+        /// <summary>Removes derived files that may no longer be kept: of contents no plain file holds, of plugins no longer installed, and the least used over their limit.</summary>
+        public const string DerivedMaintenance = "derived.maintenance";
     }
 }

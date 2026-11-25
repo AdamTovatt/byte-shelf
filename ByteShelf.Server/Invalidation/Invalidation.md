@@ -27,8 +27,8 @@ it, and a failed read, that first one included, is tried again at the next poll.
 | Resource | Made stale by | Metadata |
 |---|---|---|
 | `users` | a user's changes | none |
-| `shelves` | a shelf's changes, any file or directory (usage), any user's grant (who sees which shelf, and what they may do there) | none |
-| `shelf-contents` | a shelf's changes, its files and directories (the trash included), and what plugins keep about a file | the shelf's id; none for a purge, which no longer knows its shelf |
+| `shelves` | a shelf's changes, any file or directory, and derived files that came or went (usage), any user's grant (who sees which shelf, and what they may do there) | none |
+| `shelf-contents` | a shelf's changes, its files and directories (the trash included), what plugins keep about a file, and derived files of its live plain files that came or went | the shelf's id; none for a purge, which no longer knows its shelf |
 | `shelf-access` | a shelf's changes and its users' grants; any key's grant | the shelf's id; none once the user's grant is gone, and none for a key's grant, since a shelf's key list shows each key's other shelves and so every shelf's list is stale |
 
 A key's own row makes nothing stale: it is shown only through its grants, which are logged beside it
@@ -37,9 +37,14 @@ when it comes and goes.
 A promotion and a change of someone's role make no `shelves` stale: whether its server is a replica, and what
 the caller may do there, are as they were until a shelf is next read.
 
+What plugins make of files' contents ([Derived files](../Derived/Derived.md)) is in no log. `DerivedInvalidationPublisher`
+publishes that the shelves with a live plain file it was made of are stale, and `shelves`, whose usage counts
+it, at once and then at most every 5 seconds however much came or went (`DerivedChanges`), so a listing shows
+new thumbnails.
+
 What was read from files' contents ([Metadata](../Metadata/Metadata.md)) makes nothing stale: an
-entry names an object, not a shelf, and refreshing every open listing for each file read would cost
-more than it shows. The web UI fetches a file's metadata afresh whenever it shows it. A plugin's document
+entry names an object, not a shelf, and refreshing every open listing would show nothing new, as listings
+carry none of it, unlike thumbnails. The web UI fetches a file's metadata afresh whenever it shows it. A plugin's document
 about contents is the same.
 
 A plugin's document about a file makes its shelf's contents stale, as a description does: listings carry

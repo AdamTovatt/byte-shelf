@@ -82,6 +82,14 @@ namespace ByteShelf.Server.Tests.TestUtilities
             return folder;
         }
 
+        /// <summary>Makes a plugin that adds each of <paramref name="makers"/> of thumbnails, a version and the media types it takes, and answers its folder.</summary>
+        public string AddMakingServerPlugin(string id, params string[] makers)
+        {
+            string folder = AddServerPlugin(id);
+            Write(folder, "makers", string.Join('\n', makers));
+            return folder;
+        }
+
         /// <summary>Makes a plugin whose registration fails unless the service <paramref name="serviceName"/> is registered before it, and answers its folder.</summary>
         public string AddServerPluginNeeding(string id, string serviceName)
         {

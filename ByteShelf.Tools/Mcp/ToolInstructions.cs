@@ -3,7 +3,7 @@ namespace ByteShelf.Tools.Mcp
     /// <summary>What both MCP servers tell an agent ByteShelf is and how its tools fit together, sent when it connects.</summary>
     internal static class ToolInstructions
     {
-        public const string Text = $"""
+        private const string UpToReading = $"""
             ByteShelf is a self-hosted file store. Files live on shelves: each shelf is its own tree of
             directories and files, with its own trash and quota. Tools take paths that start with /
             (the shelf's root is /) and a shelf to work on, which you can leave out when you reach
@@ -25,11 +25,10 @@ namespace ByteShelf.Tools.Mcp
             page.
 
             Reading: download_file answers a UTF-8 file of up to 256 KiB as text, and a
-            {ByteShelfMcpTools.InlineImageKinds} image of up to 1 MiB as an image you can see. On the
-            ByteShelf server's MCP, any other file stored as an image (image/*) of up to 32 MiB comes as
-            a JPEG preview at most 1568 pixels on its long side, saying its full size and where to get
-            it whole; one it cannot preview (HEIC, say) comes only with why and where to get it.
-            Through the byteshelf CLI's MCP, save a larger image with localPath and look at it there.
+            {ByteShelfMcpTools.InlineImageKinds} image of up to 1 MiB as an image you can see.
+            """;
+
+        private const string FromSharing = """
             share_file makes a link anyone can open without signing in, for 24 hours or the time asked
             for (at most 7 days); use it to hand a person a file, or to fetch anything else. A link
             answers with its id: list_links shows the links that have not run out, and revoke_link
@@ -70,5 +69,25 @@ namespace ByteShelf.Tools.Mcp
             A refusal ends with its code in parentheses, such as (not_found), (conflict) or
             (permission_denied).
             """;
+
+        /// <summary>The instructions of the tools on <paramref name="host"/>.</summary>
+        public static string For(ToolHost host)
+        {
+            return $"{UpToReading}\n{OtherFilesOn(host)}\n{FromSharing}";
+        }
+
+        /// <summary>What download_file does on <paramref name="host"/> with a file it does not answer as it is.</summary>
+        public static string OtherFilesOn(ToolHost host)
+        {
+            if (host.ReachesLocalFiles)
+            {
+                return "Save any other file with localPath, and look at a larger image there.";
+            }
+
+            return host.PreviewedTypes.Count == 0
+                ? "This server has no plugin that makes previews for agents, so any other file, an image too, comes only with why and where to get it."
+                : $"Any other {string.Join(", ", host.PreviewedTypes.Select(type => type.ToString()).Distinct().Order(StringComparer.Ordinal))} file, of any size, comes as a preview of it you can see, "
+                    + "with where to get it whole; any other, and one no preview could be made of, comes only with why and where to get it.";
+        }
     }
 }

@@ -1,3 +1,4 @@
+using ByteShelf.Server.Storage.Services;
 using EasyReasy.Database;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -14,6 +15,12 @@ namespace ByteShelf.Server.Tests.TestUtilities
             TResult result = await write(scope.ServiceProvider, session);
             await session.CommitAsync();
             return result;
+        }
+
+        /// <summary>Starts a transaction that may change which contents files hold.</summary>
+        public static Task<ContentsSession> CreateContentsSessionAsync(this IServiceProvider services)
+        {
+            return services.GetRequiredService<ContentsSessions>().CreateAsync();
         }
     }
 }

@@ -1,10 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
-using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Plugins.Models;
+using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Plugins.Services;
+using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using EasyReasy.Database.Mapping;
@@ -273,20 +274,42 @@ namespace ByteShelf.Server.Tests.Plugins
         }
 
         [Fact]
-        public async Task AReaderThatCannotBeMade_IsLoggedAndLeavesWhatItWouldReadForTheNextStart()
+        public async Task AReaderThatCannotBeMade_IsLoggedAndLeavesWhatItWouldRead()
         {
-            RecordingLogger<ContentReadRunner> logger = new RecordingLogger<ContentReadRunner>();
-            await using ServerTestHost host = await StartWithAnUnmadeReaderAsync(services => services.AddSingleton<ILogger<ContentReadRunner>>(logger));
-            ShelfFile stored = await host.PutAsAdminAsync("docs", "/a.txt", "Ett äpple"u8.ToArray(), "text/plain");
+            RecordingLogger<PluginMetadataReading> logger = new RecordingLogger<PluginMetadataReading>();
+            PassLogger<PluginMetadataReadingWorker> passes = new PassLogger<PluginMetadataReadingWorker>();
+            await using ServerTestHost host = await StartWithAnUnmadeReaderAsync(services => services
+                .AddSingleton<ILogger<PluginMetadataReading>>(logger)
+                .AddSingleton<ILogger<PluginMetadataReadingWorker>>(passes));
+            await passes.Finished(1).WaitAsync(TestReadLimits.Real);
 
-            await host.Services.ReadPluginMetadataAsync();
+            // The server's own pass, so that no other logs or reads beside it.
+            ShelfFile stored = await host.PutAsAdminAsync("docs", "/a.txt", "Ett äpple"u8.ToArray(), "text/plain");
+            await passes.Finished(2).WaitAsync(TestReadLimits.Real);
 
             Assert.Equal(["healthy: Ett äpple"], await ReadWordsAsync(host, "/a.txt"));
             await using AsyncServiceScope scope = host.Services.CreateAsyncScope();
             IContentPluginMetadataRepository repository = scope.ServiceProvider.GetRequiredService<IContentPluginMetadataRepository>();
             Assert.Equal([stored.Sha256], await repository.GetUnreadAsync("reading", 1, MediaTypeSet.Of("text/plain"), null, 10));
-            Assert.Equal(["The reader reading could not be made, so it reads nothing until the server restarts: It was told to fail."], logger.Messages);
-            Assert.IsType<InvalidOperationException>(Assert.Single(logger.Exceptions));
+            Assert.Equal(
+                ["The reader of reading could not run, and is tried again by the next pass: its reader could not be made: It was told to fail."], logger.Messages);
+        }
+
+        [Fact]
+        public async Task AReader_OfAnotherVersionThanWhenTheServerStarted_LeavesWhatItWouldRead()
+        {
+            string folder = _plugins.AddReadingServerPlugin("reading", "1 text/plain");
+            await using ServerTestHost host = await ServerTestHost.StartAsync(pluginsPath: _plugins.Path);
+            await host.CreateShelfAsync("docs");
+            await host.PutAsAdminAsync("docs", "/a.txt", "a"u8.ToArray(), "text/plain");
+            await File.WriteAllTextAsync(Path.Combine(folder, "readers"), "2 text/plain");
+
+            await host.Services.ReadPluginMetadataAsync();
+
+            Assert.Empty(await ReadWordsAsync(host, "/a.txt"));
+            Assert.Equal(
+                [("reading", "Its reader of files' contents could not run, so it reads nothing until it can: it is another version than when the server started.")],
+                await ReadProblemsAsync(host.AdminClient));
         }
 
         [Fact]
@@ -296,9 +319,76 @@ namespace ByteShelf.Server.Tests.Plugins
             await host.PutAsAdminAsync("docs", "/a.txt", "a"u8.ToArray(), "text/plain");
             await host.Services.ReadPluginMetadataAsync();
 
-            string problem = "Its reader of files' contents could not be made, so it reads nothing until the server restarts: It was told to fail.";
+            string problem = "Its reader of files' contents could not run, so it reads nothing until it can: its reader could not be made: It was told to fail.";
             Assert.Equal([("healthy", null), ("reading", problem)], await ReadProblemsAsync(host.AdminClient));
             Assert.Equal([("healthy", null), ("reading", null)], await ReadProblemsAsync(host.MemberClient));
+        }
+
+        [Fact]
+        public async Task AMaker_OfALoadedPlugin_MakesTheTypesItTakesAtItsVersion()
+        {
+            _plugins.AddMakingServerPlugin("making", "3 text/plain");
+            await using ServerTestHost host = await ServerTestHost.StartAsync(pluginsPath: _plugins.Path);
+            await host.CreateShelfAsync("docs");
+            ShelfFile file = await host.PutAsAdminAsync("docs", "/a.txt", "Ett äpple"u8.ToArray(), "text/plain");
+            await host.PutAsAdminAsync("docs", "/a.css", "Css"u8.ToArray(), "text/css");
+
+            HttpResponseMessage made = await host.AdminClient.GetAsync("/api/shelves/docs/files/derived?path=/a.txt&kind=thumbnail");
+
+            Assert.Equal("ETT ÄPPLE", await made.Content.ReadAsStringAsync());
+            Assert.Equal($"\"thumbnail-{file.Sha256}-making-3\"", made.Headers.ETag?.ToString());
+            Assert.Equal(HttpStatusCode.NotFound, (await host.AdminClient.GetAsync("/api/shelves/docs/files/derived?path=/a.txt&kind=preview")).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await host.AdminClient.GetAsync("/api/shelves/docs/files/derived?path=/a.css&kind=thumbnail")).StatusCode);
+        }
+
+        [Theory]
+        [InlineData("1 text/plain", "2 text/html")]
+        [InlineData("1 no-type")]
+        public async Task AMakerRegisteredAsItMayNotBe_RefusesThePlugin(params string[] makers)
+        {
+            _plugins.AddMakingServerPlugin("making", makers);
+            await using ServerTestHost host = await ServerTestHost.StartAsync(pluginsPath: _plugins.Path);
+
+            PluginList? list = await host.AdminClient.GetFromJsonAsync<PluginList>("/api/plugins");
+
+            Assert.Empty(list!.Plugins);
+            Assert.Equal("making", Assert.Single(list.Skipped!).Id);
+        }
+
+        [Fact]
+        public async Task AReader_AskedForContentsOnlyAnEncryptedFileHoldsByNow_IsNotGivenThem()
+        {
+            _plugins.AddReadingServerPlugin("reading", "1 text/plain");
+            await using ServerTestHost host = await ServerTestHost.StartAsync(pluginsPath: _plugins.Path);
+            await host.CreateShelfAsync("docs");
+            byte[] bytes = "age-encryption.org/v1\nencrypted"u8.ToArray();
+            ShelfFile file = await host.PutAsAdminAsync("docs", "/a.bin", bytes, "application/octet-stream");
+            using ByteArrayContent encrypted = new ByteArrayContent(bytes);
+            (await host.AdminClient.PutAsync($"/api/shelves/docs/content/swap?id={file.Id}&sha256={file.Sha256}&encrypted=true", encrypted)).EnsureSuccessStatusCode();
+
+            PluginReading reading = await Assert.Single(host.Services.GetRequiredService<IPluginReaders>().All).Read(file.Sha256, CancellationToken.None);
+
+            Assert.IsType<PluginReading.NotRead>(reading);
+            Assert.Empty(WorkFolder.Find(host.TestRoot.Root));
+        }
+
+        [Fact]
+        public async Task AReader_ThatReadAFileSinceEncrypted_LeavesNothingOfItOnDisk()
+        {
+            _plugins.AddReadingServerPlugin("reading", "1 text/plain");
+            await using ServerTestHost host = await ServerTestHost.StartAsync(pluginsPath: _plugins.Path);
+            await host.CreateShelfAsync("docs");
+            ShelfFile file = await host.PutAsAdminAsync("docs", "/a.txt", "a secret"u8.ToArray(), "text/plain");
+            await host.Services.ReadPluginMetadataAsync();
+            Assert.Equal(["reading: a secret"], await ReadWordsAsync(host, "/a.txt"));
+            WorkFolder folder = Assert.Single(WorkFolder.Find(host.TestRoot.Root), each => each.GetContents().Contains(file.Sha256));
+
+            using StringContent encrypted = new StringContent("age-encryption.org/v1\nencrypted");
+            (await host.AdminClient.PutAsync($"/api/shelves/docs/content/swap?id={file.Id}&sha256={file.Sha256}&encrypted=true", encrypted)).EnsureSuccessStatusCode();
+
+            Assert.False(Directory.Exists(folder.Path));
+            Assert.Empty(WorkFolder.Find(host.TestRoot.Root));
+            Assert.Empty(await ReadWordsAsync(host, "/a.txt"));
         }
 
         public void Dispose()

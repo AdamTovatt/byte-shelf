@@ -96,6 +96,15 @@ namespace ByteShelfClient
         Task<Stream> OpenReadAsync(EntryReference file, CancellationToken cancellationToken = default);
 
         /// <summary>
+        /// Opens what a plugin of the server's made from a file's contents, which is made first when it is missing.
+        /// Dispose the answer when done. A <see cref="ByteShelfException"/> of code
+        /// <see cref="ErrorCodes.NotReady"/> says it is still being made, for the caller to ask again; one of
+        /// <see cref="ErrorCodes.NotFound"/> that there is none, as no plugin makes it from the file, it could not be
+        /// made, or the file is encrypted. The in-memory client has none of any file.
+        /// </summary>
+        Task<DerivedFileContent> OpenDerivedAsync(EntryReference file, DerivedKind kind, CancellationToken cancellationToken = default);
+
+        /// <summary>
         /// Opens part of a file's contents: <paramref name="length"/> bytes from <paramref name="offset"/>, or to
         /// the end when <paramref name="length"/> is null, with the file's total length, to seek in a video or
         /// answer a browser's <c>Range</c> request. A range running past the end is cut at the end; one starting
@@ -249,6 +258,9 @@ namespace ByteShelfClient
         /// <see cref="OpenReadAsync"/>'s does.
         /// </summary>
         Task<Stream> OpenDeletedReadAsync(Guid deletionId, Guid fileId, CancellationToken cancellationToken = default);
+
+        /// <summary>As <see cref="OpenDerivedAsync"/>, of a file a deletion removed, by its id.</summary>
+        Task<DerivedFileContent> OpenDeletedDerivedAsync(Guid deletionId, Guid fileId, DerivedKind kind, CancellationToken cancellationToken = default);
 
         /// <summary>Puts back what one deletion removed, where it was.</summary>
         Task RestoreAsync(Guid deletionId, CancellationToken cancellationToken = default);

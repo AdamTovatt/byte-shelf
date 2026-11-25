@@ -47,7 +47,7 @@ describe('the viewers', () => {
   }
 
   function picked(contentType: string): string | undefined {
-    return viewers.viewerFor({ name: 'x', contentType } as ShelfFile)?.viewer?.id;
+    return viewers.viewerFor({ name: 'x', contentType } as ShelfFile)?.viewers[0]?.viewer.id;
   }
 
   beforeEach(() => {

@@ -27,12 +27,16 @@ namespace ByteShelf.Server.Storage
             services.AddScoped<IShelfRepository, ShelfRepository>();
             services.AddScoped<IDirectoryRepository, DirectoryRepository>();
             services.AddScoped<IFileRepository, FileRepository>();
+            services.AddScoped<IPlainContentsRepository, PlainContentsRepository>();
             services.AddScoped<IUploadRepository, UploadRepository>();
             services.AddScoped<ITrashRepository, TrashRepository>();
             services.AddScoped<ILinkRepository, LinkRepository>();
 
             services.AddScoped<ShelfTree>();
             services.AddScoped<ShelfEncryption>();
+            services.AddScoped<ContentsSessions>();
+            services.AddSingleton<ContentsLocks>();
+            services.AddScoped<ContentsTransactions>();
             services.AddScoped<ObjectCollector>();
             services.AddScoped<IShelfService, ShelfService>();
             services.AddScoped<ITrashService, TrashService>();

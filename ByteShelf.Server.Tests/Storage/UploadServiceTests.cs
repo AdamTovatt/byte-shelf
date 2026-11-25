@@ -13,11 +13,11 @@ namespace ByteShelf.Server.Tests.Storage
 {
     public class UploadServiceTests : ServiceTestBase
     {
-        private FailingCommitSessionFactory _sessionFactory = null!;
+        private HookedCommitSessionFactory _sessionFactory = null!;
 
         protected override void ConfigureServices(IServiceCollection services)
         {
-            _sessionFactory = new FailingCommitSessionFactory(TestRoot.Root.Database);
+            _sessionFactory = new HookedCommitSessionFactory(TestRoot.Root.Database);
             services.AddSingleton<IDbSessionFactory>(_sessionFactory);
         }
 
@@ -430,6 +430,19 @@ namespace ByteShelf.Server.Tests.Storage
             Assert.Equal(60, (await GetUsageAsync(shelf)).ReservedBytes);
             await Assert.ThrowsAsync<QuotaExceededException>(() =>
                 UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/b", SizeBytes = 41 }, Uploader));
+        }
+
+        [Fact]
+        public async Task CompleteAsync_QuotaLoweredSinceItStarted_StoresWhatItReserved()
+        {
+            Shelf shelf = await CreateShelfAsync(quotaBytes: 100);
+            UploadSession upload = await UploadService.StartAsync(shelf, new StartUploadRequest { Path = "/a", SizeBytes = 10 }, Uploader);
+            await ShelfService.UpdateAsync(shelf, shelf.Name, quotaBytes: 5);
+            await UploadService.AppendAsync(shelf, upload.Id, 0, new MemoryStream(Encoding.UTF8.GetBytes("0123456789")), CancellationToken.None);
+
+            ShelfFile file = await UploadService.CompleteAsync(shelf, upload.Id, CancellationToken.None);
+
+            Assert.Equal(10, file.SizeBytes);
         }
 
         [Fact]

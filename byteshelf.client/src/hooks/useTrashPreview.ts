@@ -22,5 +22,5 @@ export function useTrashPreview(shelf: string, decryption: Decryption): TrashPre
   const gone = !isFetching && (isNotFound(error) || (deletion !== undefined && !previewed));
   useCloseWhenGone(gone, close);
 
-  return { isOpen: id !== null && !gone, open, shown: { previewed, error, steps: null, onClose: close, asksPassword: wasOpened } };
+  return { isOpen: id !== null && !gone, open, shown: { previewed, error, steps: null, previous: null, next: null, onClose: close, asksPassword: wasOpened } };
 }

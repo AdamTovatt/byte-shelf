@@ -1,6 +1,5 @@
 using System.Buffers.Binary;
 using System.Text;
-using SkiaSharp;
 using UglyToad.PdfPig.Content;
 using UglyToad.PdfPig.Writer;
 
@@ -127,12 +126,13 @@ namespace ByteShelf.Server.Tests.TestUtilities
             return builder.Build();
         }
 
+        /// <summary>An 8 by 8 pixel JPEG of one colour.</summary>
         private static byte[] SmallJpeg()
         {
-            using SKBitmap bitmap = new SKBitmap(8, 8);
-            bitmap.Erase(SKColors.SteelBlue);
-            using SKData data = bitmap.Encode(SKEncodedImageFormat.Jpeg, 90);
-            return data.ToArray();
+            return Convert.FromBase64String(
+                "/9j/4AAQSkZJRgABAgAAAQABAAD/2wBDAAgEBAQEBAUFBQUFBQYGBgYGBgYGBgYGBgYHBwcICAgHBwcGBgcHCAgICAkJCQgICAgJCQoKCgwMCwsODg4RERT/" +
+                "xABLAAEBAAAAAAAAAAAAAAAAAAAABAEBAAAAAAAAAAAAAAAAAAAABhABAAAAAAAAAAAAAAAAAAAAABEBAAAAAAAAAAAAAAAAAAAAAP/AABEIAAgACAMBIgAC" +
+                "EQADEQD/2gAMAwEAAhEDEQA/AJQCMdf/2Q==");
         }
 
         private static void AddText(List<TiffField> fields, ushort tag, string? text)

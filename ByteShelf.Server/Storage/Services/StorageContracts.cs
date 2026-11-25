@@ -8,7 +8,7 @@ namespace ByteShelf.Server.Storage.Services
     public static class StorageContracts
     {
         /// <param name="pluginFields">The values of plugins' fields a listing carries; null for a file that is not listed, or has none.</param>
-        public static ShelfFile ToShelfFile(FileRecord file, string directoryPath, ListedFields? pluginFields = null)
+        public static ShelfFile ToShelfFile(FileRecord file, string directoryPath, ListedFields? pluginFields = null, IReadOnlyDictionary<DerivedKind, string>? derived = null)
         {
             return new ShelfFile
             {
@@ -25,6 +25,7 @@ namespace ByteShelf.Server.Storage.Services
                 Description = file.Description,
                 Encrypted = file.Encrypted,
                 PluginFields = pluginFields,
+                Derived = derived,
             };
         }
 

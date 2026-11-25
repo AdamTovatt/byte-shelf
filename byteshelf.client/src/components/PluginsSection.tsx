@@ -23,7 +23,7 @@ export function PluginsSection() {
               key={plugin.id}
               name={plugin.name}
               details={`Version ${plugin.version}`}
-              problems={[failures.has(plugin.id) && `Its part in the web UI failed: ${failures.get(plugin.id)}`, plugin.readerProblem]}
+              problems={[failures.has(plugin.id) && `Its part in the web UI failed: ${failures.get(plugin.id)}`, plugin.readerProblem, plugin.makerProblem]}
             />
           ))}
           {skipped.map((plugin) => (

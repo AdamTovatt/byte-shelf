@@ -157,6 +157,19 @@ namespace ByteShelf.Server.Tests.Client
         }
 
         [Fact]
+        public async Task OpenDerivedAsync_WithoutAPluginThatMakesIt_IsNotFound()
+        {
+            ShelfFile file = await UploadTextAsync("/a.txt", "a");
+            TrashEntry deleted = await Shelf.DeleteFileAsync(file.Id);
+            ShelfFile live = await UploadTextAsync("/b.txt", "b");
+
+            Assert.Equal(ErrorCodes.NotFound, (await RefusalOf(Shelf.OpenDerivedAsync(live.Id, DerivedKind.Agent))).Code);
+            Assert.Equal(ErrorCodes.NotFound, (await RefusalOf(Shelf.OpenDerivedAsync("/none.txt", DerivedKind.Agent))).Code);
+            Assert.Equal(ErrorCodes.NotFound, (await RefusalOf(Shelf.OpenDeletedDerivedAsync(deleted.DeletionId, file.Id, DerivedKind.Agent))).Code);
+            Assert.Equal(ErrorCodes.NotFound, (await RefusalOf(Shelf.OpenDeletedDerivedAsync(Guid.NewGuid(), file.Id, DerivedKind.Agent))).Code);
+        }
+
+        [Fact]
         public async Task OpenDeletedReadAsync_AFileAnotherDeletionTook_IsNotFound()
         {
             await UploadTextAsync("/a.txt", "a");

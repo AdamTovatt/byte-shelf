@@ -1,3 +1,4 @@
+import { sleep } from '../lib/abort';
 import type { paths } from '../types/api';
 import { getExpiresAt, getFreshToken } from './authService';
 import { getSseData, splitSseBuffer } from '../lib/sse';
@@ -157,8 +158,4 @@ async function readEvents(reader: ReadableStreamDefaultReader<Uint8Array>, onRes
   } finally {
     reader.releaseLock();
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

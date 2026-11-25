@@ -22,16 +22,17 @@ needs is in the table in [Access.md](../Access/Access.md). An existing file or d
 exactly one of the `path` and `id` query parameters. A new path is in the JSON body for
 `POST directories`, `POST uploads`, `POST upload-link` and the `toPath` of a move, and in the `path`
 query parameter for `PUT content`. Errors answer an `ErrorResponse` with a `code` from `ByteShelfCommon.ErrorCodes`,
-except a 416 for a range `GET content` cannot satisfy, which ASP.NET answers without a body (clients
+except a 416 for a range that cannot be satisfied, which ASP.NET answers without a body (clients
 read it as `range_not_satisfiable`); a path that is not allowed is a 400.
 
 | Method and route | What it does |
 |---|---|
-| `GET entries?path=` | Lists a directory (the root without `path` or `id`). Each of its `directories` is the `directory` with the `sizeBytes`, `fileCount` and `encryptedFileCount` of the live files under it at any depth (`ListedDirectory`), summed in the same query (a recursive walk per child), so listing the root walks the whole shelf. Its `files`, as those of `tree`, `search` and a deletion's tree, have `pluginFields`: the values of the fields plugins declare for listings ([Metadata](../Metadata/Metadata.md)), absent when there are none. `encryptedBy` is the encrypted directory it is or is inside, null for none. |
+| `GET entries?path=` | Lists a directory (the root without `path` or `id`). Each of its `directories` is the `directory` with the `sizeBytes`, `fileCount` and `encryptedFileCount` of the live files under it at any depth (`ListedDirectory`), summed in the same query (a recursive walk per child), so listing the root walks the whole shelf. Its `files`, as those of `tree`, `search` and a deletion's tree, have `pluginFields`: the values of the fields plugins declare for listings ([Metadata](../Metadata/Metadata.md)), absent when there are none, and `derived`, the kinds of derived files there are of the contents, each with a word that changes when another is made in its place and means nothing else, as `{"thumbnail": "images-1"}` ([Derived files](../Derived/Derived.md)), absent when there are none. `encryptedBy` is the encrypted directory it is or is inside, null for none. |
 | `GET tree?under=&depth=&limit=&after=` | One page of the live directories and files under `under` (the root by default), at any depth or down to `depth` levels (1: what it holds directly), together by path in code point order: `limit` (1 to 1000, 100 by default) entries, and `nextCursor` to pass as `after` for the next page. 400 for a depth below 1 or a limit out of range, 404 when `under` is missing or names a file. |
-| `GET files?path=` | A file's record. |
+| `GET files?path=` | A file's record, with `derived` as a listing has it. |
 | `GET files/metadata?path=` | What the file's contents say (`FileMetadata`): when and where it was taken, the camera, a video's length, a PDF's title and pages. `readable` says whether the server reads the file at all (not when it is encrypted or of a type it does not read); `readAt` is null until it has read them, and always when it does not. `plugins` has what each installed plugin keeps, by its id: its documents, the version of the one about the file, and its declared fields with their values. See [Metadata](../Metadata/Metadata.md). |
 | `PUT files/plugin-metadata?path=&plugin=` | Writes the document an installed plugin keeps about the file, the body's `document`, whole, or removes it when null, over the version `expectedVersion` names (null for a first write); answers what the plugin keeps about the file then. Moves no `updatedAt`. 400 without a `document` or for one that is not one (a JSON object of at most 64 KiB, nested at most 32 deep), 404 for a plugin that is not installed, 409 when another version is there. |
+| `GET files/derived?path=&kind=` (and `HEAD`) | What a plugin made from the file's contents: `kind` is `thumbnail`, `preview`, `full` or `agent`. 404 when there is none, 503 with `Retry-After: 5` while it is made, 507 `quota_exceeded` when it was made with no room in a shelf's quota to keep it and a shelf holding the contents still has none, 500 when the plugin could not run. Also served under `/api/open`. See [Derived files](../Derived/Derived.md). |
 | `DELETE files?path=` | Moves a file to the trash; answers the deletion. |
 | `POST files/move?path=` | Moves or renames a file to the body's `toPath`; missing directories above it are created. 400 for `/`, 409 when the path is taken. |
 | `PUT files/description?path=` | Sets the body's `description`, or removes it when null or blank; 400 over `FileDescription.MaxLength` characters. |
@@ -50,15 +51,16 @@ read it as `range_not_satisfiable`); a path that is not allowed is a 400.
 | `PUT content?path=&overwrite=&encrypted=` | Stores the body in one request. Needs `Content-Length` (411 without); the `Content-Type` is stored, or without one the type the path's extension names (`ContentTypes.ForUpload`), so `curl -T` stores a PDF as one. `encrypted=true` marks the body as an age file (400 when it does not start as one). 409 when the path is taken and `overwrite` is not set, or for a plain file under an encrypted directory; 507 over quota. |
 | `POST upload-link` | A link that stores one file sent to it without a token, from the body's `path`, `overwrite`, `description` and `expiresInMinutes` (1 to 1440, 15 by default), with its `id` to revoke it by; see "Upload links" below. Needs `Add`, or `Write` with `overwrite`; 400 for the root or a request `CreateUploadLinkRequest.Normalize` refuses, 409 for a path under an encrypted directory or over an encrypted file. |
 | `POST uploads` | Starts a resumable upload from the body's `path`, `sizeBytes`, `contentType` (optional, typed as `PUT content` is), `overwrite` (false by default), `encrypted` (as on `PUT content`, checked when it completes) and the file's `description` if it has one (a single `PUT` has no body to carry one); reserves the size against the quota. |
-| `PUT content/swap?id=&sha256=&encrypted=` | Swaps the contents of the file `id` in place for the body, in one request (`Content-Length` needed): encrypting a plain file (`encrypted=true`, an age file) or decrypting an encrypted one. Needs write access. 400 when sent as encrypted but not an age file; 404 for no such live file; 409 when its contents are no longer `sha256`, when the swap would not flip its encryption, or for a plain file under an encrypted directory; 411 without `Content-Length`; 507 when what it adds to the file's size does not fit the quota. See "Encryption" below. |
+| `PUT content/swap?id=&sha256=&encrypted=` | Swaps the contents of the file `id` in place for the body, in one request (`Content-Length` needed): encrypting a plain file (`encrypted=true`, an age file) or decrypting an encrypted one. Needs write access. 400 when sent as encrypted but not an age file; 404 for no such live file; 409 when its contents are no longer `sha256`, when the swap would not flip its encryption, or for a plain file under an encrypted directory; 411 without `Content-Length`; 507 when what it adds to the file's size does not fit the quota, or the derived files the server already has of the new contents do not, however small they are. See "Encryption" below. |
 | `POST uploads/swap` | Starts a resumable upload that swaps a file's contents when it completes, from the body's `fileId`, `sha256`, `sizeBytes` and `encrypted`, refused as `PUT content/swap` is. Its chunks, progress, completion and abort are an upload's. |
 | `GET uploads/{id}` | Progress: `receivedBytes` is where the next chunk starts. |
 | `PUT uploads/{id}?offset=` | Appends a chunk of at most `UploadLimits.MaxChunkBytes` (64 MiB, 413 above); 409 when `offset` is not `receivedBytes`. |
-| `POST uploads/{id}/complete` | Stores the file once every byte has arrived. 409 when the path was taken meanwhile, or for a swap when the file's contents changed or the swap no longer flips its encryption; 404 for a swap whose file is gone. The upload is kept. |
+| `POST uploads/{id}/complete` | Stores the file once every byte has arrived. 409 when the path was taken meanwhile, or for a swap when the file's contents changed or the swap no longer flips its encryption; 404 for a swap whose file is gone; 507 when the derived files the server already has of the contents do not fit the quota beside them. The upload is kept. |
 | `DELETE uploads/{id}` | Drops the upload and releases its reservation. |
 | `GET trash` | Deletions still inside the restore window, newest first. |
 | `GET trash/{deletionId}/tree?under=&limit=&after=` | What a deletion took, by the paths it had, a page at a time as `tree` pages (`DeletionTree`): the deletion as `GET trash` lists it, the encrypted folder the entry at `under` was stored in (`encryptedBy`, which may have been moved or deleted since; its check still tells the password), and the page, whose directory is the one the deletion was made in and whose entries are what it took at `under` and below, that entry first. Without `under`, that is all it took. 404 when it took nothing at `under`. |
 | `GET trash/{deletionId}/content?id=` (and `HEAD`) | A file the deletion took, sent as a live file's contents are, `download=true` too. Also served at `/api/open/{shelf}/trash/{deletionId}/content`, for a browser's cookie. |
+| `GET trash/{deletionId}/derived?id=&kind=` (and `HEAD`) | As `files/derived`, of a file the deletion took. Also served under `/api/open`. |
 | `POST trash/{deletionId}/restore` | Puts a deletion back where it was. |
 | `DELETE trash` | Empties the trash: everything in it can no longer be restored, and is purged now with its objects (see below). |
 
@@ -66,9 +68,10 @@ read it as `range_not_satisfiable`); a path that is not allowed is a 400.
 
 A new tab or a save is a plain navigation, and an image, a player or a frame on a page loads its file by
 itself: neither can send an `Authorization` header. So the web UI opens, previews and saves a file at
-`/api/open/{shelf}/content`, and one in the trash at `/api/open/{shelf}/trash/{deletionId}/content`: the
-paths under `/api/open`, where the session's access token may instead come in the `__Secure-access_token` cookie (EasyReasy.Auth's `CookieTokenPaths`; its README's
-"Opening Files in a New Tab (token in a cookie)"). The built-in sign-in and renewal set the cookie, `HttpOnly`, `Secure`,
+`/api/open/{shelf}/content`, and one in the trash at `/api/open/{shelf}/trash/{deletionId}/content`; their
+derived files are at `/api/open/{shelf}/files/derived` and `/api/open/{shelf}/trash/{deletionId}/derived`. Under
+`/api/open` the session's access token may instead come in the `__Secure-access_token` cookie (EasyReasy.Auth's
+`CookieTokenPaths`; its README's "Opening Files in a New Tab (token in a cookie)"). The built-in sign-in and renewal set the cookie, `HttpOnly`, `Secure`,
 `SameSite=Strict`, host-only, with `Path=/api/open` and the token's own lifetime; a failed renewal
 and signing out clear it. It is read only on `GET` and `HEAD`, only without an `Authorization`
 header, and not when the request carries the cookie twice, so a copied URL is useless to anyone else and no public link
@@ -161,10 +164,31 @@ altered token answers 404. Removing the secret and restarting ends every link at
 3. Finish: the server hashes the staged bytes itself, then in one transaction creates missing
    directories, moves an overwritten file to the trash, inserts the file row and removes the upload.
    The object is placed just before the commit. A swap instead checks its file again as it stands,
-   points the row at the new object, and removes the old object once that commits (see
-   "Encryption"); a removal that fails is logged and left to maintenance, as the swap stands.
+   points the row at the new object, and removes the old object once that commits, what else the server
+   has of it before (see "Changing which contents files hold"); a removal of the object that fails is logged
+   and left to maintenance, as the swap stands. The same transaction measures the shelf's usage before and
+   after: where the row takes more than the upload reserved, by the derived files the server already has of
+   its contents, and that puts the shelf over its quota, it is refused with 507 and the upload kept
+   ([Derived files](../Derived/Derived.md#quota)).
 
 The client never supplies a hash the server trusts.
+
+## Changing which contents files hold (`ContentsSession`)
+
+What changes which contents a file holds (`IFileRepository`'s insert, swap, replicated write and purges)
+takes an `IContentsSession`, a transaction in which it notes the contents the file no longer holds, or no
+longer holds as plain, and those a live plain file came to hold. Over the server's own database only
+`ContentsSessions` starts one, so nothing there can commit such a change without what committing one does:
+
+- before the commit, what else the server has of the contents released goes (`IContentsTraces`: what plugins
+  made of them and what their processes hold, [Derived files](../Derived/Derived.md)) unless a plain file holds
+  them still, and none comes to be until it has committed. What cannot be removed refuses the commit.
+- after it, whoever does something with contents stored is told (`IStoredContentsListener`: the jobs that read
+  them, [Metadata](../Metadata/Metadata.md), and the makers of derived files).
+
+Removing the released objects is left to who started it (`ContentsSession.Released`,
+`ObjectCollector.RemoveReleasedAsync`), once it holds no object's lock. A backup prunes a copy of the
+database, of whose contents nobody has anything (`ContentsSession.OfACopy`).
 
 ## Deletes, restores and the purge (`TrashService`)
 
@@ -264,10 +288,10 @@ the mark.
 A client encrypts or decrypts a stored file by swapping its contents in place (`PUT content/swap`,
 `POST uploads/swap`): the file keeps its id, path, type, description and plugins' documents about it,
 and its old contents are removed at once rather than moved to the trash, unless another file holds the
-same ones. What was read from them goes in the same transaction, unless another plain file holds them
-([Metadata](../Metadata/Metadata.md)). This is the one write that destroys contents without the trash,
-and it is allowed only for what the person confirmed cannot be undone: it must flip the file's
-encryption, and it must name the SHA-256 the
+same ones. What was read from them, and what plugins made from them, goes in the same transaction, unless
+another plain file holds them ([Metadata](../Metadata/Metadata.md), [Derived files](../Derived/Derived.md)).
+This is the one write that destroys contents without the trash, and it is allowed only for what the person
+confirmed cannot be undone: it must flip the file's encryption, and it must name the SHA-256 the
 contents still have, so a change made since they were read is never lost (409 otherwise). Its change
 log entry (`swapped`) points the row at the new contents, and a replica removes the old ones as soon
 as it applies it, the one exception to replicas keeping what the primary drops for their own restore
@@ -296,9 +320,11 @@ the items before it done; a client that goes away stops it between items.
 
 ## Removing objects safely (`ObjectCollector`)
 
-An object is removed only when no row, live or trashed, points at it. Both sides of that question
-hold the object's lock (`ObjectStore.LockAsync`): a finishing upload from placing the object until
-its row commits, a removal from checking for rows until the file is gone. A replica's sync places
+An object is removed only when no row, live or trashed, points at it. What else the server has of it
+(`IContentsTraces`) goes with the last plain file that holds it, which may be sooner: an encrypted file
+with the same bytes keeps the object ([Derived files](../Derived/Derived.md)). Both sides of the question hold the object's lock
+(`ObjectStore.LockAsync`): a finishing upload from placing the object until its row commits, a removal from
+checking for rows until the file is gone. A replica's sync places
 objects for rows it commits later, after a whole page has arrived; it holds `MaintenanceGate` for the
 whole step instead, which keeps maintenance, and so every removal, away until those rows commit
 ([Replication](../Replication/Replication.md)).

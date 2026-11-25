@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using ByteShelf.Server.Backup.Models;
 using ByteShelf.Server.ChangeLog.Repositories;
+using ByteShelf.Server.Derived.Repositories;
 using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Shared.Database;
@@ -231,20 +232,22 @@ namespace ByteShelf.Server.Backup.Services
         }
 
         /// <summary>
-        /// Drops from the snapshot the uploads in progress, points the files swapped meanwhile at their new
-        /// contents, and purges the other files whose objects are missing, both logged so that replicas
-        /// copying the restored root follow; answers how many files were purged. What was read from contents
-        /// the backup then holds no plain file of goes too, as it does on the server: their plaintext may be
-        /// gone for being encrypted.
+        /// Drops from the snapshot the uploads in progress and the sizes of derived files, which are not in it,
+        /// points the files swapped meanwhile at their new contents, and purges the other files whose objects
+        /// are missing, both logged so that replicas copying the restored root follow; answers how many files
+        /// were purged. What was read from contents the backup then holds no plain file of goes too, as it does
+        /// on the server: their plaintext may be gone for being encrypted.
         /// </summary>
         private static async Task<int> PruneSnapshotAsync(StorageDatabase snapshot, IReadOnlyList<SwappedFile> swapped, IReadOnlyList<string> missingObjects)
         {
             DateTimeOffset now = TimeProvider.System.GetUtcNow();
-            await using IDbTransactionSession session = await snapshot.Sessions.CreateSessionWithTransactionAsync();
+            await using ContentsSession session = ContentsSession.OfACopy(await snapshot.Sessions.CreateSessionWithTransactionAsync());
             foreach (Guid upload in await snapshot.Uploads.GetAllIdsAsync(session))
             {
                 await snapshot.Uploads.DeleteAsync(upload, session);
             }
+
+            await snapshot.DerivedSizes.RemoveAllAsync(session);
 
             foreach (SwappedFile file in swapped)
             {
@@ -346,9 +349,12 @@ namespace ByteShelf.Server.Backup.Services
                     new FilePluginMetadataRepository(database, Sessions, changeLog, fieldValues));
                 Files = new FileRepository(database, Sessions, changeLog, MetadataUpkeep);
                 Uploads = new UploadRepository(database, Sessions);
+                DerivedSizes = new DerivedSizeRepository(database, Sessions);
             }
 
             public IDbSessionFactory Sessions { get; }
+
+            public IDerivedSizeRepository DerivedSizes { get; }
 
             public IFileRepository Files { get; }
 

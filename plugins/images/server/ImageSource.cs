@@ -1,0 +1,123 @@
+using ImageMagick;
+
+namespace ByteShelf.Plugins.Images
+{
+    /// <summary>Contents that are an image the plugin reads, by their own bytes, of a size it decodes. Nothing of it is decoded yet.</summary>
+    internal sealed class ImageSource
+    {
+        /// <summary>What <see cref="ImageFormat.DecodesSmaller"/> counts in.</summary>
+        private const uint Scales = 8;
+
+        private readonly Codecs _codecs;
+        private readonly Stream _contents;
+        private readonly ImageFormat _format;
+        private readonly uint _storedWidth;
+        private readonly uint _storedHeight;
+
+        private ImageSource(Codecs codecs, Stream contents, ImageFormat format, IMagickImage<byte> pinged)
+        {
+            _codecs = codecs;
+            _contents = contents;
+            _format = format;
+            (_storedWidth, _storedHeight) = ShownSize(pinged, format);
+        }
+
+        /// <summary>The image that <paramref name="contents"/> are; null when they are none the plugin reads.</summary>
+        /// <exception cref="MagickException">They are damaged.</exception>
+        public static async Task<ImageSource?> OpenAsync(Codecs codecs, Stream contents)
+        {
+            if (contents.Length > ImageLimits.MaxSourceBytes)
+            {
+                return null;
+            }
+
+            byte[] head = new byte[ImageFormat.HeadBytes];
+            int read = await contents.ReadAtLeastAsync(head, head.Length, throwOnEndOfStream: false);
+            if (ImageFormat.Of(head.AsSpan(0, read)) is not { } format)
+            {
+                return null;
+            }
+
+            using MagickImageCollection images = new MagickImageCollection();
+            codecs.Ping(images, contents, ReadSettings(format));
+            IMagickImage<byte> image = Shown(images);
+            (uint width, uint height) = ShownSize(image, format);
+            return Math.Max((ulong)image.Width * image.Height, (ulong)width * height) <= ImageLimits.MaxPixels && !IsSmallerCopy(image)
+                ? new ImageSource(codecs, contents, format, image)
+                : null;
+        }
+
+        /// <summary>
+        /// The whole image; or, when only <paramref name="longSide"/> pixels of its long side are wanted, smaller where
+        /// decoding it so takes less, but no smaller than that.
+        /// </summary>
+        /// <exception cref="MagickException">It is damaged, or takes too much memory.</exception>
+        public DecodedImage Decode(int? longSide)
+        {
+            MagickReadSettings settings = ReadSettings(_format);
+            if (_format.DecodesSmaller && longSide is { } wanted)
+            {
+                uint scale = Math.Clamp((uint)Math.Ceiling((double)wanted * Scales / Math.Max(_storedWidth, _storedHeight)), 1, Scales);
+
+                // ImageMagick decodes at the scale nearest to this size.
+                settings.SetDefine("jpeg:size", $"{_storedWidth * scale / Scales}x{_storedHeight * scale / Scales}");
+            }
+
+            using MagickImageCollection images = new MagickImageCollection();
+            _codecs.Read(images, _contents, settings);
+            IMagickImage<byte> image = Shown(images);
+            if (ShownSize(image, _format) != (image.Width, image.Height))
+            {
+                // The rest of what is shown is transparent.
+                image.Alpha(AlphaAction.Set);
+                images.Coalesce();
+                image = Shown(images);
+            }
+
+            images.Remove(image);
+            Colors.AddDisplayP3ProfileIfMarked(image);
+            (int width, int height) = UprightSize(image.Orientation);
+            return new DecodedImage(image, width, height);
+        }
+
+        private static MagickReadSettings ReadSettings(ImageFormat format)
+        {
+            MagickReadSettings settings = new MagickReadSettings { Format = format.Magick };
+            if (!format.LargestIsShown)
+            {
+                settings.FrameIndex = 0;
+            }
+
+            return settings;
+        }
+
+        /// <summary>The one of <paramref name="images"/> that is shown.</summary>
+        private static IMagickImage<byte> Shown(MagickImageCollection images)
+        {
+            return images.MaxBy(image => (long)image.Width * image.Height)
+                ?? throw new InvalidDataException("There is no image.");
+        }
+
+        /// <summary>The size <paramref name="image"/> is shown at: that of the animation it is the first frame of, which may be larger.</summary>
+        private static (uint Width, uint Height) ShownSize(IMagickImage<byte> image, ImageFormat format)
+        {
+            return format.FirstFrameMayBePart && image.Page is { Width: > 0, Height: > 0 } canvas
+                ? (canvas.Width, canvas.Height)
+                : (image.Width, image.Height);
+        }
+
+        /// <summary>Whether a TIFF says its first page is a smaller copy of another: as in a camera's DNG or NEF, whose picture is not one.</summary>
+        private static bool IsSmallerCopy(IMagickImage<byte> image)
+        {
+            return image.GetAttribute("tiff:subfiletype") == "REDUCEDIMAGE";
+        }
+
+        /// <summary>The image's size upright, by the <paramref name="orientation"/> it was decoded with: not every format says it before.</summary>
+        private (int Width, int Height) UprightSize(Orientation orientation)
+        {
+            return orientation is Orientation.LeftTop or Orientation.RightTop or Orientation.RightBottom or Orientation.LeftBottom
+                ? ((int)_storedHeight, (int)_storedWidth)
+                : ((int)_storedWidth, (int)_storedHeight);
+        }
+    }
+}

@@ -34,6 +34,7 @@ namespace ByteShelf.Server.Replication.Services
         private readonly ReplicaApplier _applier;
         private readonly ObjectStore _objectStore;
         private readonly ObjectCollector _objectCollector;
+        private readonly ContentsSessions _contentsSessions;
         private readonly StagingArea _stagingArea;
         private readonly MaintenanceGate _maintenanceGate;
         private readonly ReplicaSyncControl _control;
@@ -49,6 +50,7 @@ namespace ByteShelf.Server.Replication.Services
             ReplicaApplier applier,
             ObjectStore objectStore,
             ObjectCollector objectCollector,
+            ContentsSessions contentsSessions,
             StagingArea stagingArea,
             MaintenanceGate maintenanceGate,
             ReplicaSyncControl control,
@@ -63,6 +65,7 @@ namespace ByteShelf.Server.Replication.Services
             _applier = applier;
             _objectStore = objectStore;
             _objectCollector = objectCollector;
+            _contentsSessions = contentsSessions;
             _stagingArea = stagingArea;
             _maintenanceGate = maintenanceGate;
             _control = control;
@@ -143,8 +146,9 @@ namespace ByteShelf.Server.Replication.Services
             HashSet<(Guid FileId, string Sha256)> unavailable = new HashSet<(Guid FileId, string Sha256)>();
             await FetchObjectsAsync(source, entries, unavailable, cancellationToken);
 
+            IReadOnlyCollection<string> released;
             AppliedChanges changes = new AppliedChanges();
-            await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+            await using (ContentsSession session = await _contentsSessions.CreateAsync())
             {
                 await _applier.ApplyAsync(WithoutUnavailable(entries, unavailable), session, changes);
                 await _applier.SettleAsync(session, changes);
@@ -154,9 +158,10 @@ namespace ByteShelf.Server.Replication.Services
                 }
 
                 await session.CommitAsync();
+                released = session.Released;
             }
 
-            await FinishAsync(changes);
+            await FinishAsync(changes, released);
         }
 
         /// <summary>
@@ -164,14 +169,14 @@ namespace ByteShelf.Server.Replication.Services
         /// part that matters for safety, then removes at once the old contents of files swapped in place
         /// (encrypted or decrypted), as the primary did, unless a row here still points at them.
         /// </summary>
-        private async Task FinishAsync(AppliedChanges changes)
+        private async Task FinishAsync(AppliedChanges changes, IReadOnlyCollection<string> released)
         {
             foreach (Guid userId in changes.RemovedUsers)
             {
                 await _userService.EndSessionsAsync(userId);
             }
 
-            await _objectCollector.RemoveReleasedAsync(changes.ReleasedObjects);
+            await _objectCollector.RemoveReleasedAsync(released);
         }
 
         /// <summary>
@@ -211,8 +216,10 @@ namespace ByteShelf.Server.Replication.Services
                 after = page.Entries[^1].Sequence;
             }
 
+            bool committed;
+            IReadOnlyCollection<string> released = [];
             AppliedChanges changes = new AppliedChanges();
-            await using (IDbTransactionSession session = await _sessionFactory.CreateSessionWithTransactionAsync())
+            await using (ContentsSession session = await _contentsSessions.CreateAsync())
             {
                 await _applier.RemoveMissingFromCopyAsync(session, changes);
 
@@ -234,12 +241,18 @@ namespace ByteShelf.Server.Replication.Services
                 // No fingerprint: the entry at startedAt may not be in the copy, which holds only the newest
                 // state of each entity. The next page applied gives one.
                 await _copyRepository.ClearAsync(session);
-                if (await _sourceRepository.SetProgressAsync(source, startedAt.Value, appliedFingerprint: null, _timeProvider.GetUtcNow(), session))
+                committed = await _sourceRepository.SetProgressAsync(source, startedAt.Value, appliedFingerprint: null, _timeProvider.GetUtcNow(), session);
+                if (committed)
                 {
                     await session.CommitAsync();
-                    await FinishAsync(changes);
-                    return;
+                    released = session.Released;
                 }
+            }
+
+            if (committed)
+            {
+                await FinishAsync(changes, released);
+                return;
             }
 
             // Promoted (or paired anew) while the copy was read, by the server's command in another process:

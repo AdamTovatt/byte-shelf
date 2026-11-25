@@ -1,5 +1,4 @@
 using ByteShelf.Server.Access.Auth;
-using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Plugins.Services;
 using ByteShelfCommon;
@@ -13,17 +12,17 @@ namespace ByteShelf.Server.Plugins.Controllers
     public class PluginsController : ControllerBase
     {
         private readonly IPluginCatalog _catalog;
-        private readonly ReaderProblems _readerProblems;
+        private readonly PluginProblems _problems;
 
-        public PluginsController(IPluginCatalog catalog, ReaderProblems readerProblems)
+        public PluginsController(IPluginCatalog catalog, PluginProblems problems)
         {
             _catalog = catalog;
-            _readerProblems = readerProblems;
+            _problems = problems;
         }
 
         /// <summary>
         /// The plugins this server loaded, for any signed-in user or shelf key, and for an admin those it
-        /// skipped and why, and why one no longer reads contents. Not public, as the release is not: the version
+        /// skipped and why, and why one's reader or maker could not run. Not public, as the release is not: the version
         /// of a plugin released with the server is the server's.
         /// </summary>
         [HttpGet]
@@ -49,7 +48,8 @@ namespace ByteShelf.Server.Plugins.Controllers
                 Version = plugin.Manifest.Version,
                 ModuleUrl = plugin.Ui?.ModuleAddress,
                 StylesheetUrl = plugin.Ui?.StylesheetAddress,
-                ReaderProblem = isAdmin ? _readerProblems.Of(plugin.Manifest.Id) : null,
+                ReaderProblem = isAdmin ? _problems.Of(plugin.Manifest.Id, PluginPart.Reader) : null,
+                MakerProblem = isAdmin ? _problems.Of(plugin.Manifest.Id, PluginPart.Maker) : null,
             };
         }
     }

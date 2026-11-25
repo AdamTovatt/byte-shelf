@@ -1,7 +1,7 @@
 import { act, Suspense } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ContentReader, ShelfFile, Viewer } from '@byteshelf/plugin';
+import type { ContentReader, DerivedReader, ShelfFile, Viewer } from '@byteshelf/plugin';
 import plugin from './plugin';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -24,7 +24,8 @@ describe('the plugin', { timeout: 2 * LOAD_TIMEOUT }, () => {
   };
 
   async function shows(text: string): Promise<void> {
-    await act(async () => root.render(<Suspense><MarkdownViewer file={{ contentType: 'text/markdown' } as ShelfFile} content={content} /></Suspense>));
+    const derived: DerivedReader = { has: () => false, url: async () => null, forget: () => {} };
+    await act(async () => root.render(<Suspense><MarkdownViewer file={{ contentType: 'text/markdown' } as ShelfFile} content={content} derived={derived} neighbours={[]} Fallback={() => null} /></Suspense>));
     // Its component is loaded as it is first shown, which takes a while on a busy machine.
     await vi.waitFor(async () => {
       await act(async () => undefined);

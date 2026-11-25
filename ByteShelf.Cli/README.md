@@ -142,7 +142,7 @@ in the call, or a whole local folder, describing a file, sharing one by a link (
 read-only, so a host asks first: the link hands the file on), making a link someone can send one
 file to with `curl`, downloading a file to a local file, as
 text (UTF-8, up to 256 KiB) or as an image the agent sees (PNG, JPEG, GIF or WebP, up to 1 MiB;
-a larger image is saved with localPath, since only the server's `/mcp` makes previews), or
+a larger image is saved with localPath, since only the server's `/mcp` shows previews), or
 a whole directory to a local folder, moving, deleting, restoring and emptying the trash, and reading
 what a deletion took without restoring it (`download_deleted`). A tool's
 `shelf` can be left out when the login reaches only one shelf, as a key given one shelf does. Local paths

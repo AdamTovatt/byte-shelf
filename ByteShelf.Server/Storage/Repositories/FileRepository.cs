@@ -112,7 +112,7 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
-        public async Task InsertAsync(FileRecord file, Guid? replacedId, IDbSession session)
+        public async Task InsertAsync(FileRecord file, Guid? replacedId, IContentsSession session)
         {
             await session.Connection.ExecuteAsync(InsertSql, Parameters(file), transaction: session.Transaction);
             await _changeLog.AppendAsync(ChangeEntityType.File, file.Id, ChangeAction.Added, file, file.CreatedAt, session);
@@ -120,6 +120,8 @@ namespace ByteShelf.Server.Storage.Repositories
             {
                 await _metadataUpkeep.StoredOverAsync(replaced, file.Id, file.CreatedAt, session);
             }
+
+            NoteContents(before: null, file, session);
         }
 
         /// <inheritdoc />
@@ -212,7 +214,7 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<FileRecord?> SwapContentAsync(Guid id, string expectedSha256, string sha256, long sizeBytes, bool encrypted, DateTimeOffset at, IDbSession session)
+        public async Task<FileRecord?> SwapContentAsync(Guid id, string expectedSha256, string sha256, long sizeBytes, bool encrypted, DateTimeOffset at, IContentsSession session)
         {
             FileRecord? file = await GetByIdAsync(id, session);
             if (file == null || file.DeletedAt != null || file.Sha256 != expectedSha256)
@@ -233,6 +235,7 @@ namespace ByteShelf.Server.Storage.Repositories
 
                 FileRecord record = swapped.ToDomain();
                 await _changeLog.AppendAsync(ChangeEntityType.File, id, ChangeAction.Swapped, record, at, session);
+                NoteContents(file, record, session);
                 return record;
             });
         }
@@ -255,6 +258,28 @@ namespace ByteShelf.Server.Storage.Repositories
                 after,
                 maxRows,
                 session);
+        }
+
+        /// <summary>Notes what a row's change from <paramref name="before"/>, null when it is new here, means for the contents it held and holds.</summary>
+        private static void NoteContents(FileRecord? before, FileRecord after, IContentsSession session)
+        {
+            // Told by what it holds, not by what was done: a replica's whole copy holds only a file's newest entry, so
+            // a swap followed by a move arrives as a move. By the very same bytes too: an age file may be stored as plain.
+            bool changed = before == null || before.Sha256 != after.Sha256 || before.Encrypted != after.Encrypted;
+            if (before != null && changed)
+            {
+                session.Release(before.Sha256);
+            }
+
+            if (changed && IsLiveAndPlain(after))
+            {
+                session.Store(after.Sha256);
+            }
+        }
+
+        private static bool IsLiveAndPlain(FileRecord file)
+        {
+            return !file.Encrypted && file.DeletedAt == null;
         }
 
         /// <summary>
@@ -411,45 +436,49 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
-        public async Task<IReadOnlyList<FileRecord>> GetTrashedBeforeAsync(DateTimeOffset deletedBefore, Guid? shelfId, int limit, IDbSession? session = null)
+        public async Task<IReadOnlyList<FileRecord>> GetTrashedBeforeAsync(DateTimeOffset deletedBefore, Guid? shelfId, IReadOnlyCollection<string> skippedContents, int limit, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>
             {
+                string skippedJson = JsonSerializer.Serialize(skippedContents);
                 string query = $@"
                     SELECT {SelectColumns}
                     FROM file
                     WHERE deleted_at IS NOT NULL AND deleted_at < @{nameof(deletedBefore)}
                       AND (@{nameof(shelfId)} IS NULL OR shelf_id = @{nameof(shelfId)})
+                      AND sha256 NOT IN (SELECT value FROM json_each(@{nameof(skippedJson)}))
                     ORDER BY deleted_at
                     LIMIT @{nameof(limit)}";
 
                 IEnumerable<FileEntity> entities = await dbSession.Connection.QueryAsync<FileEntity>(
-                    query, new { deletedBefore, shelfId, limit }, transaction: dbSession.Transaction);
+                    query, new { deletedBefore, shelfId, skippedJson, limit }, transaction: dbSession.Transaction);
 
                 return (IReadOnlyList<FileRecord>)entities.Select(entity => entity.ToDomain()).ToList();
             }, session);
         }
 
         /// <inheritdoc />
-        public async Task<bool> PurgeAsync(Guid id, DateTimeOffset purgedAt, IDbSession session)
+        public async Task<bool> PurgeAsync(Guid id, DateTimeOffset purgedAt, IContentsSession session)
         {
-            string query = $"DELETE FROM file WHERE id = @{nameof(id)} AND deleted_at IS NOT NULL";
+            string query = $"DELETE FROM file WHERE id = @{nameof(id)} AND deleted_at IS NOT NULL RETURNING sha256";
 
-            int rowsAffected = await session.Connection.ExecuteAsync(
+            string? sha256 = await session.Connection.QuerySingleOrDefaultAsync<string?>(
                 query, new { id }, transaction: session.Transaction);
 
-            if (rowsAffected == 0)
+            if (sha256 == null)
             {
                 return false;
             }
 
+            session.Release(sha256);
             await _changeLog.AppendAsync<FileRecord>(ChangeEntityType.File, id, ChangeAction.Purged, null, purgedAt, session);
             return true;
         }
 
         /// <inheritdoc />
-        public async Task UpsertReplicatedAsync(FileRecord file, string action, Guid displacedDeletionId, DateTimeOffset at, IDbSession session)
+        public async Task UpsertReplicatedAsync(FileRecord file, string action, Guid displacedDeletionId, DateTimeOffset at, IContentsSession session)
         {
+            FileRecord? here = await GetByIdAsync(file.Id, session);
             if (file.DeletedAt == null)
             {
                 FileRecord? holder = await GetLiveByNameAsync(file.DirectoryId, file.Name, session);
@@ -461,11 +490,19 @@ namespace ByteShelf.Server.Storage.Repositories
 
             await session.Connection.ExecuteAsync(UpsertReplicatedSql, Parameters(file), transaction: session.Transaction);
             await _changeLog.AppendAsync(ChangeEntityType.File, file.Id, action, file, at, session);
+            NoteContents(here, file, session);
         }
 
         /// <inheritdoc />
-        public async Task PurgeForShelfAsync(Guid shelfId, DateTimeOffset purgedAt, IDbSession session)
+        public async Task PurgeForShelfAsync(Guid shelfId, DateTimeOffset purgedAt, IContentsSession session)
         {
+            IEnumerable<string> held = await session.Connection.QueryAsync<string>(
+                $"SELECT DISTINCT sha256 FROM file WHERE shelf_id = @{nameof(shelfId)}", new { shelfId }, transaction: session.Transaction);
+            foreach (string sha256 in held)
+            {
+                session.Release(sha256);
+            }
+
             string query = $"DELETE FROM file WHERE shelf_id = @{nameof(shelfId)} RETURNING id";
             await _changeLog.DeleteAndLogAsync(ChangeEntityType.File, query, new { shelfId }, purgedAt, session);
         }
@@ -507,6 +544,17 @@ namespace ByteShelf.Server.Storage.Repositories
                     query, new { sha256 }, transaction: dbSession.Transaction);
 
                 return (IReadOnlyList<FileRecord>)entities.Select(entity => entity.ToDomain()).ToList();
+            }, session);
+        }
+
+        /// <inheritdoc />
+        public async Task<IReadOnlyDictionary<Guid, int>> CountByShelfWithObjectAsync(string sha256, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string query = $"SELECT shelf_id AS {nameof(ShelfCount.ShelfId)}, COUNT(*) AS {nameof(ShelfCount.Rows)} FROM file WHERE sha256 = @{nameof(sha256)} GROUP BY shelf_id";
+                IEnumerable<ShelfCount> counts = await dbSession.Connection.QueryAsync<ShelfCount>(query, new { sha256 }, transaction: dbSession.Transaction);
+                return (IReadOnlyDictionary<Guid, int>)counts.ToDictionary(count => count.ShelfId, count => (int)count.Rows);
             }, session);
         }
 
@@ -555,6 +603,12 @@ namespace ByteShelf.Server.Storage.Repositories
         internal sealed class FileSearchEntity : FileEntity
         {
             public string FullPath { get; set; } = string.Empty;
+        }
+
+        private sealed class ShelfCount
+        {
+            public Guid ShelfId { get; set; }
+            public long Rows { get; set; }
         }
 
         internal class FileEntity

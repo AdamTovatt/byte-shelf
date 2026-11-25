@@ -6,8 +6,8 @@ import { AUDIO } from './audio';
 import { VIDEO } from './video';
 import { blobReader, type ContentReader } from '../../../lib/content/contentReader';
 import type { Viewer } from '../../../lib/preview/viewerRegistry';
-import type { ShelfFile } from '../../../services/shelfService';
 import { press, untilFound } from '../../../test/dom';
+import { viewerProps } from '../../../test/viewerProps';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -34,7 +34,7 @@ describe.each<[string, Viewer, string, string]>([
   });
 
   async function play(content: ContentReader): Promise<HTMLMediaElement> {
-    await act(async () => root.render(<Player file={{ name: 'a' } as ShelfFile} content={content} />));
+    await act(async () => root.render(<Player {...viewerProps({ name: 'a' }, content)} />));
     return found();
   }
 

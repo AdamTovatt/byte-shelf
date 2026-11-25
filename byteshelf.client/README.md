@@ -35,11 +35,12 @@ npm ci
 npm run dev        # Vite on port 44903, forwarding /api, /plugins, /mcp, /llms.txt and /swagger to the server (ASPNETCORE_URLS, else :5190)
 npm run lint
 npm test           # Vitest
-npm run test:e2e   # Playwright: builds the UI and the Markdown plugin, adds e2e/albumPlugin, starts the server on a root of its own, runs e2e/
+npm run test:e2e   # Playwright: builds the UI and the plugins its config names, adds e2e/albumPlugin, starts the server on a root of its own, runs e2e/
 npm run build      # into dist/, which a published server serves
 ```
 
-Before the first `npm run test:e2e`, install its browser with `npx playwright install chromium`.
+Before the first `npm run test:e2e`, install its browser with `npx playwright install chromium`. The images
+plugin's server part, which it builds, needs the .NET SDK.
 
 `src/lib/encryption/interop.test.ts` checks typage (`age-encryption`) decrypts `dotnet.age`, an age
 file ByteShelfClient wrote, and matches `dotnet-check.txt`, a folder check it made; ByteShelfClient's
@@ -84,6 +85,8 @@ npm run codegen    # in a second terminal
   offers no clipboard (plain HTTP), the toast shows it to copy by hand. A shelf's settings show
   everyone a Links tab listing the share and upload links that have not run out (their own, or every one
   for someone who may change the shelf's files) and revoking them; only admins see the other tabs.
+  A file's row shows its thumbnail where its listing says a plugin made one (`components/FileThumbnail.tsx`,
+  loaded as the row comes into view), else its type's icon.
   A folder's rows select as in Finder (`hooks/useSelection.ts`): a click selects one, Cmd or Ctrl
   adds or takes one away, Shift selects a range, Space toggles the focused row, Cmd or Ctrl+A selects
   them all, and Escape or a click in empty space clears it; a double-click or Enter opens a row, a file in
@@ -101,7 +104,9 @@ npm run codegen    # in a second terminal
   the pages that follow until one holds a file a viewer takes); a file outside them, as after a reload of a
   search, is previewed alone. A preview whose file is gone closes with a toast. In the trash
   (`hooks/useTrashPreview.ts`) it is of the one file a file deletion took, by the deletion's id, without
-  neighbours; Open shows it there whatever its type, saying so of one no viewer takes.
+  neighbours; Open shows it there whatever its type, saying so of one no viewer takes. A viewer also gets what
+  plugins made from the file and from the two beside it (`lib/derived/derivedReader.ts`), which an `<img>`
+  loads by its address, or from a blob where the page cannot keep the session's cookie.
   - *Viewers* (`components/preview/viewers/`) are `{ id, mediaTypes, extensions, component, unavailable? }`,
     held by a registry that never changes (`lib/preview/viewerRegistry.ts`) and is read through
     `hooks/useViewers.ts` alone: the built-in ones, listed in `BUILT_IN_VIEWERS` (`viewers/index.ts`), and
@@ -109,9 +114,11 @@ npm run codegen    # in a second terminal
     (`usePluginsAwaited`), and until they are loaded a file that no viewer shows in this browser opens in the
     preview, not in a tab: one of theirs may. An exact type beats a family (`image/*`), a plugin's viewer a
     built-in one, and the first plugin by id the next; extensions count only for a file stored as
-    `application/octet-stream`. The built-in ones render nothing as HTML: HTML shows as its source, and SVG
+    `application/octet-stream`. A viewer may leave a file to the next in that order through its `Fallback`
+    (`components/preview/ViewerChain.tsx`). The built-in ones render nothing as HTML: HTML shows as its source, and SVG
     through an `<img>`, where its scripts do not run. Text shows its first 1 MiB, decoded as a tab would; an
-    image zooms with the wheel, a pinch or a double-click and moves with a drag.
+    image zooms with the wheel, a pinch or a double-click and moves with a drag (`hooks/useZoom.ts`, which
+    plugins have too).
   - *Contents* reach a viewer through a `ContentReader` (`lib/content/contentReader.ts`): `url()`, `blob()`
     and `range()`, whatever they come from. A blob-backed file (`isBlobBacked`) is read whole into the page
     first (`lib/preview/fileContents.ts`), over 100 MiB only once Load, Download or Open in new tab is
@@ -202,7 +209,7 @@ npm run codegen    # in a second terminal
   (such as file actions) goes on from a listing to a viewer and back (`hooks/useShelfWork.ts`).
 - **Live updates:** `hooks/useInvalidationStream.ts` holds the server's event stream open and
   refetches what each event makes stale (`lib/invalidationMap.ts`), so a change made elsewhere shows up
-  within about a second. A test checks the map covers every resource the server publishes. The
+  within about a second, and a thumbnail within about 5. A test checks the map covers every resource the server publishes. The
   exceptions are the Replication page's status, polled every 5 seconds, as a replica's lag changes
   without anything being published, a promotion and a change of someone's role, which a shelf's `onReplica`
   and `permission` show once it is next read, and the plugins, which change only with a restart of the server,

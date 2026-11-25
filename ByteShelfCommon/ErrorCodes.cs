@@ -36,6 +36,9 @@ namespace ByteShelfCommon
         /// <summary>A replica's primary could not be reached, or what it answered could not be used.</summary>
         public const string PrimaryFailed = "primary_failed";
 
+        /// <summary>What was asked for is still being made. Answered with status 503 and <c>Retry-After</c>.</summary>
+        public const string NotReady = "not_ready";
+
         /// <summary>
         /// A ranged read starts at or past the end of the file. Answered with status 416, without a body.
         /// </summary>

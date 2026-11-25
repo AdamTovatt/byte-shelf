@@ -2,6 +2,7 @@ using System.Net;
 using ByteShelf.Server.Access;
 using ByteShelf.Server.Backup.Services;
 using ByteShelf.Server.ChangeLog;
+using ByteShelf.Server.Derived;
 using ByteShelf.Server.Email;
 using ByteShelf.Server.Invalidation;
 using ByteShelf.Server.Jobs;
@@ -9,6 +10,7 @@ using ByteShelf.Server.Mcp;
 using ByteShelf.Server.Metadata;
 using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Plugins;
+using ByteShelf.Server.Plugins.Processes;
 using ByteShelf.Server.Plugins.Services;
 using ByteShelf.Server.Replication;
 using ByteShelf.Server.Replication.Services;
@@ -59,6 +61,13 @@ namespace ByteShelf.Server
             {
                 RunMigrateOnlyMode();
                 return;
+            }
+
+            if (args.Contains(PluginProcessCommand.Flag))
+            {
+                // Exits rather than returns, so a thread a plugin left running does not keep the process.
+                string? location = args.ElementAtOrDefault(Array.IndexOf(args, PluginProcessCommand.Flag) + 1);
+                Environment.Exit(PluginProcessCommand.RunAsync(location, PluginWorkLoader.Load).GetAwaiter().GetResult());
             }
 
             int backup = Array.IndexOf(args, "--backup");
@@ -178,7 +187,9 @@ namespace ByteShelf.Server
             services.AddJobServices();
             services.AddChangeLogServices();
             services.AddStorageServices(settings.Storage);
+            services.AddPluginProcesses();
             services.AddMetadataServices();
+            services.AddDerivedServices();
             services.AddAccessServices();
         }
 

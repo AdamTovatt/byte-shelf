@@ -1,14 +1,20 @@
 using System.Collections.Concurrent;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
-using ByteShelf.Plugins;
-using ByteShelf.Server.Metadata.Models;
 using ByteShelf.Server.Metadata.Services;
+using ByteShelf.Server.Plugins.Processes;
+using ByteShelf.Server.Storage.Models;
+using ByteShelf.Server.Storage.Services;
 
 namespace ByteShelf.Server.Tests.TestUtilities
 {
-    /// <summary>A plugin's reader that does what a test says, and counts how often it was asked.</summary>
-    public sealed class TestDocumentReader : IContentDocumentReader
+    /// <summary>
+    /// A plugin's reader that does what a test says, and counts how often it was asked, in the test's own process. What
+    /// comes of it is what comes of one in a process of its own; that nothing ends it, as a swap of what it reads
+    /// does there, is not.
+    /// </summary>
+    public sealed class TestDocumentReader
     {
         private readonly Func<Stream, CancellationToken, Task<JsonObject?>> _read;
         private readonly int _version;
@@ -24,8 +30,11 @@ namespace ByteShelf.Server.Tests.TestUtilities
 
         public int Reads => _streams.Count;
 
-        /// <summary>What making it waits for, and fails as; at once when not set.</summary>
-        public Task Making { get; init; } = Task.CompletedTask;
+        /// <summary>How often it was told to read, whether it could run or not.</summary>
+        public int Asked { get; private set; }
+
+        /// <summary>Why it cannot run, when it cannot.</summary>
+        public string? Unavailable { get; set; }
 
         /// <summary>A reader of text files that answers the text itself, as <c>{"text": …}</c>.</summary>
         public static TestDocumentReader OfText(int version = 1)
@@ -40,32 +49,42 @@ namespace ByteShelf.Server.Tests.TestUtilities
             return await reader.ReadToEndAsync(cancellationToken);
         }
 
-        /// <summary>This as the reader of the plugin <paramref name="pluginId"/>.</summary>
-        public PluginReader AsReaderOf(string pluginId)
+        /// <summary>This as the reader of the plugin <paramref name="pluginId"/>, run in the test's own process.</summary>
+        public PluginReader AsReaderOf(string pluginId, ObjectStore objectStore)
         {
-            return new PluginReader(pluginId, MadeAsync, _version, MediaTypeSet.Of(_mediaTypes));
+            return new PluginReader(pluginId, _version, MediaTypeSet.Of(_mediaTypes), (sha256, cancellationToken) => RunAsync(new PluginTarget(pluginId, string.Empty), objectStore, sha256, cancellationToken));
         }
 
-        /// <summary>Waits until every read has ended and its file is closed; throws when one is not.</summary>
-        public async Task AllReadsEndedAsync()
+        private async Task<PluginReading> RunAsync(PluginTarget plugin, ObjectStore objectStore, string sha256, CancellationToken cancellationToken)
         {
-            using CancellationTokenSource limit = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            while (_streams.Any(stream => stream.CanRead))
+            Asked++;
+            if (Unavailable != null)
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(5), limit.Token);
+                throw new PluginUnavailableException(Unavailable);
             }
+
+            PluginRunResult result;
+            try
+            {
+                await using FileStream contents = objectStore.OpenRead(sha256);
+                result = new PluginRunResult.Answered(JsonSerializer.SerializeToElement(await ReadAsync(contents, cancellationToken)));
+            }
+            catch (FileNotFoundException)
+            {
+                result = new PluginRunResult.ContentsNotRead();
+            }
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                result = new PluginRunResult.Failed(exception.GetType().FullName!);
+            }
+
+            return await new ReadRun(plugin, sha256, _version).TakeAsync(result, null!, cancellationToken);
         }
 
-        public Task<JsonObject?> ReadAsync(Stream contents, CancellationToken cancellationToken)
+        private Task<JsonObject?> ReadAsync(Stream contents, CancellationToken cancellationToken)
         {
             _streams.Enqueue(contents);
             return _read(contents, cancellationToken);
-        }
-
-        private async Task<IContentDocumentReader> MadeAsync()
-        {
-            await Making;
-            return this;
         }
     }
 }

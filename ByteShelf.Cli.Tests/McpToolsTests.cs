@@ -81,7 +81,6 @@ namespace ByteShelf.Cli.Tests
             { "move", null, $"up to {EntryBatch.MaxItems} in one call" },
             { "download_file", null, $"at most {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)}" },
             { "download_file", null, $"WebP of at most {TextFormat.Size(ByteShelfMcpTools.MaxInlineImageBytes)}" },
-            { "download_file", null, $"of at most {TextFormat.Size(ImagePreview.MaxSourceBytes)} is answered as a JPEG preview at most {ImagePreview.LongSide} pixels" },
             { "share_file", "expiresIn", $"{DownloadLink.Lifetime.Default.TotalHours}h by default, at most {DownloadLink.Lifetime.Max.TotalDays}d" },
             { "create_upload_link", "expiresIn", $"{UploadLink.Lifetime.Default.TotalMinutes}m by default, at most {UploadLink.Lifetime.Max.TotalHours}h" },
             { "create_upload_link", "description", $"up to {FileDescription.MaxLength} characters" },
@@ -105,11 +104,11 @@ namespace ByteShelf.Cli.Tests
         [Fact]
         public void Instructions_StateTheLimitsTheConstantsSet()
         {
-            string instructions = Regex.Replace(ToolInstructions.Text, @"\s+", " ");
+            string instructions = Regex.Replace(ToolInstructions.For(ToolHost.Local), @"\s+", " ");
 
             Assert.Contains($"up to {TextFormat.Size(ByteShelfMcpTools.MaxInlineBytes)}", instructions, StringComparison.Ordinal);
             Assert.Contains($"image of up to {TextFormat.Size(ByteShelfMcpTools.MaxInlineImageBytes)}", instructions, StringComparison.Ordinal);
-            Assert.Contains($"of up to {TextFormat.Size(ImagePreview.MaxSourceBytes)} comes as a JPEG preview at most {ImagePreview.LongSide} pixels", instructions, StringComparison.Ordinal);
+            Assert.Contains("Save any other file with localPath, and look at a larger image there.", instructions, StringComparison.Ordinal);
             Assert.Contains($"for {DownloadLink.Lifetime.Default.TotalHours} hours", instructions, StringComparison.Ordinal);
             Assert.Contains($"(at most {DownloadLink.Lifetime.Max.TotalDays} days)", instructions, StringComparison.Ordinal);
             Assert.Contains($"for {UploadLink.Lifetime.Default.TotalMinutes} minutes", instructions, StringComparison.Ordinal);

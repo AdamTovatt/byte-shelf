@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using ByteShelf.Server.Shared.Errors;
@@ -60,6 +61,11 @@ namespace ByteShelf.Server.Shared.Middleware
             else
             {
                 _logger.LogInformation("Request {Path} answered {StatusCode}: {Message}", context.Request.Path, (int)statusCode, message);
+            }
+
+            if (exception is RetryLaterException later)
+            {
+                context.Response.Headers.RetryAfter = ((int)later.RetryAfter.TotalSeconds).ToString(CultureInfo.InvariantCulture);
             }
 
             context.Response.StatusCode = (int)statusCode;

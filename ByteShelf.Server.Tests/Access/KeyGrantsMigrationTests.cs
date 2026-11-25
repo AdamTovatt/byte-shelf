@@ -11,6 +11,7 @@ using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Shared.Json;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Models;
+using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
 using ByteShelfCommon;
 using EasyReasy.Database;
@@ -166,7 +167,7 @@ namespace ByteShelf.Server.Tests.Access
         /// <summary>Applies the migrated database's whole log to this test's fresh one, as a replica following it from the start.</summary>
         private async Task ReplayMigratedLogAsync()
         {
-            await using IDbTransactionSession session = await Services.GetRequiredService<IDbSessionFactory>().CreateSessionWithTransactionAsync();
+            await using ContentsSession session = await Services.CreateContentsSessionAsync();
             await Services.GetRequiredService<ReplicaApplier>().ApplyAsync(await TestMigrations.ReadLogAsync(_old.Database), session, new AppliedChanges());
             await session.CommitAsync();
         }

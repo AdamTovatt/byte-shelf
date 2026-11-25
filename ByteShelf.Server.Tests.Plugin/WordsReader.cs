@@ -16,10 +16,10 @@ namespace ByteShelf.Server.Tests.Plugin
             }
         }
 
-        public async Task<JsonObject?> ReadAsync(Stream contents, CancellationToken cancellationToken)
+        public async Task<JsonObject?> ReadAsync(Stream contents)
         {
             using StreamReader reader = new StreamReader(contents, leaveOpen: true);
-            return new JsonObject { ["words"] = await reader.ReadToEndAsync(cancellationToken) };
+            return new JsonObject { ["words"] = await reader.ReadToEndAsync() };
         }
     }
 }

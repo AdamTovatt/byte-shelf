@@ -59,13 +59,16 @@ those, which are the defaults whatever the environment sets (the root, the secre
 address, settings), on the email sender, which is the one that only logs, on what the machine
 configures (`appsettings.json`, `ASPNETCORE_*`), or on another plugin's registrations. It sees that
 one folder, so not another plugin with the same id. Its arguments, exit codes and what it may need
-are a contract with updaemon, which runs it before switching versions, as the server's user, with
-only `PATH` and `HOME`, from any folder. Only the server itself loads plugins; `--schema-only`,
-`--migrate-only` and the root commands do not.
+are a contract with updaemon 1.1 or later, which runs it before switching versions, as the server's user, with
+only `PATH` and `HOME`, from any folder. Of the server, only itself and the processes it starts for plugins
+([Processes](Processes/Processes.md)) load them; `--schema-only`, `--migrate-only` and the root commands do not.
+A plugin's entry point is made and its registration run in each of those processes too, with the defaults
+`--check-plugin` has and without the server's environment: one more reason for neither to have effects.
 
 ## The server assembly
 
-It is written against `ByteShelf.Plugins` and holds one public class implementing
+It is written against `ByteShelf.Plugins`, which like `ByteShelfCommon` is MIT-licensed
+([LICENSE](../../ByteShelf.Plugins/LICENSE)). It holds one public class implementing
 `IByteShelfPlugin`, which registers what it adds through an `IPluginBuilder`: its services, in a
 copy of the server's collection, taken over only once the plugin can be loaded, so one that fails
 leaves nothing registered and no controller behind. The exception is what a registration does to an
@@ -73,8 +76,8 @@ object already registered: `AddHttpClient<T>` keeps the names of typed clients i
 client needs a class name no other plugin's has, and a failed plugin's stays taken until the server
 restarts. A copy rather than an empty collection, because the framework's own registrations
 (`AddHttpClient`, `AddLogging`) add to what is already there, and a second set beside the server's
-breaks or resets it. There is no access to shelves or files in the contract, but the reader's, below, to
-contents.
+breaks or resets it. There is no access to shelves or files in the contract, but for the reader's and
+the maker's, below, to contents.
 
 What the server shares with a plugin must be no older than the plugin was built against, or it is
 refused before any of it runs, as one for another api is. That goes for its server assembly and for
@@ -83,24 +86,31 @@ those in its folder that the assembly's references lead to, not for one it loads
 A plugin that reads files' contents adds one reader, `builder.AddReader<TReader>(version, mediaTypes)`: an
 `IContentDocumentReader`, which the server runs in the background, once per version, over every object that a
 live plain file of those types holds, and whose answers it keeps as the plugin's documents about contents
-([Metadata](../Metadata/Metadata.md)). A second reader, or a type that is none, refuses the plugin. The reader
-is made with no services (`new()`), the first time there is something for it to read, so never on a replica
-and not by `--check-plugin`. It may be made and run in another process than the rest of the plugin, with which
-it shares no state; `IPluginReaders` is the one place that says which readers there are, and how each is made
-and run. One that cannot be made, or takes over 60 seconds to be, or does not stop when told to, is not run
-until the server restarts: it is logged, admins see why on the Settings page (`ReaderProblems`), and the rest
-of the plugin works. What it would have read stays to be read, but for contents it did not stop on, which are
-recorded as saying nothing. A read has 60 seconds, and 5 more to stop once cancelled; one that takes longer,
-throws, or answers more than a document holds (64 KiB, nested 32 deep) is recorded as saying nothing too, and
-is not tried again by that version. **A reader keeps what it reads nowhere else**, where it would outlive the
-plaintext.
+([Metadata](../Metadata/Metadata.md)). A second reader, or a type that is none, refuses the plugin. The
+reader is made with no services (`new()`), in a process of the plugin's own, which loads the plugin anew and
+shares no state with the rest of it ([Processes](Processes/Processes.md)); not by `--check-plugin`.
+`IPluginReaders` is the one place that says which readers there are, and how each is run. One that cannot be
+made reads nothing until it can: it is logged, and admins see why on the Settings page (`PluginProblems`), as they
+see why a maker could not run ([Derived files](../Derived/Derived.md)). What it
+would have read stays to be read. Its plugin's controllers and web UI go on, and so does its maker when the
+reader's constructor throws; one that crashes or takes over 60 seconds keeps the whole process from loading,
+and so the maker from running, as a maker's does the reader. A read that takes over 60 seconds, throws,
+or answers more than a document holds (64 KiB, nested 32 deep) is recorded as saying nothing, and is not tried
+again by that version. **A reader keeps what it reads nowhere else**, where it would outlive the plaintext.
+
+A plugin that makes derived files, such as thumbnails, adds one maker, `builder.AddMaker<TMaker>(...)`, with each
+kind it makes, at a version, from media types: an `IDerivedFileMaker`, made and run as a reader is, whose files
+the server keeps and serves ([Derived files](../Derived/Derived.md)). Its `agent` files are shown to agents only
+when they are a PNG, JPEG, GIF or WebP of at most 1 MiB ([Mcp](../Mcp/Mcp.md)). Why one could not run is in the server's
+log alone, and what it would have made is not there when asked for. A second maker, a kind twice, or a type
+that is none refuses the plugin. It too keeps what it reads and makes nowhere else.
 
 Each plugin has an `AssemblyLoadContext` of its own (`PluginLoadContext`): its packages and native
 libraries come from its folder, so it may use another version of a package than the server does.
 `ByteShelf.Plugins`, `ByteShelfCommon` and the framework always come from the server
 (`HostAssemblies`), whatever the plugin brings, so the two agree on their types and rules. A plugin
 references the first two without copying them (`Private="false" ExcludeAssets="runtime"`) and sets
-`EnableDynamicLoading`, as `ByteShelf.Server.Tests.Plugin` does.
+`EnableDynamicLoading`, as `plugins/images/server` does.
 
 Its controllers answer under `/api/plugins/{id}/` whatever routes they declare
 (`PluginRouteProvider`), so none can take an address of the server's, and are left out of the
@@ -112,8 +122,8 @@ replica.
 ## The web UI part
 
 `GET /api/plugins` lists the loaded plugins with the addresses of their module and stylesheet, for
-any signed-in user or shelf key, and for an admin those skipped and why a plugin's reader no longer
-runs (`readerProblem`). The `ui` folder, and nothing else
+any signed-in user or shelf key, and for an admin those skipped and why a plugin's reader could not run
+when it last had something to read (`readerProblem`). The `ui` folder, and nothing else
 of the plugin, is served at `/plugins/{id}/{hash}/...` (`UsePluginAssets`), to anyone, as a browser
 loads modules without the session's token. The hash is of every file in the folder, so each may be
 cached for good, and is in the deploy id ([Version](../Version/Version.md)), so open tabs are told
@@ -135,8 +145,26 @@ A module's default export is `definePlugin({ viewers, fileActions, folderTypes }
   unavailable? }`. `extensions` count only for files stored without a type
   (`application/octet-stream`). The component, which may be a `lazy` one, gets the file's record and a
   content reader, which answers plain contents wherever they come from, until the preview closes or
-  moves on. A plugin's beats a built-in one for the same type; between two plugins the first id does.
+  moves on. It gets a reader of what plugins made from the file (`derived`, [Derived files](../Derived/Derived.md))
+  too: `has(kind)` says whether its record names one, so its URL is known at once, and `url(kind, signal)` answers
+  the URL an `<img>` loads it from, waiting while one its record does not name is made, or null when there is
+  none, as of an encrypted file. One its record names may have gone since: when its URL does not load,
+  `forget(kind)` has `url` ask the server, and wait. `loadDerived(reader, kind, load, signal)` does that: it hands
+  the URL to `load`, and once more after `forget` when that fails. `loadImage(image, url, signal)` is such a `load`
+  for an `<img>`: it loads and decodes the image, so it is drawn whole at once.
+  `neighbours` are the files the arrow keys move to, the one before it and the one after, each with such a
+  reader, to load ahead what they will show: only files a viewer takes, none in the trash or of a file
+  previewed alone, and none after the last of those fetched so far.
+  A plugin's beats a built-in one for the same type; between two plugins the first id does.
   `unavailable` says why this browser cannot show the files, and the next viewer that takes them does.
+  The component also gets `Fallback`, a component without props, for a file it finds it has nothing to show of, or
+  nothing better than the next viewer: it shows the file in the viewer that would show it were there not this one,
+  by the order above and passing over those that are unavailable, or, when none is left, says why the first that is
+  unavailable cannot, or that no other viewer shows the file.
+  `useZoom` zooms and moves an element of the plugin's as the app's image viewer does, with the wheel, a pinch or
+  a double-click and a drag: it gives `frame`, to spread on a `div` that fills the space and centres what it
+  holds, and `zoomed`, the ref and transform of the element in it. `mediaTypeOf(contentType)` is a file's type as
+  viewers' `mediaTypes` are matched against it: lowercase, without parameters such as `; charset=utf-8`.
 - **File actions** are items in the menus of live files: `{ id, label, icon?, showsFor, run }`.
   `showsFor` is asked as a menu is drawn. `run` gets the shelf, the file, its content reader and
   `showDialog`, which shows a dialog of the plugin's until it calls the `close` it is given. The contents
@@ -205,7 +233,7 @@ a plugin built against it.
 
 An addition to the web UI's part raises nothing, and `--check-plugin`, which runs no module, sees nothing
 of it: on a server without it, a plugin that imports a new export fails as it loads, which the Settings
-page says, and one that uses a new member of a type there (`ContentReader`, `FolderContents`) loads
+page says, and one that uses a new member of a type there (`ViewerProps`, `ContentReader`, `FolderContents`) loads
 and fails in the viewer or action that does. A part of `definePlugin` that server does not know is not
 missed by anything: folders of a type show as plain ones. Its server part runs either way.
 

@@ -63,15 +63,14 @@ namespace ByteShelf.Server.Plugins.Services
             };
 
             PluginUi? ui = Attempt("Its ui folder could not be read", () => PluginUiReader.Read(plugin.Manifest.Id, plugin.Folder));
-            PluginReaderRegistration? reader = null;
+            PluginBuilder? registered = null;
             if (plugin.Manifest.ServerAssemblyPath != null)
             {
                 ApplicationPart[] partsBefore = parts.ApplicationParts.ToArray();
                 try
                 {
-                    PluginBuilder registered = Register(plugin.Manifest.Id, plugin.Manifest.ServerAssemblyPath, services, parts);
+                    registered = Register(plugin.Manifest.Id, plugin.Manifest.ServerAssemblyPath, services, parts);
                     Replace(services, registered.Services);
-                    reader = registered.Reader;
                 }
                 catch
                 {
@@ -80,11 +79,33 @@ namespace ByteShelf.Server.Plugins.Services
                 }
             }
 
-            return new LoadedPlugin(plugin.Manifest, ui, reader);
+            return new LoadedPlugin(plugin.Manifest, ui, plugin.Folder, registered?.Reader, registered?.Maker);
+        }
+
+        /// <summary>
+        /// Has a plugin register what it adds among <paramref name="services"/>, the server's own, for a child process
+        /// to make its reader and maker. Its services and controllers are not looked at.
+        /// </summary>
+        /// <exception cref="PluginRefusedException">It cannot be loaded.</exception>
+        internal static PluginBuilder RegisterForProcess(PluginCandidate candidate, IServiceCollection services)
+        {
+            return candidate is ReadablePlugin { Manifest.ServerAssemblyPath: string assemblyPath } plugin
+                ? Register(plugin.Manifest.Id, assemblyPath, services).Registered
+                : throw new PluginRefusedException($"There is no plugin with a server assembly in {candidate.Folder}.");
         }
 
         /// <summary>What the plugin registers, in a copy of <paramref name="services"/>, its controllers in <paramref name="parts"/> tried.</summary>
         private static PluginBuilder Register(string pluginId, string assemblyPath, IServiceCollection services, ApplicationPartManager parts)
+        {
+            (Assembly assembly, PluginBuilder registered) = Register(pluginId, assemblyPath, services);
+
+            parts.ApplicationParts.Add(new AssemblyPart(assembly));
+            Attempt("Its controllers could not be built", () => PluginEndpoints.Try(registered.Services));
+
+            return registered;
+        }
+
+        private static (Assembly Assembly, PluginBuilder Registered) Register(string pluginId, string assemblyPath, IServiceCollection services)
         {
             (Assembly assembly, Type entry) = Attempt("Its server assembly could not be loaded", () => LoadAssembly(pluginId, assemblyPath));
 
@@ -99,10 +120,7 @@ namespace ByteShelf.Server.Plugins.Services
                 plugin.Configure(registered);
             });
 
-            parts.ApplicationParts.Add(new AssemblyPart(assembly));
-            Attempt("Its controllers could not be built", () => PluginEndpoints.Try(registered.Services));
-
-            return registered;
+            return (assembly, registered);
         }
 
         private static (Assembly Assembly, Type Entry) LoadAssembly(string pluginId, string path)
