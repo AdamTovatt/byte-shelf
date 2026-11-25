@@ -65,6 +65,27 @@ describe('uploading into the folder shown', () => {
     return release;
   }
 
+  /**
+   * Holds each read of the listing of the folder at `path` from here on, answered as the folder was when it was
+   * asked for, until what this answers is called; a read asked for after that is never answered.
+   */
+  function holdListings(path: string): () => void {
+    let release = (): void => undefined;
+    let held = new Promise<void>((resolve) => { release = resolve; });
+    const served = serve;
+    serve = async (request) => {
+      const { pathname, search } = new URL(request.url);
+      if (!`GET ${pathname}${search}`.startsWith(listingRequest(path))) return served(request);
+      const answered = served(request);
+      await held;
+      return answered;
+    };
+    return () => {
+      release();
+      held = new Promise(() => undefined);
+    };
+  }
+
   /** Answers no listing read from here on, so only what is put into the cached listing shows a file stored. */
   function answerNoListings(): void {
     const served = serve;
@@ -194,23 +215,11 @@ describe('uploading into the folder shown', () => {
 
   it('keeps a listing read begun before a file was stored from landing over it, in a folder left meanwhile', async () => {
     const release = holdStoring();
-    const storeHeld = serve;
-    let answerListings = (): void => undefined;
-    let listings = new Promise<void>((resolve) => { answerListings = resolve; });
-    let holdListings = false;
-    serve = async (request) => {
-      if (request.method === 'PUT') return storeHeld(request);
-      // A listing of the folder is read as it is asked for, and answered later.
-      const answered = shelf.answer(request);
-      const { pathname, search } = new URL(request.url);
-      if (holdListings && `GET ${pathname}${search}`.startsWith(listingRequest('/a'))) await listings;
-      return answered;
-    };
     const { client } = await open();
     await drop(page!, [FILES[0]]);
     await untilRows('↑a.txt');
 
-    holdListings = true;
+    const answerListings = holdListings('/a');
     const staleRead = client.refetchQueries({ queryKey: queryKeys.shelfContents.listing('docs', '/a') });
     await page!.page.to('/shelves/docs/files/b');
     await vi.waitFor(() => expect(listingReads('/b')).toBe(1));
@@ -220,7 +229,23 @@ describe('uploading into the folder shown', () => {
     answerListings();
     await act(() => staleRead);
     // Back in the folder, it shows what is cached, as no read of it answers any more.
-    listings = new Promise(() => undefined);
+    await page!.page.to('/shelves/docs/files/a');
+
+    await untilRows('a.txt');
+  });
+
+  it('takes an upload\'s row away as it is stored into a folder whose listing is no longer cached', async () => {
+    const release = holdStoring();
+    const { client } = await open();
+    await drop(page!, [FILES[0]]);
+    await untilRows('↑a.txt');
+
+    await page!.page.to('/shelves/docs/files/b');
+    await vi.waitFor(() => expect(listingReads('/b')).toBe(1));
+    client.removeQueries({ queryKey: queryKeys.shelfContents.listing('docs', '/a') });
+    release();
+    // The shelf is read again once the stored file would have been put into the cached listing.
+    await vi.waitFor(() => expect(listingReads('/b')).toBe(2));
     await page!.page.to('/shelves/docs/files/a');
 
     await untilRows('a.txt');

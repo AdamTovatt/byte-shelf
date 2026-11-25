@@ -1,33 +1,9 @@
 import { Button, ErrorText, Icon, IconButton, ProgressBar, cn, getFileIcon, iconMap } from '../ui';
 import { useUpload } from '../contexts/UploadHost';
-import { formatBytes } from '../lib/format';
-import { isMissed, isUnderway, type UnderwayState, type Upload } from '../services/uploadQueue';
+import { isMissed, isUnderway, type Upload } from '../services/uploadQueue';
 import { FILE_ROW } from './fileRowLayout';
 import { RowIcon } from './RowIcon';
-import { uploadFailure } from './uploadFailure';
-
-interface Stage {
-  label: string;
-  /** How far it is, as a percentage. */
-  progress: number;
-  /** Whether all is sent, and the server has not answered yet. */
-  finishing: boolean;
-}
-
-/** Where an upload on its way is. */
-function stage(state: UnderwayState): Stage {
-  switch (state.status) {
-    case 'waiting':
-      return { label: 'Waiting', progress: 0, finishing: false };
-    case 'encrypting':
-      return { label: 'Encrypting', progress: 0, finishing: false };
-    case 'uploading': {
-      const { sentBytes, totalBytes } = state;
-      if (sentBytes >= totalBytes) return { label: 'Finishing', progress: 100, finishing: true };
-      return { label: `${formatBytes(sentBytes)} of ${formatBytes(totalBytes)}`, progress: (sentBytes / totalBytes) * 100, finishing: false };
-    }
-  }
-}
+import { uploadFailure, uploadStage } from './uploadWording';
 
 /**
  * An upload's row in the list of the folder it goes into, laid out as a file's row, so it reads as the file
@@ -40,7 +16,7 @@ export function UploadRow({ upload }: { upload: Upload }) {
   const { name } = upload;
 
   if (state && isUnderway(state)) {
-    const shown = stage(state);
+    const shown = uploadStage(state);
     return (
       <div data-upload-row={name} className={FILE_ROW.row}>
         <div className={FILE_ROW.main}>
@@ -71,7 +47,7 @@ export function UploadRow({ upload }: { upload: Upload }) {
         <UploadIcon name={name} />
         <span className="flex min-w-0 flex-col">
           <span className={FILE_ROW.name}>{name}</span>
-          <ErrorText>{uploadFailure(state, 'here')}</ErrorText>
+          <ErrorText>{uploadFailure(state, null)}</ErrorText>
         </span>
       </div>
       {state.status === 'taken' && <Button size="sm" variant="outlineDanger" onClick={state.replace}>Replace</Button>}

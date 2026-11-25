@@ -3,7 +3,7 @@ import type { Upload } from '../services/uploadQueue';
 import { uploadStore, type HeldState } from './uploadStore';
 
 function upload(id: number, folderPath = '/a'): Upload {
-  return { id, shelf: 'docs', folderPath, file: new File(['new'], `${id}.txt`), name: `${id}.txt`, path: `${folderPath}/${id}.txt` };
+  return { id, shelf: 'docs', folderPath, file: new File(['new'], `${id}.txt`), name: `${id}.txt` };
 }
 
 const underway = { replacing: false, cancel: () => undefined };

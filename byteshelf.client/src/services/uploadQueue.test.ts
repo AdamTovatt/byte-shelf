@@ -459,6 +459,7 @@ describe('uploads', () => {
     const done = await until('b.txt', 'done');
 
     expect(done.file).toMatchObject({ path: '/a/b.txt' });
+    // None sent, then half and then all of it, as the fake server reports what goes out.
     expect(states.get('a.txt')!.map((state) => (state.status === 'uploading' ? [state.sentBytes, state.totalBytes] : state.status)))
       .toEqual(['waiting', [0, 3], [1, 3], [3, 3], 'done']);
     expect(states.get('a.txt')![0]).toMatchObject({ replacing: false });
@@ -466,13 +467,13 @@ describe('uploads', () => {
 
   it('stores a file under its name composed, as the server stores names, and reports it so', async () => {
     const reported: string[] = [];
-    queueUploads = uploadQueue({ askFirst: first.ask, ask: prompts.ask, report: ({ name, path }) => reported.push(`${name} ${path}`), changed, workFactor: FAST });
+    queueUploads = uploadQueue({ askFirst: first.ask, ask: prompts.ask, report: ({ name }) => reported.push(name), changed, workFactor: FAST });
 
     await queueUploads('docs', folderNow(), [new File(['new'], 'café.txt')]);
     await vi.waitFor(() => expect(shelf.sent).toHaveLength(1));
 
     expect(shelf.sent[0].path).toBe('/a/café.txt');
-    expect(new Set(reported)).toEqual(new Set(['café.txt /a/café.txt']));
+    expect(new Set(reported)).toEqual(new Set(['café.txt']));
   });
 
   it('tells one into an encrypted folder as encrypting, then sending as many bytes as that made', async () => {
@@ -533,6 +534,8 @@ describe('uploads', () => {
 
       expect(sentPaths()).toEqual(['/a/b.txt']);
       expect(statuses('a.txt')).toEqual(['waiting', 'encrypting', 'cancelled']);
+      // Nothing of it was sent, so nothing of it can be stored.
+      expect(changed).not.toHaveBeenCalled();
     });
 
     it('once all is sent, too late to stop it, tells nothing more, and what shows the shelf reads it again', async () => {
@@ -549,8 +552,9 @@ describe('uploads', () => {
       await vi.waitFor(() => expect(sentPaths()).toEqual(['/a/a.txt']));
       cancel('a.txt');
       answer();
-      await afterAWhile();
 
+      await vi.waitFor(() => expect(changed).toHaveBeenCalledOnce());
+      await afterAWhile();
       expect(statuses('a.txt')).toEqual(['waiting', 'uploading', 'uploading', 'uploading', 'cancelled']);
       expect(changed).toHaveBeenCalledOnce();
     });
