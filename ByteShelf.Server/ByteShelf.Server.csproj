@@ -2,12 +2,29 @@
 
   <PropertyGroup>
     <AssemblyName>ByteShelf.Server</AssemblyName>
-    <Version>2.3.0</Version>
+    <Version>3.0.0</Version>
     <!-- The GitHub release's notes (release.yml), above the list of pull requests it generates. -->
     <PackageReleaseNotes>
+**Upgrading**
+
+- Upgrade replicas together with their primary, primary first. A replica of this version stops at an older primary's log, and an older replica stops at this primary's (migrations v0015 and v0016, and a new change action).
+- Clients, the CLI and MCP of this version need a server of this version: shelf info now carries the caller's permission and whether the server is a replica.
+- `/mcp` shows agents previews of images only with the images plugin installed: `updaemon install byteshelf/images`. Plugins need updaemon 1.1 or later.
+- Shelf usage and quotas now include the thumbnails and previews made of a shelf's files. An upload that would go over the quota through them is refused with 507.
+
 **New**
 
-- Signed-in users and shelf keys can read which release the server runs: `GET /api/version/release` answers it with the deploy id, and 401 to anyone else, so the release stays hidden from anonymous callers. The web UI shows it in the account menu, `byteshelf version` prints it, and `/mcp` names it in its instructions. `GET /api/version/current` is unchanged.
+- Plugins, loaded from `BYTESHELF_PLUGINS` with full trust, in the server and in the web UI. Released with the server: `byteshelf-images.zip` (thumbnails and previews, HEIC and TIFF shown, sized previews for agents) and `byteshelf-markdown.zip`. `--check-plugin` checks one; `GET /api/plugins` lists them.
+- A preview of files over the shelf page, with images sharpening in place, PDFs, text, audio and video.
+- Plugins can keep documents and searchable fields about files (`GET files/metadata`, `PUT files/plugin-metadata`, `--forget-plugin`), and give folders a type by the end of their name (`Trip.album`) that opens in their own viewer.
+- Rows deleted from the database are overwritten (`secure_delete`), and what tells of a file's plain contents leaves the change log a day after it is encrypted in place. Rows deleted before the upgrade stay until `VACUUM` with the server stopped (DEPLOYMENT.md, Deleted data).
+
+**Changed**
+
+- Replacing a file that has a password of its own in the web UI keeps it encrypted.
+- File contents are sent with `Cache-Control: private, no-cache`; thumbnails and previews with `private, max-age=3600`.
+- Addresses of folders whose name has a dot, such as `v1.2`, load the app instead of 404.
+- The page reloads when its session ends.
     </PackageReleaseNotes>
     <SpaRoot>..\byteshelf.client</SpaRoot>
     <SpaProxyLaunchCommand>npm run dev</SpaProxyLaunchCommand>
