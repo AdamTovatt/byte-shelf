@@ -14,7 +14,7 @@ function file(contentType: string, name = 'a.bin'): ShelfFile {
 /** The viewer picked among those registered, by each one's plugin. */
 function picked(registered: [string | null, Viewer][], shown: ShelfFile): string | null {
   const registry = registered.reduce((before, [plugin, each]) => before.with(plugin, [each]), ViewerRegistry.EMPTY);
-  return registry.viewerFor(shown)?.viewer?.id ?? null;
+  return registry.viewerFor(shown)?.viewers[0]?.viewer.id ?? null;
 }
 
 describe('the viewer a file is shown with', () => {
@@ -36,7 +36,7 @@ describe('the viewer a file is shown with', () => {
     const before = ViewerRegistry.EMPTY;
     const after = before.with(null, [viewer('image', ['image/*'])]);
 
-    expect(after.viewerFor(file('image/png'))?.viewer?.id).toBe('image');
+    expect(after.viewerFor(file('image/png'))?.viewers[0]?.viewer.id).toBe('image');
     expect(before.viewerFor(file('image/png'))).toBeNull();
   });
 
@@ -64,16 +64,30 @@ describe('the viewer a file is shown with', () => {
     expect(picked(registered.slice(0, 1), file('image/png'))).toBe('built-in');
   });
 
-  it('is the next that takes the file when one is unavailable, and why the first is when none is left', () => {
+  it('is the next that takes the file when one is unavailable, keeping why the first is', () => {
     const unavailable = (id: string) => ({ ...viewer(id, ['application/pdf']), unavailable: () => `No ${id} here.` });
     const available = { ...viewer('available', ['application/pdf']), unavailable: () => null };
     const registry = ViewerRegistry.EMPTY.with('ant', [unavailable('ant')]).with(null, [unavailable('built-in')]);
     const pdf = file('application/pdf');
 
-    expect(registry.viewerFor(pdf)).toEqual({ viewer: null, unavailable: 'No ant here.' });
-    expect(registry.with('bee', [available]).viewerFor(pdf)).toEqual({ viewer: available, pluginId: 'bee', unavailable: null });
-    expect(registry.with(null, [available]).viewerFor(pdf)).toEqual({ viewer: available, pluginId: null, unavailable: null });
+    expect(registry.viewerFor(pdf)).toEqual({ viewers: [], unavailable: 'No ant here.' });
+    expect(registry.with('bee', [available]).viewerFor(pdf)).toEqual({ viewers: [{ viewer: available, pluginId: 'bee' }], unavailable: 'No ant here.' });
+    expect(registry.with(null, [available]).viewerFor(pdf)).toEqual({ viewers: [{ viewer: available, pluginId: null }], unavailable: 'No ant here.' });
     expect(registry.viewerFor(file('image/png'))).toBeNull();
+  });
+
+  it('are those that would show the file after the first, in order, but those that are unavailable, whose reason it keeps', () => {
+    const unavailable = { ...viewer('gone', ['image/*']), unavailable: () => 'Not here.' };
+    const registry = ViewerRegistry.EMPTY
+      .with(null, [viewer('built-in', ['image/*'])])
+      .with('zebra', [viewer('zebra', ['image/*'])])
+      .with('bee', [unavailable])
+      .with('ant', [viewer('ant', ['image/*']), viewer('exact', ['image/png'])]);
+
+    const match = registry.viewerFor(file('image/png'));
+
+    expect(match?.viewers.map(({ viewer: { id }, pluginId }) => `${pluginId} ${id}`)).toEqual(['ant exact', 'ant ant', 'zebra zebra', 'null built-in']);
+    expect(match?.unavailable).toBe('Not here.');
   });
 
   it('passes over one that fails to say whether it is available, logging why once', () => {
@@ -81,7 +95,7 @@ describe('the viewer a file is shown with', () => {
     const failing: Viewer = { ...viewer('failing', ['text/plain']), unavailable: () => { throw new Error('It threw.'); } };
 
     expect(picked([['a', failing], [null, viewer('text', ['text/*'])]], file('text/plain'))).toBe('text');
-    expect(ViewerRegistry.EMPTY.with('a', [failing]).viewerFor(file('text/plain'))).toEqual({ viewer: null, unavailable: 'The viewer failed.' });
+    expect(ViewerRegistry.EMPTY.with('a', [failing]).viewerFor(file('text/plain'))).toEqual({ viewers: [], unavailable: 'The viewer failed.' });
     expect(error.mock.calls).toEqual([['The viewer failing could not say whether it is available.', new Error('It threw.')]]);
     error.mockRestore();
   });

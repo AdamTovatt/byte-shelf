@@ -76,7 +76,7 @@ export function useShelfPreview(shelf: string, shown: ShownFiles, reading: FileR
   };
 
   function showsInPreview(file: ShelfFile): boolean {
-    return Boolean(viewers.viewerFor(file)?.viewer) || !pluginsSettled;
+    return Boolean(viewers.viewerFor(file)?.viewers.length) || !pluginsSettled;
   }
 
   return {

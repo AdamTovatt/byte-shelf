@@ -18,7 +18,6 @@ export { useLoaded, type Loaded, type Reloadable } from '../hooks/useLoaded';
 export { useZoom, type Zoom } from '../hooks/useZoom';
 export { ErrorBoundary } from '../components/ErrorBoundary';
 export { LoadedContent } from '../components/preview/LoadedContent';
-export { ImageViewer } from '../components/preview/viewers/ImageViewer';
 export { usePluginDocuments, useSetPluginDocument, type PluginDocuments, type PluginDocumentWrite } from '../hooks/usePluginDocuments';
 export type { DerivedKind, DirectoryTree, ShelfDirectory, ShelfFile } from '../services/shelfService';
 export { ApiError, authorizedFetch, throwIfFailed } from '../services/apiClient';

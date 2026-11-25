@@ -114,7 +114,8 @@ npm run codegen    # in a second terminal
     (`usePluginsAwaited`), and until they are loaded a file that no viewer shows in this browser opens in the
     preview, not in a tab: one of theirs may. An exact type beats a family (`image/*`), a plugin's viewer a
     built-in one, and the first plugin by id the next; extensions count only for a file stored as
-    `application/octet-stream`. The built-in ones render nothing as HTML: HTML shows as its source, and SVG
+    `application/octet-stream`. A viewer may leave a file to the next in that order through its `Fallback`
+    (`components/preview/ViewerChain.tsx`). The built-in ones render nothing as HTML: HTML shows as its source, and SVG
     through an `<img>`, where its scripts do not run. Text shows its first 1 MiB, decoded as a tab would; an
     image zooms with the wheel, a pinch or a double-click and moves with a drag (`hooks/useZoom.ts`, which
     plugins have too).

@@ -47,17 +47,27 @@ function DerivedViewer({ file, derived, neighbours }: ViewerProps) {
   return <p>{`${file.id} at ${url}, beside ${neighbours.map((each) => `${each.file.id} ${each.derived.has('preview')}`).join(' and ')}`}</p>;
 }
 
+/** Leaves every file to the viewer after it, as one does that has nothing to show of a file. */
+function DecliningViewer({ Fallback }: ViewerProps) {
+  return <Fallback />;
+}
+
 /** Brings the component of a viewer that loads it when it is first shown. */
 let loadLazy: (module: { default: ComponentType<ViewerProps> }) => void;
 
 const LazyViewer = lazy(() => new Promise<{ default: ComponentType<ViewerProps> }>((resolve) => { loadLazy = resolve; }));
 
 const WITH_PLUGINS = BUILT_IN_VIEWERS.with('test', [
-  { id: 'broken', mediaTypes: ['x-test/broken'], extensions: [], component: BrokenViewer },
+  { id: 'broken', mediaTypes: ['x-test/broken', 'x-test/broken-next'], extensions: [], component: BrokenViewer },
   { id: 'lazy', mediaTypes: ['x-test/lazy'], extensions: [], component: LazyViewer },
   { id: 'owned', mediaTypes: ['x-test/owned'], extensions: [], component: OwnedViewer },
   { id: 'derived', mediaTypes: ['x-test/derived'], extensions: [], component: DerivedViewer },
-]).with(null, [{ id: 'own', mediaTypes: ['x-test/own'], extensions: [], component: OwnedViewer }]);
+  { id: 'declining', mediaTypes: ['x-test/chain', 'x-test/alone', 'x-test/gone', 'text/plain'], extensions: [], component: DecliningViewer },
+]).with('zz', [
+  { id: 'next', mediaTypes: ['x-test/chain'], extensions: [], component: OwnedViewer },
+  { id: 'unavailable', mediaTypes: ['x-test/gone'], extensions: [], component: OwnedViewer, unavailable: () => 'This browser has no such viewer.' },
+]).with('aa', [{ id: 'declining', mediaTypes: ['x-test/broken-next'], extensions: [], component: DecliningViewer }])
+  .with(null, [{ id: 'own', mediaTypes: ['x-test/own'], extensions: [], component: OwnedViewer }]);
 
 vi.mock('../../hooks/useViewers', () => ({ useViewers: () => WITH_PLUGINS }));
 
@@ -349,6 +359,37 @@ describe('the preview', () => {
 
     await act(async () => change(shelfFile('b', { contentType: 'x-test/own' })));
     await shows('The viewer failed while showing this file.');
+  });
+
+  it('shows a file a viewer leaves to the next in that one, as its plugin\'s, and the app\'s own after a plugin\'s', async () => {
+    await show(shelfFile('a', { contentType: 'x-test/chain' }));
+    await shows('of the plugin zz');
+
+    await act(async () => change(shelfFile('b.txt', { contentType: 'text/plain' })));
+    await shows('text of b.txt');
+  });
+
+  it('says no other viewer shows a file that the last viewer leaves, and saves it', async () => {
+    await show(shelfFile('a.bin', { contentType: 'x-test/alone' }));
+
+    await shows('No other viewer shows this file.');
+    await press('Download');
+    expect(saved).toEqual(['/open/a.bin?download']);
+  });
+
+  it('says why the viewer after one that leaves a file cannot show it in this browser', async () => {
+    await show(shelfFile('a.bin', { contentType: 'x-test/gone' }));
+
+    await shows('This browser has no such viewer.');
+  });
+
+  it('says a viewer failed, and saves the file, when the one a file is left to throws', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await show(shelfFile('a.bin', { contentType: 'x-test/broken-next' }));
+
+    await shows('The viewer failed while showing this file.');
+    await press('Download');
+    expect(saved).toEqual(['/open/a.bin?download']);
   });
 
   it('has the plugins\' actions for a live file in a menu of their own, and none without any', async () => {

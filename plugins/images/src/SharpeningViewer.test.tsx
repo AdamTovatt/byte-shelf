@@ -15,6 +15,11 @@ vi.mock('@byteshelf/plugin', async (original) => ({ ...(await original<object>()
 const shown = new Set(['image/png', 'image/jpeg']);
 vi.mock('./showsType', () => ({ showsType: async (type: string) => shown.has(type) }));
 
+/** The viewer after this one, as the app gives it. */
+function NextViewer() {
+  return <p>the next viewer</p>;
+}
+
 describe('the sharpening viewer', () => {
   let root: Root;
   let container: HTMLDivElement;
@@ -31,7 +36,7 @@ describe('the sharpening viewer', () => {
   async function show(derived: DerivedReader, file: Partial<ShelfFile> = {}, neighbours: Neighbour[] = []): Promise<void> {
     const content: ContentReader = { url: contentUrl, blob: async () => new Blob(), range: async () => new Blob(['a']) };
     const shows = { id: 'f', name: 'a.png', contentType: 'image/png', encrypted: false, ...file } as ShelfFile;
-    await act(async () => root.render(<SharpeningViewer file={shows} content={content} derived={derived} neighbours={neighbours} />));
+    await act(async () => root.render(<SharpeningViewer file={shows} content={content} derived={derived} neighbours={neighbours} Fallback={NextViewer} />));
   }
 
   /** The images there are, by what they load. */
@@ -293,7 +298,7 @@ describe('the sharpening viewer', () => {
       expect([seen(), boxSize()]).toEqual(['whole.png', ['2048', '1365']]);
     });
 
-    it('waits for what is recorded before it leaves it to the app\'s viewer, and keeps it when something is', async () => {
+    it('waits for what is recorded before it leaves it to the next viewer, and keeps it when something is', async () => {
       documents = { isPending: true };
       const derived = derivedReader([]);
       await show(derived);
@@ -327,45 +332,45 @@ describe('the sharpening viewer', () => {
     });
   });
 
-  describe('leaves it to the app\'s viewer', () => {
-    const tryAgain = () => container.querySelector('button')?.textContent;
+  describe('leaves it to the next viewer', () => {
+    /** What is shown, and the images of this one's that are left: the next viewer, and none, once it is left to that. */
+    const left = () => [container.textContent, images()];
+    const LEFT = ['the next viewer', []];
 
     it('when nothing is made of the image', async () => {
       documents = { data: { contents: null }, isPending: false };
       await show(derivedReader([]));
 
-      expect([seen(), box()]).toEqual(['whole.png', null]);
+      expect(left()).toEqual(LEFT);
     });
 
     it.each([{ encrypted: true }, { contentType: 'image/svg+xml; charset=utf-8' }])('when it is %o', async (file) => {
       const derived = derivedReader([]);
       await show(derived, file);
 
-      expect([seen(), box()]).toEqual(['whole.png', null]);
+      expect(left()).toEqual(LEFT);
       expect(derived.url).not.toHaveBeenCalled();
       expect(documentsOf).not.toHaveBeenCalled();
+      expect(contentUrl).not.toHaveBeenCalled();
     });
 
-    it('to say why there is nothing to show, and to try again', async () => {
+    it('when neither the preview nor the whole loads', async () => {
       await show(derivedReader([]));
       expect(images()).toEqual([RECORDED.placeholder, 'whole.png']);
 
       await fail('whole.png');
-      await fail('whole.png');
 
-      await vi.waitFor(() => expect(container.textContent).toContain('This browser cannot show this image.'));
-      expect(tryAgain()).toBe('Try again');
+      expect(left()).toEqual(LEFT);
     });
 
-    it('to say why when there is only a thumbnail to show', async () => {
+    it('when the whole does not load and there is only a thumbnail', async () => {
       await show(derivedReader(['thumbnail']));
       await load('thumbnail.webp');
       expect(seen()).toBe('thumbnail.webp');
 
       await fail('whole.png');
-      await fail('whole.png');
 
-      await vi.waitFor(() => expect(container.textContent).toContain('This browser cannot show this image.'));
+      expect(left()).toEqual(LEFT);
     });
   });
 

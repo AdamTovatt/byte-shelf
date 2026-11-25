@@ -63,8 +63,36 @@ it('promises plugins this of a file, and changing what a release holds of it, bu
 /** The members of an interface plugins import as `type`, as it is written, records by their names. */
 function membersOf(type: string): string[] {
   const declared = checker.getDeclaredTypeOfSymbol(checker.getAliasedSymbol(exported.find(({ name }) => name === type)!));
-  return declared.getProperties().map(({ name, valueDeclaration }) => `${type}.${name}: ${(valueDeclaration as ts.PropertySignature).type!.getText()}`);
+  return declared.getProperties().map(({ name, valueDeclaration }) => {
+    const { questionToken, type: written } = valueDeclaration as ts.PropertySignature;
+    return `${type}.${name}${questionToken ? '?' : ''}: ${written!.getText()}`;
+  });
 }
+
+it('promises plugins this of viewers, and changing what a release holds of it, but for more, raises PluginApi.Version', () => {
+  expect(['Viewer', 'ViewerProps', 'Neighbour', 'DerivedReader', 'ContentReader'].flatMap(membersOf)).toMatchInlineSnapshot(`
+    [
+      "Viewer.id: string",
+      "Viewer.mediaTypes: readonly string[]",
+      "Viewer.extensions: readonly string[]",
+      "Viewer.component: ComponentType<ViewerProps>",
+      "Viewer.unavailable?: () => string | null",
+      "ViewerProps.file: ShelfFile",
+      "ViewerProps.content: ContentReader",
+      "ViewerProps.derived: DerivedReader",
+      "ViewerProps.neighbours: readonly Neighbour[]",
+      "ViewerProps.Fallback: ComponentType",
+      "Neighbour.file: ShelfFile",
+      "Neighbour.derived: DerivedReader",
+      "DerivedReader.has: (kind: DerivedKind) => boolean",
+      "DerivedReader.url: (kind: DerivedKind, signal?: AbortSignal) => Promise<string | null>",
+      "DerivedReader.forget: (kind: DerivedKind) => void",
+      "ContentReader.url: (signal?: AbortSignal) => Promise<string>",
+      "ContentReader.blob: (signal?: AbortSignal) => Promise<Blob>",
+      "ContentReader.range: (start: number, end: number, signal?: AbortSignal) => Promise<Blob>",
+    ]
+  `);
+});
 
 it('promises plugins this of folder types, and changing what a release holds of it, but for more, raises PluginApi.Version', () => {
   expect(['FolderType', 'FolderViewerProps', 'FolderContents', 'LockableReader'].flatMap(membersOf)).toMatchInlineSnapshot(`
@@ -147,7 +175,6 @@ it('promises plugins these, and taking away one a release holds raises PluginApi
       "IconComponent",
       "IconMapKey",
       "IconProps",
-      "ImageViewer",
       "Input",
       "InputProps",
       "InvalidationResource",

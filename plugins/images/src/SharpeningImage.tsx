@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from 'react';
-import { ImageViewer, Spinner, cn, mediaTypeOf, usePluginDocuments, useZoom, type DerivedKind, type ViewerProps } from '@byteshelf/plugin';
+import { Spinner, cn, mediaTypeOf, usePluginDocuments, useZoom, type DerivedKind, type ViewerProps } from '@byteshelf/plugin';
 import { ImageLayer, type LayerAddress } from './ImageLayer';
 import { recordedImage, type ImageSize } from './recordedImage';
 import { showsType } from './showsType';
@@ -15,10 +15,10 @@ function isSharper(one: LayerName | null, other: LayerName): boolean {
 /**
  * An image in a box of its size from the start, shown by the sharpest of its placeholder, thumbnail, preview
  * and the whole of it that has been loaded and decoded. One takes the place of another between two frames, under
- * the same zoom. When there is nothing to show but the whole, the app's own viewer shows it, or says why not.
+ * the same zoom. When there is nothing to show but the whole, it is the next viewer's to show, or to say why not.
  */
 export function SharpeningImage(props: ViewerProps) {
-  const { file, content, derived } = props;
+  const { file, content, derived, Fallback } = props;
   const { frame, zoomed: { ref: box, style: zoom } } = useZoom<HTMLDivElement>();
   const documents = usePluginDocuments(file);
   const recorded = recordedImage(documents.data?.contents);
@@ -37,7 +37,7 @@ export function SharpeningImage(props: ViewerProps) {
   const hasNothingMade = hasFailed('preview') && !documents.isPending && !recorded && size === null;
   const hasNothingToShow = hasFailed('preview') && hasFailed('whole') && (shown === null || shown === 'thumbnail');
   if ((hasNothingMade || hasNothingToShow) && !isHandedOver) setIsHandedOver(true);
-  if (isHandedOver) return <ImageViewer {...props} />;
+  if (isHandedOver) return <Fallback />;
 
   function layer(name: LayerName, address: (signal: AbortSignal) => Promise<LayerAddress | null>, look: { className?: string; fetchPriority?: 'high' | 'low' }) {
     if (isSharper(shown, name) || hasFailed(name)) return null;

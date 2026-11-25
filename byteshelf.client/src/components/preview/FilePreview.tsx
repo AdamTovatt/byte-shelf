@@ -1,12 +1,10 @@
-import { Suspense, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { Button, Icon, IconButton, Modal, getErrorMessage, iconMap } from '../../ui';
-import { contentsKey } from '../../lib/preview/fileContents';
 import type { DerivedReader } from '../../lib/derived/derivedReader';
 import type { Steps } from '../../lib/preview/neighbours';
 import type { ShownPreview } from '../../lib/preview/shownPreview';
 import type { Neighbour } from '../../lib/preview/viewerRegistry';
 import type { FileActions } from '../../hooks/useFileActions';
-import { PluginIdentity } from '../../contexts/PluginIdentity';
 import { useDerivedReaders, type DerivedOf } from '../../hooks/useDerivedReaders';
 import { usePluginsAwaited } from '../../hooks/usePluginHost';
 import { usePreviewContents } from '../../hooks/usePreviewContents';
@@ -15,13 +13,13 @@ import { formatBytes } from '../../lib/format';
 import { isTypingTarget } from '../../lib/keys';
 import { openable, type OpenableFile, type ReadableFile } from '../../services/fileReading';
 import type { ShelfFile } from '../../services/shelfService';
-import { ErrorBoundary } from '../ErrorBoundary';
 import { FileActionsMenu } from '../FileActionItems';
 import { FileDetailsDialog } from '../FileDetailsDialog';
 import { openFile, opensInTab, saveFiles } from '../fileOpening';
 import { PreviewFailure } from './PreviewFailure';
 import { PreviewMessage } from './PreviewMessage';
 import { PreviewSpinner } from './PreviewSpinner';
+import { ViewerChain } from './ViewerChain';
 
 interface FilePreviewProps extends ShownPreview {
   /** The shelf the file is live on, whose record of it Details shows; absent for one that is not. */
@@ -40,8 +38,9 @@ export function FilePreview({ previewed, error, steps, previous, next, onClose, 
   const awaitsPlugins = usePluginsAwaited();
   const file = previewed?.file;
   const match = file ? viewers.viewerFor(file) : null;
-  const { contents, readWhole } = usePreviewContents(match?.viewer ? previewed : null, asksPassword);
-  const [derived, previousDerived, nextDerived] = useDerivedReaders([match?.viewer ? derivedOf(previewed) : null, derivedOf(previous), derivedOf(next)]);
+  const shownBy = match?.viewers.length ? match.viewers : null;
+  const { contents, readWhole } = usePreviewContents(shownBy ? previewed : null, asksPassword);
+  const [derived, previousDerived, nextDerived] = useDerivedReaders([shownBy ? derivedOf(previewed) : null, derivedOf(previous), derivedOf(next)]);
   const neighbours = useMemo(() => [...neighbour(previous?.file, previousDerived), ...neighbour(next?.file, nextDerived)], [previous?.file, previousDerived, next?.file, nextDerived]);
   const target = previewed && openable(previewed, readWhole ?? undefined);
 
@@ -86,10 +85,9 @@ export function FilePreview({ previewed, error, steps, previous, next, onClose, 
     // A plugin still loading may show it, or show it better.
     if (awaitsPlugins) return <PreviewSpinner />;
 
-    if (!match?.viewer || !derived) {
-      const openInTab = opensInTab(of.file) && <Button variant="secondary" icon={<Icon icon={iconMap.openInTab} size={16} />} onClick={() => void openFile(of)}>Open in new tab</Button>;
-      return <PreviewMessage message={match?.unavailable ?? 'There is no preview of files of this type.'} action={<div className="flex gap-2">{openInTab}{download}</div>} />;
-    }
+    const openInTab = opensInTab(of.file) && <Button variant="secondary" icon={<Icon icon={iconMap.openInTab} size={16} />} onClick={() => void openFile(of)}>Open in new tab</Button>;
+    const noPreview = (message: string) => <PreviewMessage message={message} action={<div className="flex gap-2">{openInTab}{download}</div>} />;
+    if (!shownBy || !derived) return noPreview(match?.unavailable ?? 'There is no preview of files of this type.');
 
     if (contents.status === 'reading') return <PreviewSpinner />;
     if (contents.status === 'waiting') {
@@ -108,15 +106,16 @@ export function FilePreview({ previewed, error, steps, previous, next, onClose, 
       return <PreviewFailure error={contents.error} onTryAgain={contents.retry} />;
     }
 
-    const { viewer: { id, component: Viewer }, pluginId } = match;
     return (
-      <ErrorBoundary key={`${contentsKey(of.file)} ${id}`} fallback={<PreviewMessage message="The viewer failed while showing this file." action={download} />}>
-        <Suspense fallback={<PreviewSpinner />}>
-          <PluginIdentity id={pluginId}>
-            <Viewer file={of.file} content={contents.reader} derived={derived} neighbours={neighbours} />
-          </PluginIdentity>
-        </Suspense>
-      </ErrorBoundary>
+      <ViewerChain
+        viewers={shownBy}
+        file={of.file}
+        content={contents.reader}
+        derived={derived}
+        neighbours={neighbours}
+        failed={<PreviewMessage message="The viewer failed while showing this file." action={download} />}
+        none={noPreview(match?.unavailable ?? 'No other viewer shows this file.')}
+      />
     );
   }
 }

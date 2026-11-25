@@ -25,7 +25,7 @@ describe('the plugin', { timeout: 2 * LOAD_TIMEOUT }, () => {
 
   async function shows(text: string): Promise<void> {
     const derived: DerivedReader = { has: () => false, url: async () => null, forget: () => {} };
-    await act(async () => root.render(<Suspense><MarkdownViewer file={{ contentType: 'text/markdown' } as ShelfFile} content={content} derived={derived} neighbours={[]} /></Suspense>));
+    await act(async () => root.render(<Suspense><MarkdownViewer file={{ contentType: 'text/markdown' } as ShelfFile} content={content} derived={derived} neighbours={[]} Fallback={() => null} /></Suspense>));
     // Its component is loaded as it is first shown, which takes a while on a busy machine.
     await vi.waitFor(async () => {
       await act(async () => undefined);

@@ -30,14 +30,17 @@ A file stored without an image type gets nothing, even when its name says it is 
 
 ## In the preview
 
-Its viewer (`src/SharpeningViewer.tsx`) takes the files stored as `image/*`; an SVG, an encrypted image and one of
-which nothing was made are the app's own viewer's to show, or to say why it cannot. An image's box has its recorded
-size from the start, with its placeholder blurred in it, and keeps it. The thumbnail, if the listing names one, and
-the preview load together, and the sharper of those that are there shows, never one less sharp after it. The whole
-image loads behind them, unseen, the original or, of a type the browser does not show, `full`: once it is decoded
-(`decode()`), it takes their place in the same box, under the same zoom (`useZoom`). If it fails, the preview
-stays. Leaving the image ends what it was loading. Of the files beside it, the size and the preview are loaded ahead,
-never the whole. `byteshelf.client/e2e/shelf.spec.ts` records every frame of the swap.
+Its viewer (`src/SharpeningViewer.tsx`) takes the files stored as `image/*`. An image's box has its recorded size
+from the start, with its placeholder blurred in it, and keeps it. The thumbnail, if the listing names one, and the
+preview load together, and the sharper of those that are there shows, never one less sharp after it. The whole image
+loads behind them, unseen, the original or, of a type the browser does not show, `full`: once it is decoded
+(`decode()`), it takes their place in the same box, under the same zoom (`useZoom`). If it fails, the preview stays.
+Leaving the image ends what it was loading. Of the files beside it, the size and the preview are loaded ahead, never
+the whole. `byteshelf.client/e2e/shelf.spec.ts` records every frame of the swap.
+
+It leaves an image to the next viewer (`Fallback`: the app's own, unless another plugin's comes first), to show or to
+say why it cannot, when it is an SVG or encrypted, when nothing was made of it, and when the whole does not load
+while no preview is shown, a thumbnail alone being too small to keep.
 
 ## Colours
 

@@ -13,6 +13,11 @@ export interface ViewerProps {
   derived: DerivedReader;
   /** The files the arrow keys move to, whatever shows them: the previous one and the next, where there are any. */
   neighbours: readonly Neighbour[];
+  /**
+   * Shows the file in the viewer that would have shown it were there not this one, or says that there is none, as
+   * of a file this viewer finds it has nothing to show of. It takes no props.
+   */
+  Fallback: ComponentType;
 }
 
 /** A file beside the previewed one, whose viewer is not shown yet but may be soon. */
@@ -34,8 +39,19 @@ export interface Viewer {
   unavailable?: () => string | null;
 }
 
-/** The viewer that shows a file and the plugin it came with, null for a built-in one, or why none of those that take the file's type can in this browser. */
-export type ViewerMatch = { viewer: Viewer; pluginId: string | null; unavailable: null } | { viewer: null; unavailable: string };
+/** A viewer and the plugin it came with, null for a built-in one. */
+export interface ShownBy {
+  viewer: Viewer;
+  pluginId: string | null;
+}
+
+/** The viewers that take a file. */
+export interface ViewerMatch {
+  /** Those that can show it in this browser, in order: the first does, and each leaves it to the next. Empty when none can. */
+  viewers: readonly ShownBy[];
+  /** Why the first of those that take it and cannot in this browser cannot; null when every one can. */
+  unavailable: string | null;
+}
 
 /** How closely a viewer takes a file: not at all, by its type's family, or by its type or extension. */
 const MATCH = { none: 0, family: 1, exact: 2 } as const;
@@ -69,7 +85,7 @@ export class ViewerRegistry {
     return new ViewerRegistry([...this.registered, ...added]);
   }
 
-  /** The viewer that shows `file`, or why those that take it cannot; null when none takes it. */
+  /** The viewers that take `file`; null when none does. */
   viewerFor(file: ShelfFile): ViewerMatch | null {
     const taking = this.registered
       .map((each) => ({ ...each, match: matchOf(each, file) }))
@@ -77,13 +93,15 @@ export class ViewerRegistry {
     // The sort is stable, so between a plugin's own viewers the first it registered wins.
     taking.sort((one, other) => other.match - one.match || byPlugin(one.pluginId, other.pluginId));
 
-    let first: ViewerMatch | null = null;
+    if (taking.length === 0) return null;
+    const viewers: ShownBy[] = [];
+    let unavailable: string | null = null;
     for (const { viewer, pluginId } of taking) {
-      const unavailable = whyUnavailable(viewer);
-      if (unavailable === null) return { viewer, pluginId, unavailable };
-      first ??= { viewer: null, unavailable };
+      const why = whyUnavailable(viewer);
+      if (why === null) viewers.push({ viewer, pluginId });
+      else unavailable ??= why;
     }
-    return first;
+    return { viewers, unavailable };
   }
 }
 
