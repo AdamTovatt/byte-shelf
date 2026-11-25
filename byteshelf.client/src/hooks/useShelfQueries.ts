@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
-import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { keepPreviousData, notifyManager, useInfiniteQuery, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { QUERY_RETRIES } from '../lib/queryClient';
-import { queryKeys } from '../lib/queryKeys';
+import { listingsAt, queryKeys } from '../lib/queryKeys';
 import type { SearchCriteria } from '../lib/searchFilters';
 import {
   createDirectory,
@@ -24,6 +24,7 @@ import {
   searchFiles,
   setDescription,
   updateShelf,
+  type DirectoryListing,
   type Entry,
   type ShelfFile,
 } from '../services/shelfService';
@@ -180,10 +181,32 @@ export function useTrash(shelf: string) {
 /** Refetches what a change on a shelf touches. The live updates do too, a moment later; this is for the tab that made it. */
 export function useInvalidateShelf() {
   const queryClient = useQueryClient();
-  return useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: queryKeys.shelves.root });
-    void queryClient.invalidateQueries({ queryKey: queryKeys.shelfContents.root });
-  }, [queryClient]);
+  return useCallback(() => invalidateShelf(queryClient), [queryClient]);
+}
+
+function invalidateShelf(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.shelves.root });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.shelfContents.root });
+}
+
+/**
+ * Puts a file just stored into the cached listings of the folder at `folderPath`, replacing the file of its
+ * name, and then refetches what the change touches. A listing being read is cancelled first, as one begun before
+ * the file was stored would land without it. `listed` is called as what shows a listing is told of the file, in
+ * the same go, so what it takes away for the file is gone as the file is there.
+ */
+export async function listStoredFile(queryClient: QueryClient, shelf: string, folderPath: string, file: ShelfFile, listed: () => void): Promise<void> {
+  const listings = listingsAt(shelf, folderPath);
+  await queryClient.cancelQueries(listings);
+  notifyManager.batch(() => {
+    queryClient.setQueriesData<DirectoryListing>(listings, (listing) => listing && {
+      ...listing,
+      // At the end, as the app orders a listing's files itself (folderRows).
+      files: [...listing.files.filter(({ name }) => name !== file.name), file],
+    });
+    notifyManager.schedule(listed);
+  });
+  invalidateShelf(queryClient);
 }
 
 export function useCreateShelf() {

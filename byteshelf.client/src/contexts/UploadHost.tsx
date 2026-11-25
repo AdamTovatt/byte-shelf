@@ -1,9 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toastMissedUpload } from '../components/uploadToasts';
+import { listStoredFile } from '../hooks/useShelfQueries';
 import { useUploadQueue, type UploadFiles } from '../hooks/useUploadQueue';
-import { withUploads, type FileRow, type ListedFiles } from '../lib/uploadRows';
-import { uploadStore, type ListedUpload, type UploadStore } from '../lib/uploadStore';
-import type { UploadState } from '../services/uploadQueue';
+import { folderRows, type FolderRow } from '../lib/uploadRows';
+import { uploadStore, type HeldState, type ListedUpload, type UploadStore } from '../lib/uploadStore';
+import type { DirectoryListing } from '../services/shelfService';
+import type { UploadReporter } from '../services/uploadQueue';
 
 interface Uploads {
   uploadFiles: UploadFiles;
@@ -14,12 +17,18 @@ const UploadContext = createContext<Uploads | null>(null);
 
 /**
  * Holds the uploads of the pages under it, which it outlives: what is queued, the rows that show how each
- * goes, what a taken name offers and a password asked for stay as a page is left. A password is asked for no
- * longer once this is gone, as on signing out.
+ * goes, what a taken name offers and a password asked for stay as a page is left. One done is put into its
+ * folder's listing, which its row then is. A password is asked for no longer once this is gone, as on signing
+ * out.
  */
 export function UploadHost({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [store] = useState(() => uploadStore(toastMissedUpload));
-  const uploadFiles = useUploadQueue(store.report);
+  const [report] = useState((): UploadReporter => (upload, state) => {
+    if (state.status !== 'done') store.report(upload, state);
+    else void listStoredFile(queryClient, upload.shelf, upload.folderPath, state.file, () => store.remove(upload.id));
+  });
+  const uploadFiles = useUploadQueue(report);
   const uploads = useMemo(() => ({ uploadFiles, store }), [uploadFiles, store]);
   return <UploadContext.Provider value={uploads}>{children}</UploadContext.Provider>;
 }
@@ -36,34 +45,24 @@ export function useUploadFiles(): UploadFiles {
 }
 
 const NO_UPLOADS: readonly ListedUpload[] = [];
-
-/** A folder as its listing was read: the uploads into it are those filed under its path. */
-export interface ListedFolder extends ListedFiles {
-  path: string;
-}
+const NO_ROWS: readonly FolderRow[] = [];
 
 /**
- * The rows of a folder's files with the uploads into it, as `withUploads` says, taking away each done that its
- * listing has caught up with; none until it is listed. While `shown`, the folder counts as shown, so one whose
- * name is taken or that fails is told of on its row alone.
+ * A folder's rows with the uploads into it, as `folderRows` says; none until it is listed. The uploads are those
+ * filed under the path its listing has. While `shown`, the folder counts as shown, so one whose name is taken or
+ * that fails is told of on its row alone.
  */
-export function useUploadRows(shelf: string, folder: ListedFolder | null, shown: boolean): FileRow[] {
+export function useFolderRows(shelf: string, listing: DirectoryListing | undefined, shown: boolean): readonly FolderRow[] {
   const { store } = useUploads();
-  const path = folder?.path ?? null;
+  const path = listing?.directory.path ?? null;
   const uploads = useSyncExternalStore(store.subscribe, () => (path === null ? NO_UPLOADS : store.inFolder(shelf, path)));
   useEffect(() => (shown && path !== null ? store.show(shelf, path) : undefined), [store, shelf, path, shown]);
 
-  const files = folder?.files;
-  const readAt = folder?.readAt ?? 0;
-  const { rows, released } = useMemo(() => withUploads({ files: files ?? [], readAt }, uploads), [files, readAt, uploads]);
-  useEffect(() => {
-    for (const { upload } of released) store.remove(upload.id);
-  }, [store, released]);
-  return rows;
+  return useMemo(() => (listing ? folderRows(listing, uploads) : NO_ROWS), [listing, uploads]);
 }
 
 /** Where an upload is, null once it is gone, and the way to dismiss it. */
-export function useUpload(id: number): { state: UploadState | null; dismiss: () => void } {
+export function useUpload(id: number): { state: HeldState | null; dismiss: () => void } {
   const { store } = useUploads();
   const state = useSyncExternalStore(store.subscribe, () => store.stateOf(id));
   return { state, dismiss: () => store.remove(id) };

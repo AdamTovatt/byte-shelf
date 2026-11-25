@@ -31,10 +31,9 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useCreateDownloadLink } from '../hooks/useLinkQueries';
 import { useSelection, type SelectionClickModifiers } from '../hooks/useSelection';
 import { useFoundFiles } from '../hooks/useFoundFiles';
-import { useUploadFiles, useUploadRows } from '../contexts/UploadHost';
+import { useFolderRows, useUploadFiles } from '../contexts/UploadHost';
 import { UploadRow } from './UploadRow';
 import { FILE_ROW } from './fileRowLayout';
-import type { FileRow } from '../lib/uploadRows';
 import { useFilePicker } from '../hooks/useFilePicker';
 import { MobileTopBarActions, MobileTopBarOverlay } from './layout/MobileTopBar';
 import { encryptionActions } from '../hooks/useEncryption';
@@ -63,7 +62,7 @@ import { copyWhenReady } from '../lib/clipboard';
 import { runOrToast } from '../lib/utils';
 import { useIsOverlayOpen } from '../ui/hooks/useOverlay';
 import { useSubmit } from '../hooks/useSubmit';
-import { directoryEntry, entrySizeBytes, nameOrCount, type DuplicateGroup, type DuplicateSearchResults, type Entry, type FileSearchResults, type ShelfFile } from '../services/shelfService';
+import { entrySizeBytes, nameOrCount, type DuplicateGroup, type DuplicateSearchResults, type Entry, type FileSearchResults, type ShelfFile } from '../services/shelfService';
 import { RowIcon } from './RowIcon';
 import { SearchOptions } from './SearchOptions';
 import { NO_SEARCH_FILTERS, isSearch, searchCriteria } from '../lib/searchFilters';
@@ -82,7 +81,7 @@ interface FolderListingProps {
 export function FolderListing({ shelf, path, work: { encryption, reading, fileActions }, toViewer }: FolderListingProps) {
   const navigate = useNavigate();
   const { plugins } = usePluginHost();
-  const { data: listing, dataUpdatedAt, isLoading, error } = useListing(shelf, path);
+  const { data: listing, isLoading, error } = useListing(shelf, path);
   const folder = listing ? listedFolder(listing) : null;
   const openableHere = (file: ShelfFile) => openable({ file, reading });
   const overlayOpen = useIsOverlayOpen();
@@ -106,9 +105,8 @@ export function FolderListing({ shelf, path, work: { encryption, reading, fileAc
   const criteria = searchCriteria(settledText, filters);
   const found = useFileSearch(shelf, path, criteria, isSearch(settledText, filters) && !filters.duplicates);
   const duplicates = useDuplicateSearch(shelf, path, criteria, filters.duplicates);
-  const listedFolderFiles = useMemo(() => (listing ? { path: listing.directory.path, files: listing.files, readAt: dataUpdatedAt } : null), [listing, dataUpdatedAt]);
   // A search hides the uploads' rows, so a taken name or a failure is then told of as for a folder not open.
-  const fileRows = useUploadRows(shelf, listedFolderFiles, !searching);
+  const rows = useFolderRows(shelf, listing, !searching);
 
   const picker = useFilePicker();
 
@@ -187,8 +185,6 @@ export function FolderListing({ shelf, path, work: { encryption, reading, fileAc
     });
   }
 
-  // The folder's own rows: its folders, then its files with what is being uploaded into it.
-  const rows: (Entry | FileRow)[] = useMemo(() => (listing ? [...listing.directories.map(directoryEntry), ...fileRows] : []), [listing, fileRows]);
   const entries = useMemo(() => rows.filter((shown): shown is Entry => shown.kind !== 'upload'), [rows]);
   const files = useMemo(() => entries.flatMap((entry) => (entry.kind === 'file' ? [entry.value] : [])), [entries]);
 

@@ -69,8 +69,9 @@ export interface UploadQueueAccess {
   askFirst: AskPassword;
   /** Asks for a password an upload turns out to need in its turn. */
   ask: AskPassword;
+  /** Told how each upload goes; one done is told with the file it was stored as, for what shows the shelf to list. */
   report: UploadReporter;
-  /** Told once a file is stored. */
+  /** Told once a file may have been stored that is not told done: one cancelled once all of it was sent. */
   changed: () => void;
   /** What an encrypted upload is encrypted at; only tests lower it. */
   workFactor?: number;
@@ -129,13 +130,8 @@ export function uploadQueue({ askFirst, ask, report, changed, workFactor = DEFAU
             return;
           }
           tell({ status: 'done', file: stored });
-          changed();
         } catch (error) {
-          // Cancelled once all was sent, it may be stored all the same: what shows the shelf reads it again.
-          if (signal.aborted) {
-            changed();
-            return;
-          }
+          if (signal.aborted) return;
           if (overwrite) tell(offerReplacing(upload, error));
           else if (await isNameTaken(upload, error)) tell(offerReplacing(upload));
           else tell({ status: 'failed', error });
@@ -150,7 +146,12 @@ export function uploadQueue({ askFirst, ask, report, changed, workFactor = DEFAU
         // Waited for no longer once it is cancelled: what it does goes on, telling nothing. Not waited out,
         // though encrypting goes on until it is done, holding what it makes: one cancelled, often for being
         // slow, is not to hold back the rest, and what goes on at once is only as many as are cancelled then.
-        await untilAborted(send(), signal).catch(() => undefined);
+        // Cancelled once all was sent, it may be stored all the same, though not told done, whether or not its
+        // answer came: what shows the shelf reads it again as it ends.
+        const sent = send().finally(() => {
+          if (signal.aborted) changed();
+        });
+        await untilAborted(sent, signal).catch(() => undefined);
       });
     }
 

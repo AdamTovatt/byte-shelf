@@ -1,3 +1,4 @@
+import type { QueryFilters } from '@tanstack/react-query';
 import type { SearchCriteria } from './searchFilters';
 
 // Hierarchical TanStack Query keys, one root per invalidation resource. Hooks build their queries
@@ -17,6 +18,8 @@ export const queryKeys = {
   },
   shelfContents: {
     root: ['shelfContents'] as const,
+    listings: (shelf: string) => ['shelfContents', shelf, 'listing'] as const,
+    // Its shelf's listings and then the path, as listingsAt below reads it.
     listing: (shelf: string, path: string) => ['shelfContents', shelf, 'listing', path] as const,
     tree: (shelf: string, path: string) => ['shelfContents', shelf, 'tree', path] as const,
     file: (shelf: string, id: string) => ['shelfContents', shelf, 'file', id] as const,
@@ -57,3 +60,12 @@ export const queryKeys = {
     release: ['version', 'release'] as const,
   },
 } as const;
+
+/**
+ * The cached listings of the folder at `path` on `shelf`, a path the server has, which it takes composed: one
+ * listed from the address may not be.
+ */
+export function listingsAt(shelf: string, path: string): QueryFilters {
+  const listings = queryKeys.shelfContents.listings(shelf);
+  return { queryKey: listings, predicate: ({ queryKey }) => String(queryKey[listings.length]).normalize('NFC') === path };
+}
