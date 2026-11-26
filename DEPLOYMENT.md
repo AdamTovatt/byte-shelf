@@ -57,7 +57,11 @@ Setting `INITIAL_ADMIN_EMAIL` and `INITIAL_ADMIN_PASSWORD` before the first star
 instead of step 4; remove them once it exists.
 
 Every start migrates the database first. `ByteShelf.Server --migrate-only` (with `BYTESHELF_ROOT`)
-only migrates it and exits, for running migrations as their own step before a start.
+only migrates it and exits, for running migrations as their own step before a start. The log has a
+line for each migration applied, in order ("Applied the migration v0001_create_auth_tables."), or
+"Database is up to date." when none was needed. A migration that fails stops the start (or
+`--migrate-only`, with a nonzero exit) with an error naming it; those applied before it stay
+applied, and the next run carries on from the one that failed.
 
 ## Users from the command line
 

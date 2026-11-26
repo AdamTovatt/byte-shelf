@@ -9,7 +9,6 @@ using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared.Database;
 using ByteShelf.Server.Shared.Errors;
 using ByteShelf.Server.Shared.Json;
-using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
@@ -40,33 +39,31 @@ namespace ByteShelf.Server.Tests.Access
         /// <summary>The keys the old log holds a state of: the three still there and the one purged since.</summary>
         private static readonly OldKey[] LoggedKeys = { Writer, Backup, Deleted, Reader };
 
-        private RootFolder _old = null!;
+        private TestRoot _old = null!;
         private DateTimeOffset _migrationStarted;
         private DateTimeOffset _migrationEnded;
 
         public override async Task InitializeAsync()
         {
             await base.InitializeAsync();
-            _old = RootFolder.Open(Path.Combine(AppContext.BaseDirectory, "test-roots", "v0013-" + Guid.NewGuid().ToString("N")));
-            TestMigrations.RunBefore("v0014", _old.Database);
-            await FillAsBeforeV0014Async(_old.Database);
+            _old = TestRoot.CreateBefore("v0014");
+            await FillAsBeforeV0014Async(_old.Root.Database);
 
             _migrationStarted = DateTimeOffset.UtcNow;
-            DatabaseMigrator.RunMigrations(_old.Database, NullLogger.Instance);
+            DatabaseMigrator.RunMigrations(_old.Root.Database, NullLogger.Instance);
             _migrationEnded = DateTimeOffset.UtcNow;
         }
 
         public override async Task DisposeAsync()
         {
-            _old.Database.Release();
-            Directory.Delete(_old.Path, recursive: true);
+            await _old.DisposeAsync();
             await base.DisposeAsync();
         }
 
         [Fact]
         public async Task Migrate_EachKey_BecomesOneGrantOnItsShelfUnderTheKeysId()
         {
-            IReadOnlyList<ShelfKeyGrant> grants = await ReadGrantsAsync(_old.Database);
+            IReadOnlyList<ShelfKeyGrant> grants = await ReadGrantsAsync(_old.Root.Database);
 
             Assert.Equal(
                 new[] { Writer, Backup, Reader }.Select(key => (key.Id, key.Id, key.ShelfId, key.Permission, TestInstants.Now, TestInstants.Now)).OrderBy(grant => grant.Item1),
@@ -76,7 +73,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task Migrate_KeyTable_LosesItsShelfAndPermissionAndKeepsTheLinkAKeyMade()
         {
-            await using DbConnection connection = await _old.Database.OpenConnectionAsync();
+            await using DbConnection connection = await _old.Root.Database.OpenConnectionAsync();
 
             Assert.Equal(new[] { "id", "name", "secret_sha256", "created_at" }, await connection.QueryAsync<string>("SELECT name FROM pragma_table_info('shelf_key') ORDER BY cid"));
             Assert.Equal(3L, await connection.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM shelf_key"));
@@ -86,7 +83,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task Migrate_ChangeLog_HoldsEveryKeyStateInTheNewShape()
         {
-            IReadOnlyList<ChangeLogEntry> entries = await TestMigrations.ReadLogAsync(_old.Database);
+            IReadOnlyList<ChangeLogEntry> entries = await TestMigrations.ReadLogAsync(_old.Root.Database);
 
             List<ChangeLogEntry> keyStates = entries.Where(entry => entry.EntityType == ChangeEntityType.ShelfKey && entry.Payload != null).ToList();
 
@@ -106,13 +103,13 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task Migrate_ChangeLog_LogsEachGrantAfterTheEntriesThereDatedWhenItRan()
         {
-            IReadOnlyList<ChangeLogEntry> entries = await TestMigrations.ReadLogAsync(_old.Database);
+            IReadOnlyList<ChangeLogEntry> entries = await TestMigrations.ReadLogAsync(_old.Root.Database);
 
             List<ChangeLogEntry> grantEntries = entries.Where(entry => entry.EntityType == ChangeEntityType.ShelfKeyGrant).ToList();
             long lastBefore = entries.Where(entry => entry.EntityType != ChangeEntityType.ShelfKeyGrant).Max(entry => entry.Sequence);
 
             Assert.Equal(
-                (await ReadGrantsAsync(_old.Database)).Select(Describe).OrderBy(grant => grant),
+                (await ReadGrantsAsync(_old.Root.Database)).Select(Describe).OrderBy(grant => grant),
                 grantEntries.Select(entry => Describe(ChangePayload.Deserialize<ShelfKeyGrant>(entry.Payload!))).OrderBy(grant => grant));
             Assert.All(grantEntries, entry =>
             {
@@ -126,7 +123,7 @@ namespace ByteShelf.Server.Tests.Access
         [Fact]
         public async Task Migrate_WholeCopyInProgress_HoldsItsKeyInTheNewShape()
         {
-            await using DbConnection connection = await _old.Database.OpenConnectionAsync();
+            await using DbConnection connection = await _old.Root.Database.OpenConnectionAsync();
 
             string payload = (await connection.ExecuteScalarAsync<string>("SELECT payload FROM replication_copy WHERE entity_type = 'shelf_key'"))!;
 
@@ -140,7 +137,7 @@ namespace ByteShelf.Server.Tests.Access
             await ReplayMigratedLogAsync();
 
             Assert.Equal(
-                (await ReadGrantsAsync(_old.Database)).Select(Describe).OrderBy(grant => grant),
+                (await ReadGrantsAsync(_old.Root.Database)).Select(Describe).OrderBy(grant => grant),
                 (await ReadGrantsAsync(TestRoot.Root.Database)).Select(Describe).OrderBy(grant => grant));
             Assert.Null(await Services.GetRequiredService<IShelfKeyRepository>().GetByIdAsync(Deleted.Id));
         }
@@ -168,7 +165,7 @@ namespace ByteShelf.Server.Tests.Access
         private async Task ReplayMigratedLogAsync()
         {
             await using ContentsSession session = await Services.CreateContentsSessionAsync();
-            await Services.GetRequiredService<ReplicaApplier>().ApplyAsync(await TestMigrations.ReadLogAsync(_old.Database), session, new AppliedChanges());
+            await Services.GetRequiredService<ReplicaApplier>().ApplyAsync(await TestMigrations.ReadLogAsync(_old.Root.Database), session, new AppliedChanges());
             await session.CommitAsync();
         }
 
