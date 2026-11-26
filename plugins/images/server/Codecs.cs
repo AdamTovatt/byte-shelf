@@ -5,8 +5,9 @@ namespace ByteShelf.Plugins.Images
 {
     /// <summary>
     /// ImageMagick, kept to the formats policy.xml names and within <see cref="ImageLimits"/>; every read goes through one.
-    /// Its own settings allow it every format it has, some of which read other files. Pixels stay in memory; a HEIC or an
-    /// AVIF is copied to a temporary file to be read, which is in the working folder and gone once it has been.
+    /// Its own settings allow it every format it has, some of which read other files. Pixels stay in memory; a HEIC, an
+    /// AVIF and what may be a camera's raw, which LibRaw (ImageMagick's DNG) is asked about, are copied to a temporary file
+    /// to be read, which is in the working folder and gone once it has been.
     /// </summary>
     internal sealed class Codecs
     {
@@ -15,7 +16,7 @@ namespace ByteShelf.Plugins.Images
         private static readonly FrozenSet<MagickFormat> Allowed = new[]
         {
             MagickFormat.Jpeg, MagickFormat.Png, MagickFormat.Gif, MagickFormat.WebP, MagickFormat.Avif,
-            MagickFormat.Heic, MagickFormat.Tiff, MagickFormat.Bmp, MagickFormat.Ico,
+            MagickFormat.Heic, MagickFormat.Tiff, MagickFormat.Bmp, MagickFormat.Ico, MagickFormat.Dng,
         }.ToFrozenSet();
 
         private static Codecs? _prepared;

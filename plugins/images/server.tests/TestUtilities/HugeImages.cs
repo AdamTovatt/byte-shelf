@@ -4,7 +4,7 @@ using ImageMagick;
 
 namespace ByteShelf.Plugins.Images.Tests.TestUtilities
 {
-    /// <summary>Files of a few hundred bytes that say they are larger than is decoded, as a bomb does, by the width of one pixel.</summary>
+    /// <summary>Small files that say they are larger than is decoded, as a bomb does, by the width of one pixel.</summary>
     internal static class HugeImages
     {
         /// <summary><paramref name="image"/> in a format, saying it is 12001 by 10000 pixels.</summary>
@@ -18,6 +18,8 @@ namespace ByteShelf.Plugins.Images.Tests.TestUtilities
                     return TestImages.Ico(TestImages.PngSaying(image.ToByteArray(MagickFormat.Png), 12_001, 10_000));
                 case "heic":
                     return HeicFile.Make(saidWidth: 12_001, saidHeight: 10_000);
+                case "dng":
+                    return DngFile.Make(saidWidth: 12_001, saidHeight: 10_000);
                 case "jpeg":
                 {
                     byte[] jpeg = TestImages.Jpeg(image);

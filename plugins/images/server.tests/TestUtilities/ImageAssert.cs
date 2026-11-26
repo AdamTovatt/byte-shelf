@@ -30,16 +30,25 @@ namespace ByteShelf.Plugins.Images.Tests.TestUtilities
             Assert.Equal(((uint)width, (uint)height), (image.Width, image.Height));
         }
 
-        /// <summary>Every kind was made, of a small image of this size upright, whose quarters are of these colours upright.</summary>
+        /// <summary>Every kind was made, of an image of this size upright, whose quarters are of these colours upright.</summary>
         public static void AllOf(MadeFiles made, int width, int height, IReadOnlyList<IMagickColor<byte>> quarters)
         {
-            Assert.Equal(MadeFiles.AllKinds.Order(), made.Kinds);
-            Assert.All(MadeFiles.AllKinds, kind =>
+            MadeOf(made, MadeFiles.AllKinds, width, height, quarters);
+        }
+
+        /// <summary>
+        /// <paramref name="kinds"/> were made and nothing else, of an image of this size upright whose quarters are of these
+        /// colours upright: each upright, and of its long side at most.
+        /// </summary>
+        public static void MadeOf(MadeFiles made, IReadOnlyList<DerivedKind> kinds, int width, int height, IReadOnlyList<IMagickColor<byte>> quarters)
+        {
+            Assert.Equal(kinds.Order(), made.Kinds);
+            Assert.All(kinds, kind =>
             {
                 Assert.Equal(kind is DerivedKind.Thumbnail or DerivedKind.Preview ? "image/webp" : "image/jpeg", made.MediaTypeOf(kind));
                 using MagickImage image = made.Decode(kind);
-                double scale = kind == DerivedKind.Thumbnail ? Math.Min(1, 320.0 / Math.Max(width, height)) : 1;
-                Size(image, (int)(width * scale), (int)(height * scale));
+                double scale = Math.Min(1, (double)LongSideOf(kind) / Math.Max(width, height));
+                Size(image, (int)Math.Round(width * scale), (int)Math.Round(height * scale));
                 Assert.True(image.Orientation is Orientation.Undefined or Orientation.TopLeft);
                 int x = (int)image.Width / 4;
                 int y = (int)image.Height / 4;
@@ -48,6 +57,18 @@ namespace ByteShelf.Plugins.Images.Tests.TestUtilities
                 Color(quarters[2], ColorAt(image, x, y * 3));
                 Color(quarters[3], ColorAt(image, x * 3, y * 3));
             });
+        }
+
+        private static int LongSideOf(DerivedKind kind)
+        {
+            return kind switch
+            {
+                DerivedKind.Thumbnail => 320,
+                DerivedKind.Preview => 2048,
+                DerivedKind.Full => ImageLimits.MaxJpegLongSide,
+                DerivedKind.Agent => ImageLimits.AgentLongSide,
+                _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+            };
         }
     }
 }

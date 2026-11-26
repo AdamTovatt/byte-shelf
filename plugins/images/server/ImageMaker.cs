@@ -9,13 +9,6 @@ namespace ByteShelf.Plugins.Images
     /// </summary>
     public sealed class ImageMaker : IDerivedFileMaker
     {
-        /// <summary>
-        /// The most pixels an agent's has on its long side: the long side past which Claude's API scales an image down
-        /// before the model sees it (Anthropic's vision documentation), so a larger one would only cost more. Re-check it
-        /// there when that changes.
-        /// </summary>
-        internal const int AgentLongSide = 1568;
-
         private const string WebP = "image/webp";
         private const string Jpeg = "image/jpeg";
         private const uint FullQuality = 92;
@@ -38,7 +31,8 @@ namespace ByteShelf.Plugins.Images
 
             // Each from a decode of its own, so a whole image that is turned has the memory to itself. The server asks
             // for thumbnails and previews together, and for the others alone.
-            if (kinds.Contains(DerivedKind.Full))
+            // Of a camera's raw, whatever it is stored as, the preview is the sharpest there is.
+            if (kinds.Contains(DerivedKind.Full) && !source.IsCameraRaw)
             {
                 await AddFullAsync(source, made);
             }
@@ -69,9 +63,9 @@ namespace ByteShelf.Plugins.Images
 
         private static async Task AddAgentsAsync(ImageSource source, IMadeFiles made)
         {
-            using DecodedImage decoded = source.Decode(AgentLongSide);
+            using DecodedImage decoded = source.Decode(ImageLimits.AgentLongSide);
             IMagickImage<byte> image = decoded.Image;
-            Pictures.ShrinkUpright(image, AgentLongSide);
+            Pictures.ShrinkUpright(image, ImageLimits.AgentLongSide);
             Colors.ToSrgb(image);
             Pictures.OnWhite(image);
             byte[] jpeg = AgentQualities

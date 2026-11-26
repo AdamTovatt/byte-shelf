@@ -10,7 +10,10 @@ namespace ByteShelfCommon
 
         private const int MaxLength = 255;
 
-        /// <summary>Common types by file extension, so a file stored without a type still opens rightly in a browser.</summary>
+        /// <summary>
+        /// Common types by file extension, so a file stored without a type still opens rightly in a browser, and a camera's
+        /// raw, as from a card, is stored as an image, which plugins make previews of.
+        /// </summary>
         private static readonly Dictionary<string, string> ByExtension = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             [".pdf"] = "application/pdf",
@@ -32,6 +35,10 @@ namespace ByteShelfCommon
             [".webp"] = "image/webp",
             [".svg"] = "image/svg+xml",
             [".heic"] = "image/heic",
+            [".arw"] = "image/x-sony-arw",
+            [".dng"] = "image/x-adobe-dng",
+            [".cr2"] = "image/x-canon-cr2",
+            [".nef"] = "image/x-nikon-nef",
             [".mp3"] = "audio/mpeg",
             [".wav"] = "audio/wav",
             [".mp4"] = "video/mp4",

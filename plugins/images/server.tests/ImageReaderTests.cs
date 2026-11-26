@@ -30,6 +30,27 @@ namespace ByteShelf.Plugins.Images.Tests
             AssertPlaceholder(document, 12, 16, MagickColors.Red, MagickColors.Red);
         }
 
+        /// <summary>As a camera set to another shape than its sensor's makes its JPEG, which the kinds are made of.</summary>
+        [Fact]
+        public async Task ReadAsync_SaysTheCamerasJpegOfARaw()
+        {
+            JsonObject document = await ReadAsync(DngFile.Make(orientation: 6, jpeg: DngFile.Jpeg(1600, 1200)));
+
+            Assert.Equal((1200, 1600), ((int)document["width"]!, (int)document["height"]!));
+            IReadOnlyList<MagickColor> upright = TestImages.UprightQuarterColors(6);
+            AssertPlaceholder(document, 12, 16, upright[0], upright[1]);
+        }
+
+        [Fact]
+        public async Task ReadAsync_SaysARaw_WhoseCamerasJpegIsSmall()
+        {
+            JsonObject document = await ReadAsync(DngFile.Make(orientation: 6, jpeg: DngFile.Jpeg(400, 200)));
+
+            Assert.Equal((DngFile.Height, DngFile.Width), ((int)document["width"]!, (int)document["height"]!));
+            IReadOnlyList<MagickColor> upright = TestImages.UprightQuarterColors(6);
+            AssertPlaceholder(document, ImageReader.PlaceholderLongSide * DngFile.Height / DngFile.Width, ImageReader.PlaceholderLongSide, upright[0], upright[1]);
+        }
+
         public static TheoryData<string, ushort> Orientations { get; } = new MatrixTheoryData<string, ushort>(TestImages.FormatsWithOrientation, TestImages.Orientations);
 
         [Theory]

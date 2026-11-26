@@ -13,12 +13,12 @@ namespace ByteShelf.Plugins.Images
 
         public void Configure(IPluginBuilder builder)
         {
-            builder.AddReader<ImageReader>(1, Images);
+            builder.AddReader<ImageReader>(2, Images);
             builder.AddMaker<ImageMaker>(
-                new DerivedFileDeclaration(DerivedKind.Thumbnail, 1, Images),
-                new DerivedFileDeclaration(DerivedKind.Preview, 1, Images),
+                new DerivedFileDeclaration(DerivedKind.Thumbnail, 2, Images),
+                new DerivedFileDeclaration(DerivedKind.Preview, 2, Images),
                 new DerivedFileDeclaration(DerivedKind.Full, 1, NotShownByBrowsers),
-                new DerivedFileDeclaration(DerivedKind.Agent, 1, Images));
+                new DerivedFileDeclaration(DerivedKind.Agent, 2, Images));
         }
     }
 }
