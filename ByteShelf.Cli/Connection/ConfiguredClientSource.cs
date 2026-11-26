@@ -169,7 +169,7 @@ namespace ByteShelf.Cli.Connection
         /// The login in effect now, or null when there is none. Read afresh for every command and
         /// tool call, so a long-running MCP server follows a login or logout made elsewhere.
         /// </summary>
-        /// <exception cref="UsageException">The environment names a server without a key, or the config file is damaged.</exception>
+        /// <exception cref="UsageException">The environment names a server without a key, the config file is damaged, or there is no config folder.</exception>
         private Credential? Resolve()
         {
             string? environmentServer = _environment(ServerVariable);

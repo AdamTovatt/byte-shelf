@@ -115,11 +115,13 @@ uses a shelf key. The password or key is read from the terminal without echo, or
 of standard input when one is piped in; never from an argument, which would land in the shell's
 history. `byteshelf logout` ends the session on the server and forgets the login.
 
-The login is kept in `byteshelf/config.json` in the user's config folder (`$XDG_CONFIG_HOME`, else
-`~/.config`, on Linux and macOS; `%APPDATA%` on Windows), readable only by its owner.
-`BYTESHELF_CONFIG` names another file. `BYTESHELF_URL` and `BYTESHELF_KEY` override it, so a program
-or an agent can use a key with no login: both together name a server and its key, and
-`BYTESHELF_KEY` alone uses the key with the kept server.
+The login is kept in `byteshelf/config.json` in the user's config folder (`$XDG_CONFIG_HOME` when it
+is an absolute path, else `.config` in the home folder, on Linux and macOS; `%APPDATA%` on Windows),
+readable only by its owner; the folder is made when first needed. `BYTESHELF_CONFIG` names
+another file, and a command that reads or writes the login needs it when there is no config folder.
+`BYTESHELF_URL` and `BYTESHELF_KEY` override the file, so a program or an agent can use a key with no
+login: both together name a server and its key, and `BYTESHELF_KEY` alone uses the key with the kept
+server.
 
 A kept session is shared by every `byteshelf` process, MCP servers included. A refresh token works
 once, so every renewal happens with the config file locked and first takes up tokens another

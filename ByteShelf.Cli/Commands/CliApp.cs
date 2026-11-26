@@ -262,30 +262,31 @@ namespace ByteShelf.Cli.Commands
         {
             arguments.EnsureAllUsed();
             VersionReport report = new VersionReport { Cli = ReleaseVersion.Of(typeof(CliApp).Assembly) };
-            string? description = _clients.Describe();
+            string? description = null;
             string Text(VersionReport printed) => printed.Server == null
                 ? $"byteshelf {printed.Cli}"
                 : $"byteshelf {printed.Cli}{Environment.NewLine}server {printed.Server.Version} at {description}";
 
-            if (description != null)
+            try
             {
-                try
+                description = _clients.Describe();
+                if (description != null)
                 {
                     report = new VersionReport { Cli = report.Cli, Server = await (await _clients.OpenAsync(cancellationToken)).GetServerVersionAsync(cancellationToken) };
                 }
-                catch (Exception exception) when (!cancellationToken.IsCancellationRequested && Failure.From(exception) != null)
+            }
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested && Failure.From(exception) != null)
+            {
+                // The CLI's own version is printed even when the server cannot be asked, or the login
+                // cannot be read; the failure then fails the command, so a script can tell.
+                Print(report, CliOutputJsonContext.Default.VersionReport, Text);
+                if (exception is ByteShelfException { IsNotFound: true })
                 {
-                    // The CLI's own version is printed even when the server cannot be asked; the
-                    // failure then fails the command, so a script can tell.
-                    Print(report, CliOutputJsonContext.Default.VersionReport, Text);
-                    if (exception is ByteShelfException { IsNotFound: true })
-                    {
-                        // Servers before 2.3.0 have no release route, and answer 404 for it.
-                        throw new IOException("The server is older than 2.3.0, the first to answer its version.", exception);
-                    }
-
-                    throw;
+                    // Servers before 2.3.0 have no release route, and answer 404 for it.
+                    throw new IOException("The server is older than 2.3.0, the first to answer its version.", exception);
                 }
+
+                throw;
             }
 
             Print(report, CliOutputJsonContext.Default.VersionReport, Text);
