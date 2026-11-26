@@ -23,7 +23,6 @@ namespace ByteShelf.Plugins.Images.Tests
             "%PDF-1.7\n",
             "8BPS\0\u0001\0\0\0\0\0\0\0\u0003",
             "P3 1 1 255 0 0 0",
-            "II*\0\u0010\0\0\0CR\u0002\0",
             "\0\0\u0002\0\u0001\0",
             "\0\0\u0001\0\0\0",
             "\0\0\0\u0018ftypisom\0\0\0\0isommp42",
@@ -34,7 +33,7 @@ namespace ByteShelf.Plugins.Images.Tests
             "\0\0\0\u000CjP  \r\n\u0087\n",
         ];
 
-        public static TheoryData<string> Huge { get; } = ["png", "jpeg", "bmp", "tiff", "gif", "gif frame", "webp", "heic", "x-icon"];
+        public static TheoryData<string> Huge { get; } = ["png", "jpeg", "bmp", "tiff", "gif", "gif frame", "webp", "heic", "x-icon", "dng"];
 
         [Theory]
         [MemberData(nameof(NoImages))]
@@ -111,7 +110,7 @@ namespace ByteShelf.Plugins.Images.Tests
             await AssertSaysNothingAsync(HugeImages.Of(format, image));
         }
 
-        /// <summary>A camera's DNG or NEF is a TIFF whose first page is a small copy; the picture is none a browser knows.</summary>
+        /// <summary>As a camera's raw is that LibRaw does not read: a TIFF whose first page is a small copy, of a picture none a browser knows.</summary>
         [Fact]
         public async Task MakeAsync_MakesNothingOfATiffWhoseFirstPageIsASmallerCopy()
         {

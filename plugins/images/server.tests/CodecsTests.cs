@@ -9,7 +9,7 @@ namespace ByteShelf.Plugins.Images.Tests
     public sealed class CodecsTests
     {
         private static readonly MagickFormat[] Allowed =
-            [MagickFormat.Jpeg, MagickFormat.Png, MagickFormat.Gif, MagickFormat.WebP, MagickFormat.Avif, MagickFormat.Heic, MagickFormat.Tiff, MagickFormat.Bmp, MagickFormat.Ico];
+            [MagickFormat.Jpeg, MagickFormat.Png, MagickFormat.Gif, MagickFormat.WebP, MagickFormat.Avif, MagickFormat.Heic, MagickFormat.Tiff, MagickFormat.Bmp, MagickFormat.Ico, MagickFormat.Dng];
 
         public static TheoryData<MagickFormat> Others { get; } = new TheoryData<MagickFormat>(Enum.GetValues<MagickFormat>().Except([.. Allowed, MagickFormat.Unknown]));
 

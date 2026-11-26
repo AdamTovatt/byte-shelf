@@ -259,11 +259,12 @@ describe('the sharpening viewer', () => {
     expect(contentUrl).not.toHaveBeenCalled();
   });
 
-  it('loads the contents of a type the browser does not show when nothing was made for that', async () => {
-    await show(derivedReader(['preview']), { contentType: 'image/heic' });
+  it('keeps the preview of a type the browser does not show when nothing was made for that, and loads none of the contents', async () => {
+    await show(derivedReader(['preview']), { contentType: 'image/x-sony-arw' });
     await load('preview.webp');
 
-    expect(images()).toEqual(['preview.webp', 'whole.png']);
+    expect([seen(), images()]).toEqual(['preview.webp', ['preview.webp']]);
+    expect(contentUrl).not.toHaveBeenCalled();
   });
 
   it('loads the whole at once when there was no preview yet, which is shown when it comes first', async () => {

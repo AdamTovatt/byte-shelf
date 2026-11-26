@@ -31,6 +31,10 @@ namespace ByteShelfCommon.Tests
         [InlineData("/2026/receipt.pdf", "application/pdf")]
         [InlineData("photo.JPG", "image/jpeg")]
         [InlineData("notes.md", "text/markdown")]
+        [InlineData("DSC09687.ARW", "image/x-sony-arw")]
+        [InlineData("photo.dng", "image/x-adobe-dng")]
+        [InlineData("IMG_0001.CR2", "image/x-canon-cr2")]
+        [InlineData("DSC_0001.NEF", "image/x-nikon-nef")]
         [InlineData("archive.unknown", null)]
         [InlineData("no-extension", null)]
         public void ForFileName_AnswersTheCommonTypeByExtension(string fileName, string? expected)

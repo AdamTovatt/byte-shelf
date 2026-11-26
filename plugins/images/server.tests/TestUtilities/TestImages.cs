@@ -158,52 +158,24 @@ namespace ByteShelf.Plugins.Images.Tests.TestUtilities
                 data.Write(new byte[width * 4 * RowsPerStrip]);
             }
 
-            // Every strip is the one there is.
-            byte[] strip = compressed.ToArray();
+            // Every strip is the one there is: deflated (8), of red, green, blue (2) and what of each is seen, unassociated (2).
             int strips = height / RowsPerStrip;
-            (ushort Tag, ushort Type, int Count, int Value)[] entries =
-            [
-                (256, 4, 1, width),
-                (257, 4, 1, height),
-                (258, 3, 4, 0),
-                (259, 3, 1, 8),
-                (262, 3, 1, 2),
-                (273, 4, strips, 0),
-                (274, 3, 1, orientation),
-                (277, 3, 1, 4),
-                (278, 4, 1, RowsPerStrip),
-                (279, 4, strips, 0),
-                (338, 3, 1, 2),
-            ];
-            int depths = 8 + 2 + (12 * entries.Length) + 4;
-            int offsets = depths + 8;
-            int lengths = offsets + (4 * strips);
-            using MemoryStream file = new MemoryStream();
-            using BinaryWriter writer = new BinaryWriter(file);
-            writer.Write([(byte)'I', (byte)'I', 42, 0, 8, 0, 0, 0]);
-            writer.Write((ushort)entries.Length);
-            foreach ((ushort tag, ushort type, int count, int value) in entries)
-            {
-                writer.Write(tag);
-                writer.Write(type);
-                writer.Write(count);
-                writer.Write(tag switch { 258 => depths, 273 => offsets, 279 => lengths, _ => value });
-            }
-
-            writer.Write(0);
-            writer.Write([8, 0, 8, 0, 8, 0, 8, 0]);
-            for (int index = 0; index < strips; index++)
-            {
-                writer.Write(lengths + (4 * strips));
-            }
-
-            for (int index = 0; index < strips; index++)
-            {
-                writer.Write(strip.Length);
-            }
-
-            writer.Write(strip);
-            return file.ToArray();
+            return TiffFile.Write(new TiffFile.ImageDirectory(
+                [
+                    TiffFile.Entry.Of(TiffFile.ImageWidth, TiffFile.Long, (uint)width),
+                    TiffFile.Entry.Of(TiffFile.ImageLength, TiffFile.Long, (uint)height),
+                    TiffFile.Entry.Of(TiffFile.BitsPerSample, TiffFile.Short, 8, 8, 8, 8),
+                    TiffFile.Entry.Of(TiffFile.Compression, TiffFile.Short, 8),
+                    TiffFile.Entry.Of(TiffFile.PhotometricInterpretation, TiffFile.Short, 2),
+                    TiffFile.Entry.StripsAt(strips),
+                    TiffFile.Entry.Of(TiffFile.Orientation, TiffFile.Short, orientation),
+                    TiffFile.Entry.Of(TiffFile.SamplesPerPixel, TiffFile.Short, 4),
+                    TiffFile.Entry.Of(TiffFile.RowsPerStrip, TiffFile.Long, RowsPerStrip),
+                    TiffFile.Entry.StripLengths(strips),
+                    TiffFile.Entry.Of(TiffFile.ExtraSamples, TiffFile.Short, 2),
+                ],
+                compressed.ToArray(),
+                []));
         }
 
         /// <summary><paramref name="png"/> saying it is of another size.</summary>

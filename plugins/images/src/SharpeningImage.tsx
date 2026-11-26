@@ -56,21 +56,17 @@ export function SharpeningImage(props: ViewerProps) {
     );
   }
 
-  /** Whether `image` was loaded with the file of `kind`: false when there is none. */
-  async function loadsDerived(kind: DerivedKind, image: HTMLImageElement, signal: AbortSignal): Promise<boolean> {
-    return (await loadDerived(derived, kind, (url) => loadImage(image, url, signal), signal)) !== null;
+  /** Loads the file of `kind` into `image`; throws when there is none. */
+  async function loadKind(kind: DerivedKind, image: HTMLImageElement, signal: AbortSignal): Promise<void> {
+    if ((await loadDerived(derived, kind, (url) => loadImage(image, url, signal), signal)) === null) throw new Error(`There is no ${kind}.`);
   }
 
-  function derivedLayer(kind: DerivedKind) {
-    return async (image: HTMLImageElement, signal: AbortSignal) => {
-      if (!(await loadsDerived(kind, image, signal))) throw new Error(`There is no ${kind}.`);
-    };
-  }
-
-  /** The contents themselves or, where the browser does not show their type, what was made of them for that. */
+  /**
+   * The contents themselves or, where the browser does not show their type, what was made of them for that: never the
+   * contents, which it would download only not to show, as when nothing is made of a camera's raw for that.
+   */
   async function loadWhole(image: HTMLImageElement, signal: AbortSignal): Promise<void> {
-    const isShown = await showsType(mediaTypeOf(file.contentType));
-    if (!isShown && (await loadsDerived('full', image, signal))) return;
+    if (!(await showsType(mediaTypeOf(file.contentType)))) return loadKind('full', image, signal);
     await loadImage(image, await content.url(signal), signal);
   }
 
@@ -84,8 +80,8 @@ export function SharpeningImage(props: ViewerProps) {
           style={size ? { ...zoom, '--images-width': size.width, '--images-height': size.height } as CSSProperties : undefined}
         >
           {recorded && shown === null && <Placeholder url={recorded.placeholder} />}
-          {size && (shown === 'thumbnail' || derived.has('thumbnail')) && layer('thumbnail', derivedLayer('thumbnail'), {})}
-          {layer('preview', derivedLayer('preview'), { fetchPriority: 'high' })}
+          {size && (shown === 'thumbnail' || derived.has('thumbnail')) && layer('thumbnail', (image, signal) => loadKind('thumbnail', image, signal), {})}
+          {layer('preview', (image, signal) => loadKind('preview', image, signal), { fetchPriority: 'high' })}
           {(!hadPreview || isPreviewDone) && layer('whole', loadWhole, { className: 'images-object-contain', fetchPriority: 'low' })}
         </div>
       </div>
