@@ -1,3 +1,4 @@
+import { SM } from './src/lib/screens.ts';
 import { uiPreset } from './src/ui/tailwind/preset.js';
 
 /** @type {import('tailwindcss').Config} */
@@ -10,6 +11,10 @@ export default {
   ],
   theme: {
     extend: {
+      // Read by scripts too, which lay out a phone's screen as these classes do.
+      screens: {
+        sm: SM,
+      },
       fontFamily: {
         sans: ['Inter Variable', 'Inter', 'system-ui', '-apple-system', 'sans-serif'],
       },

@@ -145,6 +145,7 @@ it('promises plugins these, and taking away one a release holds raises PluginApi
       "CopyFieldProps",
       "CustomScroll",
       "CustomScrollProps",
+      "DRAGS_ITSELF",
       "DerivedKind",
       "DerivedReader",
       "DirectoryTree",

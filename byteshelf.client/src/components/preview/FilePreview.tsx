@@ -1,12 +1,14 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { Button, Icon, IconButton, Modal, getErrorMessage, iconMap } from '../../ui';
+import { Button, Icon, Modal, getErrorMessage, iconMap } from '../../ui';
 import type { DerivedReader } from '../../lib/derived/derivedReader';
 import { BackdropClick } from '../../lib/preview/backdropClick';
 import type { Steps } from '../../lib/preview/neighbours';
 import type { ShownPreview } from '../../lib/preview/shownPreview';
+import { ZoomedSwipe, type Swipes } from '../../lib/preview/swipe';
 import type { Neighbour } from '../../lib/preview/viewerRegistry';
 import type { FileActions } from '../../hooks/useFileActions';
 import { useDerivedReaders, type DerivedOf } from '../../hooks/useDerivedReaders';
+import { useNoPullToRefresh } from '../../hooks/useNoPullToRefresh';
 import { useSwipe } from '../../hooks/useSwipe';
 import { usePluginsAwaited } from '../../hooks/usePluginHost';
 import { usePreviewContents } from '../../hooks/usePreviewContents';
@@ -15,10 +17,10 @@ import { formatBytes } from '../../lib/format';
 import { isTypingTarget } from '../../lib/keys';
 import { openable, type OpenableFile, type ReadableFile } from '../../services/fileReading';
 import type { ShelfFile } from '../../services/shelfService';
-import { FileActionsMenu } from '../FileActionItems';
 import { FileDetailsDialog } from '../FileDetailsDialog';
 import { openFile, opensInTab, saveFiles } from '../fileOpening';
-import { FloatingBars } from './FloatingBars';
+import { FileActionsMenu } from './FileActionsMenu';
+import { BarButton, FloatingBars } from './FloatingBars';
 import { PreviewFailure } from './PreviewFailure';
 import { PreviewMessage } from './PreviewMessage';
 import { PreviewSpinner } from './PreviewSpinner';
@@ -33,7 +35,8 @@ interface FilePreviewProps extends ShownPreview {
 
 /**
  * A file over its page, in the viewer that takes its type: its name, where it stands among the files
- * beside it (the arrow keys move between them), and saving it, opening it in a tab and its details.
+ * beside it (the arrow keys and a swipe across move between them, and a swipe down closes it), and saving
+ * it, opening it in a tab and its details.
  */
 export function FilePreview({ previewed, error, steps, previous, next, onClose, detailsOn, actions, asksPassword }: FilePreviewProps) {
   const [detailing, setDetailing] = useState(false);
@@ -46,7 +49,9 @@ export function FilePreview({ previewed, error, steps, previous, next, onClose, 
   const [derived, previousDerived, nextDerived] = useDerivedReaders([shownBy ? derivedOf(previewed) : null, derivedOf(previous), derivedOf(next)]);
   const neighbours = useMemo(() => [...neighbour(previous?.file, previousDerived), ...neighbour(next?.file, nextDerived)], [previous?.file, previousDerived, next?.file, nextDerived]);
   const target = previewed && openable(previewed, readWhole ?? undefined);
-  const swipe = useSwipe({ onLeft: steps?.toNext, onRight: steps?.toPrevious });
+  const swipes: Swipes = { onLeft: steps?.toNext, onRight: steps?.toPrevious, onDown: onClose };
+  const swipe = useSwipe(swipes);
+  useNoPullToRefresh();
 
   function onKeyDown(event: KeyboardEvent): void {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.defaultPrevented || ownsArrowKeys(event.target)) return;
@@ -67,19 +72,21 @@ export function FilePreview({ previewed, error, steps, previous, next, onClose, 
           <>
             {target && (
               <>
-                <IconButton variant="ghost" size="sm" shape="pill" icon={iconMap.download} aria-label="Download" title="Download" onClick={() => void saveFiles([target])} />
-                {opensInTab(target.file) && <IconButton variant="ghost" size="sm" shape="pill" icon={iconMap.openInTab} aria-label="Open in new tab" title="Open in new tab" onClick={() => void openFile(target)} />}
-                {detailsOn !== undefined && <IconButton variant="ghost" size="sm" shape="pill" icon={iconMap.info} aria-label="Details" title="Details" onClick={() => setDetailing(true)} />}
+                <BarButton icon={iconMap.download} aria-label="Download" title="Download" onClick={() => void saveFiles([target])} />
+                {opensInTab(target.file) && <BarButton icon={iconMap.openInTab} aria-label="Open in new tab" title="Open in new tab" onClick={() => void openFile(target)} />}
+                {detailsOn !== undefined && <BarButton icon={iconMap.info} aria-label="Details" title="Details" onClick={() => setDetailing(true)} />}
                 {actions && <FileActionsMenu actions={actions} target={target} />}
               </>
             )}
-            <IconButton variant="ghost" size="sm" shape="pill" icon={iconMap.close} aria-label="Close" title="Close" onClick={onClose} />
+            <BarButton icon={iconMap.close} aria-label="Close" title="Close" onClick={onClose} />
           </>
         )}
       >
         <div className="flex min-h-0 flex-1 flex-col" {...swipe}>
           <BackdropClick.Provider value={onClose}>
-            {target ? shown(target) : error ? <PreviewMessage message={getErrorMessage(error, 'Could not load the file.')} /> : <PreviewSpinner />}
+            <ZoomedSwipe.Provider value={swipes}>
+              {target ? shown(target) : error ? <PreviewMessage message={getErrorMessage(error, 'Could not load the file.')} /> : <PreviewSpinner />}
+            </ZoomedSwipe.Provider>
           </BackdropClick.Provider>
         </div>
       </FloatingBars>
@@ -140,9 +147,9 @@ function neighbour(file: ShelfFile | undefined, derived: DerivedReader | null): 
 function StepButtons({ steps: { position, count, more, toPrevious, toNext } }: { steps: Steps }) {
   return (
     <div className="flex items-center gap-1">
-      <IconButton variant="ghost" size="sm" shape="pill" icon={iconMap.chevronLeft} aria-label="Previous file" title="Previous file" disabled={!toPrevious} onClick={() => toPrevious?.()} />
+      <BarButton icon={iconMap.chevronLeft} aria-label="Previous file" title="Previous file" disabled={!toPrevious} onClick={() => toPrevious?.()} />
       <span className="whitespace-nowrap text-body-sm text-muted">{position} of {count}{more && '+'}</span>
-      <IconButton variant="ghost" size="sm" shape="pill" icon={iconMap.chevronRight} aria-label="Next file" title="Next file" disabled={!toNext} onClick={() => toNext?.()} />
+      <BarButton icon={iconMap.chevronRight} aria-label="Next file" title="Next file" disabled={!toNext} onClick={() => toNext?.()} />
     </div>
   );
 }

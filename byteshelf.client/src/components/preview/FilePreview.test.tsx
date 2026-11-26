@@ -17,6 +17,7 @@ import type { ShelfFile } from '../../services/shelfService';
 import { removePdfViewer, restorePdfViewer, stubTabs } from '../../test/browser';
 import { button, dialogTitles, labelled, press, shows, untilFound } from '../../test/dom';
 import { DRAGS_ITSELF } from '../../lib/dragsItself';
+import { doubleTap, drag, layOutZoom, pointer } from '../../test/pointers';
 import { useZoom } from '../../hooks/useZoom';
 import { json, stubServer } from '../../test/fakeServer';
 import { shelfFile } from '../../test/shelfFiles';
@@ -61,13 +62,14 @@ function ZoomingViewer() {
   return <div {...frame} data-testid="frame"><div {...zoomed}>a picture</div></div>;
 }
 
-/** Shows what moves with a drag of its own: a player, a slider and a row that scrolls sideways, which the test page does not lay out. */
+/** Shows what moves with a drag of its own: a player, a slider, a row that scrolls sideways and a pane that scrolls down, which the test page does not lay out. */
 function DraggingViewer() {
   return (
     <div>
       <video data-testid="player" />
       <input type="range" />
       <div style={{ overflowX: 'auto' }} data-testid="row"><p>a long row</p></div>
+      <div style={{ overflowY: 'auto' }} data-testid="pane"><p>a long pane</p></div>
       <p>plain</p>
     </div>
   );
@@ -233,10 +235,6 @@ describe('the preview', () => {
       act(() => vi.advanceTimersByTime(ms));
     }
 
-    function pointer(type: string, target: Element, init: PointerEventInit = {}): void {
-      act(() => void target.dispatchEvent(new PointerEvent(type, { bubbles: true, ...init })));
-    }
-
     /** A tap of a finger on `target`, which the browser follows with a click. */
     function tap(target: HTMLElement): void {
       pointer('pointerdown', target, { pointerType: 'touch' });
@@ -254,6 +252,17 @@ describe('the preview', () => {
         target.dispatchEvent(touchEvent('touchstart', [from], from));
         target.dispatchEvent(touchEvent('touchend', [], to));
       });
+    }
+
+    /**
+     * Lays out the picture `ZoomingViewer` shows, 400 by 200 in a frame 400 by 300, and zooms it in with a double tap:
+     * 300 pixels from either side and 100 from the top or the bottom.
+     */
+    function zoomIn(): HTMLElement {
+      const frame = document.querySelector<HTMLElement>('[data-testid="frame"]')!;
+      layOutZoom(frame, { width: 400, height: 200 });
+      doubleTap(frame, [200, 150]);
+      return frame;
     }
 
     const text = () => document.querySelector('pre')!;
@@ -331,6 +340,60 @@ describe('the preview', () => {
       swipe(text(), [300, 100], [200, 300]);
       await act(async () => {});
       expect(document.querySelector('h2')?.textContent).toBe('b');
+    });
+
+    it('close at a swipe down, as Close does, and not at one short, slanted or up', async () => {
+      await show(files[1], files);
+      await shows('text of b');
+
+      swipe(text(), [200, 100], [200, 199]);
+      swipe(text(), [200, 100], [130, 200]);
+      swipe(text(), [200, 300], [200, 100]);
+      expect(closed).toBe(0);
+      swipe(text(), [200, 100], [230, 200]);
+      expect(closed).toBe(1);
+    });
+
+    it('take no swipe down that starts on a pane scrolled from its top, a player or a slider', async () => {
+      const dragging = [shelfFile('y', { contentType: 'x-test/dragging' })];
+      await show(dragging[0], dragging);
+      await shows('a long pane');
+      const pane = document.querySelector<HTMLElement>('[data-testid="pane"]')!;
+      Object.defineProperty(pane, 'scrollTop', { value: 40, configurable: true });
+
+      for (const start of [pane.querySelector('p')!, document.querySelector('video')!, document.querySelector('input')!]) swipe(start, [200, 100], [200, 300]);
+      expect(closed).toBe(0);
+
+      Object.defineProperty(pane, 'scrollTop', { value: 0 });
+      swipe(pane.querySelector('p')!, [200, 100], [200, 300]);
+      expect(closed).toBe(1);
+    });
+
+    it('take a swipe down that starts on a row that scrolls sideways, and one across on a pane scrolled from its top', async () => {
+      const dragging = [shelfFile('y', { contentType: 'x-test/dragging' }), shelfFile('z', { contentType: 'x-test/dragging' })];
+      await show(dragging[0], dragging);
+      await shows('a long row');
+      const row = document.querySelector<HTMLElement>('[data-testid="row"]')!;
+      Object.defineProperties(row, { scrollWidth: { value: 800 }, clientWidth: { value: 400 } });
+      Object.defineProperty(document.querySelector('[data-testid="pane"]'), 'scrollTop', { value: 40 });
+
+      swipe(row.querySelector('p')!, [200, 100], [200, 300]);
+      expect(closed).toBe(1);
+      swipe(document.querySelector('[data-testid="pane"] p')!, [300, 200], [100, 200]);
+      await shows('2 of 2');
+    });
+
+    it('move on at a drag of a finger past the edge of what is zoomed in, to the next shown fitted, and close at one down past it', async () => {
+      const zooming = [shelfFile('y', { contentType: 'x-test/zooming' }), shelfFile('z', { contentType: 'x-test/zooming' })];
+      await show(zooming[0], zooming);
+      await shows('a picture');
+
+      drag(zoomIn(), [[350, 150], [0, 150]]);
+      await shows('2 of 2');
+      expect(document.querySelector(`[${DRAGS_ITSELF}]`)).toBeNull();
+
+      drag(zoomIn(), [[200, 50], [200, 250]]);
+      expect(closed).toBe(1);
     });
 
     it('leave a swipe to what is zoomed in, which a drag moves', async () => {
@@ -417,6 +480,52 @@ describe('the preview', () => {
       expect(controlsShown()).toBe(true);
       idle(2000);
       expect(controlsShown()).toBe(false);
+    });
+  });
+
+  describe('the page under it', () => {
+    const page = document.documentElement.style;
+
+    afterEach(() => {
+      page.overscrollBehaviorX = '';
+      page.overscrollBehaviorY = '';
+    });
+
+    it('is not pulled down to reload while it is open, and is left as it was once it closes', async () => {
+      page.overscrollBehaviorY = 'contain';
+      await show(shelfFile('a'));
+
+      expect([page.overscrollBehaviorX, page.overscrollBehaviorY]).toEqual(['', 'none']);
+      act(() => root.unmount());
+      expect(page.overscrollBehaviorY).toBe('contain');
+    });
+  });
+
+  describe('its bars', () => {
+    const files = [shelfFile('a'), shelfFile('b'), shelfFile('c')];
+
+    /** Makes the screen `width` wide, which the bars ask of the browser; 1024 by 768 is the test page's own. */
+    function widen(width: number): void {
+      act(() => (window as unknown as { happyDOM: { setViewport(size: { width: number; height: number }): void } }).happyDOM.setViewport({ width, height: 768 }));
+    }
+
+    afterEach(() => widen(1024));
+
+    /** The sizes of the glyphs of the buttons in the bars, which the test page draws as elements named by their files. */
+    function glyphSizes(): (string | null | undefined)[] {
+      return [...new Set([...document.querySelectorAll('[data-shown] button')].map((each) => each.firstElementChild?.getAttribute('width')))];
+    }
+
+    it('hold larger buttons on a phone than from Tailwind\'s sm up', async () => {
+      actions = { actionsFor: () => [CONVERT], run: vi.fn() };
+      widen(375);
+      await show(files[1], files);
+      await shows('text of b');
+
+      expect(labelled('More actions')).not.toBeNull();
+      expect(glyphSizes()).toEqual(['20']);
+      widen(640);
+      expect(glyphSizes()).toEqual(['16']);
     });
   });
 
