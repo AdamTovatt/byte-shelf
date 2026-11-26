@@ -168,8 +168,14 @@ A module's default export is `definePlugin({ viewers, fileActions, folderTypes }
   click or a double tap, and a drag: it gives `frame`, to spread on a `div` that fills the space and centres what it
   holds, and `zoomed`, the ref and transform of the element in it. A click with the mouse on that element zooms in
   where it is, and once zoomed in one anywhere zooms out; one beside it, fitted, closes the preview, as its Close
-  does. A tap shows or hides the preview's controls instead. `mediaTypeOf(contentType)` is a file's type as
-  viewers' `mediaTypes` are matched against it: lowercase, without parameters such as `; charset=utf-8`.
+  does. A tap shows or hides the preview's controls instead. Zoomed in, a finger's drag moves the element, and one
+  that goes on as far as a swipe past where the element stops at its edge swipes.
+  A finger's swipe over a viewer moves to the file beside when it goes across and closes the preview when it goes
+  down, unless it starts on what moves with a drag of its own that way, which it is left to: a player, a field, a
+  row that scrolls sideways (across), a pane scrolled down from its top (down), what `useZoom` zooms while zoomed
+  in, and an element of the plugin's given `{ [DRAGS_ITSELF]: true }`, or anything in one (across and down).
+  `mediaTypeOf(contentType)` is a file's type as viewers' `mediaTypes` are matched against it: lowercase, without
+  parameters such as `; charset=utf-8`.
 - **File actions** are items in the menus of live files: `{ id, label, icon?, showsFor, run }`.
   `showsFor` is asked as a menu is drawn. `run` gets the shelf, the file, its content reader and
   `showDialog`, which shows a dialog of the plugin's until it calls the `close` it is given. The contents

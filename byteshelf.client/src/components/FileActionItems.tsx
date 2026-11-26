@@ -1,31 +1,22 @@
 import type { ReactNode } from 'react';
-import { Dropdown, DropdownItem, Icon, IconButton, iconMap } from '../ui';
+import { DropdownItem, Icon } from '../ui';
 import type { FileActions } from '../hooks/useFileActions';
 import type { OpenableFile } from '../services/fileReading';
 import type { OfferedAction } from '../lib/plugins/offeredActions';
 import { ErrorBoundary } from './ErrorBoundary';
 
-interface FileActionsProps {
+export interface FileActionsProps {
   actions: FileActions;
   target: OpenableFile;
 }
 
 /** The plugins' actions for a file, as items of its menu. */
 export function FileActionItems({ actions, target }: FileActionsProps): ReactNode {
-  return itemsOf(actions.actionsFor(target.file), { actions, target });
+  return <OfferedActionItems offered={actions.actionsFor(target.file)} actions={actions} target={target} />;
 }
 
-/** A menu of the plugins' actions for a file; none without any. */
-export function FileActionsMenu({ actions, target }: FileActionsProps): ReactNode {
-  const offered = actions.actionsFor(target.file);
-  return offered.length > 0 && (
-    <Dropdown align="right" trigger={<IconButton variant="ghost" size="sm" shape="pill" icon={iconMap.more} aria-label="More actions" title="More actions" />}>
-      {itemsOf(offered, { actions, target })}
-    </Dropdown>
-  );
-}
-
-function itemsOf(offered: OfferedAction[], { actions: { run }, target }: FileActionsProps): ReactNode {
+/** Those of the plugins' actions for a file that are `offered`, as items of its menu. */
+export function OfferedActionItems({ offered, actions: { run }, target }: FileActionsProps & { offered: OfferedAction[] }): ReactNode {
   return offered.map((each) => {
     const { key, action } = each;
     return (

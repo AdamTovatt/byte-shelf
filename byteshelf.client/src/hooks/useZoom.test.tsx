@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useZoom } from './useZoom';
 import { DRAGS_ITSELF } from '../lib/dragsItself';
 import { BackdropClick } from '../lib/preview/backdropClick';
+import { ZoomedSwipe } from '../lib/preview/swipe';
+import { doubleTap, drag, layOutZoom, pointer, type At } from '../test/pointers';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -32,14 +34,7 @@ describe('zooming', () => {
   function lay(width: number): void {
     zoomed = container.querySelector('[data-content]')!;
     frame = container.querySelector('[data-frame]')!;
-    const size = (element: HTMLElement, names: [string, string], width: number, height: number) => {
-      Object.defineProperty(element, names[0], { value: width });
-      Object.defineProperty(element, names[1], { value: height });
-    };
-    size(zoomed, ['offsetWidth', 'offsetHeight'], width, width === 0 ? 0 : 200);
-    size(frame, ['clientWidth', 'clientHeight'], 400, 300);
-    frame.getBoundingClientRect = () => ({ left: 0, top: 0, width: 400, height: 300 }) as DOMRect;
-    frame.setPointerCapture = () => {};
+    layOutZoom(frame, { width, height: width === 0 ? 0 : 200 });
   }
 
   beforeEach(() => {
@@ -65,18 +60,9 @@ describe('zooming', () => {
     return event;
   }
 
-  function pointer(type: string, pointerId: number, clientX: number, clientY: number, button = 0): void {
-    act(() => void frame.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId, clientX, clientY, button })));
-  }
-
-  /** Two taps of a finger, which the browser follows with a double-click. */
-  function doubleTap(clientX: number, clientY: number): void {
-    const touch = { bubbles: true, pointerId: 9, clientX, clientY, button: 0, pointerType: 'touch' };
-    act(() => {
-      frame.dispatchEvent(new PointerEvent('pointerdown', touch));
-      frame.dispatchEvent(new PointerEvent('pointerup', touch));
-      frame.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, clientX, clientY }));
-    });
+  /** A pointer event of `type` on the frame, of the main button unless `init` says otherwise. */
+  function onFrame(type: string, pointerId: number, [clientX, clientY]: At, init: PointerEventInit = {}): void {
+    pointer(type, frame, { pointerId, clientX, clientY, button: 0, ...init });
   }
 
   it('follows the wheel, about the pointer, which no longer scrolls the page', async () => {
@@ -113,7 +99,7 @@ describe('zooming', () => {
   it('zooms nothing that is not laid out yet', async () => {
     await show(0);
 
-    doubleTap(200, 150);
+    doubleTap(frame, [200, 150]);
     wheel({ deltaY: -100 });
 
     expect(view()).toEqual({ scale: 1, x: 0, y: 0 });
@@ -121,10 +107,10 @@ describe('zooming', () => {
 
   it('zooms in on a double tap and out on the next', async () => {
     await show();
-    doubleTap(200, 150);
+    doubleTap(frame, [200, 150]);
     expect(view().scale).toBe(2.5);
 
-    doubleTap(200, 150);
+    doubleTap(frame, [200, 150]);
     expect(view()).toEqual({ scale: 1, x: 0, y: 0 });
   });
 
@@ -132,47 +118,166 @@ describe('zooming', () => {
     await show();
     expect(frame.hasAttribute(DRAGS_ITSELF)).toBe(false);
 
-    doubleTap(200, 150);
+    doubleTap(frame, [200, 150]);
     expect(frame.hasAttribute(DRAGS_ITSELF)).toBe(true);
-    doubleTap(200, 150);
+    doubleTap(frame, [200, 150]);
     expect(frame.hasAttribute(DRAGS_ITSELF)).toBe(false);
   });
 
   it('moves a zoomed image with a drag of the main button, until it is let go', async () => {
     await show();
-    doubleTap(200, 150);
+    doubleTap(frame, [200, 150]);
 
-    pointer('pointerdown', 1, 100, 100, 2);
-    pointer('pointermove', 1, 150, 110);
+    onFrame('pointerdown', 1, [100, 100], { button: 2 });
+    onFrame('pointermove', 1, [150, 110]);
     expect(view()).toEqual({ scale: 2.5, x: 0, y: 0 });
-    pointer('pointerdown', 1, 100, 100);
-    pointer('pointermove', 1, 150, 110);
+    onFrame('pointerdown', 1, [100, 100]);
+    onFrame('pointermove', 1, [150, 110]);
     expect(view()).toEqual({ scale: 2.5, x: 50, y: 10 });
-    pointer('pointerup', 1, 150, 110);
-    pointer('pointermove', 1, 300, 110);
+    onFrame('pointerup', 1, [150, 110]);
+    onFrame('pointermove', 1, [300, 110]);
     expect(view()).toEqual({ scale: 2.5, x: 50, y: 10 });
   });
 
   it('zooms with a pinch of two fingers, about their middle, and moves with it', async () => {
     await show();
-    doubleTap(200, 150);
-    pointer('pointerdown', 1, 150, 150);
-    pointer('pointerdown', 2, 250, 150);
+    doubleTap(frame, [200, 150]);
+    onFrame('pointerdown', 1, [150, 150]);
+    onFrame('pointerdown', 2, [250, 150]);
 
-    pointer('pointermove', 2, 270, 150);
+    onFrame('pointermove', 2, [270, 150]);
 
     expect(view()).toEqual({ scale: 3, x: 10, y: 0 });
   });
 
   it('takes a finger the browser took over as lifted', async () => {
     await show();
-    doubleTap(200, 150);
-    pointer('pointerdown', 1, 100, 100);
-    pointer('pointercancel', 1, 100, 100);
+    doubleTap(frame, [200, 150]);
+    onFrame('pointerdown', 1, [100, 100]);
+    onFrame('pointercancel', 1, [100, 100]);
 
-    pointer('pointermove', 1, 150, 100);
+    onFrame('pointermove', 1, [150, 100]);
 
     expect(view()).toEqual({ scale: 2.5, x: 0, y: 0 });
+  });
+
+  describe('a drag of a finger', () => {
+    let swiped: string[];
+
+    /** Shows it where a swipe is heard, drawn where `show` lays it out: zoomed in, 300 pixels from either side and 100 from the top or bottom. */
+    async function showSwiping(): Promise<void> {
+      swiped = [];
+      const swipes = { onLeft: () => swiped.push('left'), onRight: () => swiped.push('right'), onDown: () => swiped.push('down') };
+      await act(async () => root.render(<ZoomedSwipe.Provider value={swipes}><Zoomable /></ZoomedSwipe.Provider>));
+      lay(400);
+    }
+
+    /** Zooms in and drags the image to its left edge, which a drag right goes past. */
+    function toLeftEdge(): void {
+      doubleTap(frame, [200, 150]);
+      drag(frame, [[50, 150], [350, 150]]);
+    }
+
+    /** A finger's pointer event of `type` on the frame. */
+    function finger(type: string, pointerId: number, at: At): void {
+      onFrame(type, pointerId, at, { pointerType: 'touch' });
+    }
+
+    it('zoomed in, swipes once it goes as far as a swipe past where the image stops at its edge', async () => {
+      await showSwiping();
+      toLeftEdge();
+      expect([view().x, swiped]).toEqual([300, []]);
+
+      drag(frame, [[100, 150], [149, 150]]);
+      expect(swiped).toEqual([]);
+      drag(frame, [[100, 150], [150, 150]]);
+      expect(swiped).toEqual(['right']);
+      // 600 of it followed, to the other edge.
+      drag(frame, [[380, 150], [-270, 150]]);
+      expect([view().x, swiped]).toEqual([-300, ['right', 'left']]);
+    });
+
+    it('counts nothing of an edge it went past once the image follows it again', async () => {
+      await showSwiping();
+      toLeftEdge();
+
+      // 150 past the edge, back and forth with the image, and let go 50 right of where it went down.
+      drag(frame, [[100, 150], [250, 150], [50, 150], [150, 150]]);
+      expect([view().x, swiped]).toEqual([200, []]);
+    });
+
+    it('swipes only as far as the finger went all told', async () => {
+      await showSwiping();
+      doubleTap(frame, [200, 150]);
+
+      // Past the right edge, and back over to 60 past the left one, but only 30 right of where it went down.
+      drag(frame, [[600, 150], [-30, 150], [570, 150], [630, 150]]);
+      expect([view().x, swiped]).toEqual([300, []]);
+    });
+
+    it('closes at one down past the top, and not up past the bottom', async () => {
+      await showSwiping();
+      doubleTap(frame, [200, 150]);
+
+      drag(frame, [[200, 50], [200, 150]]);
+      expect([view().y, swiped]).toEqual([100, []]);
+      drag(frame, [[200, 50], [200, 150]]);
+      expect(swiped).toEqual(['down']);
+      drag(frame, [[200, 250], [200, -150]]);
+      expect([view().y, swiped]).toEqual([-100, ['down']]);
+    });
+
+    it('closes not at a pan sideways that drifts down over an image whose height fits', async () => {
+      await showSwiping();
+      // 1.49 times as large: 298 of the frame's 300 high, and 98 from either side.
+      wheel({ deltaY: -100 });
+      wheel({ deltaY: -100 });
+
+      // Down 130 the image does not follow, but 160 across too.
+      drag(frame, [[300, 100], [140, 230]]);
+      expect(view().x).toBeCloseTo(-98.4, 1);
+      expect(swiped).toEqual([]);
+    });
+
+    it('leaves a swipe of what is fitted to the preview, and the mouse\'s past an edge a drag', async () => {
+      await showSwiping();
+      drag(frame, [[300, 150], [100, 150]]);
+      drag(frame, [[200, 50], [200, 250]]);
+      expect(swiped).toEqual([]);
+
+      doubleTap(frame, [200, 150]);
+      drag(frame, [[50, 150], [350, 150]], { pointerType: 'mouse' });
+      drag(frame, [[100, 150], [300, 150]], { pointerType: 'mouse' });
+      expect([view().x, swiped]).toEqual([300, []]);
+    });
+
+    it('takes none that the browser took over', async () => {
+      await showSwiping();
+      toLeftEdge();
+
+      finger('pointerdown', 1, [100, 150]);
+      finger('pointermove', 1, [300, 150]);
+      finger('pointercancel', 1, [300, 150]);
+      expect(swiped).toEqual([]);
+    });
+
+    it('takes none that began as a pinch, whichever finger is left to go on past the edge', async () => {
+      await showSwiping();
+      toLeftEdge();
+
+      finger('pointerdown', 1, [100, 150]);
+      finger('pointerdown', 2, [300, 150]);
+      finger('pointerup', 2, [300, 150]);
+      finger('pointermove', 1, [300, 150]);
+      finger('pointerup', 1, [300, 150]);
+
+      finger('pointerdown', 1, [100, 150]);
+      finger('pointerdown', 2, [300, 150]);
+      finger('pointerup', 1, [100, 150]);
+      finger('pointermove', 2, [500, 150]);
+      finger('pointerup', 2, [500, 150]);
+      expect([view().x, swiped]).toEqual([300, []]);
+    });
   });
 
   describe('a click', () => {

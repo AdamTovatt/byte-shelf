@@ -17,6 +17,7 @@ export { readText, type ReadText } from '../lib/content/readText';
 export { PlainText, TextPane } from '../components/preview/TextPane';
 export { useLoaded, type Loaded, type Reloadable } from '../hooks/useLoaded';
 export { useZoom, type Zoom } from '../hooks/useZoom';
+export { DRAGS_ITSELF } from '../lib/dragsItself';
 export { ErrorBoundary } from '../components/ErrorBoundary';
 export { LoadedContent } from '../components/preview/LoadedContent';
 export { usePluginDocuments, useSetPluginDocument, type PluginDocuments, type PluginDocumentWrite } from '../hooks/usePluginDocuments';

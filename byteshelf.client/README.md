@@ -135,8 +135,14 @@ npm run codegen    # in a second terminal
     image zooms with the wheel, a pinch, a click or a double tap and moves with a drag (`hooks/useZoom.ts`, which
     plugins have too). The preview is the whole screen, on black, its controls in bars over the file
     that fade after 2 seconds of no clicks or mouse moves and show or hide at a tap (`hooks/useFadingControls.ts`);
-    a swipe across moves on (`hooks/useSwipe.ts`), and a click with the mouse beside an image that zooms closes it
-    (`BackdropClick`). A viewer that is `clearOfBars` is drawn between the bars.
+    a swipe across moves on and one down closes it (`hooks/useSwipe.ts`, by the rule in `lib/preview/swipe.ts`),
+    unless it starts on what moves with a drag of its own that way: a player, a field, a row that scrolls sideways,
+    a pane scrolled from its top, or an element marked `DRAGS_ITSELF`, as an image is while zoomed in, whose drag
+    swipes once it goes on past where the image stops at its edge (`ZoomedSwipe`). While it is open a pull down
+    does not reload the page (`hooks/useNoPullToRefresh.ts`), and a click with the mouse beside an image that zooms
+    closes it (`BackdropClick`). On a phone, narrower than Tailwind's `sm` (`lib/screens.ts`, which
+    `tailwind.config.js` reads too), the bars' buttons are larger and the bars stand further from the edges. A
+    viewer that is `clearOfBars` is drawn between the bars.
   - *Contents* reach a viewer through a `ContentReader` (`lib/content/contentReader.ts`): `url()`, `blob()`
     and `range()`, whatever they come from. A blob-backed file (`isBlobBacked`) is read whole into the page
     first (`lib/preview/fileContents.ts`), over 100 MiB only once Load, Download or Open in new tab is
