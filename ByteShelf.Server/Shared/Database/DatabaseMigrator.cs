@@ -12,13 +12,20 @@ namespace ByteShelf.Server.Shared.Database
         /// <summary>
         /// Applies the embedded <c>Migrations/*.sql</c> scripts to <paramref name="database"/>,
         /// each in its own transaction, and puts it in WAL mode (a setting SQLite keeps in the file, so once
-        /// is enough).
+        /// is enough). Logs each script the run applied, in order, or that none was needed. A script that fails
+        /// throws, naming it, after those applied before it are logged: they stay applied, and the next run
+        /// starts from the one that failed.
         /// </summary>
         public static void RunMigrations(DatabaseFile database, ILogger logger)
         {
             using DbConnection connection = database.OpenConnection();
 
             DatabaseUpgradeResult result = Upgrader(connection).PerformUpgrade();
+
+            foreach (SqlScript script in result.Scripts)
+            {
+                logger.LogInformation("Applied the migration {Migration}.", MigrationName(script.Name));
+            }
 
             if (!result.Successful)
             {
@@ -31,7 +38,10 @@ namespace ByteShelf.Server.Shared.Database
                 command.ExecuteNonQuery();
             }
 
-            logger.LogInformation("Database is up to date.");
+            if (!result.Scripts.Any())
+            {
+                logger.LogInformation("Database is up to date.");
+            }
         }
 
         /// <summary>
@@ -69,6 +79,12 @@ namespace ByteShelf.Server.Shared.Database
                 .WithTransactionPerScript()
                 .LogToNowhere()
                 .Build();
+        }
+
+        /// <summary>A script's name without its namespace and <c>.sql</c>: "v0001_create_auth_tables".</summary>
+        internal static string MigrationName(string scriptName)
+        {
+            return scriptName.Split('.')[^2];
         }
     }
 }

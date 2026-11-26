@@ -35,6 +35,24 @@ namespace ByteShelf.Server.Tests.TestUtilities
             return new TestRoot(root);
         }
 
+        /// <summary>A root whose database is as a server before <paramref name="first"/>, as "v0015", left it: every migration before it has run.</summary>
+        public static TestRoot CreateBefore(string first)
+        {
+            RootFolder root = RootFolder.Open(Path.Combine(RootsPath, "before-" + first + "-" + Guid.NewGuid().ToString("N")));
+            using (DbConnection connection = root.Database.OpenConnection())
+            {
+                DbUp.Engine.DatabaseUpgradeResult result = DatabaseMigrator
+                    .Upgrader(connection, name => string.CompareOrdinal(DatabaseMigrator.MigrationName(name), first) < 0)
+                    .PerformUpgrade();
+
+                Assert.True(result.Successful, result.Error?.ToString());
+                string last = DatabaseMigrator.MigrationName(result.Scripts.Last().Name);
+                Assert.StartsWith($"v{int.Parse(first[1..], System.Globalization.CultureInfo.InvariantCulture) - 1:D4}_", last, StringComparison.Ordinal);
+            }
+
+            return new TestRoot(root);
+        }
+
         public async ValueTask DisposeAsync()
         {
             // This root's pooled connections alone: another test may be using its own.

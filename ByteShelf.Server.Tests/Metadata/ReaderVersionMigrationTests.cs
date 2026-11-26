@@ -6,7 +6,6 @@ using ByteShelf.Server.Metadata.Repositories;
 using ByteShelf.Server.Replication;
 using ByteShelf.Server.Replication.Services;
 using ByteShelf.Server.Shared.Database;
-using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Services;
 using ByteShelf.Server.Tests.TestUtilities;
@@ -28,30 +27,28 @@ namespace ByteShelf.Server.Tests.Metadata
         private static readonly string Photo = new string('a', 64);
         private static readonly string Removed = new string('b', 64);
 
-        private RootFolder _old = null!;
+        private TestRoot _old = null!;
 
         public override async Task InitializeAsync()
         {
             await base.InitializeAsync();
-            _old = RootFolder.Open(Path.Combine(AppContext.BaseDirectory, "test-roots", "v0014-" + Guid.NewGuid().ToString("N")));
-            TestMigrations.RunBefore("v0015", _old.Database);
+            _old = TestRoot.CreateBefore("v0015");
             await FillAsBeforeV0015Async();
-            DatabaseMigrator.RunMigrations(_old.Database, NullLogger.Instance);
+            DatabaseMigrator.RunMigrations(_old.Root.Database, NullLogger.Instance);
         }
 
         public override async Task DisposeAsync()
         {
-            _old.Database.Release();
-            Directory.Delete(_old.Path, recursive: true);
+            await _old.DisposeAsync();
             await base.DisposeAsync();
         }
 
         [Fact]
         public async Task Migrate_Row_IsVersionOnes()
         {
-            DbSessionFactory sessions = new DbSessionFactory(_old.Database);
+            DbSessionFactory sessions = new DbSessionFactory(_old.Root.Database);
 
-            ObjectMetadata? row = await new ObjectMetadataRepository(_old.Database, sessions, new ChangeLogRepository(_old.Database, sessions)).GetBySha256Async(Photo);
+            ObjectMetadata? row = await new ObjectMetadataRepository(_old.Root.Database, sessions, new ChangeLogRepository(_old.Root.Database, sessions)).GetBySha256Async(Photo);
 
             Assert.Equal((1, "Nikon"), (row!.ReaderVersion, row.Metadata.Camera));
         }
@@ -59,7 +56,7 @@ namespace ByteShelf.Server.Tests.Metadata
         [Fact]
         public async Task Migrate_ChangeLog_HoldsEveryReadingWithItsVersionAndWhatElseItHeldAsItWas()
         {
-            IReadOnlyList<ChangeLogEntry> entries = await TestMigrations.ReadLogAsync(_old.Database);
+            IReadOnlyList<ChangeLogEntry> entries = await TestMigrations.ReadLogAsync(_old.Root.Database);
 
             Assert.Equal([ChangeEntityType.Shelf, ChangeEntityType.ObjectMetadata, ChangeEntityType.ObjectMetadata, ChangeEntityType.ObjectMetadata], entries.Select(entry => entry.EntityType));
             Assert.Equal(ShelfPayload(), entries[0].Payload);
@@ -70,7 +67,7 @@ namespace ByteShelf.Server.Tests.Metadata
         [Fact]
         public async Task Migrate_WholeCopyInProgress_HoldsItsReadingWithItsVersion()
         {
-            await using DbConnection connection = await _old.Database.OpenConnectionAsync();
+            await using DbConnection connection = await _old.Root.Database.OpenConnectionAsync();
 
             Assert.Equal(ShelfPayload(), await connection.ExecuteScalarAsync<string>("SELECT payload FROM replication_copy WHERE entity_type = 'shelf'"));
             AssertVersionOnes((await connection.ExecuteScalarAsync<string>("SELECT payload FROM replication_copy WHERE entity_type = 'object_metadata'"))!);
@@ -82,7 +79,7 @@ namespace ByteShelf.Server.Tests.Metadata
         {
             await using (ContentsSession session = await Services.CreateContentsSessionAsync())
             {
-                await Services.GetRequiredService<ReplicaApplier>().ApplyAsync(await TestMigrations.ReadLogAsync(_old.Database), session, new AppliedChanges());
+                await Services.GetRequiredService<ReplicaApplier>().ApplyAsync(await TestMigrations.ReadLogAsync(_old.Root.Database), session, new AppliedChanges());
                 await session.CommitAsync();
             }
 
@@ -106,7 +103,7 @@ namespace ByteShelf.Server.Tests.Metadata
         /// <summary>A row, log entries and a whole copy in progress as the server wrote them before v0015.</summary>
         private async Task FillAsBeforeV0015Async()
         {
-            await using DbConnection connection = await _old.Database.OpenConnectionAsync();
+            await using DbConnection connection = await _old.Root.Database.OpenConnectionAsync();
             string now = StoredInstant.ToText(TestInstants.Now);
             await connection.ExecuteAsync(
                 "INSERT INTO object_metadata (id, sha256, read_at, camera, camera_fold) VALUES (@Id, @Photo, @now, 'Nikon', 'nikon')",
