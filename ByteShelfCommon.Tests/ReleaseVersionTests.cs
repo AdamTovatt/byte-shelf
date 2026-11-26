@@ -1,3 +1,5 @@
+using System.Reflection;
+
 namespace ByteShelfCommon.Tests
 {
     public class ReleaseVersionTests
@@ -14,9 +16,12 @@ namespace ByteShelfCommon.Tests
         [Fact]
         public void Of_ThisPackage_IsItsVersionWithoutTheCommit()
         {
-            string release = ReleaseVersion.Of(typeof(ReleaseVersion).Assembly);
+            Assembly assembly = typeof(ReleaseVersion).Assembly;
+            string release = ReleaseVersion.Of(assembly);
 
-            Assert.Equal(typeof(ReleaseVersion).Assembly.GetName().Version!.ToString(3), release);
+            // The file version is the package's whole version; the assembly version leaves the patch out (ByteShelfCommon.csproj).
+            string fileVersion = assembly.GetCustomAttribute<AssemblyFileVersionAttribute>()!.Version;
+            Assert.Equal(Version.Parse(fileVersion).ToString(3), release);
         }
     }
 }

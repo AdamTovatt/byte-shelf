@@ -20,6 +20,8 @@
     <Version>4.0.1</Version>
     <!-- Major and minor alone: a server loads a plugin built against an earlier or the same one (ByteShelf.Server/Plugins/Plugins.md), and a patch adds nothing it could miss. -->
     <AssemblyVersion>$([System.Version]::Parse('$(Version)').ToString(2)).0.0</AssemblyVersion>
+    <!-- The whole version, patch included, which the file version would otherwise take from the assembly version. -->
+    <FileVersion>$([System.Version]::Parse('$(Version)').ToString(3)).0</FileVersion>
     <PackageReleaseNotes>ContentTypes gives names ending in .arw, .dng, .cr2 and .nef their camera raw types: image/x-sony-arw, image/x-adobe-dng, image/x-canon-cr2 and image/x-nikon-nef. So an upload of one without a type is stored as an image, which a ByteShelf server 3.1.0 or later makes previews of. See https://github.com/AdamTovatt/byte-shelf/blob/client-v$(Version)/ByteShelfCommon/README.md</PackageReleaseNotes>
   </PropertyGroup>
 
