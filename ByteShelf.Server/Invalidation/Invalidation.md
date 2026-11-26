@@ -12,7 +12,9 @@ A Server-Sent Events stream that tells the web UI which cached queries to refetc
   with the shelf's id) goes only to streams whose user can see that shelf when it is sent, by the
   rule `ShelfAccessResolver` holds, with the user's roles and grants read as they are then
   (`InvalidationAudience`); the rest name nothing and go to every stream. A stream ends once its
-  user has been deleted.
+  user has been deleted, and as the server begins to stop: Kestrel waits for open requests when it
+  stops, so a stream that stayed open would hold the stop until the host's shutdown timeout. The
+  web UI reconnects when a stream ends, backing off while the server is down.
 
 ## Where events come from
 

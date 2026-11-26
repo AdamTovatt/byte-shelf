@@ -1,13 +1,8 @@
 using System.Text;
 using ByteShelf.Server.Tests.TestUtilities;
-using ByteShelf.Server.Users.Services;
 using ByteShelfClient;
 using ByteShelfClient.Http;
 using ByteShelfCommon;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace ByteShelf.Server.Tests.Client
 {
@@ -18,47 +13,25 @@ namespace ByteShelf.Server.Tests.Client
     /// </summary>
     public sealed class LongPathTests : IAsyncLifetime
     {
-        private TestRoot _root = null!;
-        private WebApplication _app = null!;
-        private HttpClient _http = null!;
+        private KestrelTestHost _host = null!;
         private UserSession _session = null!;
 
         public async Task InitializeAsync()
         {
-            _root = TestRoot.Create();
-            _app = Program.BuildApplication(
-                Program.CreateBuilder(["--environment", "Development"]),
-                ServerSettings.Open(_root.Root),
-                builder =>
-                {
-                    // Loopback only, on a port of the system's choosing.
-                    builder.WebHost.UseUrls("http://127.0.0.1:0");
-                    builder.Logging.SetMinimumLevel(LogLevel.Warning);
-                });
-            await _app.StartAsync();
-
-            using (IServiceScope scope = _app.Services.CreateScope())
-            {
-                await scope.ServiceProvider.GetRequiredService<IUserService>().CreateUserAsync(ServerTestHost.AdminEmail, "Admin", ServerTestHost.Password, new[] { UserRoles.Admin });
-            }
-
-            _http = new HttpClient { BaseAddress = new Uri(_app.Urls.Single() + "/") };
-            _session = await UserSession.SignInAsync(_http, ServerTestHost.AdminEmail, ServerTestHost.Password);
+            _host = await KestrelTestHost.StartAsync();
+            _session = await UserSession.SignInAsync(_host.Http, ServerTestHost.AdminEmail, ServerTestHost.Password);
         }
 
         public async Task DisposeAsync()
         {
             _session.Dispose();
-            _http.Dispose();
-            await _app.StopAsync();
-            await _app.DisposeAsync();
-            await _root.DisposeAsync();
+            await _host.DisposeAsync();
         }
 
         [Fact]
         public async Task LongestPath_OfThreeByteCharacters_IsStoredFoundAndSearchedPast()
         {
-            IByteShelfClient client = new ByteShelfHttpClient(_http, _session);
+            IByteShelfClient client = new ByteShelfHttpClient(_host.Http, _session);
             await client.CreateShelfAsync("docs");
             IShelfClient shelf = client.Shelf("docs");
             string path = LongestPath('漢');

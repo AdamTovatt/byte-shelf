@@ -19,22 +19,26 @@ namespace ByteShelf.Server.Invalidation.Controllers
         private readonly IInvalidationBroadcaster _broadcaster;
         private readonly InvalidationAudience _audience;
         private readonly TimeProvider _timeProvider;
+        private readonly IHostApplicationLifetime _lifetime;
 
-        public InvalidationController(IInvalidationBroadcaster broadcaster, InvalidationAudience audience, TimeProvider timeProvider)
+        public InvalidationController(IInvalidationBroadcaster broadcaster, InvalidationAudience audience, TimeProvider timeProvider, IHostApplicationLifetime lifetime)
         {
             _broadcaster = broadcaster;
             _audience = audience;
             _timeProvider = timeProvider;
+            _lifetime = lifetime;
         }
 
         /// <summary>
         /// Holds a <c>text/event-stream</c> open and writes each invalidation the caller may hear of as it is
         /// published, with a comment heartbeat every 25 seconds. A caller may hold a limited number of
-        /// streams at once. The stream ends once the caller's account is gone.
+        /// streams at once. The stream ends once the caller's account is gone, and as the server begins to stop:
+        /// Kestrel cancels no request when it stops but waits for each to end, so an open stream would hold the
+        /// stop until the host's shutdown timeout.
         /// </summary>
         [HttpGet("stream")]
         [Authorize]
-        public async Task Stream(CancellationToken cancellationToken)
+        public async Task Stream(CancellationToken requestAborted)
         {
             Guid userId = HttpContext.GetUserGuid();
             using IInvalidationSubscription? subscription = _broadcaster.Subscribe(RateLimitPartitionKey.Resolve(HttpContext));
@@ -44,9 +48,13 @@ namespace ByteShelf.Server.Invalidation.Controllers
                 await Response.WriteAsJsonAsync(
                     new ErrorResponse { Message = "Too many live-update streams are open for this user." },
                     JsonDefaults.CamelCase,
-                    cancellationToken);
+                    requestAborted);
                 return;
             }
+
+            // A short refusal is no stream to end as the server stops; the stream is.
+            using CancellationTokenSource streamEnd = CancellationTokenSource.CreateLinkedTokenSource(requestAborted, _lifetime.ApplicationStopping);
+            CancellationToken cancellationToken = streamEnd.Token;
 
             Response.Headers.Append("Content-Type", "text/event-stream; charset=utf-8");
             Response.Headers.Append("Cache-Control", "no-cache");
