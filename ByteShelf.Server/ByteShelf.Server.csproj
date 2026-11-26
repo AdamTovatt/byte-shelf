@@ -2,29 +2,25 @@
 
   <PropertyGroup>
     <AssemblyName>ByteShelf.Server</AssemblyName>
-    <Version>3.0.0</Version>
+    <Version>3.1.0</Version>
     <!-- The GitHub release's notes (release.yml), above the list of pull requests it generates. -->
     <PackageReleaseNotes>
 **Upgrading**
 
-- Upgrade replicas together with their primary, primary first. A replica of this version stops at an older primary's log, and an older replica stops at this primary's (migrations v0015 and v0016, and a new change action).
-- Clients, the CLI and MCP of this version need a server of this version: shelf info now carries the caller's permission and whether the server is a replica.
-- `/mcp` shows agents previews of images only with the images plugin installed: `updaemon install byteshelf/images`. Plugins need updaemon 1.1 or later.
-- Shelf usage and quotas now include the thumbnails and previews made of a shelf's files. An upload that would go over the quota through them is refused with 507.
+- After the upgrade, the images plugin makes every image's thumbnail, preview and picture for agents once more, as its reader and makers are at a new version, so a server with many images is busy for a while. Raw photos it failed on before get theirs that way.
 
 **New**
 
-- Plugins, loaded from `BYTESHELF_PLUGINS` with full trust, in the server and in the web UI. Released with the server: `byteshelf-images.zip` (thumbnails and previews, HEIC and TIFF shown, sized previews for agents) and `byteshelf-markdown.zip`. `--check-plugin` checks one; `GET /api/plugins` lists them.
-- A preview of files over the shelf page, with images sharpening in place, PDFs, text, audio and video.
-- Plugins can keep documents and searchable fields about files (`GET files/metadata`, `PUT files/plugin-metadata`, `--forget-plugin`), and give folders a type by the end of their name (`Trip.album`) that opens in their own viewer.
-- Rows deleted from the database are overwritten (`secure_delete`), and what tells of a file's plain contents leaves the change log a day after it is encrypted in place. Rows deleted before the upgrade stay until `VACUUM` with the server stopped (DEPLOYMENT.md, Deleted data).
+- Previews of cameras' raw photos in the images plugin: ARW, DNG, CR2, NEF and the other TIFF-based raws LibRaw reads, told by their contents. They are made from the JPEG the camera put in the file when it is at least 1568 pixels on its long side, else from the raw itself. No full-size copy of a raw is made; the viewer shows its preview. An upload without a type whose name ends in `.arw`, `.dng`, `.cr2` or `.nef` is stored as that kind of image.
+- On a phone, a swipe down closes the preview, a zoomed image moves on to the next or previous file once it is swiped past its edge, and the preview's controls are larger and further from the screen's edges. The page does not pull to refresh while a preview is open.
+- Uploads show as rows in the folder they go into, among its files, with their progress, instead of as toasts.
+- For plugins, `DRAGS_ITSELF` from `@byteshelf/plugin` marks an element that moves with a drag of its own, which the preview's swipes then leave alone.
 
 **Changed**
 
-- Replacing a file that has a password of its own in the web UI keeps it encrypted.
-- File contents are sent with `Cache-Control: private, no-cache`; thumbnails and previews with `private, max-age=3600`.
-- Addresses of folders whose name has a dot, such as `v1.2`, load the app instead of 404.
-- The page reloads when its session ends.
+- The startup log names each migration a start applies, and says the database is up to date only when none ran.
+- A server stops at once while the web UI is open. Its live-update stream now ends as the server begins to stop; it held the stop for the 30-second shutdown timeout.
+- The images viewer no longer downloads the whole of a file the browser cannot show when no full-size copy was made of it.
     </PackageReleaseNotes>
     <SpaRoot>..\byteshelf.client</SpaRoot>
     <SpaProxyLaunchCommand>npm run dev</SpaProxyLaunchCommand>

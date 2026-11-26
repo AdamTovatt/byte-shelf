@@ -18,8 +18,8 @@
     <PackageTags>storage, api, client, byteshelf, byte shelf, file storage</PackageTags>
     <Description>Client for ByteShelf, a self-hosted file store: an interface over shelves, files and directories, an HTTP implementation, and an in-memory one for tests.</Description>
     <Copyright>MIT</Copyright>
-    <Version>4.0.0</Version>
-    <PackageReleaseNotes>Breaking: built on ByteShelfCommon 4.0.0, where ShelfKeyPermission is ShelfPermission, and needs a ByteShelf server 3.0.0 or later for shelf info and key sign-in. IShelfClient gains SetPluginDocumentAsync, OpenDerivedAsync and OpenDeletedDerivedAsync, which an implementation of its own must add; the HTTP and in-memory clients have them. Search takes FileCriteria.PluginFields. See https://github.com/AdamTovatt/byte-shelf/blob/client-v$(Version)/ByteShelfClient/README.md</PackageReleaseNotes>
+    <Version>4.0.1</Version>
+    <PackageReleaseNotes>Built on ByteShelfCommon 4.0.1, so an upload whose name ends in .arw, .dng, .cr2 or .nef and that is given no type is stored as a camera raw image rather than application/octet-stream. Nothing else changes. See https://github.com/AdamTovatt/byte-shelf/blob/client-v$(Version)/ByteShelfClient/README.md</PackageReleaseNotes>
   </PropertyGroup>
 
   <ItemGroup>
