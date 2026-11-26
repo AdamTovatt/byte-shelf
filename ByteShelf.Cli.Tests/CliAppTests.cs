@@ -1161,6 +1161,21 @@ namespace ByteShelf.Cli.Tests
                 (run.ExitCode, run.Output, run.Error));
         }
 
+        [Theory]
+        [InlineData("no config folder", "BYTESHELF_CONFIG")]
+        [InlineData("server without a key", "BYTESHELF_KEY must be too")]
+        public async Task Version_LoginCannotBeRead_PrintsTheClisAndFailsAsMisuse(string cause, string expectedError)
+        {
+            using ConfiguredClientSource clients = cause == "no config folder"
+                ? new ConfiguredClientSource(new CliConfigStore(null), _ => null)
+                : new ConfiguredClientSource(new CliConfigStore(_work.File("config/config.json")), name => name == ConfiguredClientSource.ServerVariable ? "https://files.test/" : null);
+
+            CliRun run = await CliRun.RunAsync(clients, new[] { "version" });
+
+            Assert.Equal((CliApp.Misused, $"byteshelf {CliRelease}"), (run.ExitCode, run.Output));
+            Assert.Contains(expectedError, run.Error, StringComparison.Ordinal);
+        }
+
         [Fact]
         public async Task Version_ServerRefusesTheLogin_FailsSayingWhy()
         {

@@ -19,6 +19,7 @@ namespace ByteShelf.Cli.Connection
         Task SignOutAsync(CancellationToken cancellationToken);
 
         /// <summary>The server and how commands prove who they are there, or null when nothing is set up.</summary>
+        /// <exception cref="UsageException">What is set up cannot be read: the environment names a server without a key, the config file is damaged, or there is no config folder.</exception>
         string? Describe();
     }
 }

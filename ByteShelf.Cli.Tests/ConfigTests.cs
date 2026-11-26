@@ -1,4 +1,6 @@
 using System.Net;
+using System.Runtime.Versioning;
+using ByteShelf.Cli.Commands;
 using ByteShelf.Cli.Config;
 using ByteShelf.Cli.Connection;
 using ByteShelf.Cli.Tests.TestUtilities;
@@ -58,8 +60,7 @@ namespace ByteShelf.Cli.Tests
                 Store.Save(KeyConfig("https://files.test/", "bsk_secret"));
             }
 
-            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(Store.FilePath));
-            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute, File.GetUnixFileMode(Path.GetDirectoryName(Store.FilePath)!));
+            AssertOwnerOnly(Store.FilePath);
         }
 
         [Fact]
@@ -276,6 +277,115 @@ namespace ByteShelf.Cli.Tests
             Assert.False(File.Exists(Store.FilePath));
         }
 
+        [Fact]
+        public void FromEnvironment_XdgConfigHomeNotMadeYet_SavesThereOwnerOnly()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            string configHome = _work.File("not-made-yet");
+            CliConfigStore store = CliConfigStore.FromEnvironment(Variables(("XDG_CONFIG_HOME", configHome), ("HOME", _work.File("home"))));
+
+            // Checked before saving, so a store that went elsewhere never writes over a real login.
+            Assert.Equal(Path.Combine(configHome, "byteshelf", "config.json"), store.FilePath);
+            store.Save(KeyConfig("https://files.test/", "bsk_secret"));
+
+            AssertOwnerOnly(store.FilePath);
+        }
+
+        [Fact]
+        public void FromEnvironment_RelativeXdgConfigHome_UsesTheHomesConfigFolder()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            string home = _work.File("home");
+
+            CliConfigStore store = CliConfigStore.FromEnvironment(Variables(("XDG_CONFIG_HOME", "relative/config"), ("HOME", home)));
+
+            Assert.Equal(Path.Combine(home, ".config", "byteshelf", "config.json"), store.FilePath);
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        public void FromEnvironment_NoHome_UsesTheAccountsHome(string? home)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            string accountHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile, Environment.SpecialFolderOption.DoNotVerify);
+
+            CliConfigStore store = CliConfigStore.FromEnvironment(Variables(("HOME", home)));
+
+            Assert.True(Path.IsPathFullyQualified(accountHome), accountHome);
+            Assert.Equal(Path.Combine(accountHome, ".config", "byteshelf", "config.json"), store.FilePath);
+        }
+
+        [Fact]
+        public void FromEnvironment_ConfigVariableRelative_NamesAFileUnderTheCurrentFolderOverTheConfigFolder()
+        {
+            CliConfigStore store = CliConfigStore.FromEnvironment(Variables((CliConfigStore.PathVariable, "relative/config.json"), ("XDG_CONFIG_HOME", _work.File("config-home"))));
+
+            Assert.Equal(Path.Combine(Environment.CurrentDirectory, "relative", "config.json"), store.FilePath);
+        }
+
+        [Fact]
+        public void Save_ConfigFolderCannotBeMade_ThrowsUsageNamingTheVariable()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            string readOnly = _work.File("read-only");
+            Directory.CreateDirectory(readOnly, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            CliConfigStore store = CliConfigStore.FromEnvironment(Variables(("XDG_CONFIG_HOME", readOnly)));
+
+            UsageException exception = Assert.Throws<UsageException>(() => store.Save(KeyConfig("https://files.test/", "bsk_secret")));
+
+            Assert.Contains(CliConfigStore.PathVariable, exception.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task NoConfigFolder_ReadingOrWritingTheConfig_ThrowsUsageNamingTheVariable()
+        {
+            CliConfigStore store = new CliConfigStore(null);
+
+            Exception[] refusals = new Exception[]
+            {
+                Assert.Throws<UsageException>(() => store.Load()),
+                Assert.Throws<UsageException>(() => store.Save(KeyConfig("https://files.test/", "bsk_secret"))),
+                Assert.Throws<UsageException>(store.Delete),
+                await Assert.ThrowsAsync<UsageException>(() => store.LockAsync(CancellationToken.None)),
+            };
+
+            Assert.All(refusals, refusal => Assert.Contains(CliConfigStore.PathVariable, refusal.Message, StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public async Task NoConfigFolder_CommandsThatNeedTheConfigFailAsMisuseWhileOthersRun()
+        {
+            using ConfiguredClientSource clients = Clients(NoVariables, new CliConfigStore(null));
+            using ConfiguredClientSource environmentKey = Clients(
+                Variables((ConfiguredClientSource.ServerVariable, "https://files.test/"), (ConfiguredClientSource.KeyVariable, "bsk_env")),
+                new CliConfigStore(null));
+
+            CliRun help = await CliRun.RunAsync(clients, new[] { "help" });
+            CliRun whoami = await CliRun.RunAsync(clients, new[] { "whoami" });
+            CliRun shelves = await CliRun.RunAsync(environmentKey, new[] { "shelves" });
+
+            Assert.Equal((CliApp.Succeeded, CliApp.Misused, CliApp.Succeeded), (help.ExitCode, whoami.ExitCode, shelves.ExitCode));
+            Assert.Contains(CliConfigStore.PathVariable, whoami.Error, StringComparison.Ordinal);
+            Assert.Equal(new[] { "GET https://files.test/api/shelves bsk_env" }, _servers.Requests);
+        }
+
         [Theory]
         [InlineData("https://files.test", "https://files.test/")]
         [InlineData("http://localhost:5000/byteshelf", "http://localhost:5000/byteshelf/")]
@@ -321,9 +431,16 @@ namespace ByteShelf.Cli.Tests
             File.WriteAllText(Store.FilePath, json);
         }
 
-        private ConfiguredClientSource Clients(Func<string, string?> variables)
+        [UnsupportedOSPlatform("windows")]
+        private static void AssertOwnerOnly(string file)
         {
-            return new ConfiguredClientSource(Store, variables, _servers);
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(file));
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute, File.GetUnixFileMode(Path.GetDirectoryName(file)!));
+        }
+
+        private ConfiguredClientSource Clients(Func<string, string?> variables, CliConfigStore? store = null)
+        {
+            return new ConfiguredClientSource(store ?? Store, variables, _servers);
         }
     }
 }
