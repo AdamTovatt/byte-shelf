@@ -1,7 +1,8 @@
-import { createContext, useCallback, useContext, useLayoutEffect, useMemo, useState, type ReactNode, type Ref } from 'react';
+import { useLayoutEffect, type ReactNode, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import { IconButton, cn, type IconButtonProps } from '../../ui';
 import { DRAGS_ITSELF } from '../../lib/dragsItself';
+import { ViewerPreviewProvider, useViewerPreview, type ViewerPreviewHost } from '../../lib/preview/viewerPreview';
 import { useMeasuredSize } from '../../ui/components/ui/useMeasuredSize';
 import { useMediaQuery } from '../../ui/hooks/useMediaQuery';
 import { useFadingControls, type FadingControls } from '../../hooks/useFadingControls';
@@ -17,6 +18,8 @@ interface FloatingBarsProps {
   actions: ReactNode;
   /** Where the file stands among those beside it, and the steps to them: beside the actions, or on a phone in a bar at the bottom. */
   steps: ReactNode;
+  /** What the preview gives the viewer the bars float over (`useViewerPreviewHost`), whose controls are drawn in the bottom bar. */
+  host: ViewerPreviewHost;
   /** What the bars float over, which fills all of the room. */
   children: ReactNode;
 }
@@ -27,22 +30,14 @@ interface FloatingBarsProps {
  * heights are given to what is drawn between them (`CLEAR_OF_BARS`).
  * On a phone they stand further from the edges, and a bar's pills are as tall as its tallest.
  */
-export function FloatingBars({ title, actions, steps, children }: FloatingBarsProps) {
+export function FloatingBars({ title, actions, steps, host: { preview, setSlot, hasControls: hasViewerControls }, children }: FloatingBarsProps) {
   const controls = useFadingControls();
   const { ref: topBar, height: topBarHeight } = useMeasuredSize<HTMLDivElement>();
   const { ref: bottomBar, height: bottomBarHeight } = useMeasuredSize<HTMLDivElement>();
-  const [slot, setSlot] = useState<HTMLDivElement | null>(null);
-  const [viewerControls, setViewerControls] = useState(0);
-  const addControls = useCallback(() => {
-    setViewerControls((count) => count + 1);
-    return () => setViewerControls((count) => count - 1);
-  }, []);
-  const controlsSlot = useMemo(() => ({ slot, addControls }), [slot, addControls]);
-  const hasViewerControls = viewerControls > 0;
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col" style={barHeights(topBarHeight, bottomBarHeight)} {...controls.area}>
-      <ControlsSlot.Provider value={controlsSlot}>{children}</ControlsSlot.Provider>
+      <ViewerPreviewProvider value={preview}>{children}</ViewerPreviewProvider>
       <Bar ref={topBar} controls={controls} className="top-0 items-stretch justify-between pt-4 sm:items-start sm:pt-2">
         <Pill controls={controls}>
           <h2 className="truncate px-3 text-body-sm font-medium text-fg">{title}</h2>
@@ -71,21 +66,15 @@ export function FloatingBars({ title, actions, steps, children }: FloatingBarsPr
 }
 
 /**
- * Where the viewer's controls go: the slot of the bottom bar, shown while some are drawn in it. `addControls` counts
- * one drawing them, and answers what counts them gone.
- */
-const ControlsSlot = createContext<{ slot: HTMLElement | null; addControls: () => () => void } | null>(null);
-
-/**
  * A viewer's controls of its own, as a player's, in a pill of the preview's bottom bar, the width of the bar up to
  * a limit, that fades with its bars; on a phone it is above the steps. A drag on them is theirs, not a swipe of the
  * preview's. Drawn nowhere outside a preview.
  */
 export function PreviewControls({ children }: { children: ReactNode }) {
-  const controlsSlot = useContext(ControlsSlot);
-  const addControls = controlsSlot?.addControls;
+  const preview = useViewerPreview();
+  const addControls = preview?.addControls;
   useLayoutEffect(() => addControls?.(), [addControls]);
-  return controlsSlot?.slot ? createPortal(children, controlsSlot.slot) : null;
+  return preview?.slot ? createPortal(children, preview.slot) : null;
 }
 
 /** A control in the bars, larger on a phone, where a finger taps it. */

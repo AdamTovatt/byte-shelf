@@ -54,9 +54,11 @@ storyboard's frame of that time, then mute and the volume, the speed, `Original`
 plays the video itself instead, from where it was, and full screen. A click with the mouse on the video plays or
 pauses it, a tap shows or hides the bars, and a double click goes full screen.
 
-Space and K play and pause, and J and L jump 10 seconds back and forward, from anywhere in the preview but a
-field (`keyAction`); while the seek bar has the focus, ← and → move 5 seconds, which then step to no other file,
-and Home and End go to the start and the end. Where a video was stopped is kept in the browser by its file's id,
+Space and K play and pause, and J and L jump 10 seconds back and forward, of the keys the preview hands its
+viewer (`keyAction`, `usePreviewKeys`): none typed into a field, though on the volume slider too, and none while a
+dialog is over it. While the seek bar has the focus, ← and → move 5 seconds, which then step to no other file, and
+Home and End go to the start and the end. Full screen is of the page while the preview is open, its bars, menus and
+dialogs and all, and on an iPhone of the video in the browser's own player (`usePreviewFullScreen`). Where a video was stopped is kept in the browser by its file's id,
 for the last 200, and it is picked up there when that is more than 10 seconds from either end (`resumePoint`).
 A video stored without a type (`application/octet-stream`) is not taken, whatever its name, as the server makes
 nothing of it either.

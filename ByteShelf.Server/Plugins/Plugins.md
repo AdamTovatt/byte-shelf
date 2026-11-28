@@ -172,6 +172,15 @@ A module's default export is `definePlugin({ viewers, fileActions, folderTypes }
   bottom bar, the width of the bar up to a limit and on a phone above the steps, that fades with the bars and goes
   with the viewer, a drag on which is the controls' and no swipe; `BarButton` is the bars' own button, and
   `BarTextButton` one that shows a word or two, as a speed, at its height. Outside a preview it draws nothing.
+  `usePreviewKeys(handler)` hands `handler` the keys pressed in the preview while that is the overlay on top, those
+  pressed with a modifier too: none while a dialog is over it, none typed into a field (a slider is not one) or taken
+  already, as by a control's own handler, and never Escape or Tab, which are the overlay's. `handler` hears them
+  ahead of the preview, whose arrow keys step between files unless it calls `preventDefault`.
+  `usePreviewFullScreen(video?)` answers a `FullScreen`: `canFullScreen`, `isFullScreen` and `toggle`, which makes
+  the page full screen while the preview is open, the menus and dialogs over it too, and closing the preview leaves
+  it. Where the browser makes no element full screen, as on an iPhone, it is the `video` given in the browser's own
+  player instead, and without one there is none. Outside a preview the one hands `handler` nothing and the other
+  cannot go full screen.
   The component also gets `Fallback`, a component without props, for a file it finds it has nothing to show of, or
   nothing better than the next viewer: it shows the file in the viewer that would show it were there not this one,
   by the order above and passing over those that are unavailable, or, when none is left, says why the first that is

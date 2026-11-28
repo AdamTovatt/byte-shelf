@@ -18,6 +18,7 @@ export { mediaTypeOf } from '../lib/mediaTypes';
 export { readText, type ReadText } from '../lib/content/readText';
 export { PlainText, TextPane } from '../components/preview/TextPane';
 export { BarButton, BarTextButton, PreviewControls } from '../components/preview/FloatingBars';
+export { usePreviewFullScreen, usePreviewKeys, type FullScreen, type PreviewKeyHandler } from '../lib/preview/viewerPreview';
 export { useLoaded, type Loaded, type Reloadable } from '../hooks/useLoaded';
 export { useZoom, type Zoom } from '../hooks/useZoom';
 export { DRAGS_ITSELF } from '../lib/dragsItself';

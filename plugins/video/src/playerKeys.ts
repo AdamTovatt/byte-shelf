@@ -1,4 +1,4 @@
-/** What a key does to the player wherever the focus is in the preview: play or pause, or a jump of so many seconds. */
+/** What a key the preview hands the player does to it: play or pause, or a jump of so many seconds. */
 export type KeyAction = { kind: 'toggle' } | { kind: 'jump'; seconds: number };
 
 /** How far J and L jump. */
@@ -9,11 +9,10 @@ export const STEP_SECONDS = 5;
 
 /**
  * What `key` does, pressed with nothing held: Space and K play or pause, J and L jump back and forward. Space on a
- * button presses that button, and nothing is done of a key typed into a field. The arrow keys are the seek bar's
- * while it has the focus, and else step between files.
+ * button presses that button. A key typed into a field the preview hands no viewer. The arrow keys are the seek
+ * bar's while it has the focus, and else step between files.
  */
 export function keyAction(key: string, target: EventTarget | null): KeyAction | null {
-  if (isTyping(target)) return null;
   switch (key.toLowerCase()) {
     case ' ':
       return isButton(target) ? null : { kind: 'toggle' };
@@ -26,10 +25,6 @@ export function keyAction(key: string, target: EventTarget | null): KeyAction | 
     default:
       return null;
   }
-}
-
-function isTyping(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
 }
 
 function isButton(target: EventTarget | null): boolean {

@@ -3,6 +3,8 @@
 // module that imports it fails its build, as any other module of `@byteshelf/plugin` does.
 import type { DerivedKind, DerivedReader } from './index';
 
+export { InPreview } from './InPreview';
+
 /** What plugins made from a file: each kind in `made` is listed and loads from its URL, and there is none of any other. */
 export function derivedReaderOf(made: Partial<Record<DerivedKind, string>> = {}): DerivedReader {
   return {

@@ -1,7 +1,6 @@
 import type { RefObject } from 'react';
-import { BarButton, BarTextButton, PreviewControls, formatDuration, iconMap } from '@byteshelf/plugin';
+import { BarButton, BarTextButton, PreviewControls, formatDuration, iconMap, type FullScreen } from '@byteshelf/plugin';
 import { SeekBar, type StoryboardImage } from './SeekBar';
-import type { FullScreen } from './useFullScreen';
 
 /** The speeds a click on the speed goes through, from the one played at; from any other, the first. */
 const RATES = [1, 1.25, 1.5, 2, 0.5, 0.75];

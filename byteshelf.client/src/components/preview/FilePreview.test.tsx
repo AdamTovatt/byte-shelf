@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FilePreview } from './FilePreview';
 import { PreviewControls } from './FloatingBars';
+import { usePreviewFullScreen, usePreviewKeys } from '../../lib/preview/viewerPreview';
 import { CLEAR_OF_BARS } from './previewBars';
 import { BUILT_IN_VIEWERS } from './viewers';
 import { usePluginId } from '../../contexts/PluginIdentity';
@@ -15,7 +16,7 @@ import type { ViewerProps } from '../../lib/preview/viewerRegistry';
 import type { ContentSource } from '../../services/contentService';
 import type { FileReading } from '../../services/fileReading';
 import type { ShelfFile } from '../../services/shelfService';
-import { removePdfViewer, restorePdfViewer, stubTabs } from '../../test/browser';
+import { removePdfViewer, restorePdfViewer, stubFullScreen, stubTabs } from '../../test/browser';
 import { button, dialogTitles, labelled, press, shows, untilFound } from '../../test/dom';
 import { DRAGS_ITSELF } from '../../lib/dragsItself';
 import { doubleTap, drag, layOutZoom, pointer } from '../../test/pointers';
@@ -76,13 +77,27 @@ function DraggingViewer() {
   );
 }
 
-/** Shows a picture with a control of its own in the preview's bars, as a player does. */
+/** The keys the controlling viewer was handed. */
+const heard: string[] = [];
+
+/**
+ * Shows a picture with controls of its own in the preview's bars, as a player does: one that takes M, a field, a
+ * slider and full screen. It hears keys, taking ← as its own.
+ */
 function ControllingViewer() {
+  usePreviewKeys((event) => {
+    heard.push(event.key);
+    if (event.key === 'ArrowLeft') event.preventDefault();
+  });
+  const fullScreen = usePreviewFullScreen();
   return (
     <>
       <p>a controlled picture</p>
       <PreviewControls>
-        <button type="button" aria-label="Its control">control</button>
+        <button type="button" aria-label="Its control" onKeyDown={(event) => event.key === 'm' && event.preventDefault()}>control</button>
+        <input aria-label="Its field" />
+        <input type="range" aria-label="Its slider" />
+        <button type="button" aria-label={fullScreen.isFullScreen ? 'Exit full screen' : 'Full screen'} onClick={fullScreen.toggle} />
       </PreviewControls>
     </>
   );
@@ -185,6 +200,7 @@ describe('the preview', () => {
   beforeEach(() => {
     vi.stubGlobal('isSecureContext', true);
     saved.length = 0;
+    heard.length = 0;
     closed = 0;
     asksPassword = false;
     moreFound = undefined;
@@ -597,6 +613,53 @@ describe('the preview', () => {
     // Each file's is its own.
     await act(async () => change(derived('a', { preview: 'p-2' })));
     await shows('a at /open/a/preview?v=a-p-2, beside b true');
+  });
+
+  it('hands its viewer the keys pressed in it, ahead of its own, those on a slider too, but those typed into a field, those taken already, those pressed while a dialog is over it, and none once the viewer is gone', async () => {
+    stubServer(async () => json({ readable: false, readAt: null }));
+    const files = [shelfFile('o'), shelfFile('p', { contentType: 'x-test/controlling' }), shelfFile('q')];
+    await show(files[1], files);
+    await shows('a controlled picture');
+
+    await key('k');
+    await key('ArrowLeft');
+    expect([heard, document.querySelector('h2')?.textContent]).toEqual([['k', 'ArrowLeft'], 'p']);
+    const input = (label: string) => document.querySelector(`input[aria-label="${label}"]`)!;
+    await key('j', input('Its field'));
+    await key('m', labelled('Its control')!);
+    await key(' ', input('Its slider'));
+
+    await act(async () => labelled('Details')!.click());
+    await shows('Details of p');
+    await key('k');
+    await key('Escape');
+    await vi.waitFor(() => expect(document.body.textContent).not.toContain('Details of p'));
+    await key('l');
+    await key('ArrowRight');
+    await shows('text of q');
+    await key('k');
+
+    expect(heard).toEqual(['k', 'ArrowLeft', ' ', 'l', 'ArrowRight']);
+  });
+
+  it('goes full screen with the page, the dialogs over it too, still so on the next file, and leaves it as it closes', async () => {
+    const fullScreen = stubFullScreen();
+    try {
+      const files = [shelfFile('p', { contentType: 'x-test/controlling' }), shelfFile('r', { contentType: 'x-test/controlling' })];
+      await show(files[0], files);
+      await act(async () => labelled('Full screen')!.click());
+      // The whole page, as the menus and dialogs over the preview are drawn outside it.
+      expect(fullScreen.requested).toEqual([document.documentElement]);
+
+      await key('ArrowRight');
+      await vi.waitFor(() => expect(document.querySelector('h2')?.textContent).toBe('r'));
+      expect(labelled('Exit full screen')).not.toBeNull();
+
+      await act(async () => root.render(<></>));
+      expect(fullScreen.exits).toBe(1);
+    } finally {
+      fullScreen.restore();
+    }
   });
 
   it('leaves the arrow keys to a dialog over it, which Escape closes first', async () => {

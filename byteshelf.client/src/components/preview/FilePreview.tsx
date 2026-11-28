@@ -5,6 +5,7 @@ import { BackdropClick } from '../../lib/preview/backdropClick';
 import type { Steps } from '../../lib/preview/neighbours';
 import type { ShownPreview } from '../../lib/preview/shownPreview';
 import { ZoomedSwipe, type Swipes } from '../../lib/preview/swipe';
+import { useViewerPreviewHost } from '../../lib/preview/viewerPreview';
 import type { Neighbour } from '../../lib/preview/viewerRegistry';
 import type { FileActions } from '../../hooks/useFileActions';
 import { useDerivedReaders, type DerivedOf } from '../../hooks/useDerivedReaders';
@@ -51,9 +52,12 @@ export function FilePreview({ previewed, error, steps, previous, next, onClose, 
   const target = previewed && openable(previewed, readWhole ?? undefined);
   const swipes: Swipes = { onLeft: steps?.toNext, onRight: steps?.toPrevious, onDown: onClose };
   const swipe = useSwipe(swipes);
+  const host = useViewerPreviewHost();
   useNoPullToRefresh();
 
+  /** A key it hears as the overlay on top: the viewer's first, then a step to the file beside it. */
   function onKeyDown(event: KeyboardEvent): void {
+    host.offer(event);
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.defaultPrevented || ownsArrowKeys(event.target)) return;
     const step = event.key === 'ArrowLeft' ? steps?.toPrevious : event.key === 'ArrowRight' ? steps?.toNext : null;
     if (!step) return;
@@ -67,6 +71,7 @@ export function FilePreview({ previewed, error, steps, previous, next, onClose, 
     <Modal isOpen variant="fullscreen" title={title} onClose={onClose} onKeyDown={onKeyDown}>
       <FloatingBars
         title={title}
+        host={host}
         steps={steps && <StepButtons steps={steps} />}
         actions={(
           <>

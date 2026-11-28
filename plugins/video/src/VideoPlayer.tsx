@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
-import { LoadedContent, Spinner, clamp, useLoaded, usePluginDocuments, type DerivedKind, type DerivedReader, type DerivedStatus, type ViewerProps } from '@byteshelf/plugin';
+import { LoadedContent, Spinner, clamp, useLoaded, usePluginDocuments, usePreviewFullScreen, type DerivedKind, type DerivedReader, type DerivedStatus, type ViewerProps } from '@byteshelf/plugin';
 import { asksForStream, playingOf } from './playing';
 import { recordedVideo } from './recordedVideo';
 import { resumeAt, savePosition, savedPosition } from './resumePoint';
 import type { StoryboardImage } from './SeekBar';
-import { useFullScreen } from './useFullScreen';
 import { usePlayerKeys } from './usePlayerKeys';
 import { VideoControls, type Playback } from './VideoControls';
 
@@ -115,7 +114,7 @@ function Video({ src, fileId, name, poster, storyboard, note, from, original, on
   const [isCutOff, setIsCutOff] = useState(false);
   const lastSaved = useRef(0);
   const pressedWith = useRef('mouse');
-  const fullScreen = useFullScreen(video);
+  const fullScreen = usePreviewFullScreen(video);
 
   function update(changed: Partial<Playback>): void {
     setPlayback((before) => ({ ...before, ...changed }));

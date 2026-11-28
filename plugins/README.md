@@ -36,8 +36,8 @@ plugins/<id>/
 It takes Node 24, and the .NET SDK for a server assembly. `npm ci` in `byteshelf.client`, whose tools it
 uses, and in the plugin, then `npm run build` in the plugin makes `dist/`, a plugin folder: copy or link it into the folder
 `BYTESHELF_PLUGINS` names and restart the server. `npm test` runs its tests, with the app's own React
-and UI library, and `@byteshelf/plugin/testing`, stand-ins for what the app gives a viewer, which only tests
-import; `npm run lint` in `byteshelf.client` covers the plugins too.
+and UI library, and `@byteshelf/plugin/testing`, stand-ins for what the app gives a viewer (`derivedReaderOf`, and
+`InPreview`, a preview to draw one in, whose are all keys pressed in the document), which only tests import; `npm run lint` in `byteshelf.client` covers the plugins too.
 
 A new one also needs its line under `extensions.known` in `ByteShelf.Server/updaemon.json`, which a
 server test asks for, so that updaemon 1.1 or later installs it by its id alone. Its id may not read as the end of a

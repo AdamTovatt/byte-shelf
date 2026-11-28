@@ -65,7 +65,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
         {
             using StreamReader reader = new StreamReader(contents, leaveOpen: true);
             string text = await reader.ReadToEndAsync();
-            await File.AppendAllTextAsync(_spec.LogPath, $"{text.ReplaceLineEndings(" ")}: {string.Join(", ", kinds)}\n");
+            await LogAsync($"{text.ReplaceLineEndings(" ")}: {string.Join(", ", kinds)}");
 
             switch (text.Split(' ')[0])
             {
@@ -104,7 +104,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
                 case "temporary":
                     string temporary = Path.GetTempFileName();
                     await File.WriteAllTextAsync(temporary, text);
-                    await File.AppendAllTextAsync(_spec.LogPath, temporary + "\n");
+                    await LogAsync(temporary);
                     await File.WriteAllTextAsync("in-working-folder", text);
                     break;
                 case "full":
@@ -200,6 +200,33 @@ namespace ByteShelf.Server.Tests.TestUtilities
             else if (text == "kinds twice")
             {
                 await AddAsync(made, kinds[0], text);
+            }
+        }
+
+        /// <summary>
+        /// Adds <paramref name="line"/> to the log, which other plugins' processes write too, holding the file beside it
+        /// alone while it does: .NET appends where the end was as it opened the log, so two at once write at the same place.
+        /// </summary>
+        private async Task LogAsync(string line)
+        {
+            await using FileStream held = await HoldAsync(_spec.LogPath + ".lock");
+            await File.AppendAllTextAsync(_spec.LogPath, line + "\n");
+        }
+
+        /// <summary>Opens <paramref name="path"/> for this process alone, once no other holds it.</summary>
+        private static async Task<FileStream> HoldAsync(string path)
+        {
+            Stopwatch waited = Stopwatch.StartNew();
+            while (true)
+            {
+                try
+                {
+                    return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                }
+                catch (IOException) when (waited.Elapsed < TimeSpan.FromSeconds(10))
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(1));
+                }
             }
         }
 

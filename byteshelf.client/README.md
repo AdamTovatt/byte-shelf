@@ -116,10 +116,10 @@ npm run codegen    # in a second terminal
   middle (`components/MiddleTruncatedName.tsx`).
 - **Preview** (`components/preview/FilePreview.tsx`): a file over the page in the viewer that takes its
   type, its place in the URL (`?preview=<file id>`, `hooks/usePreviewParam.ts`), so Back closes it and a
-  reload keeps it. Previous, next and the arrow keys go through the files a viewer takes, in the order of
-  the listing or the search's results (`hooks/useShelfPreview.ts`; past the last result so far, next fetches
-  the pages that follow until one holds a file a viewer takes); a file outside them, as after a reload of a
-  search, is previewed alone. A preview whose file is gone closes with a toast. In the trash
+  reload keeps it. Previous, next and the arrow keys, unless the viewer takes them, as a player's seek bar does,
+  go through the files a viewer takes, in the order of the listing or the search's results
+  (`hooks/useShelfPreview.ts`; past the last result so far, next fetches the pages that follow until one holds a
+  file a viewer takes); a file outside them, as after a reload of a search, is previewed alone. A preview whose file is gone closes with a toast. In the trash
   (`hooks/useTrashPreview.ts`) it is of the one file a file deletion took, by the deletion's id, without
   neighbours; Open shows it there whatever its type, saying so of one no viewer takes. A viewer also gets what
   plugins made from the file and from the two beside it (`lib/derived/derivedReader.ts`), which an `<img>`
@@ -146,7 +146,10 @@ npm run codegen    # in a second terminal
     `tailwind.config.js` reads too), the bars' buttons are larger and the bars stand further from the edges. A
     viewer that is `clearOfBars` is drawn between the bars. A viewer's own controls, as a player's, go in a pill
     of the bottom bar (`PreviewControls`, a portal into `FloatingBars`' slot, marked `DRAGS_ITSELF` while it holds
-    any).
+    any). What a preview gives its viewer is made in one place (`useViewerPreviewHost`, `lib/preview/viewerPreview.ts`):
+    that slot; the keys the preview hears as the overlay on top, offered to the viewer's handlers before its own
+    (`usePreviewKeys`), but those typed into a field or taken already; and full screen of the whole page while it is
+    open, so that the menus and dialogs drawn outside it show too, which closing it leaves (`usePreviewFullScreen`).
   - *Contents* reach a viewer through a `ContentReader` (`lib/content/contentReader.ts`): `url()`, `blob()`
     and `range()`, whatever they come from. A blob-backed file (`isBlobBacked`) is read whole into the page
     first (`lib/preview/fileContents.ts`), over 100 MiB only once Load, Download or Open in new tab is

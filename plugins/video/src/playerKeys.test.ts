@@ -26,10 +26,4 @@ describe('the keys of the player', () => {
 
     expect([keyAction(' ', button), keyAction(' ', inButton), keyAction('k', button)]).toEqual([null, null, { kind: 'toggle' }]);
   });
-
-  it('do nothing in a field', () => {
-    const field = document.createElement('input');
-
-    expect([keyAction('k', field), keyAction(' ', document.createElement('textarea')), keyAction('j', field)]).toEqual([null, null, null]);
-  });
 });
