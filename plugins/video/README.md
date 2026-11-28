@@ -5,7 +5,7 @@ What it makes of a video (`VideoMaker`), with its own ffmpeg, in its process's w
 | Kind | What it is |
 |---|---|
 | `thumbnail` | The poster: a WebP of at most 320 pixels on the long side, of the keyframe at or before a tenth of the way in. |
-| `preview` | The storyboard: one WebP grid of frames 160 pixels wide across the whole video (`Storyboard`), whose layout the document says. |
+| `preview` | The storyboard: one WebP grid of frames 160 pixels wide across the whole video (`Storyboard`), whose layout the document says, which the player shows over its seek bar. |
 | `stream` | A copy that streams: H.264 High in an MP4 with its index at the front, a keyframe every second of a closed GOP, at most 1080p (1080 wide when upright), CRF 23 at most about 6 Mbps, AAC at 160 kbps in stereo. Made in the background alone, in a process of its own at the lowest CPU priority, for up to 24 hours ([Processes](../../ByteShelf.Server/Plugins/Processes/Processes.md)). None is made of a video that streams well as it is, nor kept when it comes out larger than the video or than a stream may be (8 GiB, `DerivedFileLimits`), so asking for it is a 404 and the video itself is what plays. |
 
 Poster and storyboard are each of keyframes, each copied out of the contents as it is and decoded alone, so a run
@@ -35,6 +35,31 @@ and at most 8 Mbps in all. The storyboard's layout is `Storyboard.For`, by which
 stretches of at most 2 seconds, and at most 100 of them, 10 to a row, frame `i` standing for the time from
 `i × intervalSeconds` to the next and of the keyframe at or before the middle of it. The reader and the storyboard
 are of one version (`VideoPlugin.ReaderAndStoryboardVersion`), so the layout a document says is the storyboard's.
+
+## The player
+
+Its viewer of `video/*` (`VideoPlayer`), ahead of the app's own, plays the `stream` when the file's listing named
+one as it opened, and else the video itself (`playingOf`): a stream made while the video plays is played the next
+time it is opened. Of the two, one that cannot be played is left for the other, from where it was, and a video
+neither of which plays is the next viewer's, as an encrypted one is. Of a video that streams well as it is, it
+never asks for a stream. Of one that does not, whose stream is not listed, it asks what there is
+(`DerivedReader.status`) and says only that a streaming copy is on its way or that there is no room on the shelf
+for one. It shows the poster until it plays. Where the page reads files whole, as where it keeps no cookie, it
+plays the video itself, which the page has read already. A video the network cut off is kept, and play loads it
+again from where it was.
+
+Its controls are in the preview's bottom bar (`PreviewControls`, `VideoControls`), fading with the bars: play and
+pause, the time and the whole, the seek bar (`SeekBar`), which shows what is loaded and, where the pointer is, the
+storyboard's frame of that time, then mute and the volume, the speed, `Original` while there is a stream, which
+plays the video itself instead, from where it was, and full screen. A click with the mouse on the video plays or
+pauses it, a tap shows or hides the bars, and a double click goes full screen.
+
+Space and K play and pause, and J and L jump 10 seconds back and forward, from anywhere in the preview but a
+field (`keyAction`); while the seek bar has the focus, ← and → move 5 seconds, which then step to no other file,
+and Home and End go to the start and the end. Where a video was stopped is kept in the browser by its file's id,
+for the last 200, and it is picked up there when that is more than 10 seconds from either end (`resumePoint`).
+A video stored without a type (`application/octet-stream`) is not taken, whatever its name, as the server makes
+nothing of it either.
 
 ## What it reads
 

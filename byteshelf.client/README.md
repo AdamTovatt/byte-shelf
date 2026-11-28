@@ -39,8 +39,10 @@ npm run test:e2e   # Playwright: builds the UI and the plugins its config names,
 npm run build      # into dist/, which a published server serves
 ```
 
-Before the first `npm run test:e2e`, install its browser with `npx playwright install chromium`. The images
-plugin's server part, which it builds, needs the .NET SDK.
+Before the first `npm run test:e2e`, install its browser with `npx playwright install chromium`. The plugins'
+server parts, which it builds, need the .NET SDK, and the video plugin's first build downloads its ffmpeg, so it
+needs the network. The video plugin's test makes its video with that ffmpeg, which is for Linux on x64 or arm64
+alone, so the e2e tests run there.
 
 `src/lib/encryption/interop.test.ts` checks typage (`age-encryption`) decrypts `dotnet.age`, an age
 file ByteShelfClient wrote, and matches `dotnet-check.txt`, a folder check it made; ByteShelfClient's
@@ -142,7 +144,9 @@ npm run codegen    # in a second terminal
     does not reload the page (`hooks/useNoPullToRefresh.ts`), and a click with the mouse beside an image that zooms
     closes it (`BackdropClick`). On a phone, narrower than Tailwind's `sm` (`lib/screens.ts`, which
     `tailwind.config.js` reads too), the bars' buttons are larger and the bars stand further from the edges. A
-    viewer that is `clearOfBars` is drawn between the bars.
+    viewer that is `clearOfBars` is drawn between the bars. A viewer's own controls, as a player's, go in a pill
+    of the bottom bar (`PreviewControls`, a portal into `FloatingBars`' slot, marked `DRAGS_ITSELF` while it holds
+    any).
   - *Contents* reach a viewer through a `ContentReader` (`lib/content/contentReader.ts`): `url()`, `blob()`
     and `range()`, whatever they come from. A blob-backed file (`isBlobBacked`) is read whole into the page
     first (`lib/preview/fileContents.ts`), over 100 MiB only once Load, Download or Open in new tab is

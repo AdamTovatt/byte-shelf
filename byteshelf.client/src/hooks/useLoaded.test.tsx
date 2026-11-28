@@ -8,7 +8,7 @@ import { useLoaded, type Reloadable } from './useLoaded';
 
 /** A load under way: the key it is for, its signal, and how it ends. */
 interface Load {
-  key: string;
+  key: string | null;
   signal: AbortSignal;
   resolve: (value: string) => void;
   reject: (error: Error) => void;
@@ -19,12 +19,12 @@ describe('a load', () => {
   let loads: Load[];
   let loaded: Reloadable<string>;
 
-  function Probe({ of }: { of: string }) {
+  function Probe({ of }: { of: string | null }) {
     loaded = useLoaded(of, (signal) => new Promise<string>((resolve, reject) => loads.push({ key: of, signal, resolve, reject })));
     return null;
   }
 
-  function show(key: string): Promise<void> {
+  function show(key: string | null): Promise<void> {
     return act(async () => root.render(<Probe of={key} />));
   }
 
@@ -50,6 +50,15 @@ describe('a load', () => {
     expect(state()).toBe('loading');
     await act(async () => loads[1].reject(new Error('no b')));
     expect(state()).toBe('no b');
+  });
+
+  it('loads nothing for a null key, loading until a key is given', async () => {
+    await show(null);
+    expect([loads.length, state()]).toEqual([0, 'loading']);
+
+    await show('a');
+    await act(async () => loads[0].resolve('A'));
+    expect([loads.length, state()]).toEqual([1, 'A']);
   });
 
   it('is aborted as its key changes, and what it then answers is left', async () => {

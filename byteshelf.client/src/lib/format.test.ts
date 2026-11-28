@@ -27,6 +27,12 @@ describe('formatDuration', () => {
     expect(formatDuration(187.2)).toBe('3:07');
     expect(formatDuration(3909.4)).toBe('1:05:09');
   });
+
+  it('writes how far a player is in whole seconds gone by, and 0:00 of what is not a time', () => {
+    const elapsed = (seconds: number) => formatDuration(seconds, { isElapsed: true });
+
+    expect([elapsed(65.9), elapsed(3600), elapsed(36_061), elapsed(Number.NaN), elapsed(-1)]).toEqual(['1:05', '1:00:00', '10:01:01', '0:00', '0:00']);
+  });
 });
 
 describe('parseQuota', () => {

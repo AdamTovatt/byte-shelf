@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FilePreview } from './FilePreview';
+import { PreviewControls } from './FloatingBars';
 import { CLEAR_OF_BARS } from './previewBars';
 import { BUILT_IN_VIEWERS } from './viewers';
 import { usePluginId } from '../../contexts/PluginIdentity';
@@ -75,6 +76,18 @@ function DraggingViewer() {
   );
 }
 
+/** Shows a picture with a control of its own in the preview's bars, as a player does. */
+function ControllingViewer() {
+  return (
+    <>
+      <p>a controlled picture</p>
+      <PreviewControls>
+        <button type="button" aria-label="Its control">control</button>
+      </PreviewControls>
+    </>
+  );
+}
+
 /** Leaves every file to the viewer after it, as one does that has nothing to show of a file. */
 function DecliningViewer({ Fallback }: ViewerProps) {
   return <Fallback />;
@@ -93,6 +106,7 @@ const WITH_PLUGINS = BUILT_IN_VIEWERS.with('test', [
   { id: 'zoomed', mediaTypes: ['x-test/zoomed'], extensions: [], component: ZoomedViewer },
   { id: 'dragging', mediaTypes: ['x-test/dragging'], extensions: [], component: DraggingViewer },
   { id: 'zooming', mediaTypes: ['x-test/zooming'], extensions: [], component: ZoomingViewer },
+  { id: 'controlling', mediaTypes: ['x-test/controlling'], extensions: [], component: ControllingViewer },
   { id: 'declining', mediaTypes: ['x-test/chain', 'x-test/alone', 'x-test/gone', 'text/plain'], extensions: [], component: DecliningViewer },
 ]).with('zz', [
   { id: 'next', mediaTypes: ['x-test/chain'], extensions: [], component: OwnedViewer },
@@ -330,6 +344,34 @@ describe('the preview', () => {
       swipe(text(), [100, 200], [300, 180]);
       await shows('text of b');
       expect(controlsShown()).toBe(false);
+    });
+
+    it('hold a viewer\'s own controls in the bottom bar, which fade with the bars, go with the viewer, and take a swipe on them as theirs', async () => {
+      const controlled = [shelfFile('p', { contentType: 'x-test/controlling' }), shelfFile('q')];
+      await show(controlled[0], controlled);
+      await shows('a controlled picture');
+      const bottomBar = () => labelled('Its control')?.closest('[data-shown]');
+      expect(bottomBar()?.querySelector('[aria-label="Next file"]')).not.toBeNull();
+      expect(bottomBar()?.className).not.toContain('hidden');
+
+      swipe(labelled('Its control')!, [300, 200], [100, 200]);
+      await act(async () => {});
+      expect(document.querySelector('h2')?.textContent).toBe('p');
+      idle(2000);
+      expect(bottomBar()?.getAttribute('data-shown')).toBe('false');
+
+      await key('ArrowRight');
+      await shows('text of q');
+      expect(labelled('Its control')).toBeNull();
+    });
+
+    it('of a viewer are drawn nowhere outside a preview', async () => {
+      const elsewhere = createRoot(document.body.appendChild(document.createElement('div')));
+
+      await act(async () => elsewhere.render(<PreviewControls><button type="button" aria-label="Alone" /></PreviewControls>));
+
+      expect(labelled('Alone')).toBeNull();
+      await act(async () => elsewhere.unmount());
     });
 
     it('take no swipe that is short, or more up or down than across', async () => {

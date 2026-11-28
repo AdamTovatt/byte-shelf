@@ -1,4 +1,8 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { arch, tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { expect, test, type Browser, type BrowserContext, type Page, type Request } from '@playwright/test';
 import { ADMIN_EMAIL, ADMIN_PASSWORD } from './e2eConfig';
 import { quarteredImage, recordFrames, recordPlaces, watchLoaded } from './frames';
@@ -369,4 +373,51 @@ test('an image becomes sharp with no frame that is blank, partly drawn or moved,
     await page.keyboard.press('ArrowRight');
     await expect.poll(() => ended, 'the whole of the image left ends').toContain(`contents of ${a}`);
   });
+});
+
+/** A video of `seconds` of VP9 in WebM, which any Chromium plays, a keyframe a second, made by the video plugin's own ffmpeg. */
+function madeVideo(seconds: number): Buffer {
+  const ffmpeg = resolve(`../plugins/video/dist/ffmpeg/linux-${arch() === 'arm64' ? 'arm64' : 'x64'}/ffmpeg`);
+  const folder = mkdtempSync(join(tmpdir(), 'byteshelf-e2e-'));
+  try {
+    const made = join(folder, 'made.webm');
+    execFileSync(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', `testsrc2=size=320x240:rate=30:duration=${seconds}`, '-c:v', 'libvpx-vp9', '-deadline', 'realtime', '-cpu-used', '8', '-g', '30', '-b:v', '300k', made]);
+    return readFileSync(made);
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+}
+
+// What only a browser shows of the video plugin's player: a seek by its seek bar plays on from where it went to.
+test('a video seeks by its player\'s seek bar and plays on from there, its arrow keys stepping to no other file', async ({ browser }) => {
+  const page = await signIn(browser);
+  await page.getByRole('button', { name: 'New shelf' }).click();
+  await page.getByLabel('Name').fill('videos');
+  await page.getByRole('button', { name: 'Create' }).click();
+  await expect(page).toHaveURL('/shelves/videos');
+  await upload(page, [
+    { name: 'seek.webm', mimeType: 'video/webm', buffer: madeVideo(30) },
+    { name: 'z.txt', mimeType: 'text/plain', buffer: Buffer.from('after') },
+  ]);
+  await untilStored(page, 'z.txt');
+
+  await page.getByRole('button', { name: 'seek.webm', exact: true }).dblclick();
+  const preview = page.getByRole('dialog', { name: 'seek.webm' });
+  const video = preview.locator('video');
+  const now = () => video.evaluate((element: HTMLVideoElement) => element.currentTime);
+  await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.duration)).toBeCloseTo(30, 0);
+
+  // At once, while the bars show: a click halfway along.
+  const seekBar = preview.getByRole('slider', { name: 'Seek' });
+  const { width, height } = (await seekBar.boundingBox())!;
+  await seekBar.click({ position: { x: width / 2, y: height / 2 } });
+  await expect.poll(now).toBeCloseTo(15, 0);
+
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await expect(seekBar).toHaveAttribute('aria-valuenow', '25');
+  await expect(preview).toBeVisible();
+
+  await page.keyboard.press('k');
+  await expect.poll(now, { message: 'it plays on from where it went to', timeout: 15_000 }).toBeGreaterThan(26);
 });

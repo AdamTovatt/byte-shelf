@@ -153,15 +153,25 @@ A module's default export is `definePlugin({ viewers, fileActions, folderTypes }
   none, as of an encrypted file. One its record names may have gone since: when its URL does not load,
   `forget(kind)` has `url` ask the server, and wait. `loadDerived(reader, kind, load, signal)` does that: it hands
   the URL to `load`, and once more after `forget` when that fails. `loadImage(image, url, signal)` is such a `load`
-  for an `<img>`: it loads and decodes the image, so it is drawn whole at once.
+  for an `<img>`: it loads and decodes the image, so it is drawn whole at once. `status(kind, signal)` says what
+  there is of one without waiting while it is made (`DerivedStatus`: `made`, `making`, `none` or `noRoom`), as of a
+  `stream`, made in the background alone, which may take hours: one its record names is `made` without asking,
+  until it is forgotten, and any other failure of the server's is thrown, so a caller catches it. A `stream` is
+  played by its address alone: where the page reads files whole, as it does where it keeps no cookie, it has read
+  the file itself already, so there is none (`has` false, `url` null, `status` `none`).
   `neighbours` are the files the arrow keys move to, the one before it and the one after, each with such a
   reader, to load ahead what they will show: only files a viewer takes, none in the trash or of a file
   previewed alone, and none after the last of those fetched so far.
   A plugin's beats a built-in one for the same type; between two plugins the first id does.
   `unavailable` says why this browser cannot show the files, and the next viewer that takes them does.
-  The preview is the whole screen, with its controls floating over the file in bars at the top and, on a
-  phone, the bottom, that fade when nothing happens. A viewer is drawn under them, edge to edge, unless it is
+  The preview is the whole screen, with its controls floating over the file in bars that fade when nothing
+  happens: at the top, and at the bottom on a phone, for the steps between files, and on any screen while a viewer
+  draws controls of its own there. A viewer is drawn under them, edge to edge, unless it is
   `clearOfBars`, for controls of its own they would cover, as a PDF's toolbar: then it is drawn between them.
+  Controls of its own in the bars instead, as a player's, are what it draws in `PreviewControls`: a pill of the
+  bottom bar, the width of the bar up to a limit and on a phone above the steps, that fades with the bars and goes
+  with the viewer, a drag on which is the controls' and no swipe; `BarButton` is the bars' own button, and
+  `BarTextButton` one that shows a word or two, as a speed, at its height. Outside a preview it draws nothing.
   The component also gets `Fallback`, a component without props, for a file it finds it has nothing to show of, or
   nothing better than the next viewer: it shows the file in the viewer that would show it were there not this one,
   by the order above and passing over those that are unavailable, or, when none is left, says why the first that is
