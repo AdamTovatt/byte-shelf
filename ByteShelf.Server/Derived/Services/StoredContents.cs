@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using ByteShelf.Server.Derived.Models;
 using ByteShelf.Server.Storage.Services;
 
 namespace ByteShelf.Server.Derived.Services
@@ -10,26 +11,32 @@ namespace ByteShelf.Server.Derived.Services
     /// </summary>
     public sealed class StoredContents : IStoredContentsListener
     {
-        private readonly IReadOnlyDictionary<string, Channel<string>> _byPlugin;
+        private readonly IReadOnlyDictionary<(string PluginId, MakingGroup Group), Channel<string>> _byMaker;
 
         public StoredContents(IDerivedFilePlugins plugins)
         {
-            _byPlugin = plugins.All.ToDictionary(plugin => plugin.Id, _ => Channel.CreateUnbounded<string>(), StringComparer.Ordinal);
+            _byMaker = MakersOf(plugins).ToDictionary(maker => (maker.Plugin.Id, maker.Group), _ => Channel.CreateUnbounded<string>());
         }
 
-        /// <summary>Tells every plugin that the contents were stored, whatever their types.</summary>
+        /// <summary>Tells every plugin, of each group it makes in the background, that the contents were stored, whatever their types.</summary>
         public void Stored(string sha256)
         {
-            foreach (Channel<string> channel in _byPlugin.Values)
+            foreach (Channel<string> channel in _byMaker.Values)
             {
                 channel.Writer.TryWrite(sha256);
             }
         }
 
-        /// <summary>The contents stored since, as the plugin's maker comes to them.</summary>
-        internal IAsyncEnumerable<string> ReadAllAsync(string pluginId, CancellationToken cancellationToken)
+        /// <summary>The plugins with each group they make in the background (<see cref="DerivedKinds.InBackground"/>): each goes at its own pace.</summary>
+        internal static IEnumerable<(DerivedFilePlugin Plugin, MakingGroup Group)> MakersOf(IDerivedFilePlugins plugins)
         {
-            return _byPlugin[pluginId].Reader.ReadAllAsync(cancellationToken);
+            return plugins.All.SelectMany(plugin => DerivedKinds.InBackground.Where(plugin.MakesAny).Select(group => (plugin, group)));
+        }
+
+        /// <summary>The contents stored since, as the plugin's maker of <paramref name="group"/> comes to them.</summary>
+        internal IAsyncEnumerable<string> ReadAllAsync(string pluginId, MakingGroup group, CancellationToken cancellationToken)
+        {
+            return _byMaker[(pluginId, group)].Reader.ReadAllAsync(cancellationToken);
         }
     }
 }

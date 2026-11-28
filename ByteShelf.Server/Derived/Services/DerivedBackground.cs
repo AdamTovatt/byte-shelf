@@ -5,7 +5,7 @@ using ByteShelf.Server.Storage.Repositories;
 
 namespace ByteShelf.Server.Derived.Services
 {
-    /// <summary>Makes what is made in the background (<see cref="MakingGroup.Background"/>): of contents just stored, and of those stored already.</summary>
+    /// <summary>Makes the groups made in the background (<see cref="DerivedKinds.InBackground"/>): of contents just stored, and of those stored already.</summary>
     internal sealed class DerivedBackground
     {
         /// <summary>How many contents one query lists.</summary>
@@ -27,18 +27,17 @@ namespace ByteShelf.Server.Derived.Services
         }
 
         /// <summary>
-        /// Has <paramref name="plugin"/> make what is missing of every contents a live plain file holds, whenever it
-        /// was stored; answers how many contents it ran for.
+        /// Has <paramref name="plugin"/> make what is missing of <paramref name="group"/> of every contents a live plain
+        /// file holds, whenever it was stored; answers how many contents it ran for.
         /// </summary>
         /// <remarks>
         /// Looks on disk for every contents' files each time, with no index of what is missing: a cache somebody
         /// emptied is made again, which an index beside it would not notice.
         /// </remarks>
         /// <exception cref="PluginUnavailableException">The plugin could not run.</exception>
-        public async Task<int> MakeBacklogAsync(DerivedFilePlugin plugin, CancellationToken cancellationToken)
+        public async Task<int> MakeBacklogAsync(DerivedFilePlugin plugin, MakingGroup group, CancellationToken cancellationToken)
         {
-            MediaTypeSet mediaTypes = MediaTypeSet.Union(
-                plugin.Makes.Where(declaration => DerivedKinds.GroupOf(declaration.Kind) == MakingGroup.Background).Select(declaration => declaration.MediaTypes));
+            MediaTypeSet mediaTypes = MediaTypeSet.Union(plugin.MakesIn(group).Select(declaration => declaration.MediaTypes));
 
             // Measured once for the pass, and only once some contents need it.
             Lazy<Task<DerivedRoom.RoomNow>> room = new Lazy<Task<DerivedRoom.RoomNow>>(_room.MeasureAsync);
@@ -49,27 +48,33 @@ namespace ByteShelf.Server.Derived.Services
                 foreach ((string sha256, IReadOnlyList<string> held) in batch)
                 {
                     after = sha256;
-                    made += await MakeMissingAsync(plugin, sha256, held, PluginPriority.Backlog, room, cancellationToken);
+                    made += await MakeMissingAsync(plugin, group, sha256, held, PluginPriority.Backlog, room, cancellationToken);
                 }
             }
 
             return made;
         }
 
-        /// <summary>Has <paramref name="plugin"/> make what is missing of contents just stored.</summary>
+        /// <summary>Has <paramref name="plugin"/> make what is missing of <paramref name="group"/> of contents just stored.</summary>
         /// <exception cref="PluginUnavailableException">The plugin could not run.</exception>
-        public async Task MakeStoredAsync(DerivedFilePlugin plugin, string sha256, CancellationToken cancellationToken)
+        public async Task MakeStoredAsync(DerivedFilePlugin plugin, MakingGroup group, string sha256, CancellationToken cancellationToken)
         {
             Lazy<Task<DerivedRoom.RoomNow>> room = new Lazy<Task<DerivedRoom.RoomNow>>(_room.MeasureAsync);
-            await MakeMissingAsync(plugin, sha256, await _contents.GetMediaTypesAsync(sha256), PluginPriority.Stored, room, cancellationToken);
+            await MakeMissingAsync(plugin, group, sha256, await _contents.GetMediaTypesAsync(sha256), PluginPriority.Stored, room, cancellationToken);
         }
 
         private async Task<int> MakeMissingAsync(
-            DerivedFilePlugin plugin, string sha256, IReadOnlyList<string> mediaTypes, PluginPriority priority, Lazy<Task<DerivedRoom.RoomNow>> room, CancellationToken cancellationToken)
+            DerivedFilePlugin plugin,
+            MakingGroup group,
+            string sha256,
+            IReadOnlyList<string> mediaTypes,
+            PluginPriority priority,
+            Lazy<Task<DerivedRoom.RoomNow>> room,
+            CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            IReadOnlyList<KindMaker> missing = _makers.MissingOf(plugin, MakingGroup.Background, sha256, mediaTypes);
+            IReadOnlyList<KindMaker> missing = _makers.MissingOf(plugin, group, sha256, mediaTypes);
             if (missing.Count == 0 || !await AnyHasRoomAsync(sha256, missing, room))
             {
                 return 0;

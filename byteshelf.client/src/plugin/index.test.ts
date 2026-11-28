@@ -44,7 +44,7 @@ it('promises plugins this of a file, and changing what a release holds of it, bu
     [
       "contentType: string",
       "createdAt: string",
-      "derived?: { thumbnail?: string | undefined; preview?: string | undefined; full?: string | undefined; agent?: string | undefined; } | null | undefined",
+      "derived?: { thumbnail?: string | undefined; preview?: string | undefined; full?: string | undefined; agent?: string | undefined; stream?: string | undefined; } | null | undefined",
       "description?: string | null | undefined",
       "directoryId: string",
       "encrypted: boolean",

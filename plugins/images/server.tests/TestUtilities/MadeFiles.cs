@@ -14,8 +14,8 @@ namespace ByteShelf.Plugins.Images.Tests.TestUtilities
             _asked = asked;
         }
 
-        /// <summary>Every kind there is.</summary>
-        public static IReadOnlyList<DerivedKind> AllKinds { get; } = Enum.GetValues<DerivedKind>();
+        /// <summary>Every kind the plugin declares it makes, which <c>ImagesPluginTests</c> holds it to.</summary>
+        public static IReadOnlyList<DerivedKind> DeclaredKinds { get; } = [DerivedKind.Thumbnail, DerivedKind.Preview, DerivedKind.Full, DerivedKind.Agent];
 
         public IEnumerable<DerivedKind> Kinds => _files.Keys.Order();
 
@@ -28,7 +28,7 @@ namespace ByteShelf.Plugins.Images.Tests.TestUtilities
 
         public static async Task<MadeFiles> MakeAsync(Stream contents, params IReadOnlyList<DerivedKind> kinds)
         {
-            MadeFiles made = new MadeFiles(kinds.Count == 0 ? AllKinds : kinds);
+            MadeFiles made = new MadeFiles(kinds.Count == 0 ? DeclaredKinds : kinds);
             await new ImageMaker().MakeAsync(contents, made._asked, made);
             return made;
         }

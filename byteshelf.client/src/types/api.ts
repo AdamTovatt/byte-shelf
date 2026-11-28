@@ -5463,7 +5463,7 @@ export interface components {
             tree: components["schemas"]["DirectoryTree"];
         };
         /** @enum {string} */
-        DerivedKind: "thumbnail" | "preview" | "full" | "agent";
+        DerivedKind: "thumbnail" | "preview" | "full" | "agent" | "stream";
         DescriptionChange: {
             path: string;
             description?: string | null;
@@ -5800,6 +5800,7 @@ export interface components {
                 preview?: string;
                 full?: string;
                 agent?: string;
+                stream?: string;
             } | null;
         };
         ShelfInfo: {

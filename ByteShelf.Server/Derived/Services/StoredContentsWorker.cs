@@ -1,8 +1,8 @@
-using ByteShelf.Server.Jobs.Models;
+using ByteShelf.Server.Derived.Models;
 
 namespace ByteShelf.Server.Derived.Services
 {
-    /// <summary>Makes what is made in the background of contents as they are stored, each plugin at its own pace.</summary>
+    /// <summary>Makes what is made in the background of contents as they are stored, each plugin and group at its own pace.</summary>
     public class StoredContentsWorker : BackgroundService
     {
         private readonly IServiceScopeFactory _scopeFactory;
@@ -20,17 +20,17 @@ namespace ByteShelf.Server.Derived.Services
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            await Task.WhenAll(_plugins.All.Select(plugin => RunPluginAsync(plugin, stoppingToken)));
+            await Task.WhenAll(StoredContents.MakersOf(_plugins).Select(maker => RunMakerAsync(maker.Plugin, maker.Group, stoppingToken)));
         }
 
-        private async Task RunPluginAsync(DerivedFilePlugin plugin, CancellationToken stoppingToken)
+        private async Task RunMakerAsync(DerivedFilePlugin plugin, MakingGroup group, CancellationToken stoppingToken)
         {
-            await foreach (string sha256 in _stored.ReadAllAsync(plugin.Id, stoppingToken))
+            await foreach (string sha256 in _stored.ReadAllAsync(plugin.Id, group, stoppingToken))
             {
                 try
                 {
                     await using AsyncServiceScope scope = _scopeFactory.CreateAsyncScope();
-                    await scope.ServiceProvider.GetRequiredService<DerivedBackground>().MakeStoredAsync(plugin, sha256, stoppingToken);
+                    await scope.ServiceProvider.GetRequiredService<DerivedBackground>().MakeStoredAsync(plugin, group, sha256, stoppingToken);
                 }
                 catch (Exception exception) when (!stoppingToken.IsCancellationRequested)
                 {
@@ -39,7 +39,7 @@ namespace ByteShelf.Server.Derived.Services
                         "The plugin {Plugin} made nothing of the contents {Sha256} just stored; the job {JobName} tries again.",
                         plugin.Id,
                         sha256,
-                        JobNames.DerivedMaking);
+                        DerivedKinds.RulesOf(group).Job);
                 }
             }
         }

@@ -17,6 +17,9 @@ namespace ByteShelf.Server.Derived.Services
         /// <summary>When a request that waited is told to come back.</summary>
         private static readonly TimeSpan RetryAfter = TimeSpan.FromSeconds(5);
 
+        /// <summary>When a request for a kind only made in the background, which may take hours, is told to come back.</summary>
+        private static readonly TimeSpan BackgroundRetryAfter = TimeSpan.FromMinutes(1);
+
         private readonly ShelfTree _shelfTree;
         private readonly ITrashService _trashService;
         private readonly IPlainContentsRepository _contents;
@@ -73,6 +76,13 @@ namespace ByteShelf.Server.Derived.Services
             if (await FindAsync(file.Sha256, maker, cancellationToken) is { } found)
             {
                 return found.File ?? throw None(file, kind);
+            }
+
+            if (!DerivedKinds.RulesOf(DerivedKinds.GroupOf(kind)).MadeWhenAsked)
+            {
+                // Missing, it is to be made in the background, or is being made; but the background makes it only of what
+                // a live plain file holds, so of contents only the trash holds there is none to come.
+                throw (await _contents.GetShelvesAsync([file.Sha256])).Count > 0 ? Later(kind, BackgroundRetryAfter) : None(file, kind);
             }
 
             Task<MakingOutcome> making = _making.MakeAsync(file.Sha256, kind, maker.Plugin, PluginPriority.Asked);
@@ -134,9 +144,9 @@ namespace ByteShelf.Server.Derived.Services
             return new QuotaExceededException($"A shelf that holds the file's contents has no room for its {DerivedKinds.NameOf(kind)}.");
         }
 
-        private static RetryLaterException Later(DerivedKind kind)
+        private static RetryLaterException Later(DerivedKind kind, TimeSpan? after = null)
         {
-            return new RetryLaterException($"The {DerivedKinds.NameOf(kind)} is still being made; ask again.", RetryAfter);
+            return new RetryLaterException($"The {DerivedKinds.NameOf(kind)} is still being made; ask again.", after ?? RetryAfter);
         }
 
         private sealed record Found(DerivedFile? File);

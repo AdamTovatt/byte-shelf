@@ -12,6 +12,9 @@ namespace ByteShelf.Server.Shared.Processes
     {
         private const int KillSignal = 9;
 
+        /// <summary>The nice value of the lowest priority.</summary>
+        private const int LowestNice = 19;
+
         private static bool _leads;
 
         /// <summary>
@@ -21,6 +24,28 @@ namespace ByteShelf.Server.Shared.Processes
         public static void Lead()
         {
             _leads = !OperatingSystem.IsWindows() && NativeMethods.SetSid() >= 0;
+        }
+
+        /// <summary>
+        /// Has this process run at the lowest CPU priority, nice 19 on Unix, which every thread and process it starts
+        /// from now on inherits. Call it once it leads its group (<see cref="Lead"/>), before it starts anything: on Linux
+        /// a priority is a thread's, so it is set for the whole group, every thread there is now included.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">It could not be lowered, or the process leads no group to lower.</exception>
+        public static void TakeLowestPriority()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                // What a process it starts takes too.
+                Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.Idle;
+                return;
+            }
+
+            // Of a group it does not lead, the server's would be lowered.
+            if (!_leads || NativeMethods.SetPriority(NativeMethods.PriorityOfGroup, 0, LowestNice) != 0)
+            {
+                throw new InvalidOperationException("The process's priority could not be lowered.");
+            }
         }
 
         /// <summary>Kills this process, and the group it leads.</summary>
@@ -73,6 +98,13 @@ namespace ByteShelf.Server.Shared.Processes
 
         private static class NativeMethods
         {
+            /// <summary><c>PRIO_PGRP</c>, on Linux and macOS alike.</summary>
+            public const int PriorityOfGroup = 1;
+
+            [DllImport("libc", EntryPoint = "setpriority")]
+            [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
+            public static extern int SetPriority(int which, uint who, int priority);
+
             [DllImport("libc", EntryPoint = "setsid")]
             [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
             public static extern int SetSid();

@@ -1,11 +1,19 @@
 namespace ByteShelf.Server.Plugins.Processes
 {
-    /// <summary>One plugin's turns: one holder at a time, the next the one waiting longest of the highest priority.</summary>
+    /// <summary>One plugin's turns in one lane: one holder at a time, the next the one waiting longest of the highest priority.</summary>
     internal sealed class PluginTurns
     {
         private readonly Lock _lock = new Lock();
         private readonly List<Turn> _waiting = new List<Turn>();
         private bool _taken;
+
+        public PluginTurns(PluginLane lane)
+        {
+            Lane = lane;
+        }
+
+        /// <summary>The lane a holder's run takes.</summary>
+        public PluginLane Lane { get; }
 
         /// <summary>Takes a turn, granted once <see cref="Turn.Granted"/> ends; dispose it to give it up, granted or not.</summary>
         public Turn Enter(PluginPriority priority)
@@ -44,6 +52,9 @@ namespace ByteShelf.Server.Plugins.Processes
             }
 
             public PluginPriority Priority { get; private set; }
+
+            /// <summary>The lane its run takes.</summary>
+            public PluginLane Lane => _turns.Lane;
 
             public Task Granted => _granted.Task;
 

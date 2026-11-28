@@ -107,7 +107,7 @@ namespace ByteShelf.Plugins.Images.Tests
 
             MadeFiles made = await MadeFiles.MakeAsync(image.ToByteArray(MagickFormat.Png));
 
-            Assert.All(MadeFiles.AllKinds, kind =>
+            Assert.All(MadeFiles.DeclaredKinds, kind =>
             {
                 using MagickImage decoded = made.Decode(kind);
                 ImageAssert.Size(decoded, 20, 10);
@@ -194,7 +194,7 @@ namespace ByteShelf.Plugins.Images.Tests
 
             MadeFiles made = await MadeFiles.MakeAsync(contents);
 
-            Assert.All(MadeFiles.AllKinds, kind =>
+            Assert.All(MadeFiles.DeclaredKinds, kind =>
             {
                 Assert.DoesNotContain("where", Encoding.Latin1.GetString(made.BytesOf(kind)), StringComparison.Ordinal);
                 using MagickImage decoded = made.Decode(kind);

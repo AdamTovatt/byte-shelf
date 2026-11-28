@@ -23,7 +23,7 @@ AOT-compatible.
 | `PluginFileDetails`, `PluginFieldEntry`, `PluginFieldValue`, `SetPluginMetadataRequest` | What one plugin keeps about a file, with its declared fields and their values, and writing its document about the file. |
 | `PluginFieldFilter`, `PluginFieldCondition` | A search's criterion on a field a plugin declares. |
 | `PluginDocument` | What a plugin keeps about a file or its contents: one JSON object, which is how it is written in JSON. |
-| `DerivedKind` | The kinds of files plugins make from a file's contents: a thumbnail, a preview, the whole in a type a browser shows, and what an agent is shown. |
+| `DerivedKind` | The kinds of files plugins make from a file's contents: a thumbnail, a preview, the whole in a type a browser shows, what an agent is shown, and the contents remade for streaming. `ShelfFile.Derived` is read without a kind a later server makes that this version does not know. |
 | `MediaTypePattern` | One media type or a family such as `image/*`, and which media types it covers. |
 | `LinkLifetime` | One kind of link's lifetime rule: its default, its bounds and `Normalize`. |
 | `FileEncryption`, `EncryptedFolder`, `PathEncryption`, `SetFolderEncryptionRequest` | Password encryption: how an age file starts, an encrypted directory's check text, an encrypted directory with its check, what a path is encrypted under, and encrypting a directory. |

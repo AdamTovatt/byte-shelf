@@ -42,7 +42,7 @@ namespace ByteShelf.Server.Derived.Services
                     return job.Ended;
                 }
 
-                job = new Job(_processes.Enter(plugin.Id, priority));
+                job = new Job(_processes.Enter(plugin.Id, DerivedKinds.RulesOf(key.Group).Lane, priority));
                 _jobs.Add(key, job);
                 job.Ended = Task.Run(() => RunAsync(key, plugin, job.Turn), CancellationToken.None);
                 return job.Ended;
@@ -61,7 +61,7 @@ namespace ByteShelf.Server.Derived.Services
                     return MakingOutcome.NothingToMake;
                 }
 
-                _problems.Clear(plugin.Id, PluginPart.Maker);
+                _problems.Clear(plugin.Id, PluginPart.Maker, turn.Lane);
                 return await run.KeepAsync(taken, CancellationToken.None);
             }
             catch (OperationCanceledException)
@@ -70,8 +70,10 @@ namespace ByteShelf.Server.Derived.Services
             }
             catch (PluginUnavailableException exception)
             {
-                _problems.Report(plugin.Id, PluginPart.Maker, $"Its maker of derived files could not run, so it makes nothing until it can: {exception.Message}.");
-                _logger.LogError(exception, "The plugin {Plugin} could not be run to make derived files.", plugin.Id);
+                _problems.Report(plugin.Id, PluginPart.Maker, turn.Lane, turn.Lane == PluginLane.Quick
+                    ? $"Its maker of derived files could not run, so it makes nothing until it can: {exception.Message}."
+                    : $"Its maker of derived files could not do its {turn.Lane.Name} runs, so it does none until it can: {exception.Message}.");
+                _logger.LogError(exception, "The plugin {Plugin} could not be run to make derived files in its {Lane} runs.", plugin.Id, turn.Lane.Name);
                 throw;
             }
             catch (Exception exception)

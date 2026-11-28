@@ -3,8 +3,8 @@ using ByteShelf.Server.Shared.Root;
 namespace ByteShelf.Server.Plugins.Processes
 {
     /// <summary>
-    /// The plugins' processes: one for each plugin at most, used by one run at a time, kept until it has had nothing to
-    /// do for a while, and known until it has ended and its folder is gone.
+    /// The plugins' processes: one for each plugin in each lane at most, used by one run at a time, kept until it has had
+    /// nothing to do for a while, and known until it has ended and its folder is gone.
     /// </summary>
     internal sealed class PluginWorkers
     {
@@ -12,7 +12,7 @@ namespace ByteShelf.Server.Plugins.Processes
         private static readonly TimeSpan IdleLimit = TimeSpan.FromSeconds(60);
 
         private readonly Lock _lock = new Lock();
-        private readonly Dictionary<string, PluginWorker> _live = new Dictionary<string, PluginWorker>(StringComparer.Ordinal);
+        private readonly Dictionary<PluginInLane, PluginWorker> _live = new Dictionary<PluginInLane, PluginWorker>();
         private readonly List<PluginWorker> _ending = new List<PluginWorker>();
         private readonly PluginExecutable _executable;
         private readonly RootFolder _root;
@@ -40,16 +40,16 @@ namespace ByteShelf.Server.Plugins.Processes
         }
 
         /// <summary>
-        /// The plugin's process, to give the contents <paramref name="sha256"/>; a new one, loaded, when it has none it can
-        /// go on with. Give the lease back once it is done with (<see cref="ReturnAsync"/>).
+        /// The plugin's process in <paramref name="lane"/>, to give the contents <paramref name="sha256"/>; a new one, loaded,
+        /// when it has none it can go on with. Give the lease back once it is done with (<see cref="ReturnAsync"/>).
         /// </summary>
         /// <exception cref="PluginUnavailableException">No process could be had.</exception>
-        public async Task<(PluginWorker Worker, PluginWorker.Lease Lease, bool IsNew)> GetAsync(PluginTarget plugin, string sha256, TimeSpan loadLimit, CancellationToken cancellationToken)
+        public async Task<(PluginWorker Worker, PluginWorker.Lease Lease, bool IsNew)> GetAsync(PluginTarget plugin, PluginLane lane, string sha256, TimeSpan loadLimit, CancellationToken cancellationToken)
         {
             PluginWorker? previous;
             lock (_lock)
             {
-                previous = _live.GetValueOrDefault(plugin.Id);
+                previous = _live.GetValueOrDefault(new PluginInLane(plugin.Id, lane));
             }
 
             if (previous != null)
@@ -63,7 +63,7 @@ namespace ByteShelf.Server.Plugins.Processes
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            PluginWorker started = Start(plugin);
+            PluginWorker started = Start(plugin, lane);
             PluginWorker.Lease lease = await UseAsync(started, sha256) ?? throw new PluginUnavailableException("its working folder was removed");
             try
             {
@@ -138,7 +138,7 @@ namespace ByteShelf.Server.Plugins.Processes
             }
         }
 
-        private PluginWorker Start(PluginTarget plugin)
+        private PluginWorker Start(PluginTarget plugin, PluginLane lane)
         {
             WorkFolder folder;
             try
@@ -153,7 +153,7 @@ namespace ByteShelf.Server.Plugins.Processes
             PluginWorker started;
             try
             {
-                started = new PluginWorker(plugin, PluginProcess.Start(_executable, plugin, folder, _timeProvider));
+                started = new PluginWorker(plugin, lane, PluginProcess.Start(_executable, plugin, lane, folder, _timeProvider));
             }
             catch
             {
@@ -163,7 +163,7 @@ namespace ByteShelf.Server.Plugins.Processes
 
             lock (_lock)
             {
-                _live[plugin.Id] = started;
+                _live[started.Key] = started;
             }
 
             return started;
@@ -214,9 +214,9 @@ namespace ByteShelf.Server.Plugins.Processes
         {
             lock (_lock)
             {
-                if (_live.GetValueOrDefault(worker.Plugin.Id) == worker)
+                if (_live.GetValueOrDefault(worker.Key) == worker)
                 {
-                    _live.Remove(worker.Plugin.Id);
+                    _live.Remove(worker.Key);
                 }
 
                 if (!_ending.Contains(worker))

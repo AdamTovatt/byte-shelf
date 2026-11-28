@@ -25,7 +25,7 @@ namespace ByteShelf.Server.Plugins.Services
             PluginTarget target = new PluginTarget(plugin.Manifest.Id, plugin.Folder);
             return new PluginReader(target.Id, registered.Version, registered.MediaTypes, async (sha256, cancellationToken) =>
             {
-                using PluginTurns.Turn turn = _processes.Enter(target.Id, PluginPriority.Backlog);
+                using PluginTurns.Turn turn = _processes.Enter(target.Id, PluginLane.Quick, PluginPriority.Backlog);
                 return await _processes.RunAsync(new ReadRun(target, sha256, registered.Version), turn, cancellationToken);
             });
         }

@@ -33,7 +33,7 @@ namespace ByteShelf.Plugins.Images.Tests.TestUtilities
         /// <summary>Every kind was made, of an image of this size upright, whose quarters are of these colours upright.</summary>
         public static void AllOf(MadeFiles made, int width, int height, IReadOnlyList<IMagickColor<byte>> quarters)
         {
-            MadeOf(made, MadeFiles.AllKinds, width, height, quarters);
+            MadeOf(made, MadeFiles.DeclaredKinds, width, height, quarters);
         }
 
         /// <summary>

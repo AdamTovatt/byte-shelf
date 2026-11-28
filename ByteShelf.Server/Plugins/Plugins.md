@@ -101,7 +101,9 @@ again by that version. **A reader keeps what it reads nowhere else**, where it w
 A plugin that makes derived files, such as thumbnails, adds one maker, `builder.AddMaker<TMaker>(...)`, with each
 kind it makes, at a version, from media types: an `IDerivedFileMaker`, made and run as a reader is, whose files
 the server keeps and serves ([Derived files](../Derived/Derived.md)). Its `agent` files are shown to agents only
-when they are a PNG, JPEG, GIF or WebP of at most 1 MiB ([Mcp](../Mcp/Mcp.md)). Why one could not run is in the server's
+when they are a PNG, JPEG, GIF or WebP of at most 1 MiB ([Mcp](../Mcp/Mcp.md)). Its `stream` files are made in a
+run of their own, in a process of their own beside its others, which may take 24 hours at the lowest CPU priority
+([Processes](Processes/Processes.md)); every other run takes 60 seconds at most. Why one could not run is in the server's
 log alone, and what it would have made is not there when asked for. A second maker, a kind twice, or a type
 that is none refuses the plugin. It too keeps what it reads and makes nowhere else.
 

@@ -9,6 +9,7 @@ example. The kinds are `ByteShelfCommon.DerivedKind`:
 | `preview` | What a viewer shows until it has the contents | with the thumbnail, from one run |
 | `full` | The whole contents in a type a browser shows | when asked for |
 | `agent` | What an agent is shown: a PNG, JPEG, GIF or WebP, as it is shown nothing else ([Mcp](../Mcp/Mcp.md)) | when asked for |
+| `stream` | The contents remade for streaming, in a type a browser plays and seeks | after an upload, and for files already stored; never when asked for, as it may take hours |
 
 A server without plugins that make them has none, and asking for one is a 404.
 
@@ -44,9 +45,9 @@ transaction that keeps it (`DerivedRoom`, `IShelfRepository.HasRoomForMoreOfAsyn
 cannot both take the last of the room. Otherwise it is not kept, nor is the one it would replace, and its
 entry says how many bytes it took (`DerivedOutcome.NoRoom`), which is not a failure: asking for it is a 507
 `quota_exceeded` while a shelf that holds the contents has no room for as many, and makes it again once every
-one has. A thumbnail or a preview is also made again by the hourly pass once every such shelf has room, by the
-room each shelf had as the pass began. Of kinds made in one run, each is weighed in turn, so a
-thumbnail may be kept where its preview is not.
+one has, but for a `stream`, which is never made when asked for. What is made in the background is also made
+again by its hourly pass once every such shelf has room, by the room each shelf had as the pass began. Of kinds
+made in one run, each is weighed in turn, so a thumbnail may be kept where its preview is not.
 
 An upload's reservation is measured against usage that includes derived files. An upload of contents
 something was made of already is refused as it finishes, with 507, when its row with those files would put
@@ -70,6 +71,7 @@ keeping, which waits for the removal's commit, then finds no plain file holding 
 | `preview` | 16 MiB | no limit |
 | `full` | 512 MiB | 2 GiB (`DerivedStore.MaxFullBytes`), the least recently used going first, a file's modification time being when it was last used. The newest stays whatever its size, and one in use until the next trim. |
 | `agent` | 1 MiB | no limit |
+| `stream` | 8 GiB | no limit; never trimmed |
 
 A maker's write that would pass that throws, and the kind has failed unless the maker makes it smaller. What is in
 its place in the end is kept only if it is a file within that, whatever put it there.
@@ -77,16 +79,24 @@ its place in the end is kept only if it is a file within that, whatever put it t
 ## Making them (`DerivedMaking`, `MakerRun`)
 
 A maker runs in its plugin's process ([Processes](../Plugins/Processes/Processes.md)), for one contents at a
-time, with all the kinds to be made from one read (`MakingGroup`). It writes each to a file that the process
-opens and limits for it (`MadeFiles`); one it did not finish is not kept. However many ask for one, it is made
-once, and goes on though nobody waits. What fails because of the contents is kept as a failure; where they are not to
-blame nothing is kept, and the next one to ask, or the next pass, tries again. A maker that could not run, whatever
-the contents, is logged, and admins see why with its plugin (`PluginProblems`, [Plugins](../Plugins/Plugins.md))
-until one of its runs begins.
+time, with all the kinds to be made from one read (`MakingGroup`). The maker writes each to a file that the
+process opens and limits for it (`MadeFiles`); one it did not finish is not kept. However many ask for one, it is
+made once, and goes on though nobody waits. What fails because of the contents is kept as a failure; where they
+are not to blame nothing is kept, and the next one to ask, or the next pass, tries again. A maker that could not
+run, whatever the contents, is logged, and admins see why with its plugin (`PluginProblems`,
+[Plugins](../Plugins/Plugins.md)) until one of its runs in the same lane begins.
 
-`DerivedBackground` makes thumbnails and previews of live plain files: of contents as uploads and a
-replica's sync store them (`StoredContents`, an `IStoredContentsListener`), and of everything already
-stored, as the job `derived.making`, at startup and hourly. A replica makes its own.
+How each group is made is said in one place, `DerivedKinds.RulesOf` (`MakingRules`): the job that makes it in the
+background, if one does; whether a missing one is made as it is asked for; and the lane its runs take
+(`PluginLane`). A `stream` is a group of its own in the long lane: a process and a turn of its own beside the
+plugin's other runs, 24 hours a run, at the lowest priority. Every other group is in the quick lane, 60 seconds a
+run.
+
+`DerivedBackground` makes the groups made in the background (`DerivedKinds.InBackground`: thumbnails with previews,
+and streams) of live plain files: of contents as uploads and a replica's sync store them (`StoredContents`, an
+`IStoredContentsListener`), and of everything already stored, as the jobs `derived.making` and
+`derived.stream_making`, at startup and hourly. Each plugin and group goes at its own pace, so streams being made
+for days hold up no thumbnail. A replica makes its own.
 
 ## Serving them (`DerivedFileService`)
 
@@ -97,7 +107,9 @@ and `Cache-Control: private, max-age=3600`, so a browser may show one for up to 
 encrypted.
 
 One that is missing is made and waited for, 10 seconds at most; then it is a 503 `not_ready` with
-`Retry-After: 5` while making goes on, as it is when the run is stopped. 404 when nothing makes it, when it
+`Retry-After: 5` while making goes on, as it is when the run is stopped. A missing `stream` is not made: it is a
+503 `not_ready` at once with `Retry-After: 60`, while the background has yet to make it or is making it, and a 404
+once only the trash holds the contents, of which the background makes none. 404 when nothing makes it, when it
 could not be made, and for an encrypted file, even when a plain file holds the same bytes. 507 when it was
 made with no room to keep it and a shelf that holds the contents still has none (see Quota). 500 when the
 plugin could not run, or what it made could not be written.
@@ -106,7 +118,10 @@ Listings, trees, searches, a deletion's tree and a file's own record name the ki
 word for each that changes when another is made in its place (`ShelfFile.Derived`, `DerivedListing`): so a
 client asks for none that has yet to be made. Naming them makes nothing. What is on disk of contents is read once,
 for at most 100,000 contents, and again once the server changes it (`KnownEntries`). One that came or went is told
-to open listings ([Invalidation](../Invalidation/Invalidation.md)).
+to open listings ([Invalidation](../Invalidation/Invalidation.md)). From ByteShelfCommon 4.1 on, a client reads
+them without the kinds it does not know (`KnownEnumKeysConverter`), so a kind added later fails none of its
+listings. Earlier versions fail on any kind they do not know: on a server whose plugins make streams, a client
+before 4.1 cannot list a folder that holds a file with one.
 
 The web UI adds a query parameter `v` to the address an `<img>` loads one from, which the server does not read:
 what tells that one from any other at its place, so that the browser, which shows its copy for an hour, never

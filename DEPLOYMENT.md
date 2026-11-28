@@ -416,13 +416,17 @@ also follows its primary continuously, every two seconds when caught up, and eve
 server checks replication for the alerts above.
 
 Plugins that make thumbnails and previews have them made as files are uploaded and asked for, and hourly for
-files that lack them; daily, what nothing needs any more is removed. What they make is in `derived/`, and counts
-in the quota of every shelf with a file that holds what it was made from
+files that lack them; one that makes streaming copies of videos has them made as files are uploaded and hourly,
+never as they are asked for, as one may take hours. Daily, what nothing needs any more is removed. What they make
+is in `derived/`, and counts in the quota of every shelf with a file that holds what it was made from
 ([Derived files](ByteShelf.Server/Derived/Derived.md)). So a shelf's usage can pass its quota without an upload:
 when the files already there gain thumbnails and previews, and when what is on disk is counted again, as it is at
 every start and daily. Such a shelf takes no new uploads until it has room again; raise its quota or empty its
-trash. What a plugin does over files'
-contents it does in a child process of the server's own executable (`--plugin-process`), one a plugin, one file
-at a time, for at most a minute a file, ended when it has had nothing to do for a minute. Each may take 1.5 GiB
-of private memory; memory it shares, and that of processes it starts, comes on top
-([Processes](ByteShelf.Server/Plugins/Processes/Processes.md)).
+trash. A streaming copy may take up to 8 GiB, and there is no limit on all of them together, as there is on full
+copies, so on a shelf without a quota `derived/` may grow to about the size of every video again, and after a
+move that leaves `derived/` out, making them all again may take days. What a plugin does over files' contents it
+does in a child process of the server's own executable (`--plugin-process`), one file at a time, ended when it has
+had nothing to do for a minute: one a plugin for at most a minute a file, and one more for a plugin's streaming
+copies, for at most 24 hours a file at the lowest CPU priority. Each may take 1.5 GiB of private memory, so a
+plugin with both may take 3 GiB; memory they share, and that of processes they start, such as an encoder, comes on
+top ([Processes](ByteShelf.Server/Plugins/Processes/Processes.md)).

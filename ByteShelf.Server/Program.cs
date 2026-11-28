@@ -66,8 +66,7 @@ namespace ByteShelf.Server
             if (args.Contains(PluginProcessCommand.Flag))
             {
                 // Exits rather than returns, so a thread a plugin left running does not keep the process.
-                string? location = args.ElementAtOrDefault(Array.IndexOf(args, PluginProcessCommand.Flag) + 1);
-                Environment.Exit(PluginProcessCommand.RunAsync(location, PluginWorkLoader.Load).GetAwaiter().GetResult());
+                Environment.Exit(PluginProcessCommand.RunAsync(args, PluginWorkLoader.Load).GetAwaiter().GetResult());
             }
 
             int backup = Array.IndexOf(args, "--backup");

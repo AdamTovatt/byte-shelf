@@ -71,7 +71,7 @@ namespace ByteShelf.Server.Tests.Derived
                 int before = Plugins.Runs.Count;
                 ShelfFile stored = await StoreTextAsync(shelf, "/stored.txt", "stored");
                 await using AsyncServiceScope scope = Services.CreateAsyncScope();
-                Task making = scope.ServiceProvider.GetRequiredService<DerivedBackground>().MakeStoredAsync(Plugins.All[0], stored.Sha256, CancellationToken.None);
+                Task making = scope.ServiceProvider.GetRequiredService<DerivedBackground>().MakeStoredAsync(Plugins.All[0], MakingGroup.Background, stored.Sha256, CancellationToken.None);
                 Plugins.GoOn("0");
                 await Task.WhenAll(backlog, making);
 
@@ -114,7 +114,7 @@ namespace ByteShelf.Server.Tests.Derived
             Shelf shelf = await CreateShelfAsync();
             await StoreTextAsync(shelf, "/a.txt", "a");
 
-            await Assert.ThrowsAsync<PluginUnavailableException>(MakeBacklogAsync);
+            await Assert.ThrowsAsync<PluginUnavailableException>(() => MakeBacklogAsync());
         }
 
         [Fact]
@@ -153,7 +153,7 @@ namespace ByteShelf.Server.Tests.Derived
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
-            using DerivedMakingWorker worker = ActivatorUtilities.CreateInstance<DerivedMakingWorker>(Services);
+            using DerivedMakingWorker worker = ActivatorUtilities.CreateInstance<DerivedMakingWorker>(Services, MakingGroup.Background);
 
             await worker.StartAsync(CancellationToken.None);
             await TestDerivedPlugins.UntilAsync(() => Store.Find(DerivedKind.Preview, file.Sha256) != null);

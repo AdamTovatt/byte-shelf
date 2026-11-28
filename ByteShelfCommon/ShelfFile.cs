@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using ByteShelfCommon.Serialization;
 
 namespace ByteShelfCommon
 {
@@ -55,9 +56,11 @@ namespace ByteShelfCommon
         /// <summary>
         /// The kinds of derived files there are of the contents, each with a word that changes when another is made
         /// in its place and means nothing else: for a client to ask for nothing that has yet to be made. Only where
-        /// <see cref="PluginFields"/> is and in a file's own record; null everywhere else, and for a file with none.
+        /// <see cref="PluginFields"/> is and in a file's own record; null everywhere else, and for a file with none. Kinds
+        /// this client does not know, of a later server, are left out.
         /// </summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonConverter(typeof(KnownEnumKeysConverter<DerivedKind>))]
         public IReadOnlyDictionary<DerivedKind, string>? Derived { get; init; }
     }
 }

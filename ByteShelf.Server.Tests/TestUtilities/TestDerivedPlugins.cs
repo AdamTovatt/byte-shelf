@@ -35,11 +35,14 @@ namespace ByteShelf.Server.Tests.TestUtilities
         /// <summary>What the makers ran for, in order: the contents, then the kinds.</summary>
         public IReadOnlyList<string> Runs => File.Exists(LogPath) ? File.ReadAllLines(LogPath) : [];
 
-        /// <summary>A plugin that makes <paramref name="kinds"/> (every one by default) from text files, or other types.</summary>
+        /// <summary>
+        /// A plugin that makes <paramref name="kinds"/> from text files, or other types: by default every kind made when
+        /// asked for, leaving those only the background makes, in runs that may take hours, to a test that names them.
+        /// </summary>
         public DerivedFilePlugin Plugin(string id = TestMaker.Spec.DefaultId, int version = 1, IEnumerable<DerivedKind>? kinds = null, params string[] mediaTypes)
         {
             return TestMaker.Plugin(new TestMaker.Spec(
-                id, (kinds ?? DerivedKinds.All).Select(kind => new TestMaker.KindSpec(kind, mediaTypes.Length == 0 ? ["text/plain"] : mediaTypes, version)).ToList(), LogPath));
+                id, (kinds ?? DerivedKinds.All.Where(kind => DerivedKinds.RulesOf(DerivedKinds.GroupOf(kind)).MadeWhenAsked)).Select(kind => new TestMaker.KindSpec(kind, mediaTypes.Length == 0 ? ["text/plain"] : mediaTypes, version)).ToList(), LogPath));
         }
 
         /// <summary>Installs these plugins in place of none, with <see cref="Program"/> to run them.</summary>
@@ -49,10 +52,10 @@ namespace ByteShelf.Server.Tests.TestUtilities
             services.Replace(ServiceDescriptor.Singleton(Program));
         }
 
-        /// <summary>Contents whose run waits for <see cref="GoOn"/>.</summary>
-        public string Waiting(string name)
+        /// <summary>Contents whose run waits for <see cref="GoOn"/>: every run, or only one that makes <paramref name="kind"/>.</summary>
+        public string Waiting(string name, DerivedKind? kind = null)
         {
-            return $"wait {Path.Combine(_folder, name)}";
+            return kind is DerivedKind making ? $"wait {Path.Combine(_folder, name)} {DerivedKinds.NameOf(making)}" : $"wait {Path.Combine(_folder, name)}";
         }
 
         /// <summary>Contents whose run starts a process that goes on, and then does as <paramref name="then"/> says: <c>crash</c> or <c>wait</c>.</summary>
@@ -79,7 +82,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
             try
             {
                 using Process process = Process.GetProcessById(processId);
-                return !process.HasExited && (!OperatingSystem.IsLinux() || !File.ReadAllText($"/proc/{processId}/stat").Contains(") Z ", StringComparison.Ordinal));
+                return !process.HasExited && (!OperatingSystem.IsLinux() || ProcStat.Of(processId).State != "Z");
             }
             catch (Exception exception) when (exception is ArgumentException or IOException)
             {

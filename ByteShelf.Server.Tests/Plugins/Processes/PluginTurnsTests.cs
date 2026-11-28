@@ -6,7 +6,7 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
     /// <summary>Who is next when one plugin has several things to make.</summary>
     public class PluginTurnsTests
     {
-        private readonly PluginTurns _turns = new PluginTurns();
+        private readonly PluginTurns _turns = new PluginTurns(PluginLane.Quick);
 
         [Fact]
         public void Enter_OneAtATime_HighestPriorityThenLongestWaiting()

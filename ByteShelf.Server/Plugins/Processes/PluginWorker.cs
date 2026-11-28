@@ -20,13 +20,19 @@ namespace ByteShelf.Server.Plugins.Processes
         private bool _stopped;
         private bool _ended;
 
-        public PluginWorker(PluginTarget plugin, PluginProcess process)
+        public PluginWorker(PluginTarget plugin, PluginLane lane, PluginProcess process)
         {
             Plugin = plugin;
+            Lane = lane;
             _process = process;
         }
 
         public PluginTarget Plugin { get; }
+
+        public PluginLane Lane { get; }
+
+        /// <summary>The plugin's runs it is the process of.</summary>
+        public PluginInLane Key => new PluginInLane(Plugin.Id, Lane);
 
         public WorkFolder Folder => _process.Folder;
 

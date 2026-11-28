@@ -27,8 +27,8 @@ namespace ByteShelf.Server.Tests.TestUtilities
     /// <c>linked</c> (puts a link where the thumbnail was), <c>reads on</c> (goes on reading as it answers),
     /// <c>undeletable</c> (leaves a folder that cannot be removed, with no file of its own),
     /// <c>child crash &lt;path&gt;</c> and <c>child wait &lt;path&gt;</c> (starts a process that goes on, says its id at
-    /// path + ".child", and crashes or waits) or <c>wait &lt;path&gt;</c> (says so at path + ".started", with its process
-    /// id, and goes on once there is a file at the path). What starts with <c>picture</c> it makes into a picture for
+    /// path + ".child", and crashes or waits) or <c>wait &lt;path&gt; [kind]</c> (says so at path + ".started", with its process
+    /// id, and goes on once there is a file at the path; with a kind, only in a run that makes it). What starts with <c>picture</c> it makes into a picture for
     /// agents. Anything else, and those that go on, it makes into text that says the kind, the contents and the maker.
     /// </summary>
     public sealed class TestMaker : IDerivedFileMaker
@@ -143,7 +143,12 @@ namespace ByteShelf.Server.Tests.TestUtilities
                     await RunSignals.WaitAsync(child[2]);
                     break;
                 case "wait":
-                    await RunSignals.WaitAsync(text.Split(' ')[1]);
+                    string[] wait = text.Split(' ');
+                    if (wait.Length == 2 || kinds.Contains(DerivedKinds.Parse(wait[2])))
+                    {
+                        await RunSignals.WaitAsync(wait[1]);
+                    }
+
                     break;
             }
 

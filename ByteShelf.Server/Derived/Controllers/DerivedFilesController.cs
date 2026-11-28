@@ -30,8 +30,9 @@ namespace ByteShelf.Server.Derived.Controllers
 
         /// <summary>
         /// The derived file of <c>kind</c> of a file, named by <c>path</c> or <c>id</c>. One that is missing is made
-        /// and waited for, at most 10 seconds: 503 with <c>Retry-After</c> then, while it is made. 404 when no plugin
-        /// makes it, when it could not be made, and for an encrypted file.
+        /// and waited for, at most 10 seconds: 503 with <c>Retry-After</c> then, while it is made; a missing stream is
+        /// not made, but in the background, and is a 503 at once. 404 when no plugin makes it, when it could not be
+        /// made, and for an encrypted file.
         /// </summary>
         [HttpGet(FileRoute)]
         [HttpHead(FileRoute)]
