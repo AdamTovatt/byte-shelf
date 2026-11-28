@@ -39,7 +39,7 @@ namespace ByteShelf.Server.Derived.Services
                         "The plugin {Plugin} made nothing of the contents {Sha256} just stored; the job {JobName} tries again.",
                         plugin.Id,
                         sha256,
-                        DerivedKinds.RulesOf(group).Job);
+                        group.Start.Job);
                 }
             }
         }

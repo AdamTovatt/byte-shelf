@@ -42,7 +42,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
         public DerivedFilePlugin Plugin(string id = TestMaker.Spec.DefaultId, int version = 1, IEnumerable<DerivedKind>? kinds = null, params string[] mediaTypes)
         {
             return TestMaker.Plugin(new TestMaker.Spec(
-                id, (kinds ?? DerivedKinds.All.Where(kind => DerivedKinds.RulesOf(DerivedKinds.GroupOf(kind)).MadeWhenAsked)).Select(kind => new TestMaker.KindSpec(kind, mediaTypes.Length == 0 ? ["text/plain"] : mediaTypes, version)).ToList(), LogPath));
+                id, (kinds ?? DerivedKinds.All.Where(kind => MakingGroup.Of(kind).Start.MadeWhenAsked)).Select(kind => new TestMaker.KindSpec(kind, mediaTypes.Length == 0 ? ["text/plain"] : mediaTypes, version)).ToList(), LogPath));
         }
 
         /// <summary>Installs these plugins in place of none, with <see cref="Program"/> to run them.</summary>

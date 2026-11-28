@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="ByteShelf.Plugins.Testing" />
   </ItemGroup>
 
   <ItemGroup>
@@ -24,6 +25,7 @@
     <!-- What the server gives the plugin. -->
     <ProjectReference Include="..\..\..\ByteShelf.Plugins\ByteShelf.Plugins.csproj" />
     <ProjectReference Include="..\..\..\ByteShelfCommon\ByteShelfCommon.csproj" />
+    <ProjectReference Include="..\..\..\ByteShelf.Plugins.Testing\ByteShelf.Plugins.Testing.csproj" />
   </ItemGroup>
 
 </Project>

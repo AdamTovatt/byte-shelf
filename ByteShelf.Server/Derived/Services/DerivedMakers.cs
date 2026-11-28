@@ -47,7 +47,7 @@ namespace ByteShelf.Server.Derived.Services
         /// </summary>
         public IReadOnlyList<KindMaker> MissingOf(DerivedFilePlugin plugin, MakingGroup group, string sha256, IReadOnlyCollection<string> mediaTypes)
         {
-            return DerivedKinds.In(group)
+            return group.Kinds
                 .Select(kind => For(kind, mediaTypes))
                 .OfType<KindMaker>()
                 .Where(maker => maker.Plugin.Id == plugin.Id && IsMissing(maker, _store.Find(maker.Declaration.Kind, sha256)))

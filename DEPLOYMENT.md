@@ -228,6 +228,9 @@ server has those installed on it. What they keep about files is both: it is in t
 signed-in user can and reads what the page holds, the session and unlocked passwords included; on the
 server it can do what the server can. Install only what you trust that far, at your own risk. On a machine others
 use, run the server with systemd's `PrivateTmp=yes`: the images plugin's ImageMagick reads settings from `/tmp`.
+The video plugin brings its own ffmpeg, for Linux x64 and arm64, so its zip is a few hundred MB; it serves the contents
+it reads to ffmpeg on the loopback, on a port of the moment and at an address no one can guess, which a firewall
+that blocks the loopback stops ([video](plugins/video/README.md)).
 
 A plugin the server cannot load is skipped and logged, and admins see it with the reason on the
 Settings page; the server starts without it. `ByteShelf.Server --check-plugin <folder>` says

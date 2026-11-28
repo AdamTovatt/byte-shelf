@@ -10,11 +10,11 @@ them, and nothing keeps it from them.
 and lane, what somebody waits for first, then making from contents just stored, then the backlog, which all reading
 is), then the process (`PluginWorker`, of `PluginWorkers`), used by one run at a time, noting the run
 (`PluginClaims`) so a removal of its contents finds it. Each plugin has one in each lane (`PluginLane`): the quick
-lane, for reading and every derived file but a stream, and the long lane, for streams (`DerivedKinds.LaneOf`), so a
-run of hours holds up none of the plugin's others. A process is the server's own executable as
-`--plugin-process <folder>`, with `--lowest-priority` in the long lane
-(`PluginProcessCommand`), which loads the plugin as the server does, among the server's registrations on no root,
-and makes its reader and maker and nothing else. What it may be asked to do is each module's `ProcessWork`
+lane, for reading (`PluginReader.Lane`) and every derived file but a stream, and the long lane, for streams
+(`MakingGroup.Lane`), so a run of hours holds up none of the plugin's others. A process is the server's own
+executable as `--plugin-process <folder>`, with `--lowest-priority` in the long lane (`PluginProcessCommand`), which
+loads the plugin as the server does, among the server's registrations on no root, and makes its reader and maker
+and nothing else. What it may be asked to do is each module's `ProcessWork`
 (metadata's reading, derived files' making), which a run names by its type. It does many things, and is ended when
 it has had nothing to do for 60 seconds. One that died or was ended is replaced by the next run.
 

@@ -4,7 +4,7 @@ using ByteShelf.Server.Jobs.Services;
 namespace ByteShelf.Server.Derived.Services
 {
     /// <summary>
-    /// Makes what is missing of one group made in the background (<see cref="DerivedKinds.InBackground"/>) from files
+    /// Makes what is missing of one group made in the background (<see cref="MakingGroup.InBackground"/>) from files
     /// already stored, at startup (a plugin may be new, or another version) and hourly, which picks up an emptied folder
     /// and anything a failed pass left. Each plugin goes at its own pace, and each group has a job of its own, so a pass
     /// of one that takes days holds up no other's.
@@ -20,7 +20,7 @@ namespace ByteShelf.Server.Derived.Services
             : base(scopeFactory, timeProvider, logger)
         {
             _group = group;
-            _job = DerivedKinds.RulesOf(group).Job ?? throw new ArgumentException($"The group {group} is not made in the background.", nameof(group));
+            _job = group.Start.Job ?? throw new ArgumentException($"The group {group} is not made in the background.", nameof(group));
             _plugins = plugins;
         }
 

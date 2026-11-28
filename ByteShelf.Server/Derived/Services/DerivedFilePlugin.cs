@@ -14,7 +14,7 @@ namespace ByteShelf.Server.Derived.Services
         /// <summary>What it makes of <paramref name="group"/>.</summary>
         public IEnumerable<DeclaredKind> MakesIn(MakingGroup group)
         {
-            return Makes.Where(declaration => DerivedKinds.GroupOf(declaration.Kind) == group);
+            return Makes.Where(declaration => group.Kinds.Contains(declaration.Kind));
         }
 
         /// <summary>Whether it makes any kind of <paramref name="group"/>.</summary>

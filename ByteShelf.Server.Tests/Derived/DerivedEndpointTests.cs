@@ -204,7 +204,7 @@ namespace ByteShelf.Server.Tests.Derived
             Type[] first = [typeof(PluginProcessesLifetime), typeof(MetadataReadingWorker), typeof(StoredContentsWorker), typeof(DerivedMakingWorker)];
             Assert.Equal(first[0], started.First(first.Contains));
             Assert.All(first, worker => Assert.Contains(worker, started));
-            Assert.Equal(DerivedKinds.InBackground, _host.Services.GetServices<IHostedService>().OfType<DerivedMakingWorker>().Select(worker => worker.Group));
+            Assert.Equal(MakingGroup.InBackground, _host.Services.GetServices<IHostedService>().OfType<DerivedMakingWorker>().Select(worker => worker.Group));
         }
 
         [Fact]

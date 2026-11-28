@@ -84,15 +84,16 @@ process opens and limits for it (`MadeFiles`); one it did not finish is not kept
 made once, and goes on though nobody waits. What fails because of the contents is kept as a failure; where they
 are not to blame nothing is kept, and the next one to ask, or the next pass, tries again. A maker that could not
 run, whatever the contents, is logged, and admins see why with its plugin (`PluginProblems`,
-[Plugins](../Plugins/Plugins.md)) until one of its runs in the same lane begins.
+[Plugins](../Plugins/Plugins.md)) until a later run of its in the same lane has run to its end, which in the long
+lane may be hours after it began.
 
-How each group is made is said in one place, `DerivedKinds.RulesOf` (`MakingRules`): the job that makes it in the
-background, if one does; whether a missing one is made as it is asked for; and the lane its runs take
+How each group is made is said in one place, the group itself (`MakingGroup`): its kinds; what has it made
+(`MakingStart`): someone asking for a missing one, the background's job, or both; and the lane its runs take
 (`PluginLane`). A `stream` is a group of its own in the long lane: a process and a turn of its own beside the
-plugin's other runs, 24 hours a run, at the lowest priority. Every other group is in the quick lane, 60 seconds a
-run.
+plugin's other runs, 24 hours a run, at the lowest priority. A restart of the server ends such a run with nothing
+kept, and the next pass starts it over. Every other group is in the quick lane, 60 seconds a run.
 
-`DerivedBackground` makes the groups made in the background (`DerivedKinds.InBackground`: thumbnails with previews,
+`DerivedBackground` makes the groups made in the background (`MakingGroup.InBackground`: thumbnails with previews,
 and streams) of live plain files: of contents as uploads and a replica's sync store them (`StoredContents`, an
 `IStoredContentsListener`), and of everything already stored, as the jobs `derived.making` and
 `derived.stream_making`, at startup and hourly. Each plugin and group goes at its own pace, so streams being made
@@ -108,11 +109,12 @@ encrypted.
 
 One that is missing is made and waited for, 10 seconds at most; then it is a 503 `not_ready` with
 `Retry-After: 5` while making goes on, as it is when the run is stopped. A missing `stream` is not made: it is a
-503 `not_ready` at once with `Retry-After: 60`, while the background has yet to make it or is making it, and a 404
-once only the trash holds the contents, of which the background makes none. 404 when nothing makes it, when it
-could not be made, and for an encrypted file, even when a plain file holds the same bytes. 507 when it was
-made with no room to keep it and a shelf that holds the contents still has none (see Quota). 500 when the
-plugin could not run, or what it made could not be written.
+503 `not_ready` at once with `Retry-After: 60`, while the background has yet to make it or is making it; a 404 when
+the background makes none of the contents (`DerivedBackground.MakingOfAsync`, by the same files its backlog takes),
+as once only the trash holds them; and a 500 while the plugin's long runs could not run when it last had one to
+do. 404 when nothing makes it, when it could not be made, and for an encrypted file, even when a plain file holds
+the same bytes. 507 when it was made with no room to keep it and a shelf that holds the contents still has none
+(see Quota). 500 when the plugin could not run, or what it made could not be written.
 
 Listings, trees, searches, a deletion's tree and a file's own record name the kinds there are of each file, with a
 word for each that changes when another is made in its place (`ShelfFile.Derived`, `DerivedListing`): so a

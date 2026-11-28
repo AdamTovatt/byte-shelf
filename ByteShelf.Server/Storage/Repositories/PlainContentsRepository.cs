@@ -46,6 +46,16 @@ namespace ByteShelf.Server.Storage.Repositories
         }
 
         /// <inheritdoc />
+        public async Task<bool> IsLiveAsync(string sha256, MediaTypeSet mediaTypes, IDbSession? session = null)
+        {
+            return await UseSessionAsync(async (dbSession) =>
+            {
+                string query = $"SELECT EXISTS (SELECT 1 FROM file WHERE file.sha256 = @{nameof(sha256)} AND {PlainContents.IsLiveSql(mediaTypes)})";
+                return await dbSession.Connection.ExecuteScalarAsync<bool>(query, new { sha256 }, transaction: dbSession.Transaction);
+            }, session);
+        }
+
+        /// <inheritdoc />
         public async Task<IReadOnlyList<Guid>> GetShelvesAsync(IReadOnlyCollection<string> hashes, IDbSession? session = null)
         {
             return await UseSessionAsync(async (dbSession) =>

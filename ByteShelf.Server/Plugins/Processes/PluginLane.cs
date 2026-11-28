@@ -19,10 +19,13 @@ namespace ByteShelf.Server.Plugins.Processes
         /// <remarks>
         /// The day is the clock's, not the processor's, so a host kept busy for long may end a run that would have
         /// finished, which then fails as any run does and is not tried again until its version changes. Kept so on
-        /// purpose: a run past its limit failing as any does is settled (issue #67), and a run that is tried again after
-        /// it would take another day of a busy host each pass, for contents that may never finish.
+        /// purpose: a run that is tried again after its limit would take another day of a busy host each pass, for
+        /// contents that may never finish. A restart of the server ends a run here with nothing kept, so the next pass
+        /// starts it over from the beginning.
         /// </remarks>
         public static readonly PluginLane Long = new PluginLane("long", TimeSpan.FromHours(24), lowestPriority: true);
+
+        public static readonly IReadOnlyList<PluginLane> All = [Quick, Long];
 
         private PluginLane(string name, TimeSpan runLimit, bool lowestPriority)
         {

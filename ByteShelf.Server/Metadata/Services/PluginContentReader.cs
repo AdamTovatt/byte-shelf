@@ -41,7 +41,7 @@ namespace ByteShelf.Server.Metadata.Services
             catch (PluginUnavailableException exception)
             {
                 _unavailable = true;
-                _problems.Report(_reader.PluginId, PluginPart.Reader, PluginLane.Quick, $"Its reader of files' contents could not run, so it reads nothing until it can: {exception.Message}.");
+                _problems.Report(_reader.PluginId, PluginPart.Reader, PluginReader.Lane, $"Its reader of files' contents could not run, so it reads nothing until it can: {exception.Message}.");
                 _logger.LogError(exception, "The reader of {Plugin} could not run, and is tried again by the next pass: {Reason}.", _reader.PluginId, exception.Message);
                 return null;
             }
@@ -57,7 +57,7 @@ namespace ByteShelf.Server.Metadata.Services
                 return null;
             }
 
-            _problems.Clear(_reader.PluginId, PluginPart.Reader, PluginLane.Quick);
+            _problems.Clear(_reader.PluginId, PluginPart.Reader, PluginReader.Lane);
             return reading switch
             {
                 PluginReading.Found { Json: null } => new ReadOutcome(Record(null), Failed: false),

@@ -11,6 +11,8 @@ assembly as `images`' is, against the two projects that one references.
   other is plain text. A long one's first 128 KiB show as they read, and 1 MiB of its source.
 - `images`: makes thumbnails, previews and what agents see of images, HEIC and cameras' raws included, and reads
   their size; its viewer shows an image at once and sharp once the whole of it is there ([README](images/README.md)).
+- `video`: makes a poster, a storyboard and a copy that streams of each video, with an ffmpeg of its own, and reads
+  how long it plays, its size and whether it streams well as it is ([README](video/README.md)).
 
 ```
 plugins/<id>/

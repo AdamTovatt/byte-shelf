@@ -27,10 +27,10 @@ namespace ByteShelf.Server.Derived.Services
             }
         }
 
-        /// <summary>The plugins with each group they make in the background (<see cref="DerivedKinds.InBackground"/>): each goes at its own pace.</summary>
+        /// <summary>The plugins with each group they make in the background (<see cref="MakingGroup.InBackground"/>): each goes at its own pace.</summary>
         internal static IEnumerable<(DerivedFilePlugin Plugin, MakingGroup Group)> MakersOf(IDerivedFilePlugins plugins)
         {
-            return plugins.All.SelectMany(plugin => DerivedKinds.InBackground.Where(plugin.MakesAny).Select(group => (plugin, group)));
+            return plugins.All.SelectMany(plugin => MakingGroup.InBackground.Where(plugin.MakesAny).Select(group => (plugin, group)));
         }
 
         /// <summary>The contents stored since, as the plugin's maker of <paramref name="group"/> comes to them.</summary>

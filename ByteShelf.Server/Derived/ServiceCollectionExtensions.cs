@@ -34,7 +34,7 @@ namespace ByteShelf.Server.Derived
             services.AddScoped<DerivedMaintenance>();
 
             services.AddHostedService<StoredContentsWorker>();
-            foreach (MakingGroup group in DerivedKinds.InBackground)
+            foreach (MakingGroup group in MakingGroup.InBackground)
             {
                 services.AddSingleton<IHostedService>(provider => ActivatorUtilities.CreateInstance<DerivedMakingWorker>(provider, group));
             }

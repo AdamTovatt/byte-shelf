@@ -44,7 +44,7 @@ namespace ByteShelf.Server.Tests.Derived
             foreach (string text in known)
             {
                 ShelfFile file = await StoreTextAsync(shelf, $"/{text}.txt", text);
-                foreach (DerivedKind kind in DerivedKinds.In(MakingGroup.Background))
+                foreach (DerivedKind kind in MakingGroup.Background.Kinds)
                 {
                     await PutAsync(file.Sha256, FailedByTestMaker(kind));
                 }
@@ -132,6 +132,33 @@ namespace ByteShelf.Server.Tests.Derived
             Assert.Equal(json.Sha256, sha256);
             Assert.Equal(["application/json", "text/plain"], types);
             Assert.Equal(0, await MakeBacklogAsync());
+        }
+
+        /// <summary>One rule, so that a missing stream the background will never make is a 404, not a 503 for ever.</summary>
+        [Fact]
+        public async Task IsLiveAsync_EachContents_IsWhetherGetLiveAsyncListsThem()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile[] files =
+            [
+                await StoreTextAsync(shelf, "/a.txt", "a"),
+                await StoreAsync(shelf, "/encrypted.txt", AgeBytes, "text/plain", encrypted: true),
+                await StoreAsync(shelf, "/other.bin", [1], "application/octet-stream"),
+                await StoreTextAsync(shelf, "/trashed.txt", "trashed"),
+            ];
+            await FileService.DeleteFileAsync(shelf, EntryReference.ForId(files[3].Id));
+            IPlainContentsRepository contents = Services.GetRequiredService<IPlainContentsRepository>();
+            MediaTypeSet mediaTypes = MediaTypeSet.Of("text/plain");
+
+            HashSet<string> listed = [.. (await contents.GetLiveAsync(mediaTypes, after: null, limit: 10)).Select(live => live.Sha256)];
+            List<bool> live = [];
+            foreach (ShelfFile file in files)
+            {
+                live.Add(await contents.IsLiveAsync(file.Sha256, mediaTypes));
+            }
+
+            Assert.Equal([true, false, false, false], live);
+            Assert.Equal(files.Select(file => listed.Contains(file.Sha256)), live);
         }
 
         [UnixFact]

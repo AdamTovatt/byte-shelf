@@ -33,7 +33,7 @@ namespace ByteShelf.Server.Derived.Services
         /// <exception cref="PluginUnavailableException">The plugin could not run, whatever the contents.</exception>
         public Task<MakingOutcome> MakeAsync(string sha256, DerivedKind kind, DerivedFilePlugin plugin, PluginPriority priority)
         {
-            JobKey key = new JobKey(sha256, plugin.Id, DerivedKinds.GroupOf(kind));
+            JobKey key = new JobKey(sha256, plugin.Id, MakingGroup.Of(kind));
             lock (_lock)
             {
                 if (_jobs.TryGetValue(key, out Job? job))
@@ -42,7 +42,7 @@ namespace ByteShelf.Server.Derived.Services
                     return job.Ended;
                 }
 
-                job = new Job(_processes.Enter(plugin.Id, DerivedKinds.RulesOf(key.Group).Lane, priority));
+                job = new Job(_processes.Enter(plugin.Id, key.Group.Lane, priority));
                 _jobs.Add(key, job);
                 job.Ended = Task.Run(() => RunAsync(key, plugin, job.Turn), CancellationToken.None);
                 return job.Ended;

@@ -29,6 +29,7 @@ namespace ByteShelf.Server.Derived.Services
         private readonly DerivedMaking _making;
         private readonly TimeProvider _timeProvider;
         private readonly DerivedRoom _room;
+        private readonly DerivedBackground _background;
 
         public DerivedFileService(
             ShelfTree shelfTree,
@@ -39,9 +40,11 @@ namespace ByteShelf.Server.Derived.Services
             ContentsLocks locks,
             DerivedMaking making,
             TimeProvider timeProvider,
-            DerivedRoom room)
+            DerivedRoom room,
+            DerivedBackground background)
         {
             _room = room;
+            _background = background;
             _shelfTree = shelfTree;
             _trashService = trashService;
             _contents = contents;
@@ -78,11 +81,15 @@ namespace ByteShelf.Server.Derived.Services
                 return found.File ?? throw None(file, kind);
             }
 
-            if (!DerivedKinds.RulesOf(DerivedKinds.GroupOf(kind)).MadeWhenAsked)
+            MakingGroup group = MakingGroup.Of(kind);
+            if (!group.Start.MadeWhenAsked)
             {
-                // Missing, it is to be made in the background, or is being made; but the background makes it only of what
-                // a live plain file holds, so of contents only the trash holds there is none to come.
-                throw (await _contents.GetShelvesAsync([file.Sha256])).Count > 0 ? Later(kind, BackgroundRetryAfter) : None(file, kind);
+                throw await _background.MakingOfAsync(maker.Plugin, group, file.Sha256) switch
+                {
+                    BackgroundMaking.None => None(file, kind),
+                    BackgroundMaking.CannotRun => new PluginUnavailableException($"its maker could not do its {group.Lane.Name} runs when it last had one to do"),
+                    _ => Later(kind, BackgroundRetryAfter),
+                };
             }
 
             Task<MakingOutcome> making = _making.MakeAsync(file.Sha256, kind, maker.Plugin, PluginPriority.Asked);

@@ -1,7 +1,7 @@
-namespace ByteShelf.Plugins.Images.Tests.TestUtilities
+namespace ByteShelf.Plugins.Testing
 {
     /// <summary>A stream that throws once it would be over so many bytes, as the server's for a derived file does.</summary>
-    internal sealed class LimitedStream(long maxBytes) : MemoryStream
+    public sealed class LimitedStream(long maxBytes) : MemoryStream
     {
         public override void Write(byte[] buffer, int offset, int count)
         {

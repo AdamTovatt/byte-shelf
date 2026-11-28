@@ -1,11 +1,13 @@
 using ByteShelf.Server.Derived.Models;
+using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Plugins.Processes;
+using ByteShelf.Server.Plugins.Services;
 using ByteShelf.Server.Storage.Models;
 using ByteShelf.Server.Storage.Repositories;
 
 namespace ByteShelf.Server.Derived.Services
 {
-    /// <summary>Makes the groups made in the background (<see cref="DerivedKinds.InBackground"/>): of contents just stored, and of those stored already.</summary>
+    /// <summary>Makes the groups made in the background (<see cref="MakingGroup.InBackground"/>): of contents just stored, and of those stored already.</summary>
     internal sealed class DerivedBackground
     {
         /// <summary>How many contents one query lists.</summary>
@@ -16,14 +18,16 @@ namespace ByteShelf.Server.Derived.Services
         private readonly DerivedMaking _making;
         private readonly DerivedStore _store;
         private readonly DerivedRoom _room;
+        private readonly PluginProblems _problems;
 
-        public DerivedBackground(IPlainContentsRepository contents, DerivedMakers makers, DerivedMaking making, DerivedStore store, DerivedRoom room)
+        public DerivedBackground(IPlainContentsRepository contents, DerivedMakers makers, DerivedMaking making, DerivedStore store, DerivedRoom room, PluginProblems problems)
         {
             _contents = contents;
             _makers = makers;
             _making = making;
             _store = store;
             _room = room;
+            _problems = problems;
         }
 
         /// <summary>
@@ -37,7 +41,7 @@ namespace ByteShelf.Server.Derived.Services
         /// <exception cref="PluginUnavailableException">The plugin could not run.</exception>
         public async Task<int> MakeBacklogAsync(DerivedFilePlugin plugin, MakingGroup group, CancellationToken cancellationToken)
         {
-            MediaTypeSet mediaTypes = MediaTypeSet.Union(plugin.MakesIn(group).Select(declaration => declaration.MediaTypes));
+            MediaTypeSet mediaTypes = TakenBy(plugin, group);
 
             // Measured once for the pass, and only once some contents need it.
             Lazy<Task<DerivedRoom.RoomNow>> room = new Lazy<Task<DerivedRoom.RoomNow>>(_room.MeasureAsync);
@@ -55,12 +59,33 @@ namespace ByteShelf.Server.Derived.Services
             return made;
         }
 
+        /// <summary>
+        /// What becomes of <paramref name="group"/> of <paramref name="sha256"/>, missing, by <paramref name="plugin"/>:
+        /// none is made unless its backlog takes those contents, which it does while a live plain file of a type the
+        /// plugin makes the group from holds them, nor while the plugin's runs in the group's lane could not run.
+        /// </summary>
+        public async Task<BackgroundMaking> MakingOfAsync(DerivedFilePlugin plugin, MakingGroup group, string sha256)
+        {
+            if (!await _contents.IsLiveAsync(sha256, TakenBy(plugin, group)))
+            {
+                return BackgroundMaking.None;
+            }
+
+            return _problems.Of(plugin.Id, PluginPart.Maker, group.Lane) != null ? BackgroundMaking.CannotRun : BackgroundMaking.Later;
+        }
+
         /// <summary>Has <paramref name="plugin"/> make what is missing of <paramref name="group"/> of contents just stored.</summary>
         /// <exception cref="PluginUnavailableException">The plugin could not run.</exception>
         public async Task MakeStoredAsync(DerivedFilePlugin plugin, MakingGroup group, string sha256, CancellationToken cancellationToken)
         {
             Lazy<Task<DerivedRoom.RoomNow>> room = new Lazy<Task<DerivedRoom.RoomNow>>(_room.MeasureAsync);
             await MakeMissingAsync(plugin, group, sha256, await _contents.GetMediaTypesAsync(sha256), PluginPriority.Stored, room, cancellationToken);
+        }
+
+        /// <summary>The types of files whose contents <paramref name="plugin"/> makes <paramref name="group"/> of.</summary>
+        private static MediaTypeSet TakenBy(DerivedFilePlugin plugin, MakingGroup group)
+        {
+            return MediaTypeSet.Union(plugin.MakesIn(group).Select(declaration => declaration.MediaTypes));
         }
 
         private async Task<int> MakeMissingAsync(

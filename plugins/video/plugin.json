@@ -1,0 +1,6 @@
+{
+  "id": "video",
+  "name": "Video",
+  "api": 1,
+  "serverAssembly": "ByteShelf.Plugins.Video.dll"
+}

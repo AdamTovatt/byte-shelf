@@ -162,9 +162,10 @@ namespace ByteShelf.Server.Tests.Derived
             return await scope.ServiceProvider.GetRequiredService<DerivedMaintenance>().RunAsync(CancellationToken.None);
         }
 
-        /// <summary>One pass over what is already stored, as the job of <paramref name="group"/> runs it.</summary>
-        protected async Task<int> MakeBacklogAsync(MakingGroup group = MakingGroup.Background)
+        /// <summary>One pass over what is already stored, as the job of <paramref name="group"/> runs it, thumbnails' by default.</summary>
+        protected async Task<int> MakeBacklogAsync(MakingGroup? group = null)
         {
+            group ??= MakingGroup.Background;
             await using AsyncServiceScope scope = Services.CreateAsyncScope();
             int made = 0;
             foreach (DerivedFilePlugin plugin in Plugins.All)

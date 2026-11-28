@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    What plugins' tests take a maker's files with as the server does (MadeFiles), so each plugin's tests hold its
+    maker to the server's rules, from one copy of them.
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ByteShelf.Plugins\ByteShelf.Plugins.csproj" />
+    <ProjectReference Include="..\ByteShelfCommon\ByteShelfCommon.csproj" />
+  </ItemGroup>
+
+</Project>

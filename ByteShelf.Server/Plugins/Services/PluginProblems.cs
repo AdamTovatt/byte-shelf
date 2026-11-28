@@ -11,8 +11,6 @@ namespace ByteShelf.Server.Plugins.Services
     /// </summary>
     public sealed class PluginProblems
     {
-        private static readonly PluginLane[] Lanes = [PluginLane.Quick, PluginLane.Long];
-
         private readonly ConcurrentDictionary<(string PluginId, PluginPart Part, PluginLane Lane), string> _problems =
             new ConcurrentDictionary<(string PluginId, PluginPart Part, PluginLane Lane), string>();
 
@@ -31,8 +29,14 @@ namespace ByteShelf.Server.Plugins.Services
         /// <summary>Why the part does not run, in any lane, a sentence for each; null for one that runs in every lane.</summary>
         public string? Of(string pluginId, PluginPart part)
         {
-            List<string> problems = Lanes.Select(lane => _problems.GetValueOrDefault((pluginId, part, lane))).OfType<string>().ToList();
+            List<string> problems = PluginLane.All.Select(lane => Of(pluginId, part, lane)).OfType<string>().ToList();
             return problems.Count == 0 ? null : string.Join(" ", problems);
+        }
+
+        /// <summary>Why the part does not run in <paramref name="lane"/>; null when it does.</summary>
+        public string? Of(string pluginId, PluginPart part, PluginLane lane)
+        {
+            return _problems.GetValueOrDefault((pluginId, part, lane));
         }
     }
 }

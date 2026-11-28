@@ -53,6 +53,49 @@ namespace ByteShelf.Server.Tests.Derived
             Assert.Empty(Plugins.Runs);
         }
 
+        /// <summary>
+        /// The background makes it by the live files of the types its maker takes, which a live file of another type with
+        /// the same contents is not: it asks no shelf of its own.
+        /// </summary>
+        [Fact]
+        public async Task GetDeletedAsync_AStreamOfContentsOnlyATrashedFileOfItsTypeHolds_IsNone()
+        {
+            Plugins.All = [Plugins.Plugin(kinds: [DerivedKind.Stream], mediaTypes: "video/mp4")];
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile video = await StoreAsync(shelf, "/a.mp4", "a"u8.ToArray(), "video/mp4");
+            await StoreTextAsync(shelf, "/a.txt", "a");
+            TrashEntry deleted = await FileService.DeleteFileAsync(shelf, EntryReference.ForId(video.Id));
+
+            await Assert.ThrowsAsync<NotFoundException>(() => DerivedFiles.GetDeletedAsync(shelf, deleted.DeletionId, video.Id, DerivedKind.Stream, CancellationToken.None));
+
+            Assert.Equal(0, await MakeBacklogAsync(MakingGroup.Stream));
+        }
+
+        /// <summary>Neither to be made nor being made, it is the plugin that cannot run, as any kind's is, until a later long run of its has run to its end.</summary>
+        [Fact]
+        public async Task GetAsync_AStreamWhoseLongRunsCouldNotRun_IsThePluginUnavailable()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/full.txt", "full disk");
+            await Assert.ThrowsAsync<PluginUnavailableException>(() => MakeAsync(file, DerivedKind.Stream));
+
+            await Assert.ThrowsAsync<PluginUnavailableException>(() => GetAsync(shelf, file, DerivedKind.Stream));
+
+            Services.GetRequiredService<PluginProblems>().Clear(TestMaker.Spec.DefaultId, PluginPart.Maker, PluginLane.Long);
+            await Assert.ThrowsAsync<RetryLaterException>(() => GetAsync(shelf, file, DerivedKind.Stream));
+        }
+
+        /// <summary>The quick lane's problems say nothing of the long lane's runs.</summary>
+        [Fact]
+        public async Task GetAsync_AStreamWhoseQuickRunsCouldNotRun_IsLater()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
+            Services.GetRequiredService<PluginProblems>().Report(TestMaker.Spec.DefaultId, PluginPart.Maker, PluginLane.Quick, "It could not run.");
+
+            await Assert.ThrowsAsync<RetryLaterException>(() => GetAsync(shelf, file, DerivedKind.Stream));
+        }
+
         [Theory]
         [InlineData("a", true)]
         [InlineData("throw", false)]

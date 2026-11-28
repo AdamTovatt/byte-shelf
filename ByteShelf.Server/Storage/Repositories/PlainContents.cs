@@ -77,14 +77,18 @@ namespace ByteShelf.Server.Storage.Repositories
             return LiveSql(mediaTypes, unless: read);
         }
 
+        /// <summary>The condition that the row of <c>file</c> is a live plain file of <paramref name="mediaTypes"/>.</summary>
+        public static string IsLiveSql(MediaTypeSet mediaTypes)
+        {
+            return $"file.deleted_at IS NULL AND file.encrypted = 0 AND {OneOf(mediaTypes, "file.media_type")}";
+        }
+
         private static string LiveSql(MediaTypeSet mediaTypes, string? unless)
         {
             return $@"
                 SELECT DISTINCT file.sha256
                 FROM file
-                WHERE file.deleted_at IS NULL
-                  AND file.encrypted = 0
-                  AND {OneOf(mediaTypes, "file.media_type")}
+                WHERE {IsLiveSql(mediaTypes)}
                   {(unless == null ? string.Empty : $"AND NOT ({unless})")}
                   AND (@after IS NULL OR file.sha256 > @after)
                 ORDER BY file.sha256
