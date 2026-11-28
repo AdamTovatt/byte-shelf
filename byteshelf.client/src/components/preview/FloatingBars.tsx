@@ -94,7 +94,11 @@ interface BarTextButtonProps {
   children: string;
 }
 
-/** A control in the bars that shows a word or two rather than a glyph, as a player's speed; as tall as `BarButton`. */
+/**
+ * A control in the bars that shows a word or two rather than a glyph, as a player's speed; as tall as `BarButton`.
+ * Not a `Button`: none of its sizes is an icon button's height (`2xs` is 22 pixels against 24, `md` 40 against 36),
+ * and its size classes are joined, not merged, so they cannot be overridden reliably.
+ */
 export function BarTextButton({ label, isPressed, onClick, children }: BarTextButtonProps) {
   const isPhone = !useMediaQuery(NOT_A_PHONE);
   return (

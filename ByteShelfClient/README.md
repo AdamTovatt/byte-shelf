@@ -116,8 +116,10 @@ the whole file is checked. An encrypted file's range is over its stored age byte
 missing is made, which the server waits for, at most 10 seconds: `not_ready` (`ByteShelfException.IsNotReady`) says
 it is still being made, `not_found` that there is none, and `quota_exceeded` (507) that a shelf holding the contents
 has no room in its quota to keep it. A missing `Stream` is not made when asked for, but in the background, which may
-take hours: it is `not_ready` until then. `ShelfFile.Derived`, in listings and a file's own record,
-names those there are. The in-memory client has none.
+take hours: it is `not_ready` while the background has yet to make it or is making it, which the server says to ask
+of again in a minute, though the exception carries no time; `not_found` when the background makes none of the
+contents; and a server error (500) while the plugin's long runs could not run. `ShelfFile.Derived`, in listings and
+a file's own record, names those there are. The in-memory client has none.
 
 ## Links
 

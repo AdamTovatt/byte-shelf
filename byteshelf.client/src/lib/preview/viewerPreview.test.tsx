@@ -2,8 +2,7 @@
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { InPreview } from '../../plugin/InPreview';
-import { stubFullScreen, type FullScreenStub } from '../../test/browser';
+import { InPreview, stubFullScreen, type FullScreenStub } from '../../plugin/testing';
 import { usePreviewFullScreen, usePreviewKeys } from './viewerPreview';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

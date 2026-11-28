@@ -87,7 +87,7 @@ namespace ByteShelf.Server.Derived.Services
                 throw await _background.MakingOfAsync(maker.Plugin, group, file.Sha256) switch
                 {
                     BackgroundMaking.None => None(file, kind),
-                    BackgroundMaking.CannotRun => new PluginUnavailableException($"its maker could not do its {group.Lane.Name} runs when it last had one to do"),
+                    BackgroundMaking.CannotRun => new PluginUnavailableException($"its maker of derived files {DerivedMaking.CouldNotDo(group.Lane)} when it last had one to do"),
                     _ => Later(kind, BackgroundRetryAfter),
                 };
             }

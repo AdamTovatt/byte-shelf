@@ -6,14 +6,14 @@ namespace ByteShelf.Server.Plugins.Processes
     /// </summary>
     /// <remarks>
     /// Each process may take <see cref="PluginMemory.MaxBytes"/>, so a plugin with runs in both lanes may take twice that,
-    /// with what its processes start beside it; a long-lane process exists only while a plugin makes streams, and ends
-    /// after a minute without runs. Kept apart rather than under one budget, which would take a cgroup the server does
+    /// with what its processes start beside it; a long-lane process exists only while a plugin makes a stream, and ends
+    /// with its run (<see cref="KeepsProcess"/>). Kept apart rather than under one budget, which would take a cgroup the server does
     /// not have (DEPLOYMENT.md says so to operators).
     /// </remarks>
     public sealed record PluginLane
     {
         /// <summary>Runs of a minute at most: reading contents, and making what someone may be waiting for.</summary>
-        public static readonly PluginLane Quick = new PluginLane("quick", TimeSpan.FromSeconds(60), lowestPriority: false);
+        public static readonly PluginLane Quick = new PluginLane("quick", TimeSpan.FromSeconds(60), lowestPriority: false, keepsProcess: true);
 
         /// <summary>Runs that may take a day, such as remaking a long video, at the lowest priority so the server stays responsive.</summary>
         /// <remarks>
@@ -23,15 +23,16 @@ namespace ByteShelf.Server.Plugins.Processes
         /// contents that may never finish. A restart of the server ends a run here with nothing kept, so the next pass
         /// starts it over from the beginning.
         /// </remarks>
-        public static readonly PluginLane Long = new PluginLane("long", TimeSpan.FromHours(24), lowestPriority: true);
+        public static readonly PluginLane Long = new PluginLane("long", TimeSpan.FromHours(24), lowestPriority: true, keepsProcess: false);
 
         public static readonly IReadOnlyList<PluginLane> All = [Quick, Long];
 
-        private PluginLane(string name, TimeSpan runLimit, bool lowestPriority)
+        private PluginLane(string name, TimeSpan runLimit, bool lowestPriority, bool keepsProcess)
         {
             Name = name;
             RunLimit = runLimit;
             LowestPriority = lowestPriority;
+            KeepsProcess = keepsProcess;
         }
 
         /// <summary>For logs.</summary>
@@ -42,5 +43,11 @@ namespace ByteShelf.Server.Plugins.Processes
 
         /// <summary>Whether its process, and every process it starts, runs at the lowest CPU priority (nice 19).</summary>
         public bool LowestPriority { get; }
+
+        /// <summary>
+        /// Whether its process goes on to the next run, rather than ending with each: one that has read contents is ended
+        /// when those are removed, so a process kept for runs of hours would have one over other contents start over.
+        /// </summary>
+        public bool KeepsProcess { get; }
     }
 }

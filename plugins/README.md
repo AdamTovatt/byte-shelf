@@ -33,17 +33,24 @@ plugins/<id>/
 }
 ```
 
-It takes Node 24, and the .NET SDK for a server assembly. `npm ci` in `byteshelf.client`, whose tools it
+It takes Node 24, and the .NET SDK for a server assembly; the video plugin's first build also downloads its ffmpeg,
+some 580 MB, with a `tar` that reads xz ([its README](video/README.md)). `npm ci` in `byteshelf.client`, whose tools it
 uses, and in the plugin, then `npm run build` in the plugin makes `dist/`, a plugin folder: copy or link it into the folder
 `BYTESHELF_PLUGINS` names and restart the server. `npm test` runs its tests, with the app's own React
-and UI library, and `@byteshelf/plugin/testing`, stand-ins for what the app gives a viewer (`derivedReaderOf`, and
-`InPreview`, a preview to draw one in, whose are all keys pressed in the document), which only tests import; `npm run lint` in `byteshelf.client` covers the plugins too.
+and UI library, and `@byteshelf/plugin/testing`, stand-ins for what the app and the browser give a viewer, which only
+tests import: `derivedReaderOf`; `InPreview`, a preview to draw one in, which hands it every key pressed in the
+document but Escape and Tab; and `stubFullScreen`, a browser that makes the page full screen. `npm run lint` in
+`byteshelf.client` covers the plugins too. A plugin's server tests take its maker's files and its reader's documents
+as the server does, with `ByteShelf.Plugins.Testing`: `MadeFiles`, which holds a maker to the server's rules of
+what it makes, `ContentDocumentReaders`, `RecordingPluginBuilder`, which keeps what the plugin adds, and
+`CountingStream`, of how much was read.
 
 A new one also needs its line under `extensions.known` in `ByteShelf.Server/updaemon.json`, which a
 server test asks for, so that updaemon 1.1 or later installs it by its id alone. Its id may not read as the end of a
 server's zip, as `linux-x64` does; the build refuses it. The build publishes
 `server/` into `dist` when `plugin.json` names a `serverAssembly`, for no one runtime, so one zip is for every
-platform.
+platform the plugin's own native parts run on: the images plugin's for every one, the video plugin's for Linux x64
+and arm64 alone, which its ffmpeg is built for.
 
 - **What it shares with the app** it imports and does not bring: `react`, `react/jsx-runtime`,
   `react-dom`, `@tanstack/react-query`, `react-router-dom` and `@byteshelf/plugin`

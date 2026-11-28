@@ -95,4 +95,6 @@ AOT-compatible.
 `ByteShelfCommon.Serialization.ByteShelfJsonContext` serializes every type that is sent without
 reflection, in camelCase like the server; a `PluginDocument` is written by its own converter
 (`PluginDocumentJsonConverter`), wherever it stands. Enums are written as camelCase strings and read back ignoring case, by
-`CamelCaseEnumConverter`, set on each enum type so the server and every client agree.
+`CamelCaseEnumConverter`, set on each enum type so the server and every client agree. `ShelfFile.Derived` is read
+by `KnownEnumKeysConverter`, by its keys' camelCase names alone, without those it does not know: a kind of derived
+file a later server adds fails no listing of an older client.

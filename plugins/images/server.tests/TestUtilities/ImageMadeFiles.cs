@@ -8,14 +8,21 @@ namespace ByteShelf.Plugins.Images.Tests.TestUtilities
     {
         extension(MadeFiles)
         {
-            /// <summary>Every kind the plugin declares it makes, which <c>ImagesPluginTests</c> holds it to.</summary>
-            public static IReadOnlyList<DerivedKind> DeclaredKinds => [DerivedKind.Thumbnail, DerivedKind.Preview, DerivedKind.Full, DerivedKind.Agent];
+            /// <summary>Every kind the plugin declares it makes, as it declares them (<c>ImagesPluginTests</c>).</summary>
+            public static IReadOnlyList<DerivedKind> DeclaredKinds
+            {
+                get
+                {
+                    RecordingPluginBuilder builder = new RecordingPluginBuilder();
+                    new ImagesPlugin().Configure(builder);
+                    return [.. builder.Makes.Select(makes => makes.Kind)];
+                }
+            }
 
             /// <summary>Makes <paramref name="kinds"/> from <paramref name="contents"/>, or every kind when there are none.</summary>
-            public static async Task<MadeFiles> MakeAsync(byte[] contents, params IReadOnlyList<DerivedKind> kinds)
+            public static Task<MadeFiles> MakeAsync(byte[] contents, params IReadOnlyList<DerivedKind> kinds)
             {
-                using MemoryStream stream = new MemoryStream(contents, writable: false);
-                return await MadeFiles.MakeAsync(stream, kinds);
+                return MadeFiles.MakeAsync(new ImageMaker(), contents, kinds.Count == 0 ? MadeFiles.DeclaredKinds : kinds);
             }
 
             public static Task<MadeFiles> MakeAsync(Stream contents, params IReadOnlyList<DerivedKind> kinds)

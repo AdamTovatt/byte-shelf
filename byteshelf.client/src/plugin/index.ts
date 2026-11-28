@@ -13,6 +13,8 @@ export { loadImage } from '../lib/loadImage';
 export { LockedError, type LockableReader } from '../lib/content/lockableReader';
 export { relativeTo } from '../lib/shelfPaths';
 export { formatDuration } from '../lib/format';
+export { isPlainKey } from '../lib/keys';
+export { PREVIEW_BAR_BOTTOM } from '../components/preview/previewBars';
 export { readStoredValue, writeStoredValue } from '../lib/storage';
 export { mediaTypeOf } from '../lib/mediaTypes';
 export { readText, type ReadText } from '../lib/content/readText';

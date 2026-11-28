@@ -30,9 +30,9 @@ describe('the sharpening viewer', () => {
 
   /** What was made of an image: each kind listed is there, and each in `made` has or comes to have a URL, null for none. */
   function derivedReader(listed: DerivedKind[], made: Partial<Record<DerivedKind, Promise<string | null>>> = {}) {
-    const reader = derivedReaderOf(Object.fromEntries(listed.map((kind) => [kind, `${kind}.webp`])));
-    const url = vi.fn((kind: DerivedKind) => made[kind] ?? reader.url(kind));
-    return { ...reader, url, forget: vi.fn() } satisfies DerivedReader;
+    const url = vi.fn(async (kind: DerivedKind) => made[kind] ?? (listed.includes(kind) ? `${kind}.webp` : null));
+    // Spread, not overrides, so the tests read `url` as the mock it is.
+    return { ...derivedReaderOf(Object.fromEntries(listed.map((kind) => [kind, `${kind}.webp`]))), url, forget: vi.fn() };
   }
 
   async function show(derived: DerivedReader, file: Partial<ShelfFile> = {}, neighbours: Neighbour[] = []): Promise<void> {

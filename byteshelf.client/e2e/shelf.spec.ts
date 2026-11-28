@@ -407,7 +407,8 @@ test('a video seeks by its player\'s seek bar and plays on from there, its arrow
   const now = () => video.evaluate((element: HTMLVideoElement) => element.currentTime);
   await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.duration)).toBeCloseTo(30, 0);
 
-  // At once, while the bars show: a click halfway along.
+  // A click halfway along, with the bars shown by the pointer moved over the video, as they fade after 2 seconds of none.
+  await video.hover();
   const seekBar = preview.getByRole('slider', { name: 'Seek' });
   const { width, height } = (await seekBar.boundingBox())!;
   await seekBar.click({ position: { x: width / 2, y: height / 2 } });
@@ -416,6 +417,7 @@ test('a video seeks by its player\'s seek bar and plays on from there, its arrow
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
   await expect(seekBar).toHaveAttribute('aria-valuenow', '25');
+  // Named by its file, as it would not be once stepped to z.txt.
   await expect(preview).toBeVisible();
 
   await page.keyboard.press('k');

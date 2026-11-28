@@ -174,6 +174,7 @@ namespace ByteShelf.Server.Plugins.Processes
                     bool goesOn = false;
                     try
                     {
+                        run.Began();
                         using CancellationTokenSource either = CancellationTokenSource.CreateLinkedTokenSource(lease.Stop, cancellationToken);
                         (PluginRunResult? result, bool processGoesOn) = await lease.Process.RunAsync(request, contents, lane.RunLimit, either.Token);
                         if (lease.Stop.IsCancellationRequested)
@@ -194,7 +195,7 @@ namespace ByteShelf.Server.Plugins.Processes
                         }
 
                         Log(run.Plugin, run.Sha256, result);
-                        goesOn = processGoesOn;
+                        goesOn = processGoesOn && lane.KeepsProcess;
                         return await run.TakeAsync(result, worker.Folder, cancellationToken);
                     }
                     catch (OperationCanceledException) when (lease.Stop.IsCancellationRequested && !cancellationToken.IsCancellationRequested)

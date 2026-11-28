@@ -103,8 +103,9 @@ kind it makes, at a version, from media types: an `IDerivedFileMaker`, made and 
 the server keeps and serves ([Derived files](../Derived/Derived.md)). Its `agent` files are shown to agents only
 when they are a PNG, JPEG, GIF or WebP of at most 1 MiB ([Mcp](../Mcp/Mcp.md)). Its `stream` files are made in a
 run of their own, in a process of their own beside its others, which may take 24 hours at the lowest CPU priority
-([Processes](Processes/Processes.md)); every other run takes 60 seconds at most. Why one could not run is in the server's
-log alone, and what it would have made is not there when asked for. A second maker, a kind twice, or a type
+([Processes](Processes/Processes.md)); every other run takes 60 seconds at most. A maker that could not run is
+logged, admins see why on the Settings page, in each lane its runs take, until one of its runs there begins
+(`makerProblem`), and what it would have made is not there when asked for. A second maker, a kind twice, or a type
 that is none refuses the plugin. It too keeps what it reads and makes nowhere else.
 
 Each plugin has an `AssemblyLoadContext` of its own (`PluginLoadContext`): its packages and native
@@ -125,7 +126,8 @@ replica.
 
 `GET /api/plugins` lists the loaded plugins with the addresses of their module and stylesheet, for
 any signed-in user or shelf key, and for an admin those skipped and why a plugin's reader could not run
-when it last had something to read (`readerProblem`). The `ui` folder, and nothing else
+when it last had something to read (`readerProblem`), and its maker when it last had something to make
+(`makerProblem`). The `ui` folder, and nothing else
 of the plugin, is served at `/plugins/{id}/{hash}/...` (`UsePluginAssets`), to anyone, as a browser
 loads modules without the session's token. The hash is of every file in the folder, so each may be
 cached for good, and is in the deploy id ([Version](../Version/Version.md)), so open tabs are told
@@ -173,8 +175,9 @@ A module's default export is `definePlugin({ viewers, fileActions, folderTypes }
   with the viewer, a drag on which is the controls' and no swipe; `BarButton` is the bars' own button, and
   `BarTextButton` one that shows a word or two, as a speed, at its height. Outside a preview it draws nothing.
   `usePreviewKeys(handler)` hands `handler` the keys pressed in the preview while that is the overlay on top, those
-  pressed with a modifier too: none while a dialog is over it, none typed into a field (a slider is not one) or taken
-  already, as by a control's own handler, and never Escape or Tab, which are the overlay's. `handler` hears them
+  pressed with a modifier too (`isPlainKey` tells them): none while a dialog is over it, none typed into a field (a
+  slider is not one), none that press the button that has the focus, as Space and Enter do, none taken already, as
+  by a control's own handler, and never Escape or Tab, which are the overlay's. `handler` hears them
   ahead of the preview, whose arrow keys step between files unless it calls `preventDefault`.
   `usePreviewFullScreen(video?)` answers a `FullScreen`: `canFullScreen`, `isFullScreen` and `toggle`, which makes
   the page full screen while the preview is open, the menus and dialogs over it too, and closing the preview leaves
@@ -196,7 +199,13 @@ A module's default export is `definePlugin({ viewers, fileActions, folderTypes }
   row that scrolls sideways (across), a pane scrolled down from its top (down), what `useZoom` zooms while zoomed
   in, and an element of the plugin's given `{ [DRAGS_ITSELF]: true }`, or anything in one (across and down).
   `mediaTypeOf(contentType)` is a file's type as viewers' `mediaTypes` are matched against it: lowercase, without
-  parameters such as `; charset=utf-8`.
+  parameters such as `; charset=utf-8`. `formatDuration(seconds, { isElapsed })` writes how long something plays as
+  the app does, `3:07`, or as a player's clock, in whole seconds gone by. `readStoredValue(key)` and
+  `writeStoredValue(key, value)` keep text in the browser's storage, and do nothing where it is refused, as a
+  private window's may be. `useLoaded(key, load)` loads anew as `key` changes, and for a null `key` loads
+  nothing and stays loading, as for what is not to be loaded yet.
+  `isPlainKey(event)` says a key was pressed with nothing held, as a viewer's own shortcuts are, and
+  `PREVIEW_BAR_BOTTOM` how high the preview's bottom bar stands, as a CSS length, for what it draws above it.
 - **File actions** are items in the menus of live files: `{ id, label, icon?, showsFor, run }`.
   `showsFor` is asked as a menu is drawn. `run` gets the shelf, the file, its content reader and
   `showDialog`, which shows a dialog of the plugin's until it calls the `close` it is given. The contents

@@ -18,6 +18,15 @@ namespace ByteShelf.Plugins.Video.Tests
             Assert.Equal(new Storyboard(IntervalSeconds: 5.4, Columns: 10, Rows: 10, FrameWidth: 160, FrameHeight: 90, Count: 100), storyboard);
         }
 
+        /// <summary>Where the two meet: 100 frames, each of 2 seconds; a moment longer, and each is longer.</summary>
+        [Fact]
+        public void For_200Seconds_TakesAFrameEvery2SecondsAndAtMost100()
+        {
+            Assert.Equal((100, 2), (Storyboard.For(200, 1920, 1080).Count, Storyboard.For(200, 1920, 1080).IntervalSeconds));
+            Assert.Equal(100, Storyboard.For(201, 1920, 1080).Count);
+            Assert.True(Storyboard.For(201, 1920, 1080).IntervalSeconds > 2);
+        }
+
         [Fact]
         public void For_AnyLength_HasRowsEnoughForEveryFrame()
         {

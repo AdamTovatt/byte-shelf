@@ -71,9 +71,9 @@ namespace ByteShelf.Server.Tests.Derived
             Assert.Equal(0, await MakeBacklogAsync(MakingGroup.Stream));
         }
 
-        /// <summary>Neither to be made nor being made, it is the plugin that cannot run, as any kind's is, until a later long run of its has run to its end.</summary>
+        /// <summary>Neither to be made nor being made, it is the plugin that cannot run, as any kind's is, until a later long run of its begins.</summary>
         [Fact]
-        public async Task GetAsync_AStreamWhoseLongRunsCouldNotRun_IsThePluginUnavailable()
+        public async Task GetAsync_AStreamWhoseLongRunsCouldNotRun_IsThePluginUnavailableUntilOneBegins()
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/full.txt", "full disk");
@@ -81,8 +81,30 @@ namespace ByteShelf.Server.Tests.Derived
 
             await Assert.ThrowsAsync<PluginUnavailableException>(() => GetAsync(shelf, file, DerivedKind.Stream));
 
-            Services.GetRequiredService<PluginProblems>().Clear(TestMaker.Spec.DefaultId, PluginPart.Maker, PluginLane.Long);
-            await Assert.ThrowsAsync<RetryLaterException>(() => GetAsync(shelf, file, DerivedKind.Stream));
+            ShelfFile later = await StoreTextAsync(shelf, "/later.txt", Plugins.Waiting("later", DerivedKind.Stream));
+            Task<MakingOutcome> making = MakeAsync(later, DerivedKind.Stream);
+            using (await Plugins.StartedAsync("later"))
+            {
+                await Assert.ThrowsAsync<RetryLaterException>(() => GetAsync(shelf, file, DerivedKind.Stream));
+                Plugins.GoOn("later");
+            }
+
+            Assert.Equal(MakingOutcome.Kept, await making);
+        }
+
+        /// <summary>None is made of contents that cannot be read, so none is on its way, though nothing is kept of that.</summary>
+        [LinuxFact]
+        public async Task GetAsync_AStreamOfContentsThatCannotBeRead_IsNone()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
+            string path = ObjectStore.GetPath(file.Sha256);
+            File.Delete(path);
+
+            // Opens, and fails each read at its start.
+            File.CreateSymbolicLink(path, "/proc/self/mem");
+
+            await Assert.ThrowsAsync<NotFoundException>(() => GetAsync(shelf, file, DerivedKind.Stream));
         }
 
         /// <summary>The quick lane's problems say nothing of the long lane's runs.</summary>
@@ -176,6 +198,11 @@ namespace ByteShelf.Server.Tests.Derived
 
             AssertKept((DerivedKind.Stream, file));
             Assert.Equal("streams", Store.Find(DerivedKind.Stream, file.Sha256)!.Plugin);
+        }
+
+        [Fact]
+        public void DerivedMaking_OfAGroupMadeOnlyWhenAsked_IsNone()
+        {
             Assert.Throws<ArgumentException>(() => ActivatorUtilities.CreateInstance<DerivedMakingWorker>(Services, MakingGroup.Full));
         }
 

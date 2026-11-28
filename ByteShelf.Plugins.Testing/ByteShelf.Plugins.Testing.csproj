@@ -13,4 +13,9 @@
     <ProjectReference Include="..\ByteShelfCommon\ByteShelfCommon.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The rule itself, the server's source: the server is not referenced, as a plugin's tests run without it. -->
+    <Compile Include="..\ByteShelf.Server\Derived\Services\MadeKindRule.cs" Link="MadeKindRule.cs" />
+  </ItemGroup>
+
 </Project>

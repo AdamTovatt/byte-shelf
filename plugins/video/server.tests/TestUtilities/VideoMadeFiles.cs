@@ -8,10 +8,9 @@ namespace ByteShelf.Plugins.Video.Tests.TestUtilities
     {
         extension(MadeFiles)
         {
-            public static async Task<MadeFiles> MakeAsync(byte[] contents, params IReadOnlyList<DerivedKind> kinds)
+            public static Task<MadeFiles> MakeAsync(byte[] contents, params IReadOnlyList<DerivedKind> kinds)
             {
-                using MemoryStream stream = new MemoryStream(contents, writable: false);
-                return await MadeFiles.MakeAsync(stream, kinds);
+                return MadeFiles.MakeAsync(new VideoMaker(), contents, kinds);
             }
 
             public static Task<MadeFiles> MakeAsync(Stream contents, params IReadOnlyList<DerivedKind> kinds)

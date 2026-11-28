@@ -20,6 +20,8 @@ namespace ByteShelf.Server.Derived.Services
             : base(scopeFactory, timeProvider, logger)
         {
             _group = group;
+
+            // The one check that the group is made in the background: a type of such groups would make it where it is made.
             _job = group.Start.Job ?? throw new ArgumentException($"The group {group} is not made in the background.", nameof(group));
             _plugins = plugins;
         }
@@ -33,7 +35,7 @@ namespace ByteShelf.Server.Derived.Services
 
         protected override async Task<DerivedMakingSummary> RunOnceAsync(IServiceProvider services, CancellationToken cancellationToken)
         {
-            int[] made = await Task.WhenAll(_plugins.All.Where(plugin => plugin.MakesAny(_group)).Select(plugin => RunPluginAsync(services, plugin, cancellationToken)));
+            int[] made = await Task.WhenAll(DerivedBackground.MakersOf(_plugins).Where(maker => maker.Group == _group).Select(maker => RunPluginAsync(services, maker.Plugin, cancellationToken)));
             return new DerivedMakingSummary(made.Sum());
         }
 

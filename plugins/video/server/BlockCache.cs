@@ -57,6 +57,20 @@ namespace ByteShelf.Plugins.Video
             }
         }
 
+        /// <summary><paramref name="count"/> bytes of the contents at <paramref name="position"/>, across blocks; fewer only at their end.</summary>
+        public async Task<byte[]> ReadExactlyAsync(long position, int count, CancellationToken cancellationToken = default)
+        {
+            byte[] bytes = new byte[count];
+            int read = 0;
+            int last;
+            while (read < count && (last = await ReadAsync(position + read, bytes.AsMemory(read), cancellationToken)) > 0)
+            {
+                read += last;
+            }
+
+            return read == count ? bytes : bytes[..read];
+        }
+
         private async Task<(long Index, byte[] Bytes, int Length)> BlockAsync(long index, CancellationToken cancellationToken)
         {
             if (_kept.TryGetValue(index, out LinkedListNode<(long Index, byte[] Bytes, int Length)>? kept))

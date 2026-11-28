@@ -62,6 +62,7 @@ namespace ByteShelf.Server.Plugins.Processes
             }
 
             string location = arguments[0];
+            bool lowestPriority = arguments is [_, LowestPriorityFlag];
             ProcessGroup.Lead();
             LeaveStoppingToTheServer();
             KeepMemoryOutOfCoreDumps();
@@ -84,7 +85,7 @@ namespace ByteShelf.Server.Plugins.Processes
                 throw;
             }
 
-            if (arguments.Length > 1)
+            if (lowestPriority)
             {
                 // Once loaded, which the load limit holds to the same time in either lane, and before any run: the
                 // group's every thread now, and every thread and process one starts from now on, is at it too.

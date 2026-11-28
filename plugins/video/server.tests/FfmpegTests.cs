@@ -41,7 +41,11 @@ namespace ByteShelf.Plugins.Video.Tests
             string folder = Path.GetDirectoryName(Ffmpeg.Locate().FfmpegPath)!;
 
             Assert.Contains("GNU GENERAL PUBLIC LICENSE", File.ReadAllText(Path.Combine(folder, "LICENSE.txt")));
-            Assert.Contains("SHA-256", File.ReadAllText(Path.Combine(folder, "BUILD.txt")));
+            string build = File.ReadAllText(Path.Combine(folder, "BUILD.txt"));
+            Assert.Contains("SHA-256", build);
+
+            // Each library it is built with and where its source is, as its licence asks: libx264 among them.
+            Assert.Contains("x264: https://code.videolan.org/videolan/x264.git at ", build);
         }
 
         [FfmpegFact]
@@ -59,8 +63,8 @@ namespace ByteShelf.Plugins.Video.Tests
             {
                 await File.WriteAllBytesAsync(file, await TestVideos.StreamingWellAsync());
 
-                await Assert.ThrowsAsync<FfmpegFailedException>(() => TestVideos.Ffmpeg.RunFfprobeAsync([.. Ffmpeg.Input("file:" + file, RangeServer.SeekingRequestBytes)]));
-                await Assert.ThrowsAsync<FfmpegFailedException>(() => TestVideos.Ffmpeg.RunFfprobeAsync([.. Ffmpeg.Input(file, RangeServer.SeekingRequestBytes)]));
+                await Assert.ThrowsAsync<FfmpegFailedException>(() => TestVideos.Ffmpeg.RunFfprobeAsync([.. Ffmpeg.Input("file:" + file, VideoSource.SeekingRequestBytes)]));
+                await Assert.ThrowsAsync<FfmpegFailedException>(() => TestVideos.Ffmpeg.RunFfprobeAsync([.. Ffmpeg.Input(file, VideoSource.SeekingRequestBytes)]));
             }
             finally
             {
@@ -68,11 +72,23 @@ namespace ByteShelf.Plugins.Video.Tests
             }
         }
 
-        /// <summary>A video's frames to standard output, which no one reads.</summary>
+        /// <summary>A video's frames to standard output, which no one reads: ffmpeg ends all the same, of megabytes it was not stopped for.</summary>
         [FfmpegFact]
         public async Task RunFfmpegAsync_WhatItPrints_IsThrownAway()
         {
-            await TestVideos.Ffmpeg.RunFfmpegAsync(["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30:duration=2", "-f", "rawvideo", "-"]);
+            Task running = TestVideos.Ffmpeg.RunFfmpegAsync(["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30:duration=2", "-f", "rawvideo", "-"]);
+
+            await running.WaitAsync(TimeSpan.FromSeconds(30));
+            Assert.True(running.IsCompletedSuccessfully);
+        }
+
+        /// <summary>The plugin then cannot run until there is room, as its host takes an IOException of ENOSPC, which says nothing of the contents.</summary>
+        [FfmpegFact]
+        public async Task RunFfmpegAsync_ADiskThatIsFull_IsAnIOExceptionOfIt()
+        {
+            IOException full = await Assert.ThrowsAsync<IOException>(() => TestVideos.Ffmpeg.RunFfmpegAsync(["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30:duration=1", "-f", "rawvideo", "-y", "/dev/full"]));
+
+            Assert.Equal(28, full.HResult);
         }
 
         [FfmpegFact]

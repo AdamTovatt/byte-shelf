@@ -50,8 +50,10 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
         [LinuxTheory]
         [InlineData(DerivedKind.Stream, true)]
         [InlineData(DerivedKind.Thumbnail, false)]
-        public async Task RunAsync_OfAStream_IsAtTheLowestPriorityWithEveryThreadAndProcessItStarts(DerivedKind kind, bool lowest)
+        public async Task RunAsync_InEachLane_IsAtItsPriorityWithEveryThreadAndProcessItStarts(DerivedKind kind, bool lowest)
         {
+            // Else a run at the lowest could not be told from one at the tests' own.
+            Assert.True(ProcStat.Of(Environment.ProcessId).Nice < LowestNice, "The tests run at the lowest priority already.");
             ShelfFile file = await StoreTextAsync(await CreateShelfAsync(), "/a.txt", Plugins.WithChild("a", "wait"));
             Task<MakingOutcome> making = MakeAsync(file, kind);
             int child = await Plugins.ChildOfAsync("a");
@@ -82,11 +84,33 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
             Assert.Null(Store.Find(DerivedKind.Stream, file.Sha256));
         }
 
+        [UnixFact]
+        public async Task StopAsync_OfContentsAStreamWasMadeOfBefore_LeavesTheStreamBeingMadeOfOthersAlone()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile first = await StoreTextAsync(shelf, "/first.txt", "first");
+            Assert.Equal(MakingOutcome.Kept, await MakeAsync(first, DerivedKind.Stream));
+            string waiting = Plugins.Waiting("second", DerivedKind.Stream);
+            ShelfFile second = await StoreTextAsync(shelf, "/second.txt", waiting);
+            Task<MakingOutcome> making = MakeAsync(second, DerivedKind.Stream);
+
+            using (await Plugins.StartedAsync("second"))
+            {
+                await Processes.StopAsync(first.Sha256).WaitAsync(RealTimeLimit);
+                Plugins.GoOn("second");
+            }
+
+            // Once: the run was not ended to be done anew in a process that never read the first.
+            Assert.Equal(MakingOutcome.Kept, await making);
+            Assert.Equal(["first: Stream", $"{waiting}: Stream"], Plugins.Runs);
+        }
+
         [LinuxFact]
         public void TakeLowestPriority_InAProcessThatLeadsNoGroup_IsRefusedRatherThanLoweringItsParentsGroup()
         {
             int before = ProcStat.Of(Environment.ProcessId).Nice;
 
+            // The tests' process leads no group: only a plugin's own process calls ProcessGroup.Lead, at its start.
             Assert.Throws<InvalidOperationException>(ProcessGroup.TakeLowestPriority);
 
             Assert.Equal(before, ProcStat.Of(Environment.ProcessId).Nice);

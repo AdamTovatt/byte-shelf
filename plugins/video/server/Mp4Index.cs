@@ -20,12 +20,12 @@ namespace ByteShelf.Plugins.Video
         private const int LargeHeaderBytes = 16;
 
         /// <summary>What the boxes of <paramref name="contents"/> say; null when they are no MP4's.</summary>
-        public static async Task<Mp4Index?> ReadAsync(BlockCache contents, CancellationToken cancellationToken)
+        public static async Task<Mp4Index?> ReadAsync(BlockCache contents)
         {
             bool first = true;
             for (long position = 0; position + HeaderBytes <= contents.Length;)
             {
-                if (await BoxAtAsync(contents, position, contents.Length, cancellationToken) is not { } box)
+                if (await BoxAtAsync(contents, position, contents.Length) is not { } box)
                 {
                     return null;
                 }
@@ -46,7 +46,7 @@ namespace ByteShelf.Plugins.Video
                             return new Mp4Index(IndexAtFront: true, MaxKeyframeGapSeconds: null);
                         }
 
-                        byte[] index = await ReadAsync(contents, box.BodyStart, (int)box.BodyLength, cancellationToken);
+                        byte[] index = await contents.ReadExactlyAsync(box.BodyStart, (int)box.BodyLength);
                         return new Mp4Index(IndexAtFront: true, MaxKeyframeGapSeconds: KeyframeGapOf(index));
                 }
 
@@ -72,51 +72,39 @@ namespace ByteShelf.Plugins.Video
 
         private static double? VideoTrackGap(ReadOnlySpan<byte> trak)
         {
-            if (Child(trak, "mdia") is not { } mdiaAt)
-            {
-                return null;
-            }
-
-            ReadOnlySpan<byte> mdia = trak.Slice(mdiaAt.Start, mdiaAt.Length);
-            if (Child(mdia, "hdlr") is not { } hdlr
+            if (!TryChild(trak, "mdia", out ReadOnlySpan<byte> mdia)
+                || !TryChild(mdia, "hdlr", out ReadOnlySpan<byte> hdlr)
                 || hdlr.Length < 12
-                || Encoding.Latin1.GetString(mdia.Slice(hdlr.Start + 8, 4)) != "vide"
-                || Child(mdia, "mdhd") is not { } mdhdAt
-                || Child(mdia, "minf") is not { } minfAt)
-            {
-                return null;
-            }
-
-            ReadOnlySpan<byte> minf = mdia.Slice(minfAt.Start, minfAt.Length);
-            if (Timescale(mdia.Slice(mdhdAt.Start, mdhdAt.Length)) is not { } timescale
-                || Child(minf, "stbl") is not { } stblAt)
-            {
-                return null;
-            }
-
-            ReadOnlySpan<byte> stbl = minf.Slice(stblAt.Start, stblAt.Length);
-            if (Child(stbl, "stts") is not { } stts || Pairs(stbl.Slice(stts.Start, stts.Length)) is not { } runs)
+                || Encoding.Latin1.GetString(hdlr.Slice(8, 4)) != "vide"
+                || !TryChild(mdia, "mdhd", out ReadOnlySpan<byte> mdhd)
+                || Timescale(mdhd) is not { } timescale
+                || !TryChild(mdia, "minf", out ReadOnlySpan<byte> minf)
+                || !TryChild(minf, "stbl", out ReadOnlySpan<byte> stbl)
+                || !TryChild(stbl, "stts", out ReadOnlySpan<byte> stts)
+                || Table(stts, fields: 2) is not { } times)
             {
                 return null;
             }
 
             uint[]? sync = null;
-            if (Child(stbl, "stss") is { } stss && (sync = Entries(stbl.Slice(stss.Start, stss.Length))) == null)
+            if (TryChild(stbl, "stss", out ReadOnlySpan<byte> stss) && (sync = Table(stss, fields: 1)) == null)
             {
                 return null;
             }
 
+            (uint Count, uint Delta)[] runs = [.. Enumerable.Range(0, times.Length / 2).Select(entry => (times[entry * 2], times[(entry * 2) + 1]))];
             return GapOf(runs, sync, timescale);
         }
 
         /// <summary>
         /// The most time between keyframes, from the start to the first and from the last to the end. <paramref name="runs"/>
         /// are <c>stts</c>'s: so many samples, each so long; <paramref name="sync"/> the keyframes' numbers, from 1, or null
-        /// when every sample is one. Null when there are no samples, or no keyframe among them.
+        /// when every sample is one. Null when there are no samples, or no keyframe among them. Times are counted in
+        /// doubles, which a table of any numbers neither wraps nor overflows.
         /// </summary>
         internal static double? GapOf(IReadOnlyList<(uint Count, uint Delta)> runs, uint[]? sync, uint timescale)
         {
-            long samples = runs.Sum(run => (long)run.Count);
+            double samples = runs.Sum(run => (double)run.Count);
             if (samples == 0)
             {
                 return null;
@@ -127,22 +115,22 @@ namespace ByteShelf.Plugins.Video
                 return (double)runs.Where(run => run.Count > 0).Max(run => run.Delta) / timescale;
             }
 
-            long gap = 0;
-            long last = 0;
+            double gap = 0;
+            double last = 0;
             bool any = false;
             int at = 0;
-            long runFirst = 1;
-            long runTime = 0;
+            double runFirst = 1;
+            double runTime = 0;
             foreach (uint number in sync.Where(number => number >= 1 && number <= samples).Distinct().Order())
             {
                 while (number >= runFirst + runs[at].Count)
                 {
                     runFirst += runs[at].Count;
-                    runTime += (long)runs[at].Count * runs[at].Delta;
+                    runTime += (double)runs[at].Count * runs[at].Delta;
                     at++;
                 }
 
-                long time = runTime + ((number - runFirst) * runs[at].Delta);
+                double time = runTime + ((number - runFirst) * runs[at].Delta);
                 gap = Math.Max(gap, time - last);
                 last = time;
                 any = true;
@@ -153,8 +141,8 @@ namespace ByteShelf.Plugins.Video
                 return null;
             }
 
-            long end = runs.Sum(run => (long)run.Count * run.Delta);
-            return (double)Math.Max(gap, end - last) / timescale;
+            double end = runs.Sum(run => (double)run.Count * run.Delta);
+            return Math.Max(gap, end - last) / timescale;
         }
 
         private static uint? Timescale(ReadOnlySpan<byte> mdhd)
@@ -169,8 +157,11 @@ namespace ByteShelf.Plugins.Video
             return timescale == 0 ? null : timescale;
         }
 
-        /// <summary>A full box's list of pairs of 32-bit numbers, as <c>stts</c>'s; null when it is broken.</summary>
-        private static (uint Count, uint Delta)[]? Pairs(ReadOnlySpan<byte> box)
+        /// <summary>
+        /// A full box's table of entries of <paramref name="fields"/> 32-bit numbers each, as <c>stts</c>'s pairs or
+        /// <c>stss</c>'s numbers, one after another; null when it is broken.
+        /// </summary>
+        private static uint[]? Table(ReadOnlySpan<byte> box, int fields)
         {
             if (box.Length < 8)
             {
@@ -178,54 +169,34 @@ namespace ByteShelf.Plugins.Video
             }
 
             uint count = BinaryPrimitives.ReadUInt32BigEndian(box[4..]);
-            if (count > (box.Length - 8) / 8)
+            if (count > (box.Length - 8) / (4 * fields))
             {
                 return null;
             }
 
-            (uint Count, uint Delta)[] pairs = new (uint Count, uint Delta)[count];
-            for (int entry = 0; entry < count; entry++)
+            uint[] numbers = new uint[count * fields];
+            for (int number = 0; number < numbers.Length; number++)
             {
-                pairs[entry] = (BinaryPrimitives.ReadUInt32BigEndian(box[(8 + (entry * 8))..]), BinaryPrimitives.ReadUInt32BigEndian(box[(12 + (entry * 8))..]));
+                numbers[number] = BinaryPrimitives.ReadUInt32BigEndian(box[(8 + (number * 4))..]);
             }
 
-            return pairs;
+            return numbers;
         }
 
-        /// <summary>A full box's list of 32-bit entries, as <c>stss</c>'s.</summary>
-        private static uint[]? Entries(ReadOnlySpan<byte> box)
-        {
-            if (box.Length < 8)
-            {
-                return null;
-            }
-
-            uint count = BinaryPrimitives.ReadUInt32BigEndian(box[4..]);
-            if (count > (box.Length - 8) / 4)
-            {
-                return null;
-            }
-
-            uint[] entries = new uint[count];
-            for (int entry = 0; entry < count; entry++)
-            {
-                entries[entry] = BinaryPrimitives.ReadUInt32BigEndian(box[(8 + (entry * 4))..]);
-            }
-
-            return entries;
-        }
-
-        private static (int Start, int Length)? Child(ReadOnlySpan<byte> body, string type)
+        /// <summary>The body of the first box of <paramref name="type"/> in <paramref name="body"/>.</summary>
+        private static bool TryChild(ReadOnlySpan<byte> body, string type, out ReadOnlySpan<byte> child)
         {
             foreach ((string childType, int start, int length) in Children(body))
             {
                 if (childType == type)
                 {
-                    return (start, length);
+                    child = body.Slice(start, length);
+                    return true;
                 }
             }
 
-            return null;
+            child = default;
+            return false;
         }
 
         /// <summary>The boxes in <paramref name="body"/>, each by its type and where its body is in it, until one is broken.</summary>
@@ -241,10 +212,9 @@ namespace ByteShelf.Plugins.Video
             return children;
         }
 
-        private static async Task<(string Type, long BodyStart, long BodyLength, long End)?> BoxAtAsync(
-            BlockCache contents, long position, long end, CancellationToken cancellationToken)
+        private static async Task<(string Type, long BodyStart, long BodyLength, long End)?> BoxAtAsync(BlockCache contents, long position, long end)
         {
-            byte[] header = await ReadAsync(contents, position, (int)Math.Min(LargeHeaderBytes, end - position), cancellationToken);
+            byte[] header = await contents.ReadExactlyAsync(position, (int)Math.Min(LargeHeaderBytes, end - position));
             if (HeaderOf(header, end - position) is not { } box)
             {
                 return null;
@@ -284,19 +254,6 @@ namespace ByteShelf.Plugins.Video
             }
 
             return size < headerLength || size > room ? null : (type, headerLength, size);
-        }
-
-        private static async Task<byte[]> ReadAsync(BlockCache contents, long position, int count, CancellationToken cancellationToken)
-        {
-            byte[] bytes = new byte[count];
-            int read = 0;
-            int last;
-            while (read < count && (last = await contents.ReadAsync(position + read, bytes.AsMemory(read), cancellationToken)) > 0)
-            {
-                read += last;
-            }
-
-            return read == count ? bytes : bytes[..read];
         }
     }
 }

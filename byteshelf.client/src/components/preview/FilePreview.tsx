@@ -15,7 +15,7 @@ import { usePluginsAwaited } from '../../hooks/usePluginHost';
 import { usePreviewContents } from '../../hooks/usePreviewContents';
 import { useViewers } from '../../hooks/useViewers';
 import { formatBytes } from '../../lib/format';
-import { isTypingTarget } from '../../lib/keys';
+import { isPlainKey, isTypingTarget } from '../../lib/keys';
 import { openable, type OpenableFile, type ReadableFile } from '../../services/fileReading';
 import type { ShelfFile } from '../../services/shelfService';
 import { FileDetailsDialog } from '../FileDetailsDialog';
@@ -58,7 +58,7 @@ export function FilePreview({ previewed, error, steps, previous, next, onClose, 
   /** A key it hears as the overlay on top: the viewer's first, then a step to the file beside it. */
   function onKeyDown(event: KeyboardEvent): void {
     host.offer(event);
-    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.defaultPrevented || ownsArrowKeys(event.target)) return;
+    if (!isPlainKey(event) || event.defaultPrevented || ownsArrowKeys(event.target)) return;
     const step = event.key === 'ArrowLeft' ? steps?.toPrevious : event.key === 'ArrowRight' ? steps?.toNext : null;
     if (!step) return;
     event.preventDefault();

@@ -1,7 +1,9 @@
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
-import { clamp, formatDuration } from '@byteshelf/plugin';
-import { STEP_SECONDS } from './playerKeys';
+import { clamp, formatDuration, isPlainKey } from '@byteshelf/plugin';
 import { frameAt, type Storyboard } from './recordedVideo';
+
+/** How far the arrow keys move the seek bar while it has the focus. */
+export const STEP_SECONDS = 5;
 
 /** The storyboard's grid, and where it is loaded from. */
 export interface StoryboardImage {
@@ -10,7 +12,8 @@ export interface StoryboardImage {
 }
 
 interface SeekBarProps {
-  durationSeconds: number;
+  /** How long the video plays; null while that is not known, as of a recording a browser made. */
+  durationSeconds: number | null;
   currentSeconds: number;
   /** What the browser has of the video, each from a time to a time. */
   buffered: readonly (readonly [number, number])[];
@@ -20,9 +23,17 @@ interface SeekBarProps {
 
 /**
  * Where the video is and what of it is loaded, which a click or a drag moves it to, showing the storyboard's frame
- * of where the pointer is. With the focus, ← and → move it 5 seconds, which then step no file in the preview.
+ * of where the pointer is. With the focus, ← and → move it 5 seconds, which then step no file in the preview. Of a
+ * video whose length is not known it says only where it is, and moves to nowhere: a share of no length is none.
  */
-export function SeekBar({ durationSeconds, currentSeconds, buffered, onSeek, storyboard }: SeekBarProps) {
+export function SeekBar({ durationSeconds, ...props }: SeekBarProps) {
+  return durationSeconds === null
+    ? <div role="slider" aria-label="Seek" aria-disabled aria-valuetext={formatDuration(props.currentSeconds, { isElapsed: true })} className="video-flex video-h-8 video-min-w-16 video-flex-1 video-items-center"><div className="video-h-1 video-w-full video-rounded-full video-bg-current video-opacity-20" /></div>
+    : <KnownSeekBar durationSeconds={durationSeconds} {...props} />;
+}
+
+/** The seek bar of a video whose length is known. */
+function KnownSeekBar({ durationSeconds, currentSeconds, buffered, onSeek, storyboard }: SeekBarProps & { durationSeconds: number }) {
   const bar = useRef<HTMLDivElement>(null);
   /** Where the pointer is over it, or drags it to, in seconds. */
   const [pointed, setPointed] = useState<number | null>(null);
@@ -47,7 +58,7 @@ export function SeekBar({ durationSeconds, currentSeconds, buffered, onSeek, sto
       End: () => onSeek(durationSeconds),
     };
     const move = moves[event.key];
-    if (!move || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (!move || !isPlainKey(event)) return;
     event.preventDefault();
     move();
   }
@@ -61,7 +72,7 @@ export function SeekBar({ durationSeconds, currentSeconds, buffered, onSeek, sto
       aria-valuemin={0}
       aria-valuemax={Math.round(durationSeconds)}
       aria-valuenow={Math.round(shown)}
-      aria-valuetext={`${formatDuration(shown, { isElapsed: true })} of ${formatDuration(durationSeconds)}`}
+      aria-valuetext={`${formatDuration(shown, { isElapsed: true })} of ${formatDuration(durationSeconds, { isElapsed: true })}`}
       className="video-relative video-flex video-h-8 video-min-w-16 video-flex-1 video-cursor-pointer video-touch-none video-items-center video-rounded-full video-outline-none focus-visible:video-ring-2 focus-visible:video-ring-current"
       onKeyDown={onKeyDown}
       onPointerDown={(event) => {

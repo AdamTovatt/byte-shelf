@@ -1,10 +1,10 @@
-namespace ByteShelf.Plugins.Video.Tests.TestUtilities
+namespace ByteShelf.Plugins.Testing
 {
     /// <summary>
-    /// Contents that count how many bytes were read of them. Every read comes to <see cref="Read"/>, which a stream's
-    /// other reads go through when they are not overridden.
+    /// Contents that count how many bytes were read of them, as a test of how little a maker or reader reads. Every
+    /// read comes to <see cref="Read"/>, which a stream's other reads go through when they are not overridden.
     /// </summary>
-    internal sealed class CountingStream(Stream contents) : Stream
+    public sealed class CountingStream(Stream contents) : Stream
     {
         private readonly Stream _contents = contents;
         private long _read;

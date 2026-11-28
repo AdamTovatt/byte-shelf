@@ -6,7 +6,7 @@ example. The kinds are `ByteShelfCommon.DerivedKind`:
 | Kind | What it is | Made |
 |---|---|---|
 | `thumbnail` | A small picture for listings | after an upload, and for files already stored |
-| `preview` | What a viewer shows until it has the contents | with the thumbnail, from one run |
+| `preview` | What a viewer shows of a file before its contents or beside them: an image's smaller copy, a video's storyboard | with the thumbnail, from one run |
 | `full` | The whole contents in a type a browser shows | when asked for |
 | `agent` | What an agent is shown: a PNG, JPEG, GIF or WebP, as it is shown nothing else ([Mcp](../Mcp/Mcp.md)) | when asked for |
 | `stream` | The contents remade for streaming, in a type a browser plays and seeks | after an upload, and for files already stored; never when asked for, as it may take hours |
@@ -120,10 +120,10 @@ Listings, trees, searches, a deletion's tree and a file's own record name the ki
 word for each that changes when another is made in its place (`ShelfFile.Derived`, `DerivedListing`): so a
 client asks for none that has yet to be made. Naming them makes nothing. What is on disk of contents is read once,
 for at most 100,000 contents, and again once the server changes it (`KnownEntries`). One that came or went is told
-to open listings ([Invalidation](../Invalidation/Invalidation.md)). From ByteShelfCommon 4.1 on, a client reads
-them without the kinds it does not know (`KnownEnumKeysConverter`), so a kind added later fails none of its
-listings. Earlier versions fail on any kind they do not know: on a server whose plugins make streams, a client
-before 4.1 cannot list a folder that holds a file with one.
+to open listings ([Invalidation](../Invalidation/Invalidation.md)). ByteShelfCommon reads them without the kinds
+it does not know (`KnownEnumKeysConverter`), so a kind added later fails none of its listings. Versions up to
+4.0.1 fail on any kind they do not know: on a server whose plugins make streams, a client of one cannot list a
+folder that holds a file with one.
 
 The web UI adds a query parameter `v` to the address an `<img>` loads one from, which the server does not read:
 what tells that one from any other at its place, so that the browser, which shows its copy for an hour, never

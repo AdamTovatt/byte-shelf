@@ -5,6 +5,7 @@ namespace ByteShelf.Plugins.Video.Tests
         /// <summary>10 seconds of 10 MB: exactly 8 Mbps.</summary>
         private static readonly VideoProbe Streaming = new VideoProbe(
             DurationSeconds: 10,
+            VideoStream: 0,
             Width: 1920,
             Height: 1080,
             VideoCodec: "h264",

@@ -20,6 +20,9 @@ namespace ByteShelf.Server.Plugins.Processes
         /// <param name="mediaTypes">What plain files hold the contents as; one at least.</param>
         JsonElement? Prepare(IReadOnlyList<string> mediaTypes);
 
+        /// <summary>Told that a loaded process of the plugin was given the run, which says the plugin can run; it may be told again, as a run is done anew.</summary>
+        void Began();
+
         /// <summary>Takes the result, with whatever files it wants from <paramref name="folder"/>, which is emptied next.</summary>
         Task<T> TakeAsync(PluginRunResult result, WorkFolder folder, CancellationToken cancellationToken);
     }

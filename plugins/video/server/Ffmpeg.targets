@@ -4,7 +4,8 @@
     by its release, its asset and the asset's SHA-256, downloaded as the plugin builds and kept under obj, never in the
     repository. A build takes the one of the machine it is on; a publish, which is what the plugin's zip is made of,
     takes every one, so the zip is for all of them. Each comes into ffmpeg/<runtime>/ with ffmpeg's licence and what
-    build it is (BUILD.txt). README.md says how to move to a newer one.
+    build it is, with each library it is built with and where its source is (BUILD.txt, of FfmpegLibraries.txt).
+    README.md says how to move to a newer one.
   -->
   <PropertyGroup>
     <FfmpegRelease>autobuild-2026-10-31-12-59</FfmpegRelease>
@@ -23,6 +24,9 @@
     <ItemGroup>
       <_FfmpegWanted Include="@(FfmpegBuild)" Condition="'$(_IsPublishing)' == 'true' Or '%(Runtime)' == '$(FfmpegHostRuntime)'" Folder="$(FfmpegCache)%(Runtime)/" />
     </ItemGroup>
+    <ReadLinesFromFile File="$(MSBuildThisFileDirectory)FfmpegLibraries.txt">
+      <Output TaskParameter="Lines" ItemName="_FfmpegLibrary" />
+    </ReadLinesFromFile>
   </Target>
 
   <!-- Once for each build wanted, and again only when this file changes. -->
@@ -46,15 +50,23 @@
     <MakeDir Directories="$(_FfmpegFolder)" />
     <Exec Command="tar -xJf &quot;$(_FfmpegArchive)&quot; -C &quot;$(_FfmpegFolder)&quot; --strip-components=2 &quot;%(_FfmpegWanted.Asset)/bin/ffmpeg&quot; &quot;%(_FfmpegWanted.Asset)/bin/ffprobe&quot;" />
     <Exec Command="tar -xJf &quot;$(_FfmpegArchive)&quot; -C &quot;$(_FfmpegFolder)&quot; --strip-components=1 &quot;%(_FfmpegWanted.Asset)/LICENSE.txt&quot;" />
-    <WriteLinesToFile
-      File="$(_FfmpegFolder)BUILD.txt"
-      Overwrite="true"
-      Lines="ffmpeg and ffprobe of %(_FfmpegWanted.Asset), static, from the release $(FfmpegRelease) of https://github.com/BtbN/FFmpeg-Builds, which says how it was built;$(_FfmpegUrl);SHA-256 of that archive: %(_FfmpegWanted.Sha256);ffmpeg's source: https://git.ffmpeg.org/ffmpeg.git, at the revision its name ends with (after the g)" />
     <Delete Files="$(_FfmpegArchive)" />
     <Touch Files="$(_FfmpegFolder).fetched" AlwaysCreate="true" />
   </Target>
 
-  <Target Name="AddFfmpeg" BeforeTargets="AssignTargetPaths" DependsOnTargets="_FetchFfmpeg">
+  <!-- What build it is and what it is built with, again whenever this file or the list of its libraries changes. -->
+  <Target
+    Name="_DescribeFfmpeg"
+    DependsOnTargets="_FetchFfmpeg"
+    Inputs="$(MSBuildThisFileFullPath);$(MSBuildThisFileDirectory)FfmpegLibraries.txt"
+    Outputs="%(_FfmpegWanted.Folder)BUILD.txt">
+    <WriteLinesToFile
+      File="%(_FfmpegWanted.Folder)BUILD.txt"
+      Overwrite="true"
+      Lines="ffmpeg and ffprobe of %(_FfmpegWanted.Asset), static, from the release $(FfmpegRelease) of https://github.com/BtbN/FFmpeg-Builds, which says how it was built;$(FfmpegReleaseUrl)/%(_FfmpegWanted.Asset).tar.xz;SHA-256 of that archive: %(_FfmpegWanted.Sha256);ffmpeg's source: https://git.ffmpeg.org/ffmpeg.git, at the revision its name ends with (after the g);;Built with these, each from its source at the revision named, by the scripts of https://github.com/BtbN/FFmpeg-Builds/tree/$(FfmpegRelease)/scripts.d:;@(_FfmpegLibrary)" />
+  </Target>
+
+  <Target Name="AddFfmpeg" BeforeTargets="AssignTargetPaths" DependsOnTargets="_DescribeFfmpeg">
     <ItemGroup>
       <_FfmpegFile Include="@(_FfmpegWanted->'%(Folder)ffmpeg');@(_FfmpegWanted->'%(Folder)ffprobe');@(_FfmpegWanted->'%(Folder)LICENSE.txt');@(_FfmpegWanted->'%(Folder)BUILD.txt')" />
       <None Include="@(_FfmpegFile)" Link="ffmpeg/%(_FfmpegFile.Runtime)/%(_FfmpegFile.Filename)%(_FfmpegFile.Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

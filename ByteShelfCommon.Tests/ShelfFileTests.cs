@@ -20,30 +20,17 @@ namespace ByteShelfCommon.Tests
             Assert.Equal(new Dictionary<DerivedKind, string> { [DerivedKind.Thumbnail] = "1", [DerivedKind.Preview] = "3" }, file.Derived);
         }
 
+        /// <summary>Read by camelCase names alone (<see cref="Derived_AKindThisClientDoesNotKnow_IsLeftOutAndTheRestRead"/>), so written by them too.</summary>
         [Fact]
-        public void Derived_EveryKind_IsWrittenByItsCamelCaseNameAndReadBack()
+        public void Derived_EveryKind_IsReadByItsCamelCaseNameAndWrittenBack()
         {
             Dictionary<DerivedKind, string> derived = Enum.GetValues<DerivedKind>().ToDictionary(kind => kind, kind => ((int)kind).ToString());
-            ShelfFile file = Read("{}");
+            const string Written = "{\"thumbnail\":\"0\",\"preview\":\"1\",\"full\":\"2\",\"agent\":\"3\",\"stream\":\"4\"}";
 
-            string json = JsonSerializer.Serialize(new ShelfFile
-            {
-                Id = file.Id,
-                ShelfId = file.ShelfId,
-                DirectoryId = file.DirectoryId,
-                Name = file.Name,
-                Path = file.Path,
-                SizeBytes = file.SizeBytes,
-                ContentType = file.ContentType,
-                Sha256 = file.Sha256,
-                CreatedAt = file.CreatedAt,
-                UpdatedAt = file.UpdatedAt,
-                Encrypted = file.Encrypted,
-                Derived = derived,
-            }, ByteShelfJsonContext.Default.ShelfFile);
+            ShelfFile file = Read(Written);
 
-            Assert.Contains("\"derived\":{\"thumbnail\":\"0\",\"preview\":\"1\",\"full\":\"2\",\"agent\":\"3\",\"stream\":\"4\"}", json);
-            Assert.Equal(derived, JsonSerializer.Deserialize(json, ByteShelfJsonContext.Default.ShelfFile)!.Derived);
+            Assert.Equal(derived, file.Derived);
+            Assert.Contains($"\"derived\":{Written}", JsonSerializer.Serialize(file, ByteShelfJsonContext.Default.ShelfFile));
         }
 
         [Theory]

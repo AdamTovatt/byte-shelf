@@ -19,7 +19,7 @@ namespace ByteShelf.Plugins.Video.Tests
         }
 
         [Fact]
-        public async Task ReadAsync_TheLastBlock_IsAsLongAsTheRest()
+        public async Task ReadAsync_TheLastBlock_IsWhatIsLeftOfTheContents()
         {
             using BlockCache cache = new BlockCache(new MemoryStream(Contents));
             byte[] buffer = new byte[1000];

@@ -8,6 +8,11 @@ namespace ByteShelf.Plugins.Video.Tests
 {
     public sealed class VideoMakerTests
     {
+        private const string SmallPicture = "testsrc2=size=320x240:rate=30:duration=4";
+
+        /// <summary>The lowest quality, and a keyframe only every 300 frames, which is one in all: as few bytes as it can be.</summary>
+        private static readonly string[] SmallestArguments = ["-c:v", "libx264", "-crf", "51", "-g", "300"];
+
         [FfmpegFact]
         public async Task MakeAsync_Thumbnail_IsAWebPPosterOfAtMost320Pixels()
         {
@@ -82,6 +87,29 @@ namespace ByteShelf.Plugins.Video.Tests
             Assert.Equal(Enumerable.Range(0, 10), await WhiteFramesAsync(made.BytesOf(DerivedKind.Preview)));
         }
 
+        /// <summary>
+        /// Cut short at 4.5 seconds of 20, white from 2 seconds: the storyboard has its first frame, black, and its second,
+        /// white, and each past the cut is the nearest of those, the second.
+        /// </summary>
+        [FfmpegFact]
+        public async Task MakeAsync_AVideoCutShort_FillsEachFrameItHasNotWithTheNearest()
+        {
+            byte[] video = await TestVideos.CutAsync(await TestVideos.Mp4Async(Lit(2, 20), "-c:v", "libx264", "-g", "1", "-movflags", "+faststart"), 4.5);
+
+            MadeFiles made = await MadeFiles.MakeAsync(video, DerivedKind.Preview);
+
+            Assert.Equal(Enumerable.Range(1, 9), await WhiteFramesAsync(made.BytesOf(DerivedKind.Preview)));
+        }
+
+        /// <summary>Its poster at its start and a stream, but no storyboard, which is laid out by how long it plays.</summary>
+        [FfmpegFact]
+        public async Task MakeAsync_AVideoThatDoesNotSayHowLongItPlays_MakesAllButTheStoryboard()
+        {
+            MadeFiles made = await MadeFiles.MakeAsync(await TestVideos.NoKnownLengthAsync(), DerivedKind.Thumbnail, DerivedKind.Preview, DerivedKind.Stream);
+
+            Assert.Equal([DerivedKind.Thumbnail, DerivedKind.Stream], made.Kinds);
+        }
+
         [FfmpegFact]
         public async Task MakeAsync_AVideoCutShortBeforeAnyFrame_MakesNothing()
         {
@@ -136,7 +164,7 @@ namespace ByteShelf.Plugins.Video.Tests
             Assert.Equal(("h264", "High", "yuv420p"), (picture.GetProperty("codec_name").GetString(), picture.GetProperty("profile").GetString(), picture.GetProperty("pix_fmt").GetString()));
             Assert.Equal(("aac", 2), (sound.GetProperty("codec_name").GetString(), sound.GetProperty("channels").GetInt32()));
             using BlockCache contents = new BlockCache(new MemoryStream(stream));
-            Mp4Index index = (await Mp4Index.ReadAsync(contents, CancellationToken.None))!;
+            Mp4Index index = (await Mp4Index.ReadAsync(contents))!;
             Assert.True(index.IndexAtFront);
             Assert.Equal(1, index.MaxKeyframeGapSeconds!.Value, precision: 1);
         }
@@ -166,20 +194,40 @@ namespace ByteShelf.Plugins.Video.Tests
         [FfmpegFact]
         public async Task MakeAsync_Stream_OfAVideoThatStreamsWell_IsNotMade()
         {
-            MadeFiles made = await MadeFiles.MakeAsync(await TestVideos.StreamingWellAsync(), DerivedKind.Stream);
-
-            Assert.Empty(made.Kinds);
-        }
-
-        /// <summary>Of so few bits a second, the copy comes out larger.</summary>
-        [FfmpegFact]
-        public async Task MakeAsync_Stream_LargerThanTheVideo_IsNotKept()
-        {
-            byte[] video = await TestVideos.Mp4Async("testsrc2=size=320x240:rate=30:duration=4", "-c:v", "libx264", "-crf", "51", "-g", "300");
+            byte[] video = await TestVideos.StreamingWellAsync();
+            Assert.True(await StreamsWellAsync(video));
 
             MadeFiles made = await MadeFiles.MakeAsync(video, DerivedKind.Stream);
 
             Assert.Empty(made.Kinds);
+        }
+
+        /// <summary>
+        /// Of the lowest quality (CRF 51) and one keyframe in all, so few bytes that the copy, with its keyframe each second,
+        /// comes out larger: of an MP4 every browser plays as it is, it is not kept, which does not stream well only for its
+        /// index at the end and its keyframes, and plays all the same.
+        /// </summary>
+        [FfmpegFact]
+        public async Task MakeAsync_Stream_LargerThanAVideoThatPlaysAsItIs_IsNotKept()
+        {
+            byte[] video = await TestVideos.Mp4Async(SmallPicture, SmallestArguments);
+            Assert.Equal((false, true), await StreamsWellAndPlaysAsync(video));
+
+            MadeFiles made = await MadeFiles.MakeAsync(video, DerivedKind.Stream);
+
+            Assert.Empty(made.Kinds);
+        }
+
+        /// <summary>As of <see cref="MakeAsync_Stream_LargerThanAVideoThatPlaysAsItIs_IsNotKept"/>'s, in Matroska, which no browser need play: the copy is the one that plays.</summary>
+        [FfmpegFact]
+        public async Task MakeAsync_Stream_LargerThanAVideoThatDoesNotPlayAsItIs_IsKept()
+        {
+            byte[] video = await TestVideos.MakeAsync(".mkv", ["-f", "lavfi", "-i", SmallPicture, .. SmallestArguments]);
+            Assert.Equal((false, false), await StreamsWellAndPlaysAsync(video));
+
+            MadeFiles made = await MadeFiles.MakeAsync(video, DerivedKind.Stream);
+
+            Assert.True(made.BytesOf(DerivedKind.Stream).Length > video.Length);
         }
 
         [FfmpegFact]
@@ -221,8 +269,13 @@ namespace ByteShelf.Plugins.Video.Tests
 
         private static async Task<bool> StreamsWellAsync(byte[] video)
         {
+            return (await StreamsWellAndPlaysAsync(video)).StreamsWell;
+        }
+
+        private static async Task<(bool StreamsWell, bool PlaysAsItIs)> StreamsWellAndPlaysAsync(byte[] video)
+        {
             await using VideoSource source = (await VideoSource.OpenAsync(TestVideos.Ffmpeg, new MemoryStream(video)))!;
-            return StreamsWell.Of(source.Probe);
+            return (StreamsWell.Of(source.Probe), StreamsWell.PlaysAsItIs(source.Probe));
         }
     }
 }

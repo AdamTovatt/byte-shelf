@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState, type SyntheticEvent } from 'react';
-import { LoadedContent, Spinner, clamp, useLoaded, usePluginDocuments, usePreviewFullScreen, type DerivedKind, type DerivedReader, type DerivedStatus, type ViewerProps } from '@byteshelf/plugin';
+import { useRef, useState, type SyntheticEvent } from 'react';
+import { LoadedContent, PREVIEW_BAR_BOTTOM, Spinner, clamp, useLoaded, usePluginDocuments, usePreviewFullScreen, type DerivedKind, type DerivedReader, type DerivedStatus, type ViewerProps } from '@byteshelf/plugin';
+import { goOnAs, pickUpOf, type PickUp } from './pickUp';
 import { asksForStream, playingOf } from './playing';
 import { recordedVideo } from './recordedVideo';
-import { resumeAt, savePosition, savedPosition } from './resumePoint';
+import { resumeAt, savedPosition } from './resumePoint';
 import type { StoryboardImage } from './SeekBar';
+import { useKeptPosition } from './useKeptPosition';
+import { useMouseClick } from './useMouseClick';
+import { usePlayback } from './usePlayback';
 import { usePlayerKeys } from './usePlayerKeys';
-import { VideoControls, type Playback } from './VideoControls';
-
-/** How often where it is is kept while it plays. */
-const SAVE_EVERY_MS = 2000;
+import { VideoControls } from './VideoControls';
 
 /** `MediaError`'s codes: what was loading was stopped as asked, or the network failed it, either of which does not say it cannot play. */
 const MEDIA_ERR_ABORTED = 1;
@@ -20,20 +21,13 @@ export function VideoPlayer(props: ViewerProps) {
   return file.encrypted ? <Fallback /> : <Player {...props} />;
 }
 
-/** Where a change of what is played picks up: the time it was at, whether it was playing, and at what speed. */
-interface Continued {
-  seconds: number;
-  isPlaying: boolean;
-  rate: number;
-}
-
 /** What is played of the file, as it was chosen and found, and where the video played next picks up. */
 interface Choice {
   wantsOriginal: boolean;
   streamFailed: boolean;
   originalFailed: boolean;
   /** Where the one before it was; null to start as a video opened does. */
-  from: Continued | null;
+  from: PickUp | null;
   /** How often it was loaded again, so that each load is a video of its own. */
   attempt: number;
 }
@@ -51,8 +45,8 @@ function Player({ file, content, derived, Fallback }: ViewerProps) {
   const [listed] = useState(() => derived.has('stream'));
   const [choice, setChoice] = useState(OPENED);
   const streamsWell = recorded?.streamsWell ?? null;
-  const asked = useLoaded(asksForStream({ listed, streamsWell }) ? derived : null, (signal) => statusOf(derived, signal));
-  const playing = playingOf({ listed, streamsWell, status: asked.status === 'done' ? asked.value : null, ...choice });
+  const streamStatus = useLoaded(asksForStream({ listed, streamsWell }) ? derived : null, (signal) => streamStatusOf(derived, signal));
+  const playing = playingOf({ listed, streamsWell, status: streamStatus.status === 'done' ? streamStatus.value : null, ...choice });
   const url = useLoaded(playing.source, (signal) => (playing.source === 'stream' ? derived.url('stream', signal) : content.url(signal)));
   const poster = useMadeUrl(derived, 'thumbnail');
   const storyboardUrl = useMadeUrl(derived, 'preview');
@@ -78,7 +72,7 @@ function Player({ file, content, derived, Fallback }: ViewerProps) {
           storyboard={storyboard}
           note={playing.note}
           from={choice.from}
-          original={playing.canChooseOriginal ? { isPlayed: playing.source === 'original', toggle: (from) => change({ wantsOriginal: playing.source !== 'original', from }) } : null}
+          original={playing.canChooseOriginal ? { isPlayed: playing.source === 'original', onSwitch: (from) => change({ wantsOriginal: playing.source !== 'original', from }) } : null}
           onFailed={(from) => change(playing.source === 'stream' ? { streamFailed: true, from } : { originalFailed: true, from })}
           onReload={(from) => change({ attempt: choice.attempt + 1, from })}
         />
@@ -95,78 +89,56 @@ interface VideoProps {
   storyboard: StoryboardImage | null;
   note: string | null;
   /** Where the video before this one of the file was, picked up once this one is loaded; null when there was none. */
-  from: Continued | null;
-  /** Playing the original rather than the stream, and switching, picking up where this one is, while both may be played. */
-  original: { isPlayed: boolean; toggle: (from: Continued | null) => void } | null;
+  from: PickUp | null;
+  /** Whether the original is played rather than the stream, and switching to the other, from where this one is, while both may be played. */
+  original: { isPlayed: boolean; onSwitch: (from: PickUp | null) => void } | null;
   /** This one cannot play, which the next takes up from where it is. */
-  onFailed: (from: Continued | null) => void;
+  onFailed: (from: PickUp | null) => void;
   /** This one is to be loaded again, from where it is, once the network failed it. */
-  onReload: (from: Continued | null) => void;
+  onReload: (from: PickUp | null) => void;
 }
 
-const STOPPED: Playback = { isPaused: true, currentSeconds: 0, durationSeconds: 0, buffered: [], volume: { level: 1, isMuted: false }, rate: 1 };
-
-/** The video element, what it says of where it is, and its controls (`VideoControls`). */
+/** The video element, what it says of where it is (`usePlayback`), and its controls (`VideoControls`). */
 function Video({ src, fileId, name, poster, storyboard, note, from, original, onFailed, onReload }: VideoProps) {
   const video = useRef<HTMLVideoElement>(null);
-  const [playback, setPlayback] = useState(STOPPED);
-  const [isWaiting, setIsWaiting] = useState(false);
+  const { playback, isWaiting, events, seeked } = usePlayback();
   const [isCutOff, setIsCutOff] = useState(false);
-  const lastSaved = useRef(0);
-  const pressedWith = useRef('mouse');
+  const position = useKeptPosition(video, fileId);
   const fullScreen = usePreviewFullScreen(video);
-
-  function update(changed: Partial<Playback>): void {
-    setPlayback((before) => ({ ...before, ...changed }));
-  }
+  const click = useMouseClick(toggle);
 
   /** Plays or pauses it; cut off by the network, it is loaded again and plays on from where it was. */
   function toggle(): void {
     const element = video.current;
     if (!element) return;
     if (isCutOff) {
-      const at = continuedFrom(element, from);
+      const at = pickUpOf(element, from);
       onReload(at && { ...at, isPlaying: true });
     } else if (element.paused) void element.play().catch(() => {});
     else element.pause();
   }
 
-  /** Shown at once as where it is, so that a seek waiting for what it plays, which sends no `timeupdate`, is where the next moves on from. */
   function seek(seconds: number): void {
     const element = video.current;
     if (!element) return;
     element.currentTime = clamp(seconds, 0, Number.isFinite(element.duration) ? element.duration : Infinity);
-    update({ currentSeconds: element.currentTime });
-  }
-
-  function save(element: HTMLVideoElement): void {
-    lastSaved.current = Date.now();
-    keepPosition(fileId, element);
+    seeked(element.currentTime);
   }
 
   usePlayerKeys(video, { toggle, seek });
-
-  // Where it is is kept as it goes, as the preview closes or moves on.
-  useEffect(() => {
-    const element = video.current;
-    return () => {
-      if (element && element.readyState > 0) keepPosition(fileId, element);
-    };
-  }, [fileId]);
 
   function onLoadedMetadata(event: SyntheticEvent<HTMLVideoElement>): void {
     const element = event.currentTarget;
     const at = from ? from.seconds : resumeAt(savedPosition(fileId), element.duration);
     if (at !== null) element.currentTime = at;
-    if (from) element.playbackRate = from.rate;
-    if (from?.isPlaying) void element.play().catch(() => {});
+    if (from) goOnAs(element, from);
   }
 
   function onError(event: SyntheticEvent<HTMLVideoElement>): void {
     const element = event.currentTarget;
     const code = element.error?.code;
     if (code === MEDIA_ERR_NETWORK) setIsCutOff(true);
-    else if (code !== MEDIA_ERR_ABORTED) onFailed(continuedFrom(element, from));
+    else if (code !== MEDIA_ERR_ABORTED) onFailed(pickUpOf(element, from));
   }
 
   const shownNote = isCutOff ? 'The video stopped loading. Play it to load it again.' : note;
@@ -181,35 +153,25 @@ function Video({ src, fileId, name, poster, storyboard, note, from, original, on
         playsInline
         preload="metadata"
         className="video-max-h-full video-max-w-full"
-        onPointerDown={(event) => {
-          pressedWith.current = event.pointerType;
-        }}
+        {...events}
         // A click plays or pauses it; a tap is the bars', showing or hiding them.
-        onClick={() => pressedWith.current === 'mouse' && toggle()}
+        {...click}
         onDoubleClick={() => fullScreen.canFullScreen && fullScreen.toggle()}
         onLoadedMetadata={onLoadedMetadata}
-        onDurationChange={(event) => update({ durationSeconds: Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0 })}
         onTimeUpdate={(event) => {
-          update({ currentSeconds: event.currentTarget.currentTime });
-          if (Date.now() - lastSaved.current > SAVE_EVERY_MS) save(event.currentTarget);
+          events.onTimeUpdate(event);
+          position.keepNowAndThen(event.currentTarget);
         }}
-        onProgress={(event) => update({ buffered: rangesOf(event.currentTarget.buffered) })}
-        onPlay={() => update({ isPaused: false })}
         onPause={(event) => {
-          update({ isPaused: true });
-          save(event.currentTarget);
+          events.onPause(event);
+          position.keep(event.currentTarget);
         }}
-        onEnded={(event) => save(event.currentTarget)}
-        onWaiting={() => setIsWaiting(true)}
-        onPlaying={() => setIsWaiting(false)}
-        onSeeked={() => setIsWaiting(false)}
-        onVolumeChange={(event) => update({ volume: { level: event.currentTarget.volume, isMuted: event.currentTarget.muted } })}
-        onRateChange={(event) => update({ rate: event.currentTarget.playbackRate })}
+        onEnded={(event) => position.keep(event.currentTarget)}
         onError={onError}
       />
       {isWaiting && !playback.isPaused && !isCutOff && <div className="video-pointer-events-none video-absolute"><Spinner size="lg" /></div>}
       {shownNote && (
-        <p className="video-pointer-events-none video-absolute video-inset-x-0 video-mx-auto video-w-fit video-rounded-full video-bg-black/60 video-px-3 video-py-1 video-text-body-sm video-text-white" style={{ bottom: 'calc(var(--preview-bar-bottom, 0px) + 8px)' }}>
+        <p className="video-pointer-events-none video-absolute video-inset-x-0 video-mx-auto video-w-fit video-rounded-full video-bg-black/60 video-px-3 video-py-1 video-text-body-sm video-text-white" style={{ bottom: `calc(${PREVIEW_BAR_BOTTOM} + 8px)` }}>
           {shownNote}
         </p>
       )}
@@ -219,7 +181,7 @@ function Video({ src, fileId, name, poster, storyboard, note, from, original, on
         storyboard={storyboard}
         toggle={toggle}
         seek={seek}
-        original={original && { isPlayed: original.isPlayed, toggle: () => video.current && original.toggle(continuedFrom(video.current, from)) }}
+        original={original && { isPlayed: original.isPlayed, onClick: () => video.current && original.onSwitch(pickUpOf(video.current, from)) }}
         fullScreen={fullScreen}
       />
     </div>
@@ -233,24 +195,10 @@ function useMadeUrl(derived: DerivedReader, kind: DerivedKind): string | null {
 }
 
 /** What there is of the video's stream; null when the asking failed, which is then said nothing of. */
-async function statusOf(derived: DerivedReader, signal: AbortSignal): Promise<DerivedStatus | null> {
+async function streamStatusOf(derived: DerivedReader, signal: AbortSignal): Promise<DerivedStatus | null> {
   try {
     return await derived.status('stream', signal);
   } catch {
     return null;
   }
-}
-
-/** Where `element` is; before it loaded anything, where it was to pick up, `from`, as it has been nowhere itself. */
-function continuedFrom(element: HTMLVideoElement, from: Continued | null): Continued | null {
-  return element.readyState === 0 ? from : { seconds: element.currentTime, isPlaying: !element.paused, rate: element.playbackRate };
-}
-
-/** Keeps where `element`, the video of `fileId`, is, or that it was watched to the end. */
-function keepPosition(fileId: string, element: HTMLVideoElement): void {
-  savePosition(fileId, element.ended ? null : element.currentTime);
-}
-
-function rangesOf(ranges: TimeRanges): (readonly [number, number])[] {
-  return Array.from({ length: ranges.length }, (_, index) => [ranges.start(index), ranges.end(index)] as const);
 }

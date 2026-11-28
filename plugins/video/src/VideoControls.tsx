@@ -9,7 +9,8 @@ const RATES = [1, 1.25, 1.5, 2, 0.5, 0.75];
 export interface Playback {
   isPaused: boolean;
   currentSeconds: number;
-  durationSeconds: number;
+  /** Null while how long it plays is not known, as of a recording a browser made. */
+  durationSeconds: number | null;
   /** What the browser has of it, each from a time to a time. */
   buffered: readonly (readonly [number, number])[];
   volume: { level: number; isMuted: boolean };
@@ -22,8 +23,8 @@ interface VideoControlsProps {
   storyboard: StoryboardImage | null;
   toggle: () => void;
   seek: (seconds: number) => void;
-  /** Playing the original rather than the stream, and switching, while both may be played. */
-  original: { isPlayed: boolean; toggle: () => void } | null;
+  /** Whether the original is played rather than the stream, and its button's click, while both may be played. */
+  original: { isPlayed: boolean; onClick: () => void } | null;
   fullScreen: FullScreen;
 }
 
@@ -43,7 +44,9 @@ export function VideoControls({ video, playback, storyboard, toggle, seek, origi
     <PreviewControls>
       <BarButton icon={isPaused ? iconMap.play : iconMap.pause} aria-label={isPaused ? 'Play' : 'Pause'} title={isPaused ? 'Play (K)' : 'Pause (K)'} onClick={toggle} />
       <span className="video-whitespace-nowrap video-px-1 video-text-body-sm video-tabular-nums video-text-muted">
-        {formatDuration(currentSeconds, { isElapsed: true })} / {formatDuration(durationSeconds)}
+        {formatDuration(currentSeconds, { isElapsed: true })}
+        {/* Of whole seconds as the time gone by is, so that it reads the same at the end. */}
+        {durationSeconds !== null && ` / ${formatDuration(durationSeconds, { isElapsed: true })}`}
       </span>
       <SeekBar durationSeconds={durationSeconds} currentSeconds={currentSeconds} buffered={buffered} onSeek={seek} storyboard={storyboard} />
       <BarButton
@@ -77,7 +80,7 @@ export function VideoControls({ video, playback, storyboard, toggle, seek, origi
       })}>
         {`${rate}×`}
       </BarTextButton>
-      {original && <BarTextButton label="Original" isPressed={original.isPlayed} onClick={original.toggle}>Original</BarTextButton>}
+      {original && <BarTextButton label="Original" isPressed={original.isPlayed} onClick={original.onClick}>Original</BarTextButton>}
       {fullScreen.canFullScreen && (
         <BarButton
           icon={fullScreen.isFullScreen ? iconMap.exitFullScreen : iconMap.fullScreen}

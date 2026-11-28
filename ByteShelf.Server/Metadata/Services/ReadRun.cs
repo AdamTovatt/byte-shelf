@@ -29,6 +29,14 @@ namespace ByteShelf.Server.Metadata.Services
             return JsonSerializer.SerializeToElement(new ReadArguments(_version), JsonDefaults.CamelCase);
         }
 
+        /// <summary>
+        /// Nothing: a reader's runs take a minute at most, so its problem is cleared as one returns
+        /// (<see cref="PluginContentReader"/>), where a maker's, whose runs may take hours, is cleared as one begins.
+        /// </summary>
+        public void Began()
+        {
+        }
+
         public Task<PluginReading> TakeAsync(PluginRunResult result, WorkFolder folder, CancellationToken cancellationToken)
         {
             return Task.FromResult<PluginReading>(result switch

@@ -9,7 +9,7 @@ namespace ByteShelf.Plugins.Video.Tests
                 """{"codec_type":"video","codec_name":"h264","profile":"High","pix_fmt":"yuv420p","width":1920,"height":1080},{"codec_type":"audio","codec_name":"aac"},{"codec_type":"audio","codec_name":"opus"}""",
                 """{"duration":"12.5","tags":{"major_brand":"isom"}}""")!;
 
-            Assert.Equivalent(new VideoProbe(12.5, 1920, 1080, "h264", "High", "yuv420p", ["aac", "opus"], "isom", Index: null, Bytes: 1000), probe, strict: true);
+            Assert.Equivalent(new VideoProbe(12.5, 0, 1920, 1080, "h264", "High", "yuv420p", ["aac", "opus"], "isom", Index: null, Bytes: 1000), probe, strict: true);
         }
 
         [Theory]
@@ -46,6 +46,17 @@ namespace ByteShelf.Plugins.Video.Tests
             Assert.Equal((1024, 576), (probe.Width, probe.Height));
         }
 
+        /// <summary>Widened by its pixels' shape first, then turned: anamorphic video of a camera held on its side.</summary>
+        [Fact]
+        public void Parse_PixelsNotSquareAndTurned_IsAsShownUpright()
+        {
+            VideoProbe probe = Parse(
+                """{"codec_type":"video","codec_name":"mpeg2video","width":720,"height":576,"sample_aspect_ratio":"64:45","side_data_list":[{"rotation":90}]}""",
+                """{"duration":"1"}""")!;
+
+            Assert.Equal((576, 1024), (probe.Width, probe.Height));
+        }
+
         [Fact]
         public void Parse_ACoversPicture_IsNoVideo()
         {
@@ -61,7 +72,7 @@ namespace ByteShelf.Plugins.Video.Tests
                 """{"codec_type":"video","codec_name":"mjpeg","width":500,"height":500,"disposition":{"attached_pic":1}},{"codec_type":"video","codec_name":"h264","width":640,"height":360}""",
                 """{"duration":"3"}""")!;
 
-            Assert.Equal(("h264", 640), (probe.VideoCodec, probe.Width));
+            Assert.Equal(("h264", 640, 1), (probe.VideoCodec, probe.Width, probe.VideoStream));
         }
 
         [Fact]
@@ -72,13 +83,16 @@ namespace ByteShelf.Plugins.Video.Tests
             Assert.Equal(4.25, probe.DurationSeconds);
         }
 
+        /// <summary>A video all the same, as a recording a browser made often does not say how long it plays.</summary>
         [Theory]
         [InlineData("""{"duration":"0"}""")]
         [InlineData("""{"duration":"N/A"}""")]
         [InlineData("{}")]
-        public void Parse_NoTimeItPlays_IsNoVideo(string format)
+        public void Parse_NoTimeItPlays_IsAVideoOfNoKnownLength(string format)
         {
-            Assert.Null(Parse("""{"codec_type":"video","codec_name":"h264","width":640,"height":360}""", format));
+            VideoProbe probe = Parse("""{"codec_type":"video","codec_name":"vp8","width":640,"height":360}""", format)!;
+
+            Assert.Equal((null, null, 640), (probe.DurationSeconds, probe.BitsPerSecond, probe.Width));
         }
 
         [Fact]

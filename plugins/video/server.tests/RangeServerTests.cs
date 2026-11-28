@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
 
 namespace ByteShelf.Plugins.Video.Tests
 {
@@ -106,7 +107,9 @@ namespace ByteShelf.Plugins.Video.Tests
             Uri[] urls = [new Uri(first.Url), new Uri(second.Url)];
 
             Assert.All(urls, url => Assert.Equal("127.0.0.1", url.Host));
-            Assert.Equal(64, urls[0].AbsolutePath.Length - 1);
+
+            // 32 random bytes in hex, after the slash.
+            Assert.Equal(32 * 2, urls[0].AbsolutePath.Length - 1);
             Assert.NotEqual(urls[0].AbsolutePath, urls[1].AbsolutePath);
         }
 
@@ -127,11 +130,15 @@ namespace ByteShelf.Plugins.Video.Tests
             Assert.All(Enumerable.Range(0, 8), part => Assert.Equal(Contents[(part * 30_000)..((part * 30_000) + 60_000)], answers[part]));
         }
 
-        /// <summary>ffmpeg hangs up on an answer as it seeks.</summary>
+        /// <summary>
+        /// ffmpeg hangs up on an answer as it seeks: of 64 MiB, far more than the loopback's buffers hold, so the server is
+        /// writing it when it does.
+        /// </summary>
         [Fact]
         public async Task Get_HungUpOn_GoesOnAnsweringOthers()
         {
-            await using RangeServer server = RangeServer.Start(new MemoryStream(Contents));
+            byte[] large = new byte[64 * 1024 * 1024];
+            await using RangeServer server = RangeServer.Start(new MemoryStream(large));
             using (HttpClient hungUp = new HttpClient())
             {
                 using HttpResponseMessage response = await hungUp.GetAsync(server.Url, HttpCompletionOption.ResponseHeadersRead);
@@ -140,7 +147,22 @@ namespace ByteShelf.Plugins.Video.Tests
             }
 
             using HttpClient client = new HttpClient();
-            Assert.Equal(Contents, await client.GetByteArrayAsync(server.Url));
+            using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, server.Url);
+            request.Headers.Range = new RangeHeaderValue(0, 99);
+            using HttpResponseMessage answer = await client.SendAsync(request).WaitAsync(TimeSpan.FromSeconds(30));
+            Assert.Equal(100, (await answer.Content.ReadAsByteArrayAsync()).Length);
+        }
+
+        /// <summary>One that connected and asks nothing holds up no end of it.</summary>
+        [Fact]
+        public async Task DisposeAsync_WithAClientThatAsksNothing_Ends()
+        {
+            RangeServer server = RangeServer.Start(new MemoryStream(Contents));
+            Uri url = new Uri(server.Url);
+            using TcpClient idle = new TcpClient();
+            await idle.ConnectAsync(url.Host, url.Port);
+
+            await server.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(30));
         }
     }
 }

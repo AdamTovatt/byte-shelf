@@ -13,7 +13,8 @@ namespace ByteShelf.Plugins.Video
 
         internal const int MaxColumns = 10;
 
-        internal const double MinIntervalSeconds = 2;
+        /// <summary>The most time a frame stands for, of a video of up to <see cref="MaxCount"/> of it: a longer one has as many frames, each of longer.</summary>
+        internal const double MaxIntervalSeconds = 2;
 
         /// <summary>As many as are found in the time a run has: each is a seek of its own.</summary>
         internal const int MaxCount = 100;
@@ -24,7 +25,7 @@ namespace ByteShelf.Plugins.Video
         /// <summary>The storyboard of a video that plays for <paramref name="durationSeconds"/> and is shown <paramref name="width"/> by <paramref name="height"/>.</summary>
         public static Storyboard For(double durationSeconds, int width, int height)
         {
-            int count = (int)Math.Clamp(Math.Ceiling(durationSeconds / MinIntervalSeconds), 1, MaxCount);
+            int count = (int)Math.Clamp(Math.Ceiling(durationSeconds / MaxIntervalSeconds), 1, MaxCount);
             int columns = Math.Min(count, MaxColumns);
             int frameHeight = (int)Math.Clamp(Math.Round((double)Width * height / width), 1, MaxFrameHeight);
             return new Storyboard(durationSeconds / count, columns, (count + columns - 1) / columns, Width, frameHeight, count);

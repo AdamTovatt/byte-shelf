@@ -214,8 +214,9 @@ npm run codegen    # in a second terminal
   `MobileTopBarOverlay` (`components/layout/MobileTopBar.tsx`).
 - **Plugins:** once signed in, the app loads the server's plugins into the page
   (`lib/plugins/pluginHost.ts`, followed with `hooks/usePluginHost.ts`), each failing alone. What they
-  import as `@byteshelf/plugin` is `src/plugin/index.ts`; `build/sharedModules.ts` makes that and the
-  packages plugins share an entry each of the build, named in `index.html`'s import map, and in the dev
+  import as `@byteshelf/plugin` is `src/plugin/index.ts`, and what their tests import as `@byteshelf/plugin/testing`
+  is `src/plugin/testing.ts`, which only tests resolve (`build/pluginTests.config.ts`); `build/sharedModules.ts`
+  makes the first and the packages plugins share an entry each of the build, named in `index.html`'s import map, and in the dev
   server too. `build/buildPlugin.ts` builds the plugins in [plugins](../plugins/README.md). What they may
   use is a promise: breaking what a release holds of it raises `PluginApi.Version` on the server
   ([Plugins](../ByteShelf.Server/Plugins/Plugins.md), Versions). A plugin adds viewers to the preview and

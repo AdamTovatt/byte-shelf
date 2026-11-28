@@ -12,13 +12,19 @@ namespace ByteShelf.Server.Tests.Derived
     {
         private static readonly string Sha256 = new string('a', 64);
 
+        /// <summary>Every kind the table took before, each of a size of its own.</summary>
+        private static readonly (string Kind, long Bytes)[] Counted = [("thumbnail", 12), ("preview", 34), ("full", 56), ("agent", 78)];
+
         private TestRoot _old = null!;
 
         public async Task InitializeAsync()
         {
             _old = TestRoot.CreateBefore("v0017");
             await using DbConnection connection = await _old.Root.Database.OpenConnectionAsync();
-            await connection.ExecuteAsync("INSERT INTO derived_size (sha256, kind, size_bytes) VALUES (@Sha256, 'thumbnail', 12)", new { Sha256 });
+            foreach ((string kind, long bytes) in Counted)
+            {
+                await connection.ExecuteAsync("INSERT INTO derived_size (sha256, kind, size_bytes) VALUES (@Sha256, @Kind, @Bytes)", new { Sha256, Kind = kind, Bytes = bytes });
+            }
         }
 
         public async Task DisposeAsync()
@@ -31,7 +37,11 @@ namespace ByteShelf.Server.Tests.Derived
         {
             await using DbConnection connection = await _old.Root.Database.OpenConnectionAsync();
 
-            await Assert.ThrowsAsync<SqliteException>(() => InsertAsync(connection, "stream"));
+            SqliteException refused = await Assert.ThrowsAsync<SqliteException>(() => InsertAsync(connection, "stream"));
+
+            // SQLITE_CONSTRAINT: the table's check of its kinds, not any other failing.
+            Assert.Equal(19, refused.SqliteErrorCode);
+            Assert.Contains("CHECK constraint failed", refused.Message, StringComparison.Ordinal);
         }
 
         [Fact]
@@ -40,7 +50,10 @@ namespace ByteShelf.Server.Tests.Derived
             DatabaseMigrator.RunMigrations(_old.Root.Database, NullLogger.Instance);
             await using DbConnection connection = await _old.Root.Database.OpenConnectionAsync();
 
-            Assert.Equal(12, await connection.ExecuteScalarAsync<long>("SELECT size_bytes FROM derived_size WHERE sha256 = @Sha256 AND kind = 'thumbnail'", new { Sha256 }));
+            foreach ((string kind, long bytes) in Counted)
+            {
+                Assert.Equal(bytes, await connection.ExecuteScalarAsync<long>("SELECT size_bytes FROM derived_size WHERE sha256 = @Sha256 AND kind = @Kind", new { Sha256, Kind = kind }));
+            }
         }
 
         [Fact]
@@ -51,7 +64,7 @@ namespace ByteShelf.Server.Tests.Derived
 
             await InsertAsync(connection, "stream");
 
-            Assert.Equal(2, await connection.ExecuteScalarAsync<long>("SELECT count(*) FROM derived_size"));
+            Assert.Equal(Counted.Length + 1, await connection.ExecuteScalarAsync<long>("SELECT count(*) FROM derived_size"));
             await Assert.ThrowsAsync<SqliteException>(() => InsertAsync(connection, "hologram"));
         }
 

@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using ByteShelf.Plugins.Video.Tests.TestUtilities;
 
 namespace ByteShelf.Plugins.Video.Tests
@@ -47,6 +48,99 @@ namespace ByteShelf.Plugins.Video.Tests
         public void GapOf_KeyframesOfNoSample_AreNone()
         {
             Assert.Null(Mp4Index.GapOf([(10, 100)], [0, 11], timescale: 1000));
+        }
+
+        /// <summary>A crafted table of runs as long as 32 bits say, each far past what 64 bits of time hold: told all the same, neither wrapped nor thrown.</summary>
+        [Fact]
+        public void GapOf_RunsTooLongFor64Bits_IsTold()
+        {
+            double? gap = Mp4Index.GapOf([(uint.MaxValue, uint.MaxValue), (uint.MaxValue, uint.MaxValue), (1, 1)], [1, uint.MaxValue], timescale: 1);
+
+            // From the last keyframe, at (max - 1) × max, to the end, at 2 × max² + 1.
+            Assert.Equal(((double)uint.MaxValue * uint.MaxValue) + uint.MaxValue, gap!.Value, tolerance: 1e6);
+        }
+
+        public static TheoryData<string, byte[]> BrokenIndexes => new TheoryData<string, byte[]>
+        {
+            { "no boxes", [1, 2, 3] },
+            { "a box larger than what holds it", [0, 0, 1, 0, .. "trak"u8] },
+            { "a track of no media", Box("trak", Box("tkhd", new byte[84])) },
+            { "a handler cut short", Track(Box("hdlr", new byte[4]), Box("mdhd", new byte[24]), Minf(Table("stts", 1, (10, 100)))) },
+            { "a timescale of none", Track(Handler("vide"), Box("mdhd", new byte[24]), Minf(Table("stts", 1, (10, 100)))) },
+            { "more times than the table holds", Track(Handler("vide"), Mdhd(1000), Minf(Table("stts", 5, (10, 100)))) },
+            { "more keyframes than the table holds", Track(Handler("vide"), Mdhd(1000), Minf(Table("stts", 1, (10, 100)), Table("stss", 3, (1, 0)))) },
+            { "sound alone", Track(Handler("soun"), Mdhd(1000), Minf(Table("stts", 1, (10, 100)))) },
+        };
+
+        [Theory]
+        [MemberData(nameof(BrokenIndexes))]
+        public void KeyframeGapOf_ABrokenIndex_IsNone(string what, byte[] moov)
+        {
+            Assert.True(Mp4Index.KeyframeGapOf(moov) == null, what);
+        }
+
+        [Fact]
+        public void KeyframeGapOf_ATrackOfItsBoxes_IsItsGap()
+        {
+            // 50 samples of a tenth of a second, a keyframe at the start alone: 5 seconds to the end.
+            byte[] moov = Track(Handler("vide"), Mdhd(1000), Minf(Table("stts", 1, (50, 100)), Table("stss", 1, (1, 0))));
+
+            Assert.Equal(5, Mp4Index.KeyframeGapOf(moov));
+        }
+
+        private static byte[] Box(string type, params byte[][] bodies)
+        {
+            byte[] body = [.. bodies.SelectMany(each => each)];
+            byte[] size = new byte[4];
+            BinaryPrimitives.WriteUInt32BigEndian(size, (uint)(8 + body.Length));
+            return [.. size, .. Encoding.Latin1.GetBytes(type), .. body];
+        }
+
+        private static byte[] Track(byte[] hdlr, byte[] mdhd, byte[] minf)
+        {
+            return Box("trak", Box("mdia", hdlr, mdhd, minf));
+        }
+
+        private static byte[] Handler(string type)
+        {
+            return Box("hdlr", [.. new byte[8], .. Encoding.Latin1.GetBytes(type), .. new byte[12]]);
+        }
+
+        /// <summary>A version 0 <c>mdhd</c>, whose timescale is after its version, flags and two times.</summary>
+        private static byte[] Mdhd(uint timescale)
+        {
+            byte[] body = new byte[24];
+            BinaryPrimitives.WriteUInt32BigEndian(body.AsSpan(12), timescale);
+            return Box("mdhd", body);
+        }
+
+        private static byte[] Minf(params byte[][] tables)
+        {
+            return Box("minf", Box("stbl", tables));
+        }
+
+        /// <summary>A full box of <paramref name="count"/> said entries, of the pairs given, or of their first halves for <c>stss</c>.</summary>
+        private static byte[] Table(string type, uint count, params (uint First, uint Second)[] entries)
+        {
+            List<byte> body = [.. new byte[4]];
+            body.AddRange(BigEndian(count));
+            foreach ((uint first, uint second) in entries)
+            {
+                body.AddRange(BigEndian(first));
+                if (type != "stss")
+                {
+                    body.AddRange(BigEndian(second));
+                }
+            }
+
+            return Box(type, [.. body]);
+        }
+
+        private static byte[] BigEndian(uint number)
+        {
+            byte[] bytes = new byte[4];
+            BinaryPrimitives.WriteUInt32BigEndian(bytes, number);
+            return bytes;
         }
 
         [Fact]
@@ -110,7 +204,7 @@ namespace ByteShelf.Plugins.Video.Tests
 
                 using CountingStream contents = new CountingStream(File.OpenRead(path));
                 using BlockCache cache = new BlockCache(contents);
-                Assert.Equal(new Mp4Index(IndexAtFront: true, MaxKeyframeGapSeconds: null), await Mp4Index.ReadAsync(cache, CancellationToken.None));
+                Assert.Equal(new Mp4Index(IndexAtFront: true, MaxKeyframeGapSeconds: null), await Mp4Index.ReadAsync(cache));
                 Assert.InRange(contents.BytesRead, 1, BlockCache.BlockBytes);
             }
             finally
@@ -174,7 +268,7 @@ namespace ByteShelf.Plugins.Video.Tests
         private static async Task<Mp4Index?> ReadAsync(byte[] contents)
         {
             using BlockCache cache = new BlockCache(new MemoryStream(contents, writable: false));
-            return await Mp4Index.ReadAsync(cache, CancellationToken.None);
+            return await Mp4Index.ReadAsync(cache);
         }
     }
 }

@@ -20,7 +20,7 @@ namespace ByteShelf.Server.Derived.Services
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            await Task.WhenAll(StoredContents.MakersOf(_plugins).Select(maker => RunMakerAsync(maker.Plugin, maker.Group, stoppingToken)));
+            await Task.WhenAll(DerivedBackground.MakersOf(_plugins).Select(maker => RunMakerAsync(maker.Plugin, maker.Group, stoppingToken)));
         }
 
         private async Task RunMakerAsync(DerivedFilePlugin plugin, MakingGroup group, CancellationToken stoppingToken)

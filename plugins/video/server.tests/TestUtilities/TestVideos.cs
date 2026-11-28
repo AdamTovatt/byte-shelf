@@ -42,17 +42,35 @@ namespace ByteShelf.Plugins.Video.Tests.TestUtilities
             return MakeAsync(".mkv", "-f", "lavfi", "-i", Picture, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30");
         }
 
+        /// <summary>A WebM that does not say how long it plays, as one a browser records: written as it is made, as a live stream.</summary>
+        public static Task<byte[]> NoKnownLengthAsync()
+        {
+            return MakeAsync(".webm", "-f", "lavfi", "-i", Picture, "-c:v", "libvpx", "-b:v", "200k", "-live", "1");
+        }
+
         /// <summary>A video of <paramref name="picture"/>, a lavfi source, with whatever <paramref name="arguments"/> add, in an MP4.</summary>
         public static Task<byte[]> Mp4Async(string picture, params string[] arguments)
         {
             return MakeAsync(".mp4", ["-f", "lavfi", "-i", picture, .. arguments]);
         }
 
-        /// <summary>What <paramref name="arguments"/>, ffmpeg's but the output, make of nothing, as a file ending in <paramref name="extension"/>.</summary>
-        public static Task<byte[]> MakeAsync(string extension, params string[] arguments)
+        /// <summary>
+        /// What <paramref name="arguments"/>, ffmpeg's but the output, make of nothing, as a file ending in
+        /// <paramref name="extension"/>: once a run, unless ffmpeg failed, which the next test that asks tries again.
+        /// </summary>
+        public static async Task<byte[]> MakeAsync(string extension, params string[] arguments)
         {
             string key = extension + " " + string.Join(' ', arguments);
-            return Made.GetOrAdd(key, _ => new Lazy<Task<byte[]>>(() => RunAsync(extension, arguments))).Value;
+            Lazy<Task<byte[]>> making = Made.GetOrAdd(key, _ => new Lazy<Task<byte[]>>(() => RunAsync(extension, arguments)));
+            try
+            {
+                return await making.Value;
+            }
+            catch
+            {
+                Made.TryRemove(new KeyValuePair<string, Lazy<Task<byte[]>>>(key, making));
+                throw;
+            }
         }
 
         /// <summary><paramref name="video"/> with its display matrix turned by <paramref name="degrees"/>, as a phone held upright records.</summary>

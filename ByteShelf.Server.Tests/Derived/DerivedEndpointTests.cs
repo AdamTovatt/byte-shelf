@@ -204,6 +204,11 @@ namespace ByteShelf.Server.Tests.Derived
             Type[] first = [typeof(PluginProcessesLifetime), typeof(MetadataReadingWorker), typeof(StoredContentsWorker), typeof(DerivedMakingWorker)];
             Assert.Equal(first[0], started.First(first.Contains));
             Assert.All(first, worker => Assert.Contains(worker, started));
+        }
+
+        [Fact]
+        public void Start_HasAWorkerOfEachGroupMadeInTheBackground()
+        {
             Assert.Equal(MakingGroup.InBackground, _host.Services.GetServices<IHostedService>().OfType<DerivedMakingWorker>().Select(worker => worker.Group));
         }
 
@@ -216,15 +221,13 @@ namespace ByteShelf.Server.Tests.Derived
             await host.CreateShelfAsync("docs");
             ShelfFile file = await host.PutAsAdminAsync("docs", "/s.txt", Encoding.UTF8.GetBytes(plugins.Waiting("s")), "text/plain");
 
-            // Made by the background, as it was stored.
+            // Made by the background, as it was stored: answered while it is, as only a wait for none says a minute.
             using (await plugins.StartedAsync("s"))
             {
-                Stopwatch asked = Stopwatch.StartNew();
                 using HttpResponseMessage response = await host.AdminClient.GetAsync($"/api/shelves/docs/files/derived?id={file.Id}&kind=stream");
 
                 ErrorResponse? error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
                 Assert.Equal((HttpStatusCode.ServiceUnavailable, "60", ErrorCodes.NotReady), (response.StatusCode, response.Headers.RetryAfter?.ToString(), error?.Code));
-                Assert.True(asked.Elapsed < TimeSpan.FromSeconds(10), $"It answered after {asked.Elapsed}, as though it waited for the stream to be made.");
                 plugins.GoOn("s");
             }
         }

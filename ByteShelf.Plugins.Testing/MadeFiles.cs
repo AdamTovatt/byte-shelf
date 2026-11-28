@@ -1,3 +1,4 @@
+using ByteShelf.Server.Derived.Services;
 using ByteShelfCommon;
 
 namespace ByteShelf.Plugins.Testing
@@ -15,6 +16,13 @@ namespace ByteShelf.Plugins.Testing
 
         public IEnumerable<DerivedKind> Kinds => _files.Keys.Order();
 
+        /// <summary>Has <paramref name="maker"/> make <paramref name="kinds"/> from <paramref name="contents"/>, in memory, as a seekable stream that cannot be written.</summary>
+        public static async Task<MadeFiles> MakeAsync(IDerivedFileMaker maker, byte[] contents, IReadOnlyList<DerivedKind> kinds)
+        {
+            using MemoryStream stream = new MemoryStream(contents, writable: false);
+            return await MakeAsync(maker, stream, kinds);
+        }
+
         /// <summary>Has <paramref name="maker"/> make <paramref name="kinds"/> from <paramref name="contents"/>.</summary>
         public static async Task<MadeFiles> MakeAsync(IDerivedFileMaker maker, Stream contents, IReadOnlyList<DerivedKind> kinds)
         {
@@ -27,16 +35,7 @@ namespace ByteShelf.Plugins.Testing
         public async Task AddAsync(DerivedKind kind, string mediaType, Func<Stream, Task> write)
         {
             ArgumentNullException.ThrowIfNull(write);
-            if (!_asked.Contains(kind))
-            {
-                throw new ArgumentException($"The kind {kind} was not asked for.", nameof(kind));
-            }
-
-            if (_files.ContainsKey(kind))
-            {
-                throw new InvalidOperationException($"The kind {kind} is made already.");
-            }
-
+            MadeKindRule.ThrowIfNotAddable(kind, _asked, _files.ContainsKey(kind));
             using LimitedStream file = new LimitedStream(DerivedFileLimits.MaxBytesOf(kind));
             await write(file);
             _files.Add(kind, (mediaType, file.ToArray()));

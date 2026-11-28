@@ -23,6 +23,12 @@ namespace ByteShelf.Plugins.Video
 
         private const int AnswerChunkChars = 16 * 1024;
 
+        /// <summary>ENOSPC, on Linux, the only system the plugin has ffmpeg for: what the plugin's host takes for a full disk.</summary>
+        private const int NoSpace = 28;
+
+        /// <summary>What ffmpeg says, in the system's words for ENOSPC and EDQUOT (glibc's and musl's), when the disk or a quota is full.</summary>
+        private static readonly string[] DiskFullWords = ["No space left on device", "Disk quota exceeded", "Quota exceeded"];
+
         private Ffmpeg(string ffmpegPath, string ffprobePath)
         {
             FfmpegPath = ffmpegPath;
@@ -92,6 +98,7 @@ namespace ByteShelf.Plugins.Video
 
         /// <summary>Runs ffmpeg, and answers nothing: what it prints is thrown away.</summary>
         /// <exception cref="FfmpegFailedException">It ended with an error.</exception>
+        /// <exception cref="IOException">It ended for the disk or a quota being full.</exception>
         public async Task RunFfmpegAsync(IEnumerable<string> arguments)
         {
             await RunAsync(FfmpegPath, ["-nostdin", "-hide_banner", "-v", "error", .. arguments], maxAnswerChars: null);
@@ -113,7 +120,7 @@ namespace ByteShelf.Plugins.Video
         /// <summary>
         /// Runs <paramref name="tool"/> to its end, and answers what it prints, of at most <paramref name="maxAnswerChars"/>;
         /// with no most, what it prints is thrown away and it answers nothing. What it writes to standard error is thrown
-        /// away, as it may quote the contents. It inherits the process's CPU priority and memory limit (Processes.md).
+        /// away, as it may quote the contents, but whether it says the disk is full. It inherits the process's CPU priority and memory limit (Processes.md).
         /// </summary>
         private static async Task<string> RunAsync(string tool, IReadOnlyList<string> arguments, int? maxAnswerChars)
         {
@@ -133,15 +140,21 @@ namespace ByteShelf.Plugins.Video
             try
             {
                 process.StandardInput.Close();
-                Task errors = process.StandardError.BaseStream.CopyToAsync(Stream.Null);
+                Task<bool> saysDiskFull = SaysDiskFullAsync(process.StandardError);
                 string? answer = maxAnswerChars is { } max
                     ? await ReadAnswerAsync(process.StandardOutput, max)
                     : await DiscardAsync(process.StandardOutput);
-                await errors;
+                bool diskFull = await saysDiskFull;
                 await process.WaitForExitAsync();
                 if (answer == null)
                 {
                     throw new FfmpegFailedException(Path.GetFileName(tool), "said too much");
+                }
+
+                if (process.ExitCode != 0 && diskFull)
+                {
+                    // As the plugin's host takes it: the plugin cannot run until there is room, which says nothing of the contents.
+                    throw new IOException("The disk is full", NoSpace);
                 }
 
                 if (process.ExitCode != 0)
@@ -158,6 +171,18 @@ namespace ByteShelf.Plugins.Video
                     process.Kill(entireProcessTree: true);
                 }
             }
+        }
+
+        /// <summary>Whether <paramref name="errors"/>, read to its end and kept no further, say that the disk or a quota is full.</summary>
+        private static async Task<bool> SaysDiskFullAsync(StreamReader errors)
+        {
+            bool full = false;
+            while (await errors.ReadLineAsync() is { } line)
+            {
+                full |= DiskFullWords.Any(words => line.Contains(words, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return full;
         }
 
         /// <summary>All of <paramref name="output"/>; null when it is more than <paramref name="maxChars"/>.</summary>

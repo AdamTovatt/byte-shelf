@@ -2,7 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContentReader, DerivedKind, DerivedReader, DerivedStatus, ShelfFile } from '@byteshelf/plugin';
-import { InPreview, derivedReaderOf } from '@byteshelf/plugin/testing';
+import { InPreview, derivedReaderOf, stubFullScreen } from '@byteshelf/plugin/testing';
 import { savePosition, savedPosition } from './resumePoint';
 import { VideoPlayer } from './VideoPlayer';
 
@@ -27,12 +27,11 @@ describe('the video player', () => {
 
   /** What was made of a video, each kind listed at its place, and what it says of a stream not listed. */
   function derivedReader(listed: DerivedKind[], streamStatus: DerivedStatus | Error = 'none') {
-    const reader = derivedReaderOf(Object.fromEntries(listed.map((kind) => [kind, MADE_AT[kind]])));
     const status = vi.fn(async () => {
       if (streamStatus instanceof Error) throw streamStatus;
       return streamStatus;
     });
-    return { reader: { ...reader, status } satisfies DerivedReader, status };
+    return { reader: derivedReaderOf(Object.fromEntries(listed.map((kind) => [kind, MADE_AT[kind]])), { status }), status };
   }
 
   async function show(derived: DerivedReader, file: Partial<ShelfFile> = {}): Promise<void> {
@@ -83,8 +82,10 @@ describe('the video player', () => {
     await dispatch(element, 'error');
   }
 
-  async function press(key: string, target: EventTarget = document.body): Promise<void> {
-    await act(async () => void target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })));
+  async function press(key: string, target: EventTarget = document.body, init: KeyboardEventInit = {}): Promise<KeyboardEvent> {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init });
+    await act(async () => void target.dispatchEvent(event));
+    return event;
   }
 
   beforeEach(() => {
@@ -117,17 +118,16 @@ describe('the video player', () => {
     expect(status).not.toHaveBeenCalled();
   });
 
-  it('plays the original while its stream is on its way or there is no room for it, and says so, and says nothing when asking fails', async () => {
-    const notes = [];
-    for (const status of ['making', 'noRoom', new Error('Refused.')] as const) {
-      const { reader, status: asked } = derivedReader([], status);
-      await show(reader, { id: String(notes.length) });
-      expect([video()?.getAttribute('src'), asked]).toEqual(['original.mp4', expect.objectContaining({ mock: expect.objectContaining({ calls: [['stream', expect.any(AbortSignal)]] }) })]);
-      notes.push(container.querySelector('p')?.textContent ?? null);
-      await act(async () => root.render(null));
-    }
+  it.each([
+    ['on its way', 'making', 'A streaming copy is on its way.'],
+    ['without room', 'noRoom', 'There is no room on this shelf for a streaming copy.'],
+    ['not told, as asking failed', new Error('Refused.'), null],
+  ] as const)('plays the original while its stream is %s, and says so', async (_what, streamStatus, note) => {
+    const { reader, status } = derivedReader([], streamStatus);
+    await show(reader);
 
-    expect(notes).toEqual(['A streaming copy is on its way.', 'There is no room on this shelf for a streaming copy.', null]);
+    expect([video()?.getAttribute('src'), container.querySelector('p')?.textContent ?? null]).toEqual(['original.mp4', note]);
+    expect(status).toHaveBeenCalledExactlyOnceWith('stream', expect.any(AbortSignal));
   });
 
   it('plays the original of a stream listed that is gone since', async () => {
@@ -169,19 +169,22 @@ describe('the video player', () => {
 
     await click('Play');
     const again = await loaded();
-    expect([again === cutOff, again.getAttribute('src'), again.currentTime, again.play]).toEqual([false, 'stream.mp4', 42, expect.objectContaining({ mock: expect.objectContaining({ calls: [[]] }) })]);
+    expect([again === cutOff, again.getAttribute('src'), again.currentTime]).toEqual([false, 'stream.mp4', 42]);
+    expect(again.play).toHaveBeenCalledOnce();
   });
 
-  it('plays the original instead of the stream and back, each from where the other was, at its speed, playing as it was', async () => {
+  it('plays the original instead of the stream and back, each from where the other was, at its speed and volume, playing as it was', async () => {
     await show(derivedReader(['stream']).reader);
     const stream = await loaded();
     stream.currentTime = 42;
     stream.playbackRate = 1.5;
+    stream.volume = 0.25;
+    stream.muted = true;
     await click('Play');
 
     await click('Original');
     const original = await loaded();
-    expect([original.getAttribute('src'), original.currentTime, original.playbackRate, original.paused]).toEqual(['original.mp4', 42, 1.5, false]);
+    expect([original.getAttribute('src'), original.currentTime, original.playbackRate, original.volume, original.muted, original.paused]).toEqual(['original.mp4', 42, 1.5, 0.25, true, false]);
     expect(control('Original')?.getAttribute('aria-pressed')).toBe('true');
 
     original.currentTime = 50;
@@ -227,13 +230,18 @@ describe('the video player', () => {
     expect([video(), container.textContent]).toEqual([null, 'the next viewer']);
   });
 
-  it('picks up where it was stopped, and keeps where it is as it is paused, every 2 seconds as it plays and as it closes, and forgets it once ended', async () => {
+  it('picks up where it was stopped', async () => {
     savePosition('f', 30);
     await show(derivedReader([]).reader);
-    const element = await loaded();
-    expect(element.currentTime).toBe(30);
 
+    expect((await loaded()).currentTime).toBe(30);
+  });
+
+  it('keeps where it is every 2 seconds as it plays', async () => {
+    await show(derivedReader([]).reader);
+    const element = await loaded();
     const now = vi.spyOn(Date, 'now').mockReturnValue(10_000);
+
     element.currentTime = 40;
     await dispatch(element, 'timeupdate');
     element.currentTime = 41;
@@ -243,19 +251,28 @@ describe('the video player', () => {
     now.mockReturnValue(12_500);
     await dispatch(element, 'timeupdate');
     expect(savedPosition('f')).toBe(41);
+  });
+
+  it('keeps where it is as it is paused, and as it closes', async () => {
+    await show(derivedReader([]).reader);
+    const element = await loaded();
 
     element.currentTime = 55;
     await dispatch(element, 'pause');
     expect(savedPosition('f')).toBe(55);
-
     element.currentTime = 60;
     await act(async () => root.render(null));
     expect(savedPosition('f')).toBe(60);
+  });
 
+  it('forgets where it was once it is watched to the end', async () => {
+    savePosition('f', 30);
     await show(derivedReader([]).reader);
     const watched = await loaded();
+
     Object.defineProperty(watched, 'ended', { value: true, configurable: true });
     await dispatch(watched, 'ended');
+
     expect(savedPosition('f')).toBeNull();
   });
 
@@ -277,6 +294,32 @@ describe('the video player', () => {
     expect(element.paused).toBe(false);
   });
 
+  it('plays or pauses once for Space or K held down, jumps again as J or L is, and takes nothing pressed with a modifier', async () => {
+    await show(derivedReader([]).reader);
+    const element = await loaded();
+    element.currentTime = 50;
+
+    await press('k');
+    await press('k', document.body, { repeat: true });
+    expect([element.paused, (await press(' ', document.body, { repeat: true })).defaultPrevented]).toEqual([false, true]);
+    await press('l');
+    await press('l', document.body, { repeat: true });
+    expect([element.paused, element.currentTime]).toEqual([false, 70]);
+
+    await press('k', document.body, { ctrlKey: true });
+    await press('l', document.body, { shiftKey: true });
+    expect([element.paused, element.currentTime]).toEqual([false, 70]);
+  });
+
+  it('leaves Space on a button to the button', async () => {
+    await show(derivedReader([]).reader);
+    const element = await loaded();
+
+    await press(' ', control('Play')!);
+
+    expect(element.play).not.toHaveBeenCalled();
+  });
+
   it('moves on from where a seek went with the seek bar\'s keys before the video says it is there', async () => {
     await show(derivedReader([]).reader);
     const element = await loaded();
@@ -288,18 +331,23 @@ describe('the video player', () => {
     expect([element.currentTime, seekBar.getAttribute('aria-valuenow')]).toEqual([10, '10']);
   });
 
-  it('goes through its speeds, from any other to the first', async () => {
+  it('goes through its speeds, from any other to the first, and shows the one it plays at', async () => {
     await show(derivedReader([]).reader);
     const element = await loaded();
-    const rates = [];
-    for (let click = 0; click < 6; click++) {
-      await act(async () => control('Speed 1×')!.click());
-      rates.push(element.playbackRate);
+    const speed = () => container.querySelector<HTMLElement>('[aria-label^="Speed"]')!;
+    async function next(): Promise<string | null> {
+      await act(async () => speed().click());
+      await dispatch(element, 'ratechange');
+      return speed().textContent;
     }
-    element.playbackRate = 3;
-    await act(async () => control('Speed 1×')!.click());
 
-    expect([...rates, element.playbackRate]).toEqual([1.25, 1.5, 2, 0.5, 0.75, 1, 1]);
+    const shown = [];
+    for (let click = 0; click < 6; click++) shown.push(await next());
+    element.playbackRate = 3;
+    await dispatch(element, 'ratechange');
+    shown.push(speed().textContent, await next());
+
+    expect(shown).toEqual(['1.25×', '1.5×', '2×', '0.5×', '0.75×', '1×', '3×', '1×']);
   });
 
   it('mutes and unmutes, at the whole volume when it was at none, and sets the volume, muted at none', async () => {
@@ -329,50 +377,99 @@ describe('the video player', () => {
     expect([element.volume, element.muted]).toEqual([1, false]);
   });
 
-  it('goes full screen with the page and back, and stays as it is when the browser refuses', async () => {
-    // What a browser that makes elements full screen has, which the test's has not; each refusal says whether it was handled.
-    const handled: string[] = [];
-    function refusal(of: string): Promise<void> {
-      const refused = Promise.reject(new Error('Refused.'));
-      refused.catch = (onRejected) => {
-        handled.push(of);
-        return Promise.prototype.catch.call(refused, onRejected);
-      };
-      return refused;
-    }
-    let shownFullScreen: Element | null = null;
-    Object.defineProperties(document, {
-      fullscreenEnabled: { value: true, configurable: true },
-      fullscreenElement: { get: () => shownFullScreen, configurable: true },
-      exitFullscreen: { value: () => refusal('exit'), configurable: true },
-    });
+  it('goes full screen with the page and back, and on a double click', async () => {
+    const fullScreen = stubFullScreen();
     try {
       await show(derivedReader([]).reader);
-      document.documentElement.requestFullscreen = () => refusal('request');
 
       await click('Full screen');
-      shownFullScreen = document.documentElement;
-      await dispatch(document, 'fullscreenchange');
       await click('Exit full screen');
+      await act(async () => void video()!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
 
-      expect(handled).toEqual(['request', 'exit']);
+      expect([fullScreen.requested, fullScreen.exits, control('Exit full screen') !== null]).toEqual([[document.documentElement, document.documentElement], 1, true]);
     } finally {
-      for (const name of ['fullscreenEnabled', 'fullscreenElement', 'exitFullscreen']) Reflect.deleteProperty(document, name);
-      Reflect.deleteProperty(document.documentElement, 'requestFullscreen');
+      fullScreen.restore();
     }
   });
 
-  it('goes full screen in the browser\'s own player where the browser makes no element full screen, as on an iPhone', async () => {
-    const enter = vi.fn();
+  /** A refusal left unhandled fails the test of itself. */
+  it('stays as it is when the browser refuses to go full screen or back', async () => {
+    const fullScreen = stubFullScreen({ refuses: true });
+    try {
+      await show(derivedReader([]).reader);
+
+      await click('Full screen');
+      expect(control('Full screen')).not.toBeNull();
+      await act(async () => fullScreen.show(document.documentElement));
+      await click('Exit full screen');
+
+      expect([fullScreen.requested.length, fullScreen.exits, control('Exit full screen') !== null]).toEqual([1, 1, true]);
+    } finally {
+      fullScreen.restore();
+    }
+  });
+
+  it.each([
+    ['', () => {}],
+    [', and stays as it is when that refuses', () => {
+      throw new DOMException('Not loaded.', 'InvalidStateError');
+    }],
+  ])('goes full screen in the browser\'s own player where the browser makes no element full screen, as on an iPhone%s', async (_what, entering) => {
+    const enter = vi.fn(entering);
     Object.defineProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen', { value: enter, configurable: true });
+    // What is thrown in a click's handler the page is told of, rather than the test.
+    const thrown: unknown[] = [];
+    const onError = (event: ErrorEvent) => {
+      thrown.push(event.error);
+      event.preventDefault();
+    };
+    window.addEventListener('error', onError);
     try {
       await show(derivedReader([]).reader);
 
       await click('Full screen');
 
-      expect(enter.mock.contexts).toEqual([video()]);
+      expect([enter.mock.contexts, thrown]).toEqual([[video()], []]);
     } finally {
+      window.removeEventListener('error', onError);
       Reflect.deleteProperty(HTMLVideoElement.prototype, 'webkitEnterFullscreen');
     }
+  });
+
+  it('plays or pauses at a click with the mouse, and leaves a tap to the preview', async () => {
+    await show(derivedReader([]).reader);
+    const element = await loaded();
+    async function pressed(pointerType: string): Promise<boolean> {
+      await act(async () => {
+        element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType }));
+        element.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      return element.paused;
+    }
+
+    expect([await pressed('touch'), await pressed('pen'), await pressed('mouse'), await pressed('mouse')]).toEqual([true, true, false, true]);
+  });
+
+  it('reads the whole at its end, in whole seconds as the time gone by', async () => {
+    await show(derivedReader([]).reader);
+    const element = video()!;
+    Object.defineProperties(element, { duration: { value: 59.6, configurable: true }, readyState: { value: 1, configurable: true } });
+    await dispatch(element, 'durationchange');
+    element.currentTime = 59.6;
+    await dispatch(element, 'timeupdate');
+
+    expect(container.textContent).toContain('0:59 / 0:59');
+  });
+
+  it('of a video whose length is not known, says where it is alone, and seeks nowhere', async () => {
+    await show(derivedReader([]).reader);
+    const element = video()!;
+    Object.defineProperties(element, { duration: { value: Infinity, configurable: true }, readyState: { value: 1, configurable: true } });
+    await dispatch(element, 'durationchange');
+    element.currentTime = 42;
+    await dispatch(element, 'timeupdate');
+
+    expect([container.textContent?.includes('0:42 /'), control('Seek')?.getAttribute('aria-disabled')]).toEqual([false, 'true']);
+    expect(container.textContent).toContain('0:42');
   });
 });

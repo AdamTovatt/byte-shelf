@@ -1,12 +1,9 @@
-// @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import { keyAction } from './playerKeys';
 
 describe('the keys of the player', () => {
-  const stage = document.createElement('div');
-
   it('play or pause with Space and K, and jump 10 seconds back and forward with J and L, either case', () => {
-    expect([' ', 'k', 'K', 'j', 'l', 'L'].map((key) => keyAction(key, stage))).toEqual([
+    expect([' ', 'k', 'K', 'j', 'l', 'L'].map(keyAction)).toEqual([
       { kind: 'toggle' },
       { kind: 'toggle' },
       { kind: 'toggle' },
@@ -17,13 +14,6 @@ describe('the keys of the player', () => {
   });
 
   it('leave the arrow keys to the seek bar and to stepping between files', () => {
-    expect(['ArrowLeft', 'ArrowRight', 'Enter', 'x'].map((key) => keyAction(key, stage))).toEqual([null, null, null, null]);
-  });
-
-  it('leave Space on a button to the button, but for K', () => {
-    const button = document.createElement('button');
-    const inButton = button.appendChild(document.createElement('span'));
-
-    expect([keyAction(' ', button), keyAction(' ', inButton), keyAction('k', button)]).toEqual([null, null, { kind: 'toggle' }]);
+    expect(['ArrowLeft', 'ArrowRight', 'Enter', 'x'].map(keyAction)).toEqual([null, null, null, null]);
   });
 });

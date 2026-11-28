@@ -24,13 +24,20 @@ namespace ByteShelf.Plugins.Video
 
         public static bool Of(VideoProbe video)
         {
-            return video.Index is { IndexAtFront: true, MaxKeyframeGapSeconds: <= MaxKeyframeGapSeconds }
+            return PlaysAsItIs(video)
+                && video.Index is { IndexAtFront: true, MaxKeyframeGapSeconds: <= MaxKeyframeGapSeconds }
+                && video.BitsPerSecond <= MaxBitsPerSecond;
+        }
+
+        /// <summary>Whether every browser plays the video as it is, however it streams: an MP4 of H.264 that each decodes, with AAC or no audio.</summary>
+        public static bool PlaysAsItIs(VideoProbe video)
+        {
+            return video.Index != null
                 && video.MajorBrand != QuickTime
                 && video.VideoCodec == "h264"
                 && PlayedProfiles.Contains(video.VideoProfile)
                 && PlayedPixelFormats.Contains(video.PixelFormat)
-                && video.AudioCodecs.All(codec => codec == "aac")
-                && video.BitsPerSecond <= MaxBitsPerSecond;
+                && video.AudioCodecs.All(codec => codec == "aac");
         }
     }
 }

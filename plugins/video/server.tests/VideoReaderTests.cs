@@ -27,6 +27,15 @@ namespace ByteShelf.Plugins.Video.Tests
         }
 
         [FfmpegFact]
+        public async Task ReadAsync_AVideoThatDoesNotSayHowLongItPlays_SaysItsSizeAlone()
+        {
+            JsonObject document = (await ReadAsync(await TestVideos.NoKnownLengthAsync()))!;
+
+            Assert.Equal((320, false), (document["width"]!.GetValue<int>(), document["streamsWell"]!.GetValue<bool>()));
+            Assert.Equal((false, false), (document.ContainsKey("durationSeconds"), document.ContainsKey("storyboard")));
+        }
+
+        [FfmpegFact]
         public async Task ReadAsync_AVideoThatStreamsWell_SaysSo()
         {
             JsonObject document = (await ReadAsync(await TestVideos.StreamingWellAsync()))!;
@@ -122,10 +131,9 @@ namespace ByteShelf.Plugins.Video.Tests
             Assert.Equal(0, opened);
         }
 
-        private static async Task<JsonObject?> ReadAsync(byte[] contents)
+        private static Task<JsonObject?> ReadAsync(byte[] contents)
         {
-            using MemoryStream stream = new MemoryStream(contents, writable: false);
-            return await new VideoReader().ReadAsync(stream);
+            return new VideoReader().ReadAsync(contents);
         }
     }
 }

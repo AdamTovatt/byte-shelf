@@ -15,7 +15,7 @@ namespace ByteShelf.Server.Derived.Services
 
         public StoredContents(IDerivedFilePlugins plugins)
         {
-            _byMaker = MakersOf(plugins).ToDictionary(maker => (maker.Plugin.Id, maker.Group), _ => Channel.CreateUnbounded<string>());
+            _byMaker = DerivedBackground.MakersOf(plugins).ToDictionary(maker => (maker.Plugin.Id, maker.Group), _ => Channel.CreateUnbounded<string>());
         }
 
         /// <summary>Tells every plugin, of each group it makes in the background, that the contents were stored, whatever their types.</summary>
@@ -25,12 +25,6 @@ namespace ByteShelf.Server.Derived.Services
             {
                 channel.Writer.TryWrite(sha256);
             }
-        }
-
-        /// <summary>The plugins with each group they make in the background (<see cref="MakingGroup.InBackground"/>): each goes at its own pace.</summary>
-        internal static IEnumerable<(DerivedFilePlugin Plugin, MakingGroup Group)> MakersOf(IDerivedFilePlugins plugins)
-        {
-            return plugins.All.SelectMany(plugin => MakingGroup.InBackground.Where(plugin.MakesAny).Select(group => (plugin, group)));
         }
 
         /// <summary>The contents stored since, as the plugin's maker of <paramref name="group"/> comes to them.</summary>

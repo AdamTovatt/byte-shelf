@@ -18,12 +18,6 @@ namespace ByteShelf.Plugins.Video
 
         private const int ChunkBytes = 64 * 1024;
 
-        /// <summary>What ffmpeg asks for at once where it seeks: a block (<see cref="BlockCache"/>).</summary>
-        internal const int SeekingRequestBytes = BlockCache.BlockBytes;
-
-        /// <summary>What ffmpeg asks for at once where it reads all of the contents: fewer requests, as many blocks.</summary>
-        internal const int ReadingRequestBytes = 16 * BlockCache.BlockBytes;
-
         private readonly TcpListener _listener;
         private readonly string _path;
         private readonly CancellationTokenSource _stopping = new CancellationTokenSource();
@@ -45,12 +39,6 @@ namespace ByteShelf.Plugins.Video
 
         /// <summary>The contents, which are read here too, as the server reads them.</summary>
         public BlockCache Contents { get; }
-
-        /// <summary>The arguments of ffmpeg's or ffprobe's input that seek in the contents.</summary>
-        public IReadOnlyList<string> SeekingInput => Ffmpeg.Input(Url, SeekingRequestBytes);
-
-        /// <summary>The arguments of ffmpeg's input that read all of the contents.</summary>
-        public IReadOnlyList<string> ReadingInput => Ffmpeg.Input(Url, ReadingRequestBytes);
 
         /// <summary>Serves <paramref name="contents"/>, a seekable stream, until it is disposed of.</summary>
         public static RangeServer Start(Stream contents)
