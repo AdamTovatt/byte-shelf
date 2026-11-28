@@ -6,6 +6,7 @@
     "typeRoots": ["../byteshelf.client/node_modules/@types", "../byteshelf.client/node_modules"],
     "paths": {
       "@byteshelf/plugin": ["../byteshelf.client/src/plugin/index.ts"],
+      "@byteshelf/plugin/testing": ["../byteshelf.client/src/plugin/testing.ts"],
       "react": ["../byteshelf.client/node_modules/@types/react"],
       "react/*": ["../byteshelf.client/node_modules/@types/react/*"],
       "react-dom": ["../byteshelf.client/node_modules/@types/react-dom"],

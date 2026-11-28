@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The video plugin's server assembly; `npm run build` in the folder above publishes it into dist. -->
+  <PropertyGroup>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\ByteShelf.Plugins\ByteShelf.Plugins.csproj" Private="false" ExcludeAssets="runtime" />
+    <ProjectReference Include="..\..\..\ByteShelfCommon\ByteShelfCommon.csproj" Private="false" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ByteShelf.Plugins.Video.Tests" />
+  </ItemGroup>
+
+  <Import Project="Ffmpeg.targets" />
+
+</Project>

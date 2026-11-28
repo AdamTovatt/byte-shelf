@@ -141,6 +141,8 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
         {
             Process withoutALocation = Start(TestDerivedPlugins.ServerExecutable);
             Assert.Equal(PluginProcessCommand.WrongArguments, await ExitCodeAsync(withoutALocation));
+            Process withAnotherFlag = Start(TestDerivedPlugins.ServerExecutable, "nowhere", "--highest-priority");
+            Assert.Equal(PluginProcessCommand.WrongArguments, await ExitCodeAsync(withAnotherFlag));
 
             Process process = Start(TestDerivedPlugins.ServerExecutable, "nowhere");
             using CancellationTokenSource patience = new CancellationTokenSource(Patience);

@@ -9,7 +9,7 @@ namespace ByteShelf.Server.Tests
         public static int Main(string[] args)
         {
             return PluginProcessCommand.RunAsync(
-                args.ElementAtOrDefault(1),
+                args,
                 location => location == TestReader.Location ? TestReader.LoadWork() : TestMaker.LoadWork(location)).GetAwaiter().GetResult();
         }
     }

@@ -66,8 +66,9 @@ whole log.
 
 What the primary read from files' contents arrives the same way, as `object_metadata` and
 `content_plugin_metadata` entries: a replica reads no metadata from contents itself, and starts to once promoted
-([Metadata](../Metadata/Metadata.md)). What plugins make from contents (thumbnails and previews) it does make
-itself ([Derived files](../Derived/Derived.md)).
+([Metadata](../Metadata/Metadata.md)). What plugins make from contents, every derived kind, it makes itself
+([Derived files](../Derived/Derived.md)): a replica promoted has what it made by then, and makes the rest over
+time, its streams, of up to hours each, maybe over days.
 
 A plugin's document about a file (`file_plugin_metadata`) refers to the file and may come before it: a copy
 holds each entity's newest entry, and the file may have changed after the document. So only after the last

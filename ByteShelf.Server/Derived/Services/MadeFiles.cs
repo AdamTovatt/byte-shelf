@@ -24,16 +24,7 @@ namespace ByteShelf.Server.Derived.Services
 
         public async Task AddAsync(DerivedKind kind, string mediaType, Func<Stream, Task> write)
         {
-            if (!_kinds.Contains(kind))
-            {
-                throw new ArgumentException($"The kind {kind} was not asked for.", nameof(kind));
-            }
-
-            if (_made.ContainsKey(kind))
-            {
-                throw new InvalidOperationException($"The kind {kind} is made already.");
-            }
-
+            MadeKindRule.ThrowIfNotAddable(kind, _kinds, _made.ContainsKey(kind));
             await using (Stream file = Open(Path.Combine(_folder, DerivedKinds.NameOf(kind)), DerivedFileLimits.MaxBytesOf(kind)))
             {
                 await write(file);

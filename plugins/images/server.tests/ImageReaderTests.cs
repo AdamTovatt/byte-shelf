@@ -92,8 +92,7 @@ namespace ByteShelf.Plugins.Images.Tests
 
         private static async Task<JsonObject> ReadAsync(byte[] contents)
         {
-            using MemoryStream stream = new MemoryStream(contents, writable: false);
-            return (await new ImageReader().ReadAsync(stream))!;
+            return (await new ImageReader().ReadAsync(contents))!;
         }
 
         private static void AssertPlaceholder(JsonObject document, int width, int height, IMagickColor<byte> topLeft, IMagickColor<byte> topRight)

@@ -33,7 +33,7 @@ namespace ByteShelf.Server.Derived.Services
         /// <exception cref="PluginUnavailableException">The plugin could not run, whatever the contents.</exception>
         public Task<MakingOutcome> MakeAsync(string sha256, DerivedKind kind, DerivedFilePlugin plugin, PluginPriority priority)
         {
-            JobKey key = new JobKey(sha256, plugin.Id, DerivedKinds.GroupOf(kind));
+            JobKey key = new JobKey(sha256, plugin.Id, MakingGroup.Of(kind));
             lock (_lock)
             {
                 if (_jobs.TryGetValue(key, out Job? job))
@@ -42,11 +42,17 @@ namespace ByteShelf.Server.Derived.Services
                     return job.Ended;
                 }
 
-                job = new Job(_processes.Enter(plugin.Id, priority));
+                job = new Job(_processes.Enter(plugin.Id, key.Group.Lane, priority));
                 _jobs.Add(key, job);
                 job.Ended = Task.Run(() => RunAsync(key, plugin, job.Turn), CancellationToken.None);
                 return job.Ended;
             }
+        }
+
+        /// <summary>What a plugin's maker of derived files could not do in <paramref name="lane"/>, said after "its maker of derived files": the one wording of it.</summary>
+        internal static string CouldNotDo(PluginLane lane)
+        {
+            return lane == PluginLane.Quick ? "could not run" : $"could not do its {lane.Name} runs";
         }
 
         private async Task<MakingOutcome> RunAsync(JobKey key, DerivedFilePlugin plugin, PluginTurns.Turn turn)
@@ -61,7 +67,6 @@ namespace ByteShelf.Server.Derived.Services
                     return MakingOutcome.NothingToMake;
                 }
 
-                _problems.Clear(plugin.Id, PluginPart.Maker);
                 return await run.KeepAsync(taken, CancellationToken.None);
             }
             catch (OperationCanceledException)
@@ -70,8 +75,9 @@ namespace ByteShelf.Server.Derived.Services
             }
             catch (PluginUnavailableException exception)
             {
-                _problems.Report(plugin.Id, PluginPart.Maker, $"Its maker of derived files could not run, so it makes nothing until it can: {exception.Message}.");
-                _logger.LogError(exception, "The plugin {Plugin} could not be run to make derived files.", plugin.Id);
+                string until = turn.Lane == PluginLane.Quick ? "it makes nothing" : "it does none";
+                _problems.Report(plugin.Id, PluginPart.Maker, turn.Lane, $"Its maker of derived files {CouldNotDo(turn.Lane)}, so {until} until it can: {exception.Message}.");
+                _logger.LogError(exception, "The plugin {Plugin} could not be run to make derived files in its {Lane} runs.", plugin.Id, turn.Lane.Name);
                 throw;
             }
             catch (Exception exception)

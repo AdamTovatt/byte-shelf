@@ -16,7 +16,7 @@ namespace ByteShelf.Server.Tests.Plugins.Processes
         public Task InitializeAsync()
         {
             PluginTarget plugin = new PluginTarget("test", string.Empty);
-            _worker = new PluginWorker(plugin, PluginProcess.Start(ShellProgram.Of("exec sleep 1000"), plugin, WorkFolder.Create(_root.Root), TimeProvider.System));
+            _worker = new PluginWorker(plugin, PluginLane.Quick, PluginProcess.Start(ShellProgram.Of("exec sleep 1000"), plugin, PluginLane.Quick, WorkFolder.Create(_root.Root), TimeProvider.System));
             return Task.CompletedTask;
         }
 

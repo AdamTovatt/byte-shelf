@@ -7,7 +7,8 @@
     "check": ["--check-plugin"],
     "known": {
       "images": "github:AdamTovatt/byte-shelf/byteshelf-images.zip",
-      "markdown": "github:AdamTovatt/byte-shelf/byteshelf-markdown.zip"
+      "markdown": "github:AdamTovatt/byte-shelf/byteshelf-markdown.zip",
+      "video": "github:AdamTovatt/byte-shelf/byteshelf-video.zip"
     }
   },
   "settings": {

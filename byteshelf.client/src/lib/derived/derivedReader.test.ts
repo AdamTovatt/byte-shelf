@@ -203,6 +203,51 @@ describe('what plugins made from a file', () => {
     expect(sent).toHaveLength(1);
   });
 
+  it('says what there is of it without waiting while it is being made: made as listed or answered, making, none or no room', async () => {
+    const answers = [notReady('60'), new Response(null, { status: 404 }), new Response(null, { status: 507 }), made()];
+    const sent = stubServer(async () => answers.shift()!);
+    const reader = derivedReader(PHOTO, LIVE);
+
+    expect(await reader.status('thumbnail')).toBe('made');
+    expect(sent).toEqual([]);
+    expect([await reader.status('stream'), await reader.status('stream'), await reader.status('stream'), await reader.status('stream')]).toEqual(['making', 'none', 'noRoom', 'made']);
+    expect(sent).toHaveLength(4);
+  });
+
+  it('says what there is of one listed by asking the server once it is forgotten, and asks no longer once given up', async () => {
+    let answer!: (response: Response) => void;
+    const sent = stubServer(() => new Promise((resolve) => { answer = resolve; }));
+    const reader = derivedReader(PHOTO, LIVE);
+    reader.forget('thumbnail');
+    const givingUp = new AbortController();
+
+    const asked = reader.status('thumbnail', givingUp.signal);
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    givingUp.abort();
+    answer(made());
+
+    await expect(asked).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('has no stream where the page reads files whole, as it read the file itself, which is asked of no server', async () => {
+    vi.stubGlobal('isSecureContext', false);
+    const sent = stubServer(async () => made());
+    const reader = derivedReader({ ...PHOTO, derived: { stream: 'video-1' } }, LIVE);
+
+    expect([reader.has('stream'), await reader.url('stream'), await reader.status('stream')]).toEqual([false, null, 'none']);
+    expect(sent).toEqual([]);
+  });
+
+  it('says it fails when the server does, and none of an encrypted file, which is asked of no server', async () => {
+    const sent = stubServer(async () => new Response(null, { status: 500 }));
+    const reader = derivedReader(PHOTO, LIVE);
+
+    await expect(reader.status('stream')).rejects.toThrow();
+    reader.update({ ...PHOTO, encrypted: true });
+    expect(await reader.status('thumbnail')).toBe('none');
+    expect(sent).toHaveLength(1);
+  });
+
   it('is none of an encrypted file, whatever its record says, which is asked of no server', async () => {
     const sent = stubServer(async () => made());
     const reader = derivedReader(PHOTO, LIVE);

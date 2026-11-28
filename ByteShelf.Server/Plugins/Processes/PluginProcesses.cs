@@ -7,9 +7,9 @@ using Microsoft.Win32.SafeHandles;
 namespace ByteShelf.Server.Plugins.Processes
 {
     /// <summary>
-    /// Has plugins do things over contents a plain file holds, each plugin in a child process of its own
-    /// (<see cref="PluginWorkers"/>), one thing at a time, in turns (<see cref="PluginTurns"/>). A process does many, until
-    /// it has had nothing to do for a while; one that was killed or died is replaced.
+    /// Has plugins do things over contents a plain file holds, each plugin in a child process of its own for each lane
+    /// (<see cref="PluginLane"/>, <see cref="PluginWorkers"/>), one thing at a time in each, in turns (<see cref="PluginTurns"/>).
+    /// A process does many, until it has had nothing to do for a while; one that was killed or died is replaced.
     /// </summary>
     /// <remarks>
     /// A process that has read contents may keep some of them in its memory for as long as it lives, so contents
@@ -18,11 +18,11 @@ namespace ByteShelf.Server.Plugins.Processes
     /// </remarks>
     internal sealed class PluginProcesses : IAsyncDisposable
     {
-        /// <summary>How long a run may take, and loading a plugin before it.</summary>
-        private static readonly TimeSpan RunLimit = TimeSpan.FromSeconds(60);
+        /// <summary>How long loading a plugin may take, in either lane; a run may take its lane's <see cref="PluginLane.RunLimit"/>.</summary>
+        private static readonly TimeSpan LoadLimit = TimeSpan.FromSeconds(60);
 
         private readonly Lock _lock = new Lock();
-        private readonly Dictionary<string, PluginTurns> _turns = new Dictionary<string, PluginTurns>(StringComparer.Ordinal);
+        private readonly Dictionary<PluginInLane, PluginTurns> _turns = new Dictionary<PluginInLane, PluginTurns>();
         private readonly PluginClaims _claims = new PluginClaims();
         private readonly PluginWorkers _workers;
         private readonly CancellationTokenSource _stopping = new CancellationTokenSource();
@@ -52,22 +52,23 @@ namespace ByteShelf.Server.Plugins.Processes
             _logger = logger;
         }
 
-        /// <summary>Takes a turn with the plugin for a run; dispose it once that is done.</summary>
-        public PluginTurns.Turn Enter(string pluginId, PluginPriority priority)
+        /// <summary>Takes a turn with the plugin in <paramref name="lane"/> for a run; dispose it once that is done.</summary>
+        public PluginTurns.Turn Enter(string pluginId, PluginLane lane, PluginPriority priority)
         {
             lock (_lock)
             {
-                if (!_turns.TryGetValue(pluginId, out PluginTurns? turns))
+                PluginInLane key = new PluginInLane(pluginId, lane);
+                if (!_turns.TryGetValue(key, out PluginTurns? turns))
                 {
-                    turns = new PluginTurns();
-                    _turns.Add(pluginId, turns);
+                    turns = new PluginTurns(lane);
+                    _turns.Add(key, turns);
                 }
 
                 return turns.Enter(priority);
             }
         }
 
-        /// <summary>Does <paramref name="run"/> once it is <paramref name="turn"/>'s.</summary>
+        /// <summary>Does <paramref name="run"/> once it is <paramref name="turn"/>'s, in the turn's lane.</summary>
         /// <exception cref="OperationCanceledException">It was stopped, for contents being removed or a server shutting down, which says nothing of the contents.</exception>
         /// <exception cref="PluginUnavailableException">The plugin could not run, whatever the contents.</exception>
         public async Task<T> RunAsync<T>(IPluginRun<T> run, PluginTurns.Turn turn, CancellationToken cancellationToken)
@@ -92,7 +93,7 @@ namespace ByteShelf.Server.Plugins.Processes
 
             try
             {
-                return await RunAsync(run, arguments, claim.Stop.Token);
+                return await RunAsync(run, turn.Lane, arguments, claim.Stop.Token);
             }
             finally
             {
@@ -151,7 +152,7 @@ namespace ByteShelf.Server.Plugins.Processes
             return await scope.ServiceProvider.GetRequiredService<IPlainContentsRepository>().GetMediaTypesAsync(sha256);
         }
 
-        private async Task<T> RunAsync<T>(IPluginRun<T> run, JsonElement arguments, CancellationToken cancellationToken)
+        private async Task<T> RunAsync<T>(IPluginRun<T> run, PluginLane lane, JsonElement arguments, CancellationToken cancellationToken)
         {
             SafeFileHandle contents;
             try
@@ -169,12 +170,13 @@ namespace ByteShelf.Server.Plugins.Processes
                 RunRequest request = new RunRequest(ProcessWork.NameOf(run.Work), arguments, RandomAccess.GetLength(contents));
                 while (true)
                 {
-                    (PluginWorker worker, PluginWorker.Lease lease, bool isNew) = await _workers.GetAsync(run.Plugin, run.Sha256, RunLimit, cancellationToken);
+                    (PluginWorker worker, PluginWorker.Lease lease, bool isNew) = await _workers.GetAsync(run.Plugin, lane, run.Sha256, LoadLimit, cancellationToken);
                     bool goesOn = false;
                     try
                     {
+                        run.Began();
                         using CancellationTokenSource either = CancellationTokenSource.CreateLinkedTokenSource(lease.Stop, cancellationToken);
-                        (PluginRunResult? result, bool processGoesOn) = await lease.Process.RunAsync(request, contents, RunLimit, either.Token);
+                        (PluginRunResult? result, bool processGoesOn) = await lease.Process.RunAsync(request, contents, lane.RunLimit, either.Token);
                         if (lease.Stop.IsCancellationRequested)
                         {
                             cancellationToken.ThrowIfCancellationRequested();
@@ -193,7 +195,7 @@ namespace ByteShelf.Server.Plugins.Processes
                         }
 
                         Log(run.Plugin, run.Sha256, result);
-                        goesOn = processGoesOn;
+                        goesOn = processGoesOn && lane.KeepsProcess;
                         return await run.TakeAsync(result, worker.Folder, cancellationToken);
                     }
                     catch (OperationCanceledException) when (lease.Stop.IsCancellationRequested && !cancellationToken.IsCancellationRequested)

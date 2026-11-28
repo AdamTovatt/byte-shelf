@@ -39,11 +39,11 @@ namespace ByteShelf.Server.Plugins.Processes
 
         public WorkFolder Folder { get; }
 
-        /// <summary>Starts one of <paramref name="plugin"/> in <paramref name="folder"/>.</summary>
+        /// <summary>Starts one of <paramref name="plugin"/> for <paramref name="lane"/> in <paramref name="folder"/>.</summary>
         /// <exception cref="PluginUnavailableException">It could not be started.</exception>
-        public static PluginProcess Start(PluginExecutable executable, PluginTarget plugin, WorkFolder folder, TimeProvider timeProvider)
+        public static PluginProcess Start(PluginExecutable executable, PluginTarget plugin, PluginLane lane, WorkFolder folder, TimeProvider timeProvider)
         {
-            ProcessStartInfo start = new ProcessStartInfo(executable.FileName, [.. executable.Arguments, PluginProcessCommand.Flag, plugin.Location])
+            ProcessStartInfo start = new ProcessStartInfo(executable.FileName, [.. executable.Arguments, .. PluginProcessCommand.ArgumentsFor(plugin, lane)])
             {
                 WorkingDirectory = folder.Path,
                 RedirectStandardInput = true,

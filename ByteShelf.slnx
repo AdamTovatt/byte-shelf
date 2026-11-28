@@ -4,6 +4,7 @@
   <Project Path="ByteShelfClient/ByteShelfClient.csproj" />
   <Project Path="ByteShelfClient.Tests/ByteShelfClient.Tests.csproj" />
   <Project Path="ByteShelf.Plugins/ByteShelf.Plugins.csproj" />
+  <Project Path="ByteShelf.Plugins.Testing/ByteShelf.Plugins.Testing.csproj" />
   <Project Path="ByteShelf.Server/ByteShelf.Server.csproj" />
   <Project Path="ByteShelf.Cli.Tests/ByteShelf.Cli.Tests.csproj" />
   <Project Path="ByteShelf.Cli/ByteShelf.Cli.csproj" />
@@ -12,4 +13,6 @@
   <Project Path="ByteShelf.Server.Tests.Plugin/ByteShelf.Server.Tests.Plugin.csproj" />
   <Project Path="plugins/images/server/ByteShelf.Plugins.Images.csproj" />
   <Project Path="plugins/images/server.tests/ByteShelf.Plugins.Images.Tests.csproj" />
+  <Project Path="plugins/video/server/ByteShelf.Plugins.Video.csproj" />
+  <Project Path="plugins/video/server.tests/ByteShelf.Plugins.Video.Tests.csproj" />
 </Solution>

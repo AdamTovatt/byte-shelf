@@ -6,12 +6,15 @@ server doing so. **It is no sandbox.** The process runs as the server's user, so
 over, can open whatever that user can: the root, the database, other programs' files. It is given none of
 them, and nothing keeps it from them.
 
-`PluginProcesses` has a run done: the plugin's turn (`PluginTurns`: one thing at a time per plugin, what somebody
-waits for first, then making from contents just stored, then the backlog, which all reading is), then the process
-(`PluginWorker`, of `PluginWorkers`), used by one run at a time, noting the run (`PluginClaims`) so a removal of its
-contents finds it. Each plugin has one, the server's own executable as `--plugin-process <folder>`
-(`PluginProcessCommand`), which loads the plugin as the server does, among the server's registrations on no root,
-and makes its reader and maker and nothing else. What it may be asked to do is each module's `ProcessWork`
+`PluginProcesses` has a run done: the plugin's turn in the run's lane (`PluginTurns`: one thing at a time per plugin
+and lane, what somebody waits for first, then making from contents just stored, then the backlog, which all reading
+is), then the process (`PluginWorker`, of `PluginWorkers`), used by one run at a time, noting the run
+(`PluginClaims`) so a removal of its contents finds it. Each plugin has one in each lane (`PluginLane`): the quick
+lane, for reading (`PluginReader.Lane`) and every derived file but a stream, and the long lane, for streams
+(`MakingGroup.Lane`), so a run of hours holds up none of the plugin's others. A process is the server's own
+executable as `--plugin-process <folder>`, with `--lowest-priority` in the long lane (`PluginProcessCommand`), which
+loads the plugin as the server does, among the server's registrations on no root, and makes its reader and maker
+and nothing else. What it may be asked to do is each module's `ProcessWork`
 (metadata's reading, derived files' making), which a run names by its type. It does many things, and is ended when
 it has had nothing to do for 60 seconds. One that died or was ended is replaced by the next run.
 
@@ -28,7 +31,12 @@ it has had nothing to do for 60 seconds. One that died or was ended is replaced 
   loaded, and cannot take more private memory; shared mappings are not counted, and a process it starts has a
   limit of its own. Elsewhere the server watches the process, and not those it starts. The collector of the
   runtime does not run beside the plugin, where garbage could reach the limit.
-- **60 seconds** a run, and as many to load the plugin. Over it, the process is killed.
+- **60 seconds** a run in the quick lane, **24 hours** in the long lane, and 60 seconds to load the plugin in either.
+  Over it, the process is killed, and the run has failed as any run does.
+- **In the long lane, the lowest CPU priority**, so the server stays responsive: once the plugin is loaded, in the
+  same 60 seconds as in the quick lane, and before any run, the process lowers itself, its group and every thread in
+  it, to nice 19 (`ProcessGroup.TakeLowestPriority`), and every process it starts inherits it, as an encoder the
+  plugin runs does. On Windows it takes the idle priority class.
 
 Its memory is left out of the dumps .NET makes, and on Linux out of the system's core dumps. What it writes to
 standard error is thrown away and an exception is told by its type alone, since either may quote the contents.

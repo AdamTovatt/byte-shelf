@@ -4,6 +4,7 @@ namespace ByteShelfCommon
     public static class DerivedFileLimits
     {
         private const long MiB = 1024 * 1024;
+        private const long GiB = 1024 * MiB;
 
         /// <summary>
         /// The most bytes a derived file of <paramref name="kind"/> may take. A shelf's quota counts what is kept of each
@@ -21,6 +22,7 @@ namespace ByteShelfCommon
                 DerivedKind.Preview => 16 * MiB,
                 DerivedKind.Full => 512 * MiB,
                 DerivedKind.Agent => MiB,
+                DerivedKind.Stream => 8 * GiB,
                 _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "There is no such kind of derived file."),
             };
         }

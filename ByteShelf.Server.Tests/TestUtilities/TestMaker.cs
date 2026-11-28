@@ -27,8 +27,8 @@ namespace ByteShelf.Server.Tests.TestUtilities
     /// <c>linked</c> (puts a link where the thumbnail was), <c>reads on</c> (goes on reading as it answers),
     /// <c>undeletable</c> (leaves a folder that cannot be removed, with no file of its own),
     /// <c>child crash &lt;path&gt;</c> and <c>child wait &lt;path&gt;</c> (starts a process that goes on, says its id at
-    /// path + ".child", and crashes or waits) or <c>wait &lt;path&gt;</c> (says so at path + ".started", with its process
-    /// id, and goes on once there is a file at the path). What starts with <c>picture</c> it makes into a picture for
+    /// path + ".child", and crashes or waits) or <c>wait &lt;path&gt; [kind]</c> (says so at path + ".started", with its process
+    /// id, and goes on once there is a file at the path; with a kind, only in a run that makes it). What starts with <c>picture</c> it makes into a picture for
     /// agents. Anything else, and those that go on, it makes into text that says the kind, the contents and the maker.
     /// </summary>
     public sealed class TestMaker : IDerivedFileMaker
@@ -65,7 +65,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
         {
             using StreamReader reader = new StreamReader(contents, leaveOpen: true);
             string text = await reader.ReadToEndAsync();
-            await File.AppendAllTextAsync(_spec.LogPath, $"{text.ReplaceLineEndings(" ")}: {string.Join(", ", kinds)}\n");
+            await LogAsync($"{text.ReplaceLineEndings(" ")}: {string.Join(", ", kinds)}");
 
             switch (text.Split(' ')[0])
             {
@@ -104,7 +104,7 @@ namespace ByteShelf.Server.Tests.TestUtilities
                 case "temporary":
                     string temporary = Path.GetTempFileName();
                     await File.WriteAllTextAsync(temporary, text);
-                    await File.AppendAllTextAsync(_spec.LogPath, temporary + "\n");
+                    await LogAsync(temporary);
                     await File.WriteAllTextAsync("in-working-folder", text);
                     break;
                 case "full":
@@ -143,7 +143,12 @@ namespace ByteShelf.Server.Tests.TestUtilities
                     await RunSignals.WaitAsync(child[2]);
                     break;
                 case "wait":
-                    await RunSignals.WaitAsync(text.Split(' ')[1]);
+                    string[] wait = text.Split(' ');
+                    if (wait.Length == 2 || kinds.Contains(DerivedKinds.Parse(wait[2])))
+                    {
+                        await RunSignals.WaitAsync(wait[1]);
+                    }
+
                     break;
             }
 
@@ -195,6 +200,33 @@ namespace ByteShelf.Server.Tests.TestUtilities
             else if (text == "kinds twice")
             {
                 await AddAsync(made, kinds[0], text);
+            }
+        }
+
+        /// <summary>
+        /// Adds <paramref name="line"/> to the log, which other plugins' processes write too, holding the file beside it
+        /// alone while it does: .NET appends where the end was as it opened the log, so two at once write at the same place.
+        /// </summary>
+        private async Task LogAsync(string line)
+        {
+            await using FileStream held = await HoldAsync(_spec.LogPath + ".lock");
+            await File.AppendAllTextAsync(_spec.LogPath, line + "\n");
+        }
+
+        /// <summary>Opens <paramref name="path"/> for this process alone, once no other holds it.</summary>
+        private static async Task<FileStream> HoldAsync(string path)
+        {
+            Stopwatch waited = Stopwatch.StartNew();
+            while (true)
+            {
+                try
+                {
+                    return new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                }
+                catch (IOException) when (waited.Elapsed < TimeSpan.FromSeconds(10))
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(1));
+                }
             }
         }
 

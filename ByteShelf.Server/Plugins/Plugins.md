@@ -101,8 +101,11 @@ again by that version. **A reader keeps what it reads nowhere else**, where it w
 A plugin that makes derived files, such as thumbnails, adds one maker, `builder.AddMaker<TMaker>(...)`, with each
 kind it makes, at a version, from media types: an `IDerivedFileMaker`, made and run as a reader is, whose files
 the server keeps and serves ([Derived files](../Derived/Derived.md)). Its `agent` files are shown to agents only
-when they are a PNG, JPEG, GIF or WebP of at most 1 MiB ([Mcp](../Mcp/Mcp.md)). Why one could not run is in the server's
-log alone, and what it would have made is not there when asked for. A second maker, a kind twice, or a type
+when they are a PNG, JPEG, GIF or WebP of at most 1 MiB ([Mcp](../Mcp/Mcp.md)). Its `stream` files are made in a
+run of their own, in a process of their own beside its others, which may take 24 hours at the lowest CPU priority
+([Processes](Processes/Processes.md)); every other run takes 60 seconds at most. A maker that could not run is
+logged, admins see why on the Settings page, in each lane its runs take, until one of its runs there begins
+(`makerProblem`), and what it would have made is not there when asked for. A second maker, a kind twice, or a type
 that is none refuses the plugin. It too keeps what it reads and makes nowhere else.
 
 Each plugin has an `AssemblyLoadContext` of its own (`PluginLoadContext`): its packages and native
@@ -123,7 +126,8 @@ replica.
 
 `GET /api/plugins` lists the loaded plugins with the addresses of their module and stylesheet, for
 any signed-in user or shelf key, and for an admin those skipped and why a plugin's reader could not run
-when it last had something to read (`readerProblem`). The `ui` folder, and nothing else
+when it last had something to read (`readerProblem`), and its maker when it last had something to make
+(`makerProblem`). The `ui` folder, and nothing else
 of the plugin, is served at `/plugins/{id}/{hash}/...` (`UsePluginAssets`), to anyone, as a browser
 loads modules without the session's token. The hash is of every file in the folder, so each may be
 cached for good, and is in the deploy id ([Version](../Version/Version.md)), so open tabs are told
@@ -151,15 +155,35 @@ A module's default export is `definePlugin({ viewers, fileActions, folderTypes }
   none, as of an encrypted file. One its record names may have gone since: when its URL does not load,
   `forget(kind)` has `url` ask the server, and wait. `loadDerived(reader, kind, load, signal)` does that: it hands
   the URL to `load`, and once more after `forget` when that fails. `loadImage(image, url, signal)` is such a `load`
-  for an `<img>`: it loads and decodes the image, so it is drawn whole at once.
+  for an `<img>`: it loads and decodes the image, so it is drawn whole at once. `status(kind, signal)` says what
+  there is of one without waiting while it is made (`DerivedStatus`: `made`, `making`, `none` or `noRoom`), as of a
+  `stream`, made in the background alone, which may take hours: one its record names is `made` without asking,
+  until it is forgotten, and any other failure of the server's is thrown, so a caller catches it. A `stream` is
+  played by its address alone: where the page reads files whole, as it does where it keeps no cookie, it has read
+  the file itself already, so there is none (`has` false, `url` null, `status` `none`).
   `neighbours` are the files the arrow keys move to, the one before it and the one after, each with such a
   reader, to load ahead what they will show: only files a viewer takes, none in the trash or of a file
   previewed alone, and none after the last of those fetched so far.
   A plugin's beats a built-in one for the same type; between two plugins the first id does.
   `unavailable` says why this browser cannot show the files, and the next viewer that takes them does.
-  The preview is the whole screen, with its controls floating over the file in bars at the top and, on a
-  phone, the bottom, that fade when nothing happens. A viewer is drawn under them, edge to edge, unless it is
+  The preview is the whole screen, with its controls floating over the file in bars that fade when nothing
+  happens: at the top, and at the bottom on a phone, for the steps between files, and on any screen while a viewer
+  draws controls of its own there. A viewer is drawn under them, edge to edge, unless it is
   `clearOfBars`, for controls of its own they would cover, as a PDF's toolbar: then it is drawn between them.
+  Controls of its own in the bars instead, as a player's, are what it draws in `PreviewControls`: a pill of the
+  bottom bar, the width of the bar up to a limit and on a phone above the steps, that fades with the bars and goes
+  with the viewer, a drag on which is the controls' and no swipe; `BarButton` is the bars' own button, and
+  `BarTextButton` one that shows a word or two, as a speed, at its height. Outside a preview it draws nothing.
+  `usePreviewKeys(handler)` hands `handler` the keys pressed in the preview while that is the overlay on top, those
+  pressed with a modifier too (`isPlainKey` tells them): none while a dialog is over it, none typed into a field (a
+  slider is not one), none that press the button that has the focus, as Space and Enter do, none taken already, as
+  by a control's own handler, and never Escape or Tab, which are the overlay's. `handler` hears them
+  ahead of the preview, whose arrow keys step between files unless it calls `preventDefault`.
+  `usePreviewFullScreen(video?)` answers a `FullScreen`: `canFullScreen`, `isFullScreen` and `toggle`, which makes
+  the page full screen while the preview is open, the menus and dialogs over it too, and closing the preview leaves
+  it. Where the browser makes no element full screen, as on an iPhone, it is the `video` given in the browser's own
+  player instead, and without one there is none. Outside a preview the one hands `handler` nothing and the other
+  cannot go full screen.
   The component also gets `Fallback`, a component without props, for a file it finds it has nothing to show of, or
   nothing better than the next viewer: it shows the file in the viewer that would show it were there not this one,
   by the order above and passing over those that are unavailable, or, when none is left, says why the first that is
@@ -175,7 +199,13 @@ A module's default export is `definePlugin({ viewers, fileActions, folderTypes }
   row that scrolls sideways (across), a pane scrolled down from its top (down), what `useZoom` zooms while zoomed
   in, and an element of the plugin's given `{ [DRAGS_ITSELF]: true }`, or anything in one (across and down).
   `mediaTypeOf(contentType)` is a file's type as viewers' `mediaTypes` are matched against it: lowercase, without
-  parameters such as `; charset=utf-8`.
+  parameters such as `; charset=utf-8`. `formatDuration(seconds, { isElapsed })` writes how long something plays as
+  the app does, `3:07`, or as a player's clock, in whole seconds gone by. `readStoredValue(key)` and
+  `writeStoredValue(key, value)` keep text in the browser's storage, and do nothing where it is refused, as a
+  private window's may be. `useLoaded(key, load)` loads anew as `key` changes, and for a null `key` loads
+  nothing and stays loading, as for what is not to be loaded yet.
+  `isPlainKey(event)` says a key was pressed with nothing held, as a viewer's own shortcuts are, and
+  `PREVIEW_BAR_BOTTOM` how high the preview's bottom bar stands, as a CSS length, for what it draws above it.
 - **File actions** are items in the menus of live files: `{ id, label, icon?, showsFor, run }`.
   `showsFor` is asked as a menu is drawn. `run` gets the shelf, the file, its content reader and
   `showDialog`, which shows a dialog of the plugin's until it calls the `close` it is given. The contents

@@ -75,7 +75,7 @@ namespace ByteShelf.Plugins.Images.Tests
 
             MadeFiles made = await MadeFiles.MakeAsync(contents[..(contents.Length / 2)]);
 
-            Assert.Equal(MadeFiles.AllKinds.Order(), made.Kinds);
+            Assert.Equal(MadeFiles.DeclaredKinds.Order(), made.Kinds);
         }
 
         [Theory]

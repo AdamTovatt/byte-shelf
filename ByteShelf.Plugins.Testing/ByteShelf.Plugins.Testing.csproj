@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    What plugins' tests take a maker's files with as the server does (MadeFiles), so each plugin's tests hold its
+    maker to the server's rules, from one copy of them.
+  -->
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ByteShelf.Plugins\ByteShelf.Plugins.csproj" />
+    <ProjectReference Include="..\ByteShelfCommon\ByteShelfCommon.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The rule itself, the server's source: the server is not referenced, as a plugin's tests run without it. -->
+    <Compile Include="..\ByteShelf.Server\Derived\Services\MadeKindRule.cs" Link="MadeKindRule.cs" />
+  </ItemGroup>
+
+</Project>

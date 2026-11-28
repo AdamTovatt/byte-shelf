@@ -17,6 +17,9 @@ namespace ByteShelf.Server.Derived.Services
         /// <summary>When a request that waited is told to come back.</summary>
         private static readonly TimeSpan RetryAfter = TimeSpan.FromSeconds(5);
 
+        /// <summary>When a request for a kind only made in the background, which may take hours, is told to come back.</summary>
+        private static readonly TimeSpan BackgroundRetryAfter = TimeSpan.FromMinutes(1);
+
         private readonly ShelfTree _shelfTree;
         private readonly ITrashService _trashService;
         private readonly IPlainContentsRepository _contents;
@@ -26,6 +29,7 @@ namespace ByteShelf.Server.Derived.Services
         private readonly DerivedMaking _making;
         private readonly TimeProvider _timeProvider;
         private readonly DerivedRoom _room;
+        private readonly DerivedBackground _background;
 
         public DerivedFileService(
             ShelfTree shelfTree,
@@ -36,9 +40,11 @@ namespace ByteShelf.Server.Derived.Services
             ContentsLocks locks,
             DerivedMaking making,
             TimeProvider timeProvider,
-            DerivedRoom room)
+            DerivedRoom room,
+            DerivedBackground background)
         {
             _room = room;
+            _background = background;
             _shelfTree = shelfTree;
             _trashService = trashService;
             _contents = contents;
@@ -73,6 +79,17 @@ namespace ByteShelf.Server.Derived.Services
             if (await FindAsync(file.Sha256, maker, cancellationToken) is { } found)
             {
                 return found.File ?? throw None(file, kind);
+            }
+
+            MakingGroup group = MakingGroup.Of(kind);
+            if (!group.Start.MadeWhenAsked)
+            {
+                throw await _background.MakingOfAsync(maker.Plugin, group, file.Sha256) switch
+                {
+                    BackgroundMaking.None => None(file, kind),
+                    BackgroundMaking.CannotRun => new PluginUnavailableException($"its maker of derived files {DerivedMaking.CouldNotDo(group.Lane)} when it last had one to do"),
+                    _ => Later(kind, BackgroundRetryAfter),
+                };
             }
 
             Task<MakingOutcome> making = _making.MakeAsync(file.Sha256, kind, maker.Plugin, PluginPriority.Asked);
@@ -134,9 +151,9 @@ namespace ByteShelf.Server.Derived.Services
             return new QuotaExceededException($"A shelf that holds the file's contents has no room for its {DerivedKinds.NameOf(kind)}.");
         }
 
-        private static RetryLaterException Later(DerivedKind kind)
+        private static RetryLaterException Later(DerivedKind kind, TimeSpan? after = null)
         {
-            return new RetryLaterException($"The {DerivedKinds.NameOf(kind)} is still being made; ask again.", RetryAfter);
+            return new RetryLaterException($"The {DerivedKinds.NameOf(kind)} is still being made; ask again.", after ?? RetryAfter);
         }
 
         private sealed record Found(DerivedFile? File);

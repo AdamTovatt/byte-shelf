@@ -39,8 +39,10 @@ npm run test:e2e   # Playwright: builds the UI and the plugins its config names,
 npm run build      # into dist/, which a published server serves
 ```
 
-Before the first `npm run test:e2e`, install its browser with `npx playwright install chromium`. The images
-plugin's server part, which it builds, needs the .NET SDK.
+Before the first `npm run test:e2e`, install its browser with `npx playwright install chromium`. The plugins'
+server parts, which it builds, need the .NET SDK, and the video plugin's first build downloads its ffmpeg, so it
+needs the network. The video plugin's test makes its video with that ffmpeg, which is for Linux on x64 or arm64
+alone, so the e2e tests run there.
 
 `src/lib/encryption/interop.test.ts` checks typage (`age-encryption`) decrypts `dotnet.age`, an age
 file ByteShelfClient wrote, and matches `dotnet-check.txt`, a folder check it made; ByteShelfClient's
@@ -114,10 +116,10 @@ npm run codegen    # in a second terminal
   middle (`components/MiddleTruncatedName.tsx`).
 - **Preview** (`components/preview/FilePreview.tsx`): a file over the page in the viewer that takes its
   type, its place in the URL (`?preview=<file id>`, `hooks/usePreviewParam.ts`), so Back closes it and a
-  reload keeps it. Previous, next and the arrow keys go through the files a viewer takes, in the order of
-  the listing or the search's results (`hooks/useShelfPreview.ts`; past the last result so far, next fetches
-  the pages that follow until one holds a file a viewer takes); a file outside them, as after a reload of a
-  search, is previewed alone. A preview whose file is gone closes with a toast. In the trash
+  reload keeps it. Previous, next and the arrow keys, unless the viewer takes them, as a player's seek bar does,
+  go through the files a viewer takes, in the order of the listing or the search's results
+  (`hooks/useShelfPreview.ts`; past the last result so far, next fetches the pages that follow until one holds a
+  file a viewer takes); a file outside them, as after a reload of a search, is previewed alone. A preview whose file is gone closes with a toast. In the trash
   (`hooks/useTrashPreview.ts`) it is of the one file a file deletion took, by the deletion's id, without
   neighbours; Open shows it there whatever its type, saying so of one no viewer takes. A viewer also gets what
   plugins made from the file and from the two beside it (`lib/derived/derivedReader.ts`), which an `<img>`
@@ -142,7 +144,12 @@ npm run codegen    # in a second terminal
     does not reload the page (`hooks/useNoPullToRefresh.ts`), and a click with the mouse beside an image that zooms
     closes it (`BackdropClick`). On a phone, narrower than Tailwind's `sm` (`lib/screens.ts`, which
     `tailwind.config.js` reads too), the bars' buttons are larger and the bars stand further from the edges. A
-    viewer that is `clearOfBars` is drawn between the bars.
+    viewer that is `clearOfBars` is drawn between the bars. A viewer's own controls, as a player's, go in a pill
+    of the bottom bar (`PreviewControls`, a portal into `FloatingBars`' slot, marked `DRAGS_ITSELF` while it holds
+    any). What a preview gives its viewer is made in one place (`useViewerPreviewHost`, `lib/preview/viewerPreview.ts`):
+    that slot; the keys the preview hears as the overlay on top, offered to the viewer's handlers before its own
+    (`usePreviewKeys`), but those typed into a field or taken already; and full screen of the whole page while it is
+    open, so that the menus and dialogs drawn outside it show too, which closing it leaves (`usePreviewFullScreen`).
   - *Contents* reach a viewer through a `ContentReader` (`lib/content/contentReader.ts`): `url()`, `blob()`
     and `range()`, whatever they come from. A blob-backed file (`isBlobBacked`) is read whole into the page
     first (`lib/preview/fileContents.ts`), over 100 MiB only once Load, Download or Open in new tab is
@@ -207,8 +214,9 @@ npm run codegen    # in a second terminal
   `MobileTopBarOverlay` (`components/layout/MobileTopBar.tsx`).
 - **Plugins:** once signed in, the app loads the server's plugins into the page
   (`lib/plugins/pluginHost.ts`, followed with `hooks/usePluginHost.ts`), each failing alone. What they
-  import as `@byteshelf/plugin` is `src/plugin/index.ts`; `build/sharedModules.ts` makes that and the
-  packages plugins share an entry each of the build, named in `index.html`'s import map, and in the dev
+  import as `@byteshelf/plugin` is `src/plugin/index.ts`, and what their tests import as `@byteshelf/plugin/testing`
+  is `src/plugin/testing.ts`, which only tests resolve (`build/pluginTests.config.ts`); `build/sharedModules.ts`
+  makes the first and the packages plugins share an entry each of the build, named in `index.html`'s import map, and in the dev
   server too. `build/buildPlugin.ts` builds the plugins in [plugins](../plugins/README.md). What they may
   use is a promise: breaking what a release holds of it raises `PluginApi.Version` on the server
   ([Plugins](../ByteShelf.Server/Plugins/Plugins.md), Versions). A plugin adds viewers to the preview and

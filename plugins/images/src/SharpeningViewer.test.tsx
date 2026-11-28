@@ -2,6 +2,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ContentReader, DerivedKind, DerivedReader, Neighbour, ShelfFile } from '@byteshelf/plugin';
+import { derivedReaderOf } from '@byteshelf/plugin/testing';
 import { SharpeningViewer } from './SharpeningViewer';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -29,8 +30,9 @@ describe('the sharpening viewer', () => {
 
   /** What was made of an image: each kind listed is there, and each in `made` has or comes to have a URL, null for none. */
   function derivedReader(listed: DerivedKind[], made: Partial<Record<DerivedKind, Promise<string | null>>> = {}) {
-    const url = vi.fn((kind: DerivedKind) => made[kind] ?? Promise.resolve(listed.includes(kind) ? `${kind}.webp` : null));
-    return { has: (kind: DerivedKind) => listed.includes(kind), url, forget: vi.fn() } satisfies DerivedReader;
+    const url = vi.fn(async (kind: DerivedKind) => made[kind] ?? (listed.includes(kind) ? `${kind}.webp` : null));
+    // Spread, not overrides, so the tests read `url` as the mock it is.
+    return { ...derivedReaderOf(Object.fromEntries(listed.map((kind) => [kind, `${kind}.webp`]))), url, forget: vi.fn() };
   }
 
   async function show(derived: DerivedReader, file: Partial<ShelfFile> = {}, neighbours: Neighbour[] = []): Promise<void> {

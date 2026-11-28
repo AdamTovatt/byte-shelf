@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
+using ByteShelf.Server.Derived.Models;
 using ByteShelf.Server.Derived.Services;
 using ByteShelf.Server.Metadata.Services;
 using ByteShelf.Server.Plugins.Processes;
@@ -203,6 +204,32 @@ namespace ByteShelf.Server.Tests.Derived
             Type[] first = [typeof(PluginProcessesLifetime), typeof(MetadataReadingWorker), typeof(StoredContentsWorker), typeof(DerivedMakingWorker)];
             Assert.Equal(first[0], started.First(first.Contains));
             Assert.All(first, worker => Assert.Contains(worker, started));
+        }
+
+        [Fact]
+        public void Start_HasAWorkerOfEachGroupMadeInTheBackground()
+        {
+            Assert.Equal(MakingGroup.InBackground, _host.Services.GetServices<IHostedService>().OfType<DerivedMakingWorker>().Select(worker => worker.Group));
+        }
+
+        [Fact]
+        public async Task Get_AStreamBeingMade_IsNotReadyAtOnceWithAMinuteToComeBack()
+        {
+            using TestDerivedPlugins plugins = new TestDerivedPlugins();
+            plugins.All = [plugins.Plugin(kinds: [DerivedKind.Stream])];
+            await using ServerTestHost host = await ServerTestHost.StartAsync(plugins.AddTo);
+            await host.CreateShelfAsync("docs");
+            ShelfFile file = await host.PutAsAdminAsync("docs", "/s.txt", Encoding.UTF8.GetBytes(plugins.Waiting("s")), "text/plain");
+
+            // Made by the background, as it was stored: answered while it is, as only a wait for none says a minute.
+            using (await plugins.StartedAsync("s"))
+            {
+                using HttpResponseMessage response = await host.AdminClient.GetAsync($"/api/shelves/docs/files/derived?id={file.Id}&kind=stream");
+
+                ErrorResponse? error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+                Assert.Equal((HttpStatusCode.ServiceUnavailable, "60", ErrorCodes.NotReady), (response.StatusCode, response.Headers.RetryAfter?.ToString(), error?.Code));
+                plugins.GoOn("s");
+            }
         }
 
         [UnixFact]

@@ -11,7 +11,7 @@ each pass in a scope of its own; a job that overrides `Wake` also starts a pass 
 error, and the next one runs on schedule. The jobs are `storage.maintenance` (hourly),
 `users.expired_token_cleanup` (daily), `change_log.compaction` (hourly), `replication.alerts`
 (every minute), `metadata.reading` and `metadata.plugin_reading` (hourly, and woken as files come to hold plain contents;
-[Metadata](../Metadata/Metadata.md)), and `derived.making` (hourly) and `derived.maintenance` (daily;
+[Metadata](../Metadata/Metadata.md)), and `derived.making` and `derived.stream_making` (hourly) and `derived.maintenance` (daily;
 [Derived files](../Derived/Derived.md)).
 
 Nothing records runs in the database: the log is the record. A job that a person needs to see the

@@ -17,6 +17,7 @@ import {
   Doc02Icon,
   Download01Icon,
   Edit04Icon,
+  ExitFullScreenIcon,
   File02Icon,
   FileChartColumnIcon,
   FileImageIcon,
@@ -25,6 +26,7 @@ import {
   FilterHorizontalIcon,
   Folder01Icon,
   Folder02Icon,
+  FullScreenIcon,
   Home11Icon,
   InformationCircleIcon,
   KeyIcon,
@@ -34,7 +36,9 @@ import {
   MoreHorizontalIcon,
   MoveRightIcon,
   PanelLeftIcon,
+  PauseIcon,
   Pdf02Icon,
+  PlayIcon,
   PlusSignIcon,
   ReloadIcon,
   RestoreIcon,
@@ -55,6 +59,8 @@ import {
   UserMultiple02Icon,
   ViewIcon,
   ViewOffSlashIcon,
+  VolumeIcon,
+  VolumeOffIcon,
 } from '../assets/icons';
 
 export const iconMap = {
@@ -118,6 +124,14 @@ export const iconMap = {
   more: MoreHorizontalIcon,
   view: ViewIcon,
   viewOff: ViewOffSlashIcon,
+
+  // Playing a video or a sound
+  play: PlayIcon,
+  pause: PauseIcon,
+  volume: VolumeIcon,
+  muted: VolumeOffIcon,
+  fullScreen: FullScreenIcon,
+  exitFullScreen: ExitFullScreenIcon,
 
   // Status
   success: Tick01Icon,

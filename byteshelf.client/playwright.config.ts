@@ -10,7 +10,7 @@ import { ADMIN_EMAIL, ADMIN_PASSWORD, PORT } from './e2e/e2eConfig';
 // which inherits the runner's environment, so the variable keeps it from emptying the root again.
 const ROOT = resolve('e2e-root');
 /** The plugins made in plugins/ that the server has. */
-const PLUGINS = ['markdown', 'images'];
+const PLUGINS = ['markdown', 'images', 'video'];
 if (!process.env.BYTESHELF_E2E_ROOT) {
   rmSync(ROOT, { recursive: true, force: true });
   mkdirSync(resolve(ROOT, 'plugins'), { recursive: true });

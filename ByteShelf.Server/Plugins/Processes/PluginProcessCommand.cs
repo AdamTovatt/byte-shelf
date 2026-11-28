@@ -8,14 +8,17 @@ using ByteShelf.Server.Shared.Processes;
 namespace ByteShelf.Server.Plugins.Processes
 {
     /// <summary>
-    /// <c>--plugin-process &lt;location&gt;</c>: the child process a server has one plugin's work done in. It loads the
-    /// plugin and does what the server asks (<see cref="Frame"/>), one thing at a time, until the server closes its
-    /// input, with which it ends. It is given contents and a folder to write in, and none of the server's settings,
-    /// services or files.
+    /// <c>--plugin-process &lt;location&gt; [--lowest-priority]</c>: the child process a server has one plugin's work done
+    /// in. It loads the plugin and does what the server asks (<see cref="Frame"/>), one thing at a time, until the server
+    /// closes its input, with which it ends. It is given contents and a folder to write in, and none of the server's
+    /// settings, services or files.
     /// </summary>
     internal sealed class PluginProcessCommand
     {
         public const string Flag = "--plugin-process";
+
+        /// <summary>Has the process, and every process it starts, run at the lowest CPU priority (<see cref="PluginLane.LowestPriority"/>).</summary>
+        public const string LowestPriorityFlag = "--lowest-priority";
 
         /// <summary>The process was started by something other than a server.</summary>
         public const int WrongArguments = 2;
@@ -40,16 +43,26 @@ namespace ByteShelf.Server.Plugins.Processes
             _output = output;
         }
 
-        /// <summary>Runs it; does not return but for the exit code of a process that was not started as one.</summary>
-        /// <param name="location">Where the plugin is (<see cref="PluginTarget.Location"/>).</param>
-        /// <param name="load">Loads the plugin at a location, throwing when it cannot be.</param>
-        public static async Task<int> RunAsync(string? location, Func<string, PluginWorks> load)
+        /// <summary>What a process is started with for <paramref name="plugin"/> in <paramref name="lane"/>, after the executable's own arguments, as <see cref="RunAsync"/> reads them.</summary>
+        public static IReadOnlyList<string> ArgumentsFor(PluginTarget plugin, PluginLane lane)
         {
-            if (location == null || !Console.IsInputRedirected)
+            return lane.LowestPriority ? [Flag, plugin.Location, LowestPriorityFlag] : [Flag, plugin.Location];
+        }
+
+        /// <summary>Runs it; does not return but for the exit code of a process that was not started as one.</summary>
+        /// <param name="args">The program's arguments, <see cref="ArgumentsFor"/>'s among them: <see cref="Flag"/>, where the plugin is (<see cref="PluginTarget.Location"/>), and <see cref="LowestPriorityFlag"/> or nothing.</param>
+        /// <param name="load">Loads the plugin at a location, throwing when it cannot be.</param>
+        public static async Task<int> RunAsync(string[] args, Func<string, PluginWorks> load)
+        {
+            int flag = Array.IndexOf(args, Flag);
+            string[] arguments = flag < 0 ? [] : args[(flag + 1)..];
+            if (arguments is not ([_] or [_, LowestPriorityFlag]) || !Console.IsInputRedirected)
             {
                 return WrongArguments;
             }
 
+            string location = arguments[0];
+            bool lowestPriority = arguments is [_, LowestPriorityFlag];
             ProcessGroup.Lead();
             LeaveStoppingToTheServer();
             KeepMemoryOutOfCoreDumps();
@@ -70,6 +83,13 @@ namespace ByteShelf.Server.Plugins.Processes
                 process.Write(FrameType.Unavailable, $"it could not be loaded: {exception.Message}");
                 await Task.Delay(Timeout.Infinite);
                 throw;
+            }
+
+            if (lowestPriority)
+            {
+                // Once loaded, which the load limit holds to the same time in either lane, and before any run: the
+                // group's every thread now, and every thread and process one starts from now on, is at it too.
+                ProcessGroup.TakeLowestPriority();
             }
 
             process.Write(FrameType.Ready, string.Empty);

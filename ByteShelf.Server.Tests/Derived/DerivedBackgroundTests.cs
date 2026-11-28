@@ -44,7 +44,7 @@ namespace ByteShelf.Server.Tests.Derived
             foreach (string text in known)
             {
                 ShelfFile file = await StoreTextAsync(shelf, $"/{text}.txt", text);
-                foreach (DerivedKind kind in DerivedKinds.In(MakingGroup.Background))
+                foreach (DerivedKind kind in MakingGroup.Background.Kinds)
                 {
                     await PutAsync(file.Sha256, FailedByTestMaker(kind));
                 }
@@ -71,7 +71,7 @@ namespace ByteShelf.Server.Tests.Derived
                 int before = Plugins.Runs.Count;
                 ShelfFile stored = await StoreTextAsync(shelf, "/stored.txt", "stored");
                 await using AsyncServiceScope scope = Services.CreateAsyncScope();
-                Task making = scope.ServiceProvider.GetRequiredService<DerivedBackground>().MakeStoredAsync(Plugins.All[0], stored.Sha256, CancellationToken.None);
+                Task making = scope.ServiceProvider.GetRequiredService<DerivedBackground>().MakeStoredAsync(Plugins.All[0], MakingGroup.Background, stored.Sha256, CancellationToken.None);
                 Plugins.GoOn("0");
                 await Task.WhenAll(backlog, making);
 
@@ -114,7 +114,7 @@ namespace ByteShelf.Server.Tests.Derived
             Shelf shelf = await CreateShelfAsync();
             await StoreTextAsync(shelf, "/a.txt", "a");
 
-            await Assert.ThrowsAsync<PluginUnavailableException>(MakeBacklogAsync);
+            await Assert.ThrowsAsync<PluginUnavailableException>(() => MakeBacklogAsync());
         }
 
         [Fact]
@@ -132,6 +132,33 @@ namespace ByteShelf.Server.Tests.Derived
             Assert.Equal(json.Sha256, sha256);
             Assert.Equal(["application/json", "text/plain"], types);
             Assert.Equal(0, await MakeBacklogAsync());
+        }
+
+        /// <summary>One rule, so that a missing stream the background will never make is a 404, not a 503 for ever.</summary>
+        [Fact]
+        public async Task IsLiveAsync_EachContents_IsWhetherGetLiveAsyncListsThem()
+        {
+            Shelf shelf = await CreateShelfAsync();
+            ShelfFile[] files =
+            [
+                await StoreTextAsync(shelf, "/a.txt", "a"),
+                await StoreAsync(shelf, "/encrypted.txt", AgeBytes, "text/plain", encrypted: true),
+                await StoreAsync(shelf, "/other.bin", [1], "application/octet-stream"),
+                await StoreTextAsync(shelf, "/trashed.txt", "trashed"),
+            ];
+            await FileService.DeleteFileAsync(shelf, EntryReference.ForId(files[3].Id));
+            IPlainContentsRepository contents = Services.GetRequiredService<IPlainContentsRepository>();
+            MediaTypeSet mediaTypes = MediaTypeSet.Of("text/plain");
+
+            HashSet<string> listed = [.. (await contents.GetLiveAsync(mediaTypes, after: null, limit: 10)).Select(live => live.Sha256)];
+            List<bool> live = [];
+            foreach (ShelfFile file in files)
+            {
+                live.Add(await contents.IsLiveAsync(file.Sha256, mediaTypes));
+            }
+
+            Assert.Equal([true, false, false, false], live);
+            Assert.Equal(files.Select(file => listed.Contains(file.Sha256)), live);
         }
 
         [UnixFact]
@@ -153,7 +180,7 @@ namespace ByteShelf.Server.Tests.Derived
         {
             Shelf shelf = await CreateShelfAsync();
             ShelfFile file = await StoreTextAsync(shelf, "/a.txt", "a");
-            using DerivedMakingWorker worker = ActivatorUtilities.CreateInstance<DerivedMakingWorker>(Services);
+            using DerivedMakingWorker worker = ActivatorUtilities.CreateInstance<DerivedMakingWorker>(Services, MakingGroup.Background);
 
             await worker.StartAsync(CancellationToken.None);
             await TestDerivedPlugins.UntilAsync(() => Store.Find(DerivedKind.Preview, file.Sha256) != null);

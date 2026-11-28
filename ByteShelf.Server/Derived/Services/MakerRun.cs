@@ -2,7 +2,9 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using ByteShelf.Plugins;
 using ByteShelf.Server.Derived.Models;
+using ByteShelf.Server.Plugins.Models;
 using ByteShelf.Server.Plugins.Processes;
+using ByteShelf.Server.Plugins.Services;
 using ByteShelf.Server.Shared.Json;
 using ByteShelf.Server.Shared.Root;
 using ByteShelf.Server.Storage.Repositories;
@@ -22,6 +24,7 @@ namespace ByteShelf.Server.Derived.Services
         private readonly MakingGroup _group;
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly DerivedMakers _makers;
+        private readonly PluginProblems _problems;
         private readonly RootFolder _root;
         private IReadOnlyList<KindMaker> _missing = [];
 
@@ -31,6 +34,7 @@ namespace ByteShelf.Server.Derived.Services
             DerivedFilePlugin plugin,
             IServiceScopeFactory scopeFactory,
             DerivedMakers makers,
+            PluginProblems problems,
             RootFolder root)
         {
             Sha256 = sha256;
@@ -38,6 +42,7 @@ namespace ByteShelf.Server.Derived.Services
             _plugin = plugin;
             _scopeFactory = scopeFactory;
             _makers = makers;
+            _problems = problems;
             _root = root;
         }
 
@@ -56,6 +61,12 @@ namespace ByteShelf.Server.Derived.Services
                 ? null
                 : JsonSerializer.SerializeToElement(
                     new MakeArguments(_missing.Select(maker => new RequestedKind(maker.Declaration.Kind, maker.Declaration.Version)).ToList()), JsonDefaults.CamelCase);
+        }
+
+        /// <summary>Clears the maker's problem in the group's lane: from now on its runs there can run, while this one may take hours.</summary>
+        public void Began()
+        {
+            _problems.Clear(_plugin.Id, PluginPart.Maker, _group.Lane);
         }
 
         /// <summary>

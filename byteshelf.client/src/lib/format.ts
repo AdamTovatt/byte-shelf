@@ -28,9 +28,13 @@ export function formatTime(instant: string): string {
   return `${formatDate(instant)} ${twoDigits(date.getHours())}:${twoDigits(date.getMinutes())}`;
 }
 
-/** How long something plays, rounded to the second: 3:07, or 1:05:09 from an hour up. */
-export function formatDuration(seconds: number): string {
-  const whole = Math.round(seconds);
+/**
+ * How long something plays, rounded to the second: 3:07, or 1:05:09 from an hour up. With `isElapsed`, as a player's
+ * clock of how far it is, it is the whole seconds gone by, so a second is shown once it has passed. What is not a
+ * time, or before none, is 0:00.
+ */
+export function formatDuration(seconds: number, { isElapsed = false }: { isElapsed?: boolean } = {}): string {
+  const whole = Number.isFinite(seconds) ? Math.max(0, isElapsed ? Math.floor(seconds) : Math.round(seconds)) : 0;
   const hours = Math.floor(whole / 3600);
   const minutes = Math.floor((whole % 3600) / 60);
   const rest = twoDigits(whole % 60);

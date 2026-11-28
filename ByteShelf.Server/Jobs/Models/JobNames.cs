@@ -24,6 +24,9 @@ namespace ByteShelf.Server.Jobs.Models
         /// <summary>Makes the thumbnails and previews that are missing, from files already stored.</summary>
         public const string DerivedMaking = "derived.making";
 
+        /// <summary>Makes the streaming copies that are missing, from files already stored.</summary>
+        public const string StreamMaking = "derived.stream_making";
+
         /// <summary>Removes derived files that may no longer be kept: of contents no plain file holds, of plugins no longer installed, and the least used over their limit.</summary>
         public const string DerivedMaintenance = "derived.maintenance";
     }

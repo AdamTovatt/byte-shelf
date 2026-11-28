@@ -199,7 +199,7 @@ namespace ByteShelf.Plugins.Images.Tests
 
             MadeFiles made = await MadeFiles.MakeAsync(TestImages.Of("tiff", image));
 
-            Assert.Equal(MadeFiles.AllKinds.Order(), made.Kinds);
+            Assert.Equal(MadeFiles.DeclaredKinds.Order(), made.Kinds);
             Assert.All(new[] { DerivedKind.Thumbnail, DerivedKind.Preview, DerivedKind.Full }, kind =>
             {
                 using MagickImage decoded = made.Decode(kind);
@@ -316,8 +316,8 @@ namespace ByteShelf.Plugins.Images.Tests
 
         private static void AssertSrgb(IMagickColor<byte> expected, MadeFiles made, int tolerance)
         {
-            Assert.Equal(MadeFiles.AllKinds.Order(), made.Kinds);
-            Assert.All(MadeFiles.AllKinds, kind =>
+            Assert.Equal(MadeFiles.DeclaredKinds.Order(), made.Kinds);
+            Assert.All(MadeFiles.DeclaredKinds, kind =>
             {
                 using MagickImage image = made.Decode(kind);
                 Assert.Empty(image.ProfileNames);

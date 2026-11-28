@@ -1,3 +1,4 @@
+using ByteShelf.Server.Derived.Models;
 using ByteShelf.Server.Derived.Repositories;
 using ByteShelf.Server.Derived.Services;
 using ByteShelf.Server.Plugins.Processes;
@@ -33,7 +34,11 @@ namespace ByteShelf.Server.Derived
             services.AddScoped<DerivedMaintenance>();
 
             services.AddHostedService<StoredContentsWorker>();
-            services.AddHostedService<DerivedMakingWorker>();
+            foreach (MakingGroup group in MakingGroup.InBackground)
+            {
+                services.AddSingleton<IHostedService>(provider => ActivatorUtilities.CreateInstance<DerivedMakingWorker>(provider, group));
+            }
+
             services.AddHostedService<DerivedMaintenanceWorker>();
 
             return services;

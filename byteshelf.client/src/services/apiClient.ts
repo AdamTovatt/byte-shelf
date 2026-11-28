@@ -40,6 +40,11 @@ export function isNotFound(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404;
 }
 
+/** Whether the server refused because a shelf has no room for what was asked for. */
+export function isNoRoom(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 507;
+}
+
 interface ApiFetchResult<T> {
   data?: T;
   error?: unknown;

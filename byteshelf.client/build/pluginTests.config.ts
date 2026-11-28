@@ -11,6 +11,8 @@ export default defineConfig({
   server: { fs: { allow: [resolve(app, '..')] } },
   resolve: {
     alias: [
+      // Ahead of the package itself, which would take it as a path in its module.
+      { find: '@byteshelf/plugin/testing', replacement: resolve(app, 'src/plugin/testing.ts') },
       { find: '@byteshelf/plugin', replacement: resolve(app, 'src/plugin/index.ts') },
       { find: new RegExp(`^(${npmPackages.join('|')})(?=/|$)`), replacement: `${app}/node_modules/$1` },
     ],
